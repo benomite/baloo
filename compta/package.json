@@ -1,0 +1,29 @@
+{
+  "name": "baloo-compta",
+  "version": "0.1.0",
+  "description": "Serveur MCP de comptabilité pour groupe SGDF",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "bootstrap": "tsx src/scripts/bootstrap.ts",
+    "import:todos": "tsx src/scripts/import-todos.ts",
+    "import:personnes": "tsx src/scripts/import-personnes.ts",
+    "import:comptes": "tsx src/scripts/import-comptes.ts",
+    "import:asso-finances": "tsx src/scripts/import-asso-finances.ts",
+    "import:outils-state": "tsx src/scripts/import-outils-state.ts",
+    "try:comptaweb": "tsx src/try-comptaweb.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "better-sqlite3": "^11.8.2",
+    "cheerio": "^1.2.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

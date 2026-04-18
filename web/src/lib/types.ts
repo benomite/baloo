@@ -1,0 +1,94 @@
+export type EcritureType = 'depense' | 'recette';
+export type EcritureStatus = 'brouillon' | 'valide' | 'saisie_comptaweb';
+export type RemboursementStatus = 'demande' | 'valide' | 'paye' | 'refuse';
+export type JustificatifStatus = 'oui' | 'en_attente' | 'non';
+export type DepotType = 'banque' | 'ancv';
+
+export interface Ecriture {
+  id: string;
+  group_id: string;
+  unite_id: string | null;
+  date_ecriture: string;
+  description: string;
+  amount_cents: number;
+  type: EcritureType;
+  category_id: string | null;
+  mode_paiement_id: string | null;
+  activite_id: string | null;
+  numero_piece: string | null;
+  status: EcritureStatus;
+  comptaweb_synced: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  unite_code?: string | null;
+  category_name?: string | null;
+  mode_paiement_name?: string | null;
+  activite_name?: string | null;
+  has_justificatif?: boolean;
+}
+
+export interface Remboursement {
+  id: string;
+  group_id: string;
+  demandeur: string;
+  amount_cents: number;
+  date_depense: string;
+  nature: string;
+  unite_id: string | null;
+  justificatif_status: JustificatifStatus;
+  status: RemboursementStatus;
+  date_paiement: string | null;
+  mode_paiement_id: string | null;
+  comptaweb_synced: number;
+  ecriture_id: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  unite_code?: string | null;
+  mode_paiement_name?: string | null;
+}
+
+export interface MouvementCaisse {
+  id: string;
+  date_mouvement: string;
+  description: string;
+  amount_cents: number;
+  solde_apres_cents: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface Category {
+  id: string;
+  name: string;
+  type: 'depense' | 'recette' | 'les_deux';
+  comptaweb_nature: string | null;
+}
+
+export interface Unite {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface ModePaiement {
+  id: string;
+  name: string;
+}
+
+export interface Activite {
+  id: string;
+  name: string;
+}
+
+export interface Justificatif {
+  id: string;
+  file_path: string;
+  original_filename: string;
+  mime_type: string | null;
+  entity_type: string;
+  entity_id: string;
+  uploaded_at: string;
+}

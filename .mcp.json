@@ -1,0 +1,33 @@
+{
+  "mcpServers": {
+    "airtable": {
+      "type": "http",
+      "url": "https://mcp.airtable.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${AIRTABLE_PAT}"
+      }
+    },
+    "compta": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["--prefix", "compta", "tsx", "compta/src/index.ts"]
+    },
+    "workspace": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "workspace-mcp",
+        "--tools",
+        "gmail",
+        "drive",
+        "sheets",
+        "--read-only"
+      ],
+      "env": {
+        "GOOGLE_OAUTH_CLIENT_ID": "${GOOGLE_OAUTH_CLIENT_ID}",
+        "GOOGLE_OAUTH_CLIENT_SECRET": "${GOOGLE_OAUTH_CLIENT_SECRET}",
+        "WORKSPACE_MCP_PORT": "8765"
+      }
+    }
+  }
+}

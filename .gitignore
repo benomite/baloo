@@ -1,0 +1,59 @@
+# Secrets
+.env
+.env.*
+!.env.example
+!**/.env.example
+*.key
+*.pem
+secrets/
+
+# Données spécifiques au groupe ou au user (ADR-013)
+# Tout ce qui est user/groupe-dépendant vit en BDD ou en fichiers locaux,
+# jamais en git. Aucune exception, même temporaire.
+mon-groupe/
+
+# Zone de dépôt brute (pièces sensibles, pas de versioning)
+inbox/
+
+# Pièces justificatives et exports
+*.pdf
+*.xlsx
+*.xls
+*.csv
+*.ods
+!doc/**/*.pdf
+
+# Données perso / financières extraites
+*.rib
+mon-groupe/exports/
+
+# Système
+.DS_Store
+Thumbs.db
+
+# Éditeurs
+.vscode/*
+!.vscode/settings.json.example
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Node
+node_modules/
+
+# SQLite database
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Justificatifs (fichiers pièces jointes)
+justificatifs/
+
+# Temp
+tmp/
+.tmp/
