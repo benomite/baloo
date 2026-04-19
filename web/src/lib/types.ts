@@ -18,6 +18,9 @@ export interface Ecriture {
   numero_piece: string | null;
   status: EcritureStatus;
   comptaweb_synced: number;
+  ligne_bancaire_id: number | null;
+  ligne_bancaire_sous_index: number | null;
+  comptaweb_ecriture_id: number | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -27,6 +30,8 @@ export interface Ecriture {
   mode_paiement_name?: string | null;
   activite_name?: string | null;
   has_justificatif?: boolean;
+  // Calculated fields (listing only)
+  missing_fields?: string[];
 }
 
 export interface Remboursement {
