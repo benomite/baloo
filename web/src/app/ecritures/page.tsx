@@ -7,6 +7,7 @@ import { listEcritures } from '@/lib/queries/ecritures';
 import { listCategories, listUnites } from '@/lib/queries/reference';
 import { formatAmount } from '@/lib/format';
 import { EcritureFilters } from '@/components/ecritures/ecriture-filters';
+import { ScanDraftsButton } from '@/components/ecritures/scan-drafts-button';
 
 export default async function EcrituresPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const params = await searchParams;
@@ -34,6 +35,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
   return (
     <div>
       <PageHeader title="Écritures">
+        <ScanDraftsButton />
         <Link href="/ecritures/nouveau"><Button>Nouvelle écriture</Button></Link>
       </PageHeader>
 

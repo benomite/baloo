@@ -8,6 +8,7 @@ import { listJustificatifs } from '@/lib/queries/justificatifs';
 import { listCategories, listUnites, listModesPaiement, listActivites } from '@/lib/queries/reference';
 import { updateEcriture, updateEcritureStatus } from '@/lib/actions/ecritures';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
+import { SyncDraftButton } from '@/components/ecritures/sync-draft-button';
 import { formatAmount } from '@/lib/format';
 
 export default async function EcritureDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -27,10 +28,25 @@ export default async function EcritureDetailPage({ params }: { params: Promise<{
         </span>
       </PageHeader>
 
+      {ecriture.ligne_bancaire_id && (
+        <div className="mb-4 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+          🏦 Issue de la ligne bancaire Comptaweb <code>{ecriture.ligne_bancaire_id}</code>
+          {ecriture.ligne_bancaire_sous_index !== null && (
+            <> sous-ligne <code>{ecriture.ligne_bancaire_sous_index}</code> (paiement carte multi-commerçants)</>
+          )}
+          {ecriture.comptaweb_ecriture_id && (
+            <> · Synchronisée vers Comptaweb (id <code>{ecriture.comptaweb_ecriture_id}</code>)</>
+          )}
+        </div>
+      )}
+
       {/* Status actions */}
       <div className="flex gap-2 mb-6">
         {ecriture.status === 'brouillon' && (
-          <form action={updateEcritureStatus.bind(null, id, 'valide')}><Button variant="outline" size="sm">Valider</Button></form>
+          <>
+            <form action={updateEcritureStatus.bind(null, id, 'valide')}><Button variant="outline" size="sm">Valider</Button></form>
+            <SyncDraftButton ecritureId={id} />
+          </>
         )}
         {ecriture.status === 'valide' && (
           <form action={updateEcritureStatus.bind(null, id, 'saisie_comptaweb')}><Button variant="outline" size="sm">Marquer saisie Comptaweb</Button></form>
