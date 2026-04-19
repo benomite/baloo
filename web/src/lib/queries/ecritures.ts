@@ -77,7 +77,9 @@ export function listEcritures(filters: EcritureFilters = {}): { ecritures: Ecrit
     LEFT JOIN modes_paiement m ON m.id = e.mode_paiement_id
     LEFT JOIN activites a ON a.id = e.activite_id
     ${where}
-    ORDER BY e.date_ecriture DESC, e.created_at DESC
+    ORDER BY
+      CASE e.status WHEN 'brouillon' THEN 0 WHEN 'valide' THEN 1 ELSE 2 END,
+      e.date_ecriture DESC, e.created_at DESC
     LIMIT ? OFFSET ?
   `).all(...values, limit, offset) as Ecriture[];
 
