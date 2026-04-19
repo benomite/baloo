@@ -79,6 +79,20 @@ Les données **spécifiques à un groupe** (noms, comptes, montants) vivent excl
 - **Intégration webapp** : prototype Next.js dans `web/`, pas encore branché sur la BDD.
 - **Pas de tests automatisés** au MVP. Les scripts d'import vivent comme validation manuelle.
 
+## Pre-commit hook de protection
+
+Un hook bloque les commits qui contiennent :
+- Des fichiers dans `mon-groupe/`, `data/`, `justificatifs/`, `inbox/` (données user/groupe, voir [ADR-013](doc/decisions.md)).
+- Des motifs sensibles custom déclarés dans `scripts/git-hooks/secrets-patterns.local` (gitignored).
+
+**Activation après un clone** :
+
+```bash
+git config core.hooksPath scripts/git-hooks
+cp scripts/git-hooks/secrets-patterns.example scripts/git-hooks/secrets-patterns.local
+$EDITOR scripts/git-hooks/secrets-patterns.local   # ajouter tes motifs (noms, emails, IDs)
+```
+
 ## Contribuer
 
 Le projet est à un stade trop précoce pour une contribution ouverte. Pour l'instant, retours d'usage, questions et suggestions sont bienvenus dans les issues. Le mode de travail et les règles pour faire évoluer Baloo sont décrits dans [`doc/DEVELOPING.md`](doc/DEVELOPING.md).

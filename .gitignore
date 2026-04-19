@@ -12,6 +12,9 @@ secrets/
 # jamais en git. Aucune exception, même temporaire.
 mon-groupe/
 
+# Motifs de secrets custom pour le pre-commit hook (voir scripts/git-hooks/)
+scripts/git-hooks/secrets-patterns.local
+
 # Zone de dépôt brute (pièces sensibles, pas de versioning)
 inbox/
 

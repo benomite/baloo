@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Garde-fou avant chaque commit : bloque les fichiers qui ne doivent jamais
+# être trackés et détecte les motifs sensibles (cf. ADR-013, mode open source).
+#
+# Installation (une fois par clone) :
+#   git config core.hooksPath scripts/git-hooks
+
+set -e
+
+repo_root="$(git rev-parse --show-toplevel)"
+staged=$(git diff --cached --name-only --diff-filter=AM)
+
+# 1. Chemins gitignored qui ne doivent JAMAIS être staged (les fichiers y
+#    vivent hors git par design ADR-013 : données user/groupe).
+BLOCKED='^(mon-groupe|data|justificatifs|inbox)/'
+bad_paths=""
+for f in $staged; do
+  if echo "$f" | grep -Eq "$BLOCKED"; then
+    bad_paths="$bad_paths\n  - $f"
+  fi
+done
+if [ -n "$bad_paths" ]; then
+  printf "Fichiers dans un chemin sensible (ne doivent jamais être commités) :%b\n" "$bad_paths"
+  echo
+  echo "Si c'est vraiment voulu (improbable), utiliser git commit --no-verify."
+  exit 1
+fi
+
+# 2. Motifs custom définis dans scripts/git-hooks/secrets-patterns.local
+#    (fichier gitignored, un motif regex par ligne, # pour commentaire).
+patterns_file="$repo_root/scripts/git-hooks/secrets-patterns.local"
+if [ -f "$patterns_file" ]; then
+  matched=""
+  while IFS= read -r pattern; do
+    [ -z "$pattern" ] && continue
+    case "$pattern" in \#*) continue ;; esac
+    # Cherche le motif dans les lignes AJOUTÉES uniquement (diff '+')
+    hits=$(git diff --cached -U0 | grep -E '^\+[^+]' | grep -iE "$pattern" | head -3 || true)
+    if [ -n "$hits" ]; then
+      matched="$matched\nMotif: $pattern\n$hits\n"
+    fi
+  done < "$patterns_file"
+  if [ -n "$matched" ]; then
+    printf "Motif(s) sensible(s) détecté(s) dans les additions :%b\n" "$matched"
+    echo "Si faux positif, utiliser git commit --no-verify (à éviter)."
+    exit 1
+  fi
+fi
+
+exit 0
