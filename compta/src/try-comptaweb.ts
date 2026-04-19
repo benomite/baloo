@@ -7,7 +7,7 @@ function formatEur(centimes: number): string {
 }
 
 async function main() {
-  const config = loadConfig();
+  const config = await loadConfig();
   console.log(`→ Requête GET ${config.baseUrl}/rapprochementbancaire?m=1`);
   const data = await listRapprochementBancaire(config);
 

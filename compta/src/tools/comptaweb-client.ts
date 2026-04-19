@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatAmount } from '../db.js';
 import {
-  loadConfig,
+  withAutoReLogin,
   listRapprochementBancaire,
   ComptawebSessionExpiredError,
 } from '../comptaweb-client/index.js';
@@ -13,8 +13,7 @@ export function registerComptawebClientTools(server: McpServer) {
     {},
     async () => {
       try {
-        const config = loadConfig();
-        const data = await listRapprochementBancaire(config);
+        const data = await withAutoReLogin((config) => listRapprochementBancaire(config));
         const payload = {
           compte: { id: data.idCompte, libelle: data.libelleCompte },
           ecritures_comptables_non_rapprochees: data.ecrituresComptables.map((e) => ({
@@ -49,7 +48,7 @@ export function registerComptawebClientTools(server: McpServer) {
             content: [
               {
                 type: 'text',
-                text: "Session Comptaweb expirée. Reconnecte-toi sur https://sgdf.production.sirom.net puis recopie le cookie dans compta/.env (cf. compta/.env.example).",
+                text: "Session Comptaweb expirée et re-login automatique impossible. Vérifier COMPTAWEB_USERNAME + COMPTAWEB_PASSWORD dans compta/.env.",
               },
             ],
             isError: true,

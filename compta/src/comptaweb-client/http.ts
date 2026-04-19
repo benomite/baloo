@@ -2,7 +2,7 @@ import type { ComptawebConfig } from './types.js';
 
 export class ComptawebSessionExpiredError extends Error {
   constructor() {
-    super("Session Comptaweb expirée ou invalide (redirection détectée). Recopier le cookie depuis un navigateur logué.");
+    super("Session Comptaweb expirée ou invalide (redirection vers /login ou Keycloak).");
     this.name = 'ComptawebSessionExpiredError';
   }
 }
@@ -15,13 +15,13 @@ export async function fetchHtml(config: ComptawebConfig, path: string): Promise<
     headers: {
       Cookie: config.cookie,
       Accept: 'text/html,application/xhtml+xml',
-      'User-Agent': 'baloo-compta/0.1 (+https://github.com/benoit.osterberger/baloo)',
+      'User-Agent': 'baloo-compta/0.1 (+https://github.com/benomite/baloo)',
     },
   });
 
   if (response.status >= 300 && response.status < 400) {
     const location = response.headers.get('location') ?? '';
-    if (location.includes('auth.sgdf.fr') || location.includes('openid-connect')) {
+    if (/auth\.sgdf\.fr|openid-connect|\/login\b/.test(location)) {
       throw new ComptawebSessionExpiredError();
     }
     throw new Error(`Redirection inattendue ${response.status} vers ${location}`);
