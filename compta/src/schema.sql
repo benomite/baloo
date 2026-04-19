@@ -10,12 +10,14 @@ CREATE TABLE IF NOT EXISTS categories (
     name TEXT NOT NULL,
     type TEXT NOT NULL DEFAULT 'les_deux' CHECK(type IN ('depense', 'recette', 'les_deux')),
     comptaweb_nature TEXT,
+    comptaweb_id INTEGER,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 CREATE TABLE IF NOT EXISTS modes_paiement (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
+    comptaweb_id INTEGER,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
@@ -24,6 +26,7 @@ CREATE TABLE IF NOT EXISTS unites (
     group_id TEXT NOT NULL,
     code TEXT NOT NULL,
     name TEXT NOT NULL,
+    comptaweb_id INTEGER,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
@@ -31,6 +34,7 @@ CREATE TABLE IF NOT EXISTS activites (
     id TEXT PRIMARY KEY,
     group_id TEXT NOT NULL,
     name TEXT NOT NULL,
+    comptaweb_id INTEGER,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
@@ -53,6 +57,13 @@ CREATE TABLE IF NOT EXISTS ecritures (
     numero_piece TEXT,
     status TEXT NOT NULL DEFAULT 'brouillon' CHECK(status IN ('brouillon', 'valide', 'saisie_comptaweb')),
     comptaweb_synced INTEGER NOT NULL DEFAULT 0,
+    -- Lien vers la ligne bancaire Comptaweb d'origine (quand l'écriture a été
+    -- générée en draft depuis le rapprochement bancaire). sous_index pointe
+    -- sur la sous-ligne DSP2 éventuelle.
+    ligne_bancaire_id INTEGER,
+    ligne_bancaire_sous_index INTEGER,
+    -- ID numérique Comptaweb de l'écriture après synchro (null tant que draft).
+    comptaweb_ecriture_id INTEGER,
     notes TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
@@ -63,6 +74,8 @@ CREATE INDEX IF NOT EXISTS idx_ecritures_unite ON ecritures(unite_id);
 CREATE INDEX IF NOT EXISTS idx_ecritures_date ON ecritures(date_ecriture);
 CREATE INDEX IF NOT EXISTS idx_ecritures_type ON ecritures(type);
 CREATE INDEX IF NOT EXISTS idx_ecritures_status ON ecritures(status);
+-- idx_ecritures_ligne_bancaire est créé par migrate() dans db.ts après le
+-- ADD COLUMN, pour les installs existantes qui n'avaient pas ces colonnes.
 
 -- Remboursements (remplace Airtable "Remboursements")
 CREATE TABLE IF NOT EXISTS remboursements (

@@ -22,7 +22,37 @@ export function getDb(): Database.Database {
   const seed = readFileSync(join(__dirname, '..', 'seed.sql'), 'utf-8');
   db.exec(seed);
 
+  migrate(db);
+
   return db;
+}
+
+function ensureColumn(
+  database: Database.Database,
+  table: string,
+  column: string,
+  ddl: string,
+): void {
+  const cols = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === column)) {
+    database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+  }
+}
+
+function migrate(database: Database.Database): void {
+  // Lien écriture locale ↔ ligne bancaire Comptaweb d'origine + ID remote.
+  ensureColumn(database, 'ecritures', 'ligne_bancaire_id', 'INTEGER');
+  ensureColumn(database, 'ecritures', 'ligne_bancaire_sous_index', 'INTEGER');
+  ensureColumn(database, 'ecritures', 'comptaweb_ecriture_id', 'INTEGER');
+  // Mapping référentiels locaux ↔ IDs numériques Comptaweb.
+  ensureColumn(database, 'categories', 'comptaweb_id', 'INTEGER');
+  ensureColumn(database, 'activites', 'comptaweb_id', 'INTEGER');
+  ensureColumn(database, 'unites', 'comptaweb_id', 'INTEGER');
+  ensureColumn(database, 'modes_paiement', 'comptaweb_id', 'INTEGER');
+  // Index qui dépendent de colonnes ajoutées par migration.
+  database.exec(
+    'CREATE INDEX IF NOT EXISTS idx_ecritures_ligne_bancaire ON ecritures(ligne_bancaire_id, ligne_bancaire_sous_index)',
+  );
 }
 
 export function nextId(prefix: string, year?: number): string {
