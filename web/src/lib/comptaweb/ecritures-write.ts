@@ -5,8 +5,8 @@ import type {
   CreateEcritureResult,
   ReferentielsCreerEcriture,
   RefOption,
-} from './types.js';
-import { fetchHtml, ComptawebSessionExpiredError } from './http.js';
+} from './types';
+import { fetchHtml, ComptawebSessionExpiredError } from './http';
 
 const FORM_PATH = '/recettedepense/creer';
 const POST_PATH = '/recettedepense/nouveau';

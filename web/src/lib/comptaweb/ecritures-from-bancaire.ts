@@ -6,9 +6,9 @@ import type {
   EcritureType,
   SousLigneDsp2,
   VentilationInput,
-} from './types.js';
-import { createEcriture } from './ecritures-write.js';
-import { listRapprochementBancaire } from './ecritures-bancaires.js';
+} from './types';
+import { createEcriture } from './ecritures-write';
+import { listRapprochementBancaire } from './ecritures-bancaires';
 
 export interface EcritureFromBancaireInput {
   ligneBancaireId: number;

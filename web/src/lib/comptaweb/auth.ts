@@ -2,10 +2,10 @@
 // plutôt que le compta/.env du projet MCP.
 // TODO : mutualiser avec compta/src/comptaweb-client/auth.ts via pnpm workspace.
 
-import { performAutomatedLogin } from './auth-automated.js';
-import { clearStoredSession, readStoredSession, writeStoredSession } from './session-store.js';
-import { ComptawebSessionExpiredError } from './http.js';
-import type { ComptawebConfig } from './types.js';
+import { performAutomatedLogin } from './auth-automated';
+import { clearStoredSession, readStoredSession, writeStoredSession } from './session-store';
+import { ComptawebSessionExpiredError } from './http';
+import type { ComptawebConfig } from './types';
 
 const DEFAULT_BASE_URL = 'https://sgdf.production.sirom.net';
 

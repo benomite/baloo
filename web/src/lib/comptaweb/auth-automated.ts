@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import { CookieJar } from './cookie-jar.js';
+import { CookieJar } from './cookie-jar';
 
 const USER_AGENT = 'baloo-compta/0.1 (+https://github.com/benomite/baloo)';
 

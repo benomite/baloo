@@ -1,14 +1,14 @@
 import * as cheerio from 'cheerio';
 import type { CheerioAPI } from 'cheerio';
 import type { AnyNode } from 'domhandler';
-import { fetchHtml } from './http.js';
+import { fetchHtml } from './http';
 import type {
   ComptawebConfig,
   EcritureBancaireNonRapprochee,
   EcritureComptableNonRapprochee,
   RapprochementBancaireData,
   SousLigneDsp2,
-} from './types.js';
+} from './types';
 
 function parseMontantFr(text: string): number {
   const cleaned = text.replace(/\s|€/g, '').replace(',', '.');

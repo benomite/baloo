@@ -1,7 +1,7 @@
-export { loadConfig, withAutoReLogin } from './auth.js';
-export { fetchHtml, ComptawebSessionExpiredError } from './http.js';
-export { listRapprochementBancaire, parseRapprochementHtml } from './ecritures-bancaires.js';
-export { fetchReferentielsCreer, createEcriture } from './ecritures-write.js';
+export { loadConfig, withAutoReLogin } from './auth';
+export { fetchHtml, ComptawebSessionExpiredError } from './http';
+export { listRapprochementBancaire, parseRapprochementHtml } from './ecritures-bancaires';
+export { fetchReferentielsCreer, createEcriture } from './ecritures-write';
 export type {
   ComptawebConfig,
   EcritureBancaireNonRapprochee,
@@ -14,4 +14,4 @@ export type {
   VentilationInput,
   CreateEcritureInput,
   CreateEcritureResult,
-} from './types.js';
+} from './types';

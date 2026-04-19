@@ -1,4 +1,4 @@
-import type { ComptawebConfig } from './types.js';
+import type { ComptawebConfig } from './types';
 
 export class ComptawebSessionExpiredError extends Error {
   constructor() {
