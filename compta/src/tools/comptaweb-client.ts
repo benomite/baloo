@@ -6,6 +6,7 @@ import {
   listRapprochementBancaire,
   fetchReferentielsCreer,
   createEcriture,
+  createEcritureFromLigneBancaire,
   ComptawebSessionExpiredError,
 } from '../comptaweb-client/index.js';
 import type { CreateEcritureInput, EcritureType } from '../comptaweb-client/index.js';
@@ -168,6 +169,63 @@ export function registerComptawebClientTools(server: McpServer) {
         const result = await withAutoReLogin((cfg) => createEcriture(cfg, input, { dryRun: args.dry_run !== false }));
         return formatCreateResult(result, 'depense');
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: 'text', text: `Erreur : ${msg}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    'cw_ecriture_depuis_ligne_bancaire',
+    "Crée une écriture Comptaweb à partir d'une ligne bancaire non rapprochée (workflow d'enrichissement). Le libellé, la date, le montant, le type (dépense/recette) et le mode de transaction sont inférés. L'utilisateur complète obligatoirement nature/activité/branche (ventilation). Dry-run par défaut.",
+    {
+      ligne_bancaire_id: z.number().describe("ID de la ligne bancaire (cf. cw_list_rapprochement_bancaire)"),
+      sous_ligne_index: z.number().int().min(0).optional().describe("Index 0-based de la sous-ligne DSP2 à utiliser (pour les paiements carte multi-commerçants). Si omis, utilise la ligne principale."),
+      nature_id: z.string().describe("ID de la nature comptable (cf. cw_referentiels_creer_ecriture)"),
+      activite_id: z.string(),
+      brancheprojet_id: z.string(),
+      libel_override: z.string().optional().describe("Si absent, libellé inféré depuis le commerçant ou l'intitulé bancaire."),
+      modetransaction_id_override: z.string().optional().describe("Si absent, mode inféré depuis l'intitulé (VIR, PAIEMENT C. PROC, etc.)"),
+      numeropiece: z.string().optional(),
+      tiers_categ_id: z.string().optional().describe("Défaut '4' = Mon groupe"),
+      tiers_structure_id: z.string().optional().describe("Défaut '498' (structure du groupe courant)"),
+      dry_run: z.boolean().optional().describe("Défaut true. Passer false pour créer réellement."),
+    },
+    async (args) => {
+      try {
+        const result = await withAutoReLogin((cfg) =>
+          createEcritureFromLigneBancaire(cfg, {
+            ligneBancaireId: args.ligne_bancaire_id,
+            sousLigneIndex: args.sous_ligne_index,
+            ventilation: {
+              montant: '', // sera ignoré : rempli par l'orchestrateur depuis la ligne
+              natureId: args.nature_id,
+              activiteId: args.activite_id,
+              brancheprojetId: args.brancheprojet_id,
+            },
+            libelOverride: args.libel_override,
+            modetransactionIdOverride: args.modetransaction_id_override,
+            numeropiece: args.numeropiece,
+            tiersCategId: args.tiers_categ_id,
+            tiersStructureId: args.tiers_structure_id,
+            dryRun: args.dry_run !== false,
+          }),
+        );
+        const header = `Ligne source: ${result.sourceLigneId}${result.sourceSousLigneIndex !== null ? ` (sous-ligne ${result.sourceSousLigneIndex})` : ''}, montant ${result.sourceMontantCentimes} centimes, mode inféré: ${result.inferredModetransactionId}.`;
+        if (result.dryRun) {
+          const body = result.postBody ? Object.entries(result.postBody).map(([k, v]) => `  ${k} = ${v}`).join('\n') : '';
+          const warn = result.warnings.length ? `\n⚠ ${result.warnings.join('; ')}` : '';
+          return {
+            content: [{ type: 'text', text: `DRY-RUN — aucune requête envoyée.\n${header}${warn}\n\nBody qui serait posté :\n${body}\n\nPour créer, rappeler avec dry_run=false.` }],
+          };
+        }
+        return {
+          content: [{ type: 'text', text: `✓ Écriture créée : ID ${result.ecritureId} (${result.detailsPath}).\n${header}` }],
+        };
+      } catch (err) {
+        if (err instanceof ComptawebSessionExpiredError) {
+          return { content: [{ type: 'text', text: 'Session expirée.' }], isError: true };
+        }
         const msg = err instanceof Error ? err.message : String(err);
         return { content: [{ type: 'text', text: `Erreur : ${msg}` }], isError: true };
       }

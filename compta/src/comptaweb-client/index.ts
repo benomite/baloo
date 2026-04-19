@@ -2,6 +2,7 @@ export { loadConfig, forceReLogin, withAutoReLogin } from './auth.js';
 export { fetchHtml, ComptawebSessionExpiredError } from './http.js';
 export { listRapprochementBancaire, parseRapprochementHtml } from './ecritures-bancaires.js';
 export { fetchReferentielsCreer, createEcriture } from './ecritures-write.js';
+export { createEcritureFromLigneBancaire } from './ecritures-from-bancaire.js';
 export type {
   ComptawebConfig,
   EcritureBancaireNonRapprochee,
