@@ -38,6 +38,7 @@ export function registerOverviewTools(server: McpServer) {
       const ecrituresSansJustif = db.prepare(`
         SELECT COUNT(*) as count FROM ecritures e
         WHERE e.type = 'depense'
+        AND e.justif_attendu = 1
         AND NOT EXISTS (SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id)
       `).get() as { count: number };
 

@@ -44,6 +44,7 @@ function migrate(database: Database.Database): void {
   ensureColumn(database, 'ecritures', 'ligne_bancaire_id', 'INTEGER');
   ensureColumn(database, 'ecritures', 'ligne_bancaire_sous_index', 'INTEGER');
   ensureColumn(database, 'ecritures', 'comptaweb_ecriture_id', 'INTEGER');
+  ensureColumn(database, 'ecritures', 'justif_attendu', 'INTEGER NOT NULL DEFAULT 1');
   // Mapping référentiels locaux ↔ IDs numériques Comptaweb.
   ensureColumn(database, 'categories', 'comptaweb_id', 'INTEGER');
   ensureColumn(database, 'activites', 'comptaweb_id', 'INTEGER');

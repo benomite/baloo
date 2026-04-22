@@ -18,10 +18,11 @@ export interface EcritureFilters {
   from_bank?: boolean;
 }
 
-// Renvoie la liste des champs manquants qui bloquent la synchronisation.
-// Les drafts issus d'une ligne bancaire sont considérés "à compléter" s'il
-// leur manque nature/activité/unité/mode ; une dépense doit en plus avoir un
-// justificatif (fichier ou numero_piece).
+// Renvoie la liste des champs manquants qui bloquent la synchronisation ou
+// qui justifient qu'on laisse l'écriture en brouillon. Une dépense est
+// signalée "justif" manquante dès que justif_attendu=1 et aucun fichier
+// n'est rattaché — même si numero_piece est renseigné (le code Comptaweb
+// permet la sync mais ne remplace pas le document).
 export function computeMissingFields(e: {
   status: string;
   category_id: string | null;
@@ -30,6 +31,7 @@ export function computeMissingFields(e: {
   mode_paiement_id: string | null;
   type: string;
   numero_piece: string | null;
+  justif_attendu: number;
   has_justificatif?: boolean;
 }): string[] {
   if (e.status !== 'brouillon') return [];
@@ -38,7 +40,7 @@ export function computeMissingFields(e: {
   if (!e.activite_id) missing.push('activité');
   if (!e.unite_id) missing.push('unité');
   if (!e.mode_paiement_id) missing.push('mode');
-  if (e.type === 'depense' && !e.has_justificatif && !e.numero_piece) {
+  if (e.type === 'depense' && e.justif_attendu === 1 && !e.has_justificatif) {
     missing.push('justif');
   }
   return missing;

@@ -11,10 +11,12 @@ export async function createEcriture(formData: FormData) {
   const prefix = type === 'depense' ? 'DEP' : 'REC';
   const id = nextId(prefix);
   const now = currentTimestamp();
+  // Checkbox HTML : présente (cochée) = 'on', absente = null. Défaut = attendu.
+  const justifAttendu = formData.has('justif_attendu') ? 1 : 0;
 
   getDb().prepare(`
-    INSERT INTO ecritures (id, date_ecriture, description, amount_cents, type, unite_id, category_id, mode_paiement_id, activite_id, numero_piece, notes, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO ecritures (id, date_ecriture, description, amount_cents, type, unite_id, category_id, mode_paiement_id, activite_id, numero_piece, justif_attendu, notes, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     formData.get('date_ecriture'),
@@ -26,6 +28,7 @@ export async function createEcriture(formData: FormData) {
     formData.get('mode_paiement_id') || null,
     formData.get('activite_id') || null,
     formData.get('numero_piece') || null,
+    justifAttendu,
     formData.get('notes') || null,
     now,
     now,
@@ -39,12 +42,14 @@ export async function createEcriture(formData: FormData) {
 export async function updateEcriture(id: string, formData: FormData) {
   const now = currentTimestamp();
   const montant = formData.get('montant');
+  // Checkbox HTML : présente (cochée) = 'on', absente = null. Défaut = attendu.
+  const justifAttendu = formData.has('justif_attendu') ? 1 : 0;
 
   getDb().prepare(`
     UPDATE ecritures SET
       date_ecriture = ?, description = ?, amount_cents = ?, type = ?,
       unite_id = ?, category_id = ?, mode_paiement_id = ?, activite_id = ?,
-      numero_piece = ?, notes = ?, updated_at = ?
+      numero_piece = ?, justif_attendu = ?, notes = ?, updated_at = ?
     WHERE id = ?
   `).run(
     formData.get('date_ecriture'),
@@ -56,6 +61,7 @@ export async function updateEcriture(id: string, formData: FormData) {
     formData.get('mode_paiement_id') || null,
     formData.get('activite_id') || null,
     formData.get('numero_piece') || null,
+    justifAttendu,
     formData.get('notes') || null,
     now,
     id,

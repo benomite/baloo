@@ -28,6 +28,7 @@ interface EcritureRow {
   mode_paiement_id: string | null;
   numero_piece: string | null;
   status: string;
+  justif_attendu: number;
   ligne_bancaire_id: number | null;
   ligne_bancaire_sous_index: number | null;
   comptaweb_ecriture_id: number | null;
@@ -61,8 +62,8 @@ function validateDraft(
   else if (refs.uniteCwId === null) errs.push(`unite_id=${ecr.unite_id} n'a pas de comptaweb_id`);
   if (!ecr.mode_paiement_id) errs.push('mode_paiement_id manquant');
   else if (refs.modeCwId === null) errs.push(`mode_paiement_id=${ecr.mode_paiement_id} n'a pas de comptaweb_id (mode local sans équivalent, ex. 'Personnel')`);
-  if (ecr.type === 'depense' && !hasJustificatif && !ecr.numero_piece) {
-    errs.push('justificatif manquant (obligatoire pour une dépense) : attacher via attach_justificatif ou renseigner numero_piece');
+  if (ecr.type === 'depense' && ecr.justif_attendu === 1 && !hasJustificatif && !ecr.numero_piece) {
+    errs.push('justificatif manquant (dépense avec justif_attendu=1) : attacher via attach_justificatif, renseigner numero_piece, ou décocher justif_attendu');
   }
   return errs;
 }
@@ -82,7 +83,8 @@ export function registerSyncDraftTool(server: McpServer) {
       const ecr = db.prepare(
         `SELECT id, group_id, date_ecriture, description, amount_cents, type,
                 unite_id, category_id, activite_id, mode_paiement_id, numero_piece,
-                status, ligne_bancaire_id, ligne_bancaire_sous_index, comptaweb_ecriture_id
+                status, justif_attendu, ligne_bancaire_id, ligne_bancaire_sous_index,
+                comptaweb_ecriture_id
          FROM ecritures WHERE id = ? AND group_id = ?`,
       ).get(ecriture_id, ctx.groupId) as EcritureRow | undefined;
 

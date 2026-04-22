@@ -98,7 +98,17 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
                 {e.ligne_bancaire_id ? '🏦' : '—'}
               </TableCell>
               <TableCell className="text-center">{e.comptaweb_synced ? '✓' : '—'}</TableCell>
-              <TableCell className="text-center">{e.has_justificatif ? '📎' : '—'}</TableCell>
+              <TableCell className="text-center">
+                {e.has_justificatif ? (
+                  <span title="Justificatif rattaché">📎</span>
+                ) : e.justif_attendu === 0 ? (
+                  <span title="Justificatif non attendu" className="text-muted-foreground">🚫</span>
+                ) : e.numero_piece ? (
+                  <span title={`En attente — code Comptaweb ${e.numero_piece}`} className="text-amber-600">⌛</span>
+                ) : (
+                  <span title="Justificatif manquant" className="text-muted-foreground">—</span>
+                )}
+              </TableCell>
             </TableRow>
           ))}
           {ecritures.length === 0 && (

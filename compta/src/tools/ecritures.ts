@@ -73,6 +73,7 @@ export function registerEcritureTools(server: McpServer) {
       mode_paiement_id: z.string().optional().describe('Mode de paiement (ex: mp-cb-sgdf)'),
       activite_id: z.string().optional().describe('Activité (ex: act-annee)'),
       numero_piece: z.string().optional().describe('Numéro de pièce'),
+      justif_attendu: z.boolean().optional().describe("Défaut true. Mettre à false pour les prélèvements auto SGDF / flux territoriaux qui n'auront jamais de justif papier."),
       notes: z.string().optional(),
     },
     (params) => {
@@ -80,12 +81,13 @@ export function registerEcritureTools(server: McpServer) {
       const id = nextId(prefix);
       const cents = parseAmount(params.montant);
       const now = currentTimestamp();
+      const justifAttendu = params.justif_attendu === false ? 0 : 1;
 
       const { groupId } = getCurrentContext();
       getDb().prepare(`
-        INSERT INTO ecritures (id, group_id, date_ecriture, description, amount_cents, type, unite_id, category_id, mode_paiement_id, activite_id, numero_piece, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, groupId, params.date_ecriture, params.description, cents, params.type, params.unite_id ?? null, params.category_id ?? null, params.mode_paiement_id ?? null, params.activite_id ?? null, params.numero_piece ?? null, params.notes ?? null, now, now);
+        INSERT INTO ecritures (id, group_id, date_ecriture, description, amount_cents, type, unite_id, category_id, mode_paiement_id, activite_id, numero_piece, justif_attendu, notes, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, groupId, params.date_ecriture, params.description, cents, params.type, params.unite_id ?? null, params.category_id ?? null, params.mode_paiement_id ?? null, params.activite_id ?? null, params.numero_piece ?? null, justifAttendu, params.notes ?? null, now, now);
 
       const row = getDb().prepare('SELECT * FROM ecritures WHERE id = ?').get(id);
       return { content: [{ type: 'text', text: JSON.stringify({ ...row as object, montant: formatAmount(cents) }, null, 2) }] };
@@ -104,6 +106,7 @@ export function registerEcritureTools(server: McpServer) {
       mode_paiement_id: z.string().optional(),
       activite_id: z.string().optional(),
       numero_piece: z.string().optional(),
+      justif_attendu: z.boolean().optional().describe("false = justif non attendu (prélèvement auto SGDF, flux territoire). Retire l'écriture du compteur 'sans justif' et débloque la sync."),
       status: z.enum(['brouillon', 'valide', 'saisie_comptaweb']).optional(),
       comptaweb_synced: z.boolean().optional(),
       notes: z.string().optional(),
@@ -119,6 +122,7 @@ export function registerEcritureTools(server: McpServer) {
       if (params.mode_paiement_id !== undefined) { sets.push('mode_paiement_id = ?'); values.push(params.mode_paiement_id); }
       if (params.activite_id !== undefined) { sets.push('activite_id = ?'); values.push(params.activite_id); }
       if (params.numero_piece !== undefined) { sets.push('numero_piece = ?'); values.push(params.numero_piece); }
+      if (params.justif_attendu !== undefined) { sets.push('justif_attendu = ?'); values.push(params.justif_attendu ? 1 : 0); }
       if (params.status !== undefined) { sets.push('status = ?'); values.push(params.status); }
       if (params.comptaweb_synced !== undefined) { sets.push('comptaweb_synced = ?'); values.push(params.comptaweb_synced ? 1 : 0); }
       if (params.notes !== undefined) { sets.push('notes = ?'); values.push(params.notes); }

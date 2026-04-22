@@ -56,6 +56,12 @@ CREATE TABLE IF NOT EXISTS ecritures (
     activite_id TEXT REFERENCES activites(id),
     numero_piece TEXT,
     status TEXT NOT NULL DEFAULT 'brouillon' CHECK(status IN ('brouillon', 'valide', 'saisie_comptaweb')),
+    -- 1 = justif requis (défaut). 0 = justif non attendu (prélèvement auto SGDF,
+    -- flux territoire, etc.) : n'apparaît plus dans l'alerte 'sans justif' et
+    -- la sync Comptaweb ne l'exige pas. Quand = 1 et aucun fichier attaché,
+    -- l'écriture reste signalée "à compléter" ; numero_piece permet la sync
+    -- sans éteindre l'alerte tant que le fichier n'est pas rattaché.
+    justif_attendu INTEGER NOT NULL DEFAULT 1,
     comptaweb_synced INTEGER NOT NULL DEFAULT 0,
     -- Lien vers la ligne bancaire Comptaweb d'origine (quand l'écriture a été
     -- générée en draft depuis le rapprochement bancaire). sous_index pointe
