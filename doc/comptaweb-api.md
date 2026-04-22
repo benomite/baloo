@@ -98,13 +98,11 @@ compta/src/comptaweb-client/
 
 **Pattern de sécurité** : chaque outil d'écriture supporte un paramètre `dry_run: boolean` (défaut `true`). En dry-run, le client construit la requête, la logue, mais n'appelle pas l'API. L'utilisateur doit explicitement passer `dry_run: false` pour écrire. Ça donne une couche de protection contre les hallucinations LLM.
 
-### Phase 4 — Synchronisation baloo-compta ↔ Comptaweb (plus tard)
+### Phase 4 — Synchronisation baloo-compta ↔ Comptaweb
 
-Hors scope de cette feature. Une fois le client API stable, on pourra envisager :
-- Sync sortante : à partir d'une écriture saisie dans baloo-compta, pousser automatiquement dans Comptaweb.
-- Sync entrante : remplacer `import_comptaweb_csv` par un pull périodique via l'API.
-
-À traiter dans une feature dédiée, pas dans celle-ci.
+- **Écritures sortantes** (✅ livré 2026-04-19) : tool `cw_sync_draft` — un draft local passe en `saisie_comptaweb` après création de l'écriture côté Comptaweb. Dry-run par défaut. Bloque si validation échoue (nature / activité / unité / mode / justif attendu).
+- **Référentiels** (✅ livré 2026-04-22, cf. [ADR-015](decisions.md)) : tool `cw_sync_referentiels` + bouton « Synchroniser les configs » sur `/import`. Pull additif des 4 référentiels (branches/projets → `unites`, natures → `categories`, activités → `activites`, modes de transaction → `modes_paiement`), match par `comptaweb_id` puis par nom normalisé, INSERT sinon. Orphelines signalées, jamais supprimées.
+- **Écritures entrantes** (via CSV pour l'instant) : `import_comptaweb_csv` depuis un export manuel. Remplacement par un pull API reste à faire, non prioritaire tant que l'export CSV reste simple.
 
 ## Dépendances et inconnues
 
@@ -157,15 +155,17 @@ Il n'y a **pas d'environnement de staging Comptaweb** accessible. Tous les tests
 - [x] Discovery : référentiels cartographiés (embarqués dans la page `/recettedepense/creer`)
 - [ ] Discovery : upload de justificatif (écran à trouver)
 - [ ] Discovery : sémantique du `choix` dans le rapprochement
-- [ ] Client TS : module `auth.ts` fonctionnel avec session persistée
-- [ ] Client TS : lecture des écritures bancaires non rapprochées fonctionnelle
-- [ ] Client TS : lecture des écritures de gestion courante fonctionnelle
-- [ ] Client TS : création d'une dépense fonctionnelle (testée en écriture réelle sur une écriture jetable)
-- [ ] Client TS : création d'une recette fonctionnelle (idem)
-- [ ] MCP : `cw_list_ecritures_bancaires` exposé et testé
-- [ ] MCP : `cw_list_ecritures` exposé et testé
-- [ ] MCP : `cw_create_depense` / `cw_create_recette` exposés avec dry-run
-- [x] Doc mise à jour (endpoints, README, ADR-012)
+- [x] Client TS : module `auth.ts` fonctionnel avec session persistée (2026-04-19)
+- [x] Client TS : lecture des écritures bancaires non rapprochées fonctionnelle
+- [x] Client TS : création d'une écriture (dépense / recette) avec ventilations, dry-run par défaut (2026-04-19)
+- [x] Client TS : sync additive des référentiels (ADR-015, 2026-04-22)
+- [x] MCP : `cw_list_rapprochement_bancaire` exposé
+- [x] MCP : `cw_scan_drafts` + `cw_sync_draft` exposés (workflow d'enrichissement depuis les lignes bancaires)
+- [x] MCP : `cw_create_depense` / `cw_create_recette` exposés avec dry-run
+- [x] MCP : `cw_sync_referentiels` exposé + bouton web « Synchroniser les configs » sur `/import`
+- [x] Front : workflow drafts `/ecritures` (colonne À compléter, statut justif 4 états cf. ADR-014, boutons Scanner/Synchroniser)
+- [ ] Client TS : upload de justificatif (dépend discovery)
+- [x] Doc mise à jour (endpoints, README, ADR-011 à ADR-015)
 
 ## Liens
 
@@ -173,5 +173,7 @@ Il n'y a **pas d'environnement de staging Comptaweb** accessible. Tous les tests
 - [ADR-010](decisions.md) — SQLite + MCP Node/TypeScript
 - [ADR-011](decisions.md) — Client API Comptaweb (reverse engineering)
 - [ADR-012](decisions.md) — Scraping HTML avec cheerio, extension lecture lignes bancaires
+- [ADR-014](decisions.md) — Flag `justif_attendu` sur les écritures (modèle des 4 états)
+- [ADR-015](decisions.md) — Sync additive des référentiels Comptaweb
 - [`comptaweb-api-endpoints.md`](comptaweb-api-endpoints.md) — cartographie détaillée des endpoints
 - [roadmap.md](roadmap.md) — Phase 2
