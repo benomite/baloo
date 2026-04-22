@@ -1,7 +1,7 @@
 import { PageHeader } from '@/components/layout/page-header';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { SyncReferentielsButton } from '@/components/config/sync-referentiels-button';
 import { getDb } from '@/lib/db';
 import { formatAmount } from '@/lib/format';
 
@@ -13,6 +13,18 @@ export default function ImportPage() {
   return (
     <div>
       <PageHeader title="Import Comptaweb" />
+
+      <Card className="mb-8">
+        <CardHeader><CardTitle>Synchroniser les configurations</CardTitle></CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground mb-4">
+            Récupère depuis Comptaweb les branches/projets, natures, activités et modes de paiement, et
+            les ajoute ou remappe en local. Additif uniquement — rien n&apos;est supprimé. À lancer après
+            toute modification côté Comptaweb (ex. nouvelle branche « Groupe », nouveau projet de camp).
+          </p>
+          <SyncReferentielsButton />
+        </CardContent>
+      </Card>
 
       <Card className="mb-8">
         <CardHeader><CardTitle>Importer un fichier CSV</CardTitle></CardHeader>
