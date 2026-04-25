@@ -21,6 +21,10 @@ function nextNoteId(groupId: string, topic: string, title: string | null): strin
   return existing.n === 0 ? base : `${base}-${existing.n + 1}`;
 }
 
+// DEPRECATED (chantier 1, doc/p2-pivot-webapp.md) : la logique métier de cet
+// outil sera retirée au chantier 3 et remplacée par un appel HTTP à
+// `web/src/lib/services/notes.ts` (canonique). En attendant, on conserve
+// l'implémentation directe pour ne rien casser côté trésorier.
 export function registerNoteTools(server: McpServer) {
   server.tool(
     'list_notes',

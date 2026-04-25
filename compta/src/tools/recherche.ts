@@ -2,6 +2,10 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { getDb, formatAmount } from '../db.js';
 
+// DEPRECATED (chantier 1, doc/p2-pivot-webapp.md) : la logique métier de cet
+// outil sera retirée au chantier 3 et remplacée par un appel HTTP à
+// `web/src/lib/services/recherche.ts` (canonique). En attendant, on conserve
+// l'implémentation directe pour ne rien casser côté trésorier.
 export function registerRechercheTools(server: McpServer) {
   server.tool(
     'recherche',
