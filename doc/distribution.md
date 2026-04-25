@@ -36,26 +36,23 @@ Webapp (ou bot Telegram/WhatsApp) hébergée, auth par groupe, backend qui tourn
 
 ## Ce que ça implique dès maintenant
 
-Même en phase 1 (MVP perso), on prend 3 décisions qui préservent l'option SaaS :
+Même en phase 1, on a pris des décisions qui préservent l'option SaaS :
 
-1. **Séparation `sgdf-core/` vs `mon-groupe/`.** Le core est le futur "template produit" ; les données privées ne le polluent jamais.
-2. **Processus en skills markdown.** Un skill est un morceau portable. Il marchera pareil dans Claude Code (MVP) et dans un backend Agent SDK (phase 3).
-3. **Zéro secret dans les fichiers trackés.** Clés, tokens, exports bruts → `.gitignore`, jamais commités.
+1. **Séparation `sgdf-core/` vs données spécifiques au groupe** (cf. [ADR-003](decisions.md), [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git)). Le core est le futur "template produit" ; les données privées vivent en BDD (gitignored).
+2. **Processus en skills markdown.** Un skill est un morceau portable. Il marche en local (Claude Code) et plus tard côté backend (Agent SDK ou agent serveur webapp) sans modification.
+3. **Zéro secret dans les fichiers trackés.** Clés, tokens, exports bruts → `.env`, BDD locale ou keychain ; jamais commités.
+4. **Schéma BDD multi-tenant dès le jour 1** (`group_id` partout), même si activé tardivement (cf. [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git)).
 
-C'est tout. Aucune autre décision "produit" à prendre maintenant.
+## Ce qu'on construit, et quand
 
-## Ce qu'on ne fait PAS
+Le pivot d'archi (cf. [`roadmap.md`](roadmap.md)) précise *quand* chaque brique apparaît :
 
-Pour rester discipliné :
+- **P1 (MVP CLI)** : pas d'auth, pas de webapp en prod, pas de déploiement. SQLite local, MCP, Claude Code.
+- **P2 (ouverture intra-groupe)** : webapp `web/` déployée, **auth multi-user activée**, **API HTTP** comme couche métier, BDD côté webapp (probablement Postgres). Le MCP `baloo-compta` devient un client HTTP.
+- **P3 (multi-groupes)** : activation effective du multi-tenant, onboarding, mutualisation infra. **Pas** de reconstruction de la webapp/auth (déjà livrées en P2).
+- **P4 (SaaS)** : facturation, CGU, sous-traitance RGPD, DPO, assurance.
 
-- ❌ Pas d'auth au MVP.
-- ❌ Pas de base de données.
-- ❌ Pas de webapp "au cas où".
-- ❌ Pas de multi-tenant "au cas où".
-- ❌ Pas de schéma Postgres "pour plus tard".
-- ❌ Pas de design d'API interne.
-
-Toutes ces choses se construisent **en phase 3 seulement**, et à ce moment-là elles sont guidées par les besoins réels observés, pas par des hypothèses.
+Discipline qui reste valable : **rien "au cas où"**. On n'introduit pas pgvector, l'Agent SDK ou un agent serveur tant qu'un user concret ne l'attend pas.
 
 ## Questions juridiques à anticiper (sans résoudre maintenant)
 
@@ -66,8 +63,8 @@ Toutes ces choses se construisent **en phase 3 seulement**, et à ce moment-là 
 - **Assurance RC pro** si on devient responsable de données financières.
 - **Affiliation SGDF** : est-ce qu'on veut être endorsé par la fédération ? Avec quels pièges (gouvernance, conformité renforcée) ?
 
-Ces sujets sont à instruire **avant la phase 4**, pas avant.
+Ces sujets sont à instruire **avant la phase 4**, pas avant. La phase 2 ouvre l'outil aux autres rôles **du même groupe** : pas de relation contractuelle avec d'autres assos, pas encore de sous-traitance RGPD à formaliser.
 
 ## Signal d'alarme
 
-Si à un moment du projet on se surprend à coder une feature "pour les futurs utilisateurs SaaS" alors qu'on est encore en phase 1 ou 2, **il faut s'arrêter**. C'est le chemin le plus rapide pour construire un produit que personne (pas même l'auteur) n'utilise vraiment.
+Si à un moment du projet on se surprend à coder une feature "pour les futurs utilisateurs SaaS" alors qu'on est encore en phase 1, 2 ou 3, **il faut s'arrêter**. C'est le chemin le plus rapide pour construire un produit que personne (pas même l'auteur) n'utilise vraiment. Le test : est-ce qu'un user concret de la phase courante l'attend ? Sinon, on attend.
