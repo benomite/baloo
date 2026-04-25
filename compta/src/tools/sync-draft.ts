@@ -67,6 +67,9 @@ function validateDraft(
   return errs;
 }
 
+// DEPRECATED (chantier 1, doc/p2-pivot-webapp.md) : sera retiré au chantier 3.
+// La logique de synchronisation des drafts vers Comptaweb migrera côté
+// backend webapp au chantier 6 ; le MCP appellera alors POST /api/comptaweb/sync.
 export function registerSyncDraftTool(server: McpServer) {
   server.tool(
     'cw_sync_draft',

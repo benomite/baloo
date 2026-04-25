@@ -67,6 +67,9 @@ function listCandidates(
   return out;
 }
 
+// DEPRECATED (chantier 1, doc/p2-pivot-webapp.md) : sera retiré au chantier 3.
+// La logique de scan des drafts depuis le rapprochement bancaire Comptaweb
+// migrera côté backend webapp au chantier 6.
 export function registerScanDraftsTool(server: McpServer) {
   server.tool(
     'cw_scan_drafts',
