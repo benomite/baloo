@@ -2,25 +2,29 @@
 
 Le projet est pensé en **4 phases** progressives. Chaque phase est validée avant d'investir dans la suivante. Le principe directeur : **ne pas construire pour un besoin non validé**.
 
+> **Note de cap** (2026-04-25) : la roadmap a été révisée pour acter un pivot d'archi. La cible n'est pas "CLI + MCP en MVP, webapp en P3" comme initialement écrit, mais **webapp = source de vérité** dès la P2. Le MCP `baloo-compta` devient un client HTTP de la webapp pour exposer ses opérations à Claude Code (LLM local). L'historique de la P1 (CLI + MCP + SQLite local) reste valide comme MVP de validation, mais sa BDD est provisoire.
+
 ---
 
-## Phase 1 — MVP perso (maintenant → ~3 mois)
+## Phase 1 — MVP perso CLI (en voie d'achèvement)
 
-**Objectif** : l'auteur utilise Baloo tous les jours pour tenir la compta et l'orga du groupe.
+**Objectif** : l'auteur utilise Baloo tous les jours pour tenir la compta et l'orga du groupe, **dans Claude Code**, et ce mode CLI sert à valider concrètement les besoins métier avant la bascule webapp de la P2.
 
-**Livrables** :
-- `CLAUDE.md` décrivant l'asso, le rôle de l'assistant, les conventions.
-- Mémoire `mon-groupe/` remplie avec les infos essentielles (personnes, comptes, process).
-- **Vue compta opérationnelle** dans `mon-groupe/finances.md` : budget voté, état Compta-Web (via export CSV manuel), suivi par unité, écarts, points d'attention. Mise à jour à chaque nouvel export.
-- `sgdf-core/` commencé (glossaire, process compta génériques).
-- MCPs Notion + Gmail configurés et fonctionnels.
-- 2-3 premiers skills (`remboursement`, `adhesion`, au choix).
-- **Format structuré** pour stocker remboursements / dépenses opérationnelles dans `mon-groupe/` — première brique du remplacement Airtable + Sheet (cf. ADR-007). Convention de format à fixer dans un ADR dédié quand on attaquera.
-- Dossier versionné en git (repo privé).
+**Stack** : Claude Code + markdown (doc, skills) + MCPs + SQLite local (via le MCP `baloo-compta`). Coût marginal 0€.
 
-**Stack** : Claude Code + markdown + MCPs. Rien d'autre.
+**Livrables — état au 2026-04-25** :
+- ✅ `CLAUDE.md` à la racine (rôle, conventions, sources de vérité).
+- ✅ Mémoire opérationnelle structurée **en BDD SQLite** via le MCP `baloo-compta` (personnes, comptes, budgets, écritures, remboursements, notes, todos). Cf. [ADR-010](decisions.md#adr-010--outil-compta--sqlite--serveur-mcp-nodejstypescript) et [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git). `mon-groupe/` retiré du repo.
+- ✅ Vue compta opérationnelle via la commande MCP `vue_ensemble` (trésorerie, remboursements en attente, alertes). Remplace l'ancien `mon-groupe/finances.md`.
+- ✅ `sgdf-core/` amorcé (glossaire, ressources chefs/cadres, premier skill `remboursement`).
+- ✅ MCP **Gmail/Workspace** configuré en lecture seule (`workspace-mcp --read-only --tools gmail drive sheets`).
+- ✅ **Client Comptaweb** (initialement prévu en P2) : auth Keycloak avec session persistée + lecture des écritures et **lignes bancaires non rapprochées avec sous-lignes DSP2** (cf. [ADR-011](decisions.md#adr-011--client-api-comptaweb-par-reverse-engineering), [ADR-012](decisions.md#adr-012--comptaweb--webapp-server-rendered-scraping-html-avec-cheerio), [`comptaweb-api.md`](comptaweb-api.md)).
+- ✅ Schéma BDD **multi-user / multi-tenant** prêt (rôles, scopes, `groupes`, `users`, `personnes`, `user_credentials`), non activé au MVP — cf. [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git).
+- ✅ Versionné en git (repo local).
+- ⏳ **2ème skill** (`adhesion` ou équivalent) — manque. Le format de skill est validé par `remboursement` ; il faut en sortir un autre pour confirmer la convention.
+- ⏳ **MCP Notion** — non configuré. Acté "à faire si besoin émerge", non bloquant pour clore la P1. Notion reste utilisable côté humain via le navigateur.
 
-**Coût** : 0€ marginal (abo Max existant).
+**Important** : la BDD SQLite locale du MCP est **provisoire**. Elle migrera vers la BDD de la webapp en P2 (cf. note de statut sur [ADR-010](decisions.md#adr-010--outil-compta--sqlite--serveur-mcp-nodejstypescript)). Le schéma étant SQL-standard et déjà multi-tenant, la migration est mécanique.
 
 **Critère de succès** : au bout de 3 mois, l'auteur ouvre Claude Code dans `baloo/` au moins 3 fois par semaine pour des tâches réelles, pas pour tester.
 
@@ -30,48 +34,53 @@ Le projet est pensé en **4 phases** progressives. Chaque phase est validée ava
 
 ---
 
-## Phase 2 — Validation élargie (mois 3 → 6)
+## Phase 2 — Ouverture intra-groupe via webapp (mois 3 → 6 ?)
 
-**Objectif** : confirmer que le besoin existe au-delà de l'auteur.
+**Objectif** : la webapp `web/` (Next.js) devient la **source de vérité opérationnelle du groupe**. Elle ouvre des accès aux autres rôles internes : chefs/cheftaines et trésoriers d'unité (consulter le budget de leur unité, déposer des justificatifs), parents et donateurs (consulter leurs propres remboursements, voir leur reçu fiscal). Le multi-groupes reste explicitement repoussé en P3.
+
+Le pivot conceptuel : la webapp porte la BDD, l'API et les règles métier. Le MCP `baloo-compta` est refondu en **client HTTP authentifié de cette API** pour continuer de servir le trésorier dans Claude Code, sans accès BDD direct.
 
 **Livrables** :
-- 2 à 3 trésoriers d'autres groupes SGDF testent Baloo en local (installation accompagnée en personne).
-- Retours formalisés : qu'est-ce qui bloque ? qu'est-ce qu'ils utilisent vraiment ?
-- `sgdf-core/` enrichi des besoins génériques observés.
-- **Première expérimentation de saisie assistée Compta-Web** : checklists, données pré-formatées prêtes à recopier, voire automation navigateur (Claude in Chrome) sur quelques opérations simples. Pas de saisie autonome, juste assistance. Cf. ADR-007.
-- **Client API Comptaweb (reverse engineering)** — lecture des écritures (y compris **lignes bancaires non rapprochées avec sous-lignes DSP2 enrichies**, cf. [ADR-012](decisions.md)) + création de dépenses/recettes, via un client TypeScript intégré au MCP `baloo-compta`. Scope fermé (pas de suppression, pas d'admin, pas de rapprochement bancaire automatique). Safety : dry-run par défaut, confirmation explicite requise. Cf. [ADR-011](decisions.md), [ADR-012](decisions.md) et [`comptaweb-api.md`](comptaweb-api.md).
-- ~~**Auth Comptaweb user-friendly**~~ — **✅ Livré 2026-04-19**. Le client Baloo reproduit le flow côté navigateur : GET `/authentification/keycloak` pour récupérer les paramètres OIDC statiques, login programmatique sur Keycloak, POST `/curl_code_autorisation_keycloak` pour récupérer le JWT, puis POST `/login` Symfony avec l'identifiant extrait du JWT. Session persistée dans `data/comptaweb-session.json` (TTL 8h local, refresh automatique sur 302). Credentials dans `compta/.env`. Cookie manuel reste comme fallback de dépannage.
+- **Webapp Next.js déployée** (la `web/` existante, déjà amorcée) avec une **API HTTP** documentée portant les opérations métier.
+- **Migration BDD** : SQLite locale → BDD côté webapp (Postgres managé ou Postgres léger sur VPS — à arbitrer à l'impl). Le schéma [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git) étant SQL-standard et multi-tenant, la migration est mécanique.
+- **Refonte du MCP `baloo-compta`** : il devient un client HTTP de l'API webapp. Plus de `better-sqlite3`, plus de SQL en dur. Les commandes MCP exposées à Claude Code (`vue_ensemble`, `create_ecriture`, `list_remboursements`, etc.) restent stables côté usage ; leur impl tape l'API.
+- **Auth multi-user activée** sur la webapp (mécanisme à arbitrer à l'impl : magic link, OIDC SGDF si disponible, etc.). Le MCP s'authentifie comme un user "trésorier" via un token.
+- **Rôles applicatifs effectifs** (cf. [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git)) : `tresorier`, `cotresorier`, `chef_unite` (lecture filtrée à son unité, upload de justif), `parent` (lecture de ses propres paiements et reçu fiscal).
+- **Vues UI scopées par rôle** : budget d'unité pour le chef, espace perso pour le parent, vue d'ensemble pour le trésorier.
+- **Upload de justificatifs** depuis la webapp (chef d'unité), stockage fichier hors BDD, référencé via chemin/URL.
+- **Client Comptaweb intégré côté webapp** : déplacé de `compta/src/comptaweb-client/` vers le backend de la webapp, exposé via l'API. Garde les acquis P1 (auth Keycloak, lecture rapprochement bancaire DSP2).
+- **Saisie assistée Compta-Web** : checklists et données pré-formatées prêtes à recopier, voire automation navigateur (Claude in Chrome) sur quelques opérations simples. Pas de saisie autonome, juste assistance. Cf. [ADR-007](decisions.md#adr-007--outil-compta-unifié--compta-web-reste-maître-baloo-devient-lamont).
 - Décision go/no-go pour la phase 3.
 
-**Stack** : identique à la phase 1.
+**Stack** : Next.js (déjà en place dans `web/`) + API + Postgres (ou équivalent) + déploiement (VPS/Vercel/Fly.io). MCP `baloo-compta` réécrit comme client HTTP TypeScript.
 
-**Coût** : 0€.
+**Coût** : non nul — ~5-15€/mois d'infra. **Rupture explicite vs P1**. Toujours pas d'API LLM payante (Claude Code reste l'unique entrée LLM).
 
-**Critère de succès** : au moins 1 utilisateur externe utilise Baloo spontanément (sans être relancé) après 1 mois.
+**Critère de succès** : sur 1 mois, ≥2 chefs d'unité utilisent activement la webapp pour leurs justifs et ≥1 parent consulte son espace, sans être relancés ; le trésorier continue d'utiliser Claude Code via le nouveau MCP sans perte fonctionnelle.
 
-**Décision clé de fin de phase** : est-ce que ça vaut le coup d'investir dans un produit ? Si non, on reste en solo, c'est déjà une victoire personnelle.
+**Décision clé de fin de phase** : élargir à d'autres groupes SGDF (P3), ou rester en outil interne au groupe Val de Saône ? Si non, on s'arrête ici, c'est déjà une victoire.
 
 ---
 
-## Phase 3 — Produit hébergé (mois 6 → 12, si phase 2 concluante)
+## Phase 3 — Multi-groupes hébergé (mois 6 → 12, si phase 2 concluante)
 
-**Objectif** : transformer Baloo en service utilisable sans terminal, sans installation.
+**Objectif** : passer la webapp P2 du mode "un seul groupe" au mode "N groupes isolés", sans la reconstruire.
 
 **Livrables** :
-- Backend (Agent SDK, Python ou TypeScript).
-- Base de données Postgres (données structurées + recherche sémantique via pgvector).
-- Webapp responsive (Next.js probablement) **ou** bot Telegram/WhatsApp Business comme interface principale.
-- Auth multi-user, multi-tenant.
-- Migration des skills markdown existants en process exécutables côté backend.
-- Hébergement VPS (Hetzner ~5€/mois) ou Fly.io.
+- **Activation effective du multi-tenant** côté webapp (le schéma est prêt depuis [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git), il s'agit d'activer les filtres `group_id` partout dans l'API et l'UI).
+- **Onboarding** de nouveaux groupes (wizard de création de groupe, import de la structure d'unités, peuplement initial).
+- **Mutualisation infra** : un seul déploiement, plusieurs groupes.
+- **Migration éventuelle** vers un Postgres plus robuste si volumes/concurrence le justifient.
+- **Recherche sémantique** (pgvector ou équivalent) **uniquement** si le besoin s'en fait sentir à ce stade — pas par défaut.
+- **Agent SDK ou agent serveur** : seulement si le cap "LLM intégré à la webapp" (cf. règles transverses) est priorisé à ce moment.
 
-**Stack probable** : Python/TS + Agent SDK + Postgres + Next.js + VPS.
+**Stack** : la même qu'en P2, à laquelle s'ajoutent les briques nécessaires aux N groupes (tenancy, observabilité, sauvegardes).
 
-**Coût** : 20-50€/mois d'infra + coût API Claude proportionnel aux users (prompt caching obligatoire pour maîtriser ça).
+**Coût** : 20-50€/mois d'infra + coût API Claude proportionnel aux users si un agent serveur est introduit (prompt caching obligatoire pour maîtriser ça).
 
 **Critère de succès** : 5+ groupes actifs, feedback positif, auteur pas seul à maintenir.
 
-**Piège à éviter** : construire la webapp avant d'avoir les process validés en phase 1/2. Les skills et la mémoire doivent être stables **avant** qu'on les mette derrière une UI.
+**Piège à éviter** : reconstruire l'UI ou l'auth alors qu'elles existent déjà depuis la P2. P3 = scaler P2, pas refaire P2.
 
 ---
 
@@ -94,6 +103,7 @@ Le projet est pensé en **4 phases** progressives. Chaque phase est validée ava
 
 ## Règles transverses
 
-- **Chaque phase doit être "arrêtable".** Si on s'arrête après la phase 1, l'auteur a quand même un outil utile. Si on s'arrête après la phase 2, d'autres trésoriers ont un outil utile. Etc.
+- **Chaque phase doit être "arrêtable".** Si on s'arrête après la phase 1, l'auteur a un outil utile en CLI. Si on s'arrête après la phase 2, le groupe entier (chefs, parents) a un outil utile. Si on s'arrête après la phase 3, plusieurs groupes ont un outil utile. Etc.
 - **Aucune décision d'archi n'est prise "au cas où".** On décide au plus tard possible.
-- **Les données et les process survivent au code.** Tout ce qui est écrit en markdown en phase 1 est réutilisable en phase 3, peu importe le langage final.
+- **Les données et les process survivent au code.** Tout ce qui est écrit en markdown ou structuré en BDD en phase 1 est réutilisable en phase 2/3, peu importe le langage final.
+- **Cap lointain : LLM intégré à la webapp.** À terme, la webapp embarquera un agent LLM côté serveur pour les users qui n'utilisent pas Claude Code (chefs, parents). Ce n'est pas une phase numérotée — c'est une direction qui guide certains choix d'archi dès la P2 (API stable, opérations idempotentes, audit trail). On ne construit pas d'agent serveur tant qu'il n'y a pas un user concret qui l'attend.

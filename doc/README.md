@@ -21,5 +21,5 @@ Ce dossier contient la documentation de conception du projet **Baloo**, un assis
 
 ## État du projet
 
-**Phase actuelle** : Phase 1 — MVP perso (en cours)
-**Dernière mise à jour** : 2026-04-18 (ADR-013)
+**Phase actuelle** : Phase 1 — MVP perso CLI (en voie d'achèvement)
+**Dernière mise à jour** : 2026-04-25 (révision roadmap : pivot webapp = source de vérité en P2)

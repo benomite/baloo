@@ -228,6 +228,8 @@ Compta-Web est imposé par l'asso nationale et ne peut **pas** être remplacé.
 **Date** : 2026-04-17
 **Statut** : accepté (remplace ADR-009 pour les nouvelles écritures)
 
+> **Note de statut (2026-04-25)** : la trajectoire phase 2 (cf. [`roadmap.md`](roadmap.md)) fait basculer la source de vérité opérationnelle vers la webapp `web/` (BDD + API HTTP côté serveur). Le MCP `baloo-compta` est refondu en client HTTP authentifié de cette API et n'attaque plus la BDD SQLite directement. ADR-010 reste valide pour la phase 1 (MVP CLI), mais la BDD SQLite locale qu'il introduit est **provisoire** et migrera vers la BDD webapp en P2. Le schéma SQL-standard prévu par cet ADR rend la migration mécanique. Pas de nouvel ADR à ce stade — la décision de pivot est documentée dans la roadmap.
+
 **Contexte** : ADR-007 prévoit que Baloo remplace Airtable et le Sheet. ADR-009 proposait un format markdown structuré pour les écritures. En pratique, le trésorier a besoin d'un vrai outil de compta opérationnel — requêtable, filtrable, avec vue d'ensemble — pas de fichiers markdown qu'il ne lira pas.
 
 **Décision** :
