@@ -5,6 +5,10 @@ import { getCurrentContext } from '../context.js';
 
 const STATUTS = ['projet', 'vote', 'cloture'] as const;
 
+// DEPRECATED (chantier 1, doc/p2-pivot-webapp.md) : la logique métier de cet
+// outil sera retirée au chantier 3 et remplacée par un appel HTTP à
+// `web/src/lib/services/budgets.ts` (canonique). En attendant, on conserve
+// l'implémentation directe pour ne rien casser côté trésorier.
 export function registerBudgetTools(server: McpServer) {
   server.tool(
     'list_budgets',

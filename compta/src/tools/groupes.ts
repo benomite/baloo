@@ -3,6 +3,10 @@ import { z } from 'zod';
 import { currentTimestamp, getDb } from '../db.js';
 import { getCurrentContext } from '../context.js';
 
+// DEPRECATED (chantier 1, doc/p2-pivot-webapp.md) : la logique métier de cet
+// outil sera retirée au chantier 3 et remplacée par un appel HTTP à
+// `web/src/lib/services/groupes.ts` (canonique). En attendant, on conserve
+// l'implémentation directe pour ne rien casser côté trésorier.
 export function registerGroupeTools(server: McpServer) {
   server.tool(
     'get_groupe',

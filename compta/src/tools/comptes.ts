@@ -23,6 +23,10 @@ function nextCompteId(groupId: string, code: string): string {
   return existing.n === 0 ? base : `${base}-${existing.n + 1}`;
 }
 
+// DEPRECATED (chantier 1, doc/p2-pivot-webapp.md) : la logique métier de cet
+// outil sera retirée au chantier 3 et remplacée par un appel HTTP à
+// `web/src/lib/services/comptes.ts` (canonique). En attendant, on conserve
+// l'implémentation directe pour ne rien casser côté trésorier.
 export function registerCompteTools(server: McpServer) {
   server.tool(
     'list_comptes_bancaires',
