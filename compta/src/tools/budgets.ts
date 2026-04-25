@@ -1,28 +1,37 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { currentTimestamp, getDb, formatAmount, parseAmount } from '../db.js';
-import { getCurrentContext } from '../context.js';
+import { api } from '../api-client.js';
+import { formatAmount, parseAmount } from '../utils.js';
 
 const STATUTS = ['projet', 'vote', 'cloture'] as const;
 
-// DEPRECATED (chantier 1, doc/p2-pivot-webapp.md) : la logique métier de cet
-// outil sera retirée au chantier 3 et remplacée par un appel HTTP à
-// `web/src/lib/services/budgets.ts` (canonique). En attendant, on conserve
-// l'implémentation directe pour ne rien casser côté trésorier.
+interface BudgetRow {
+  id: string;
+  [key: string]: unknown;
+}
+
+interface BudgetLigneRow {
+  id: string;
+  amount_cents: number;
+  [key: string]: unknown;
+}
+
+interface BudgetLignesResponse {
+  lignes: BudgetLigneRow[];
+  total_depenses_cents: number;
+  total_recettes_cents: number;
+  solde_cents: number;
+}
+
 export function registerBudgetTools(server: McpServer) {
   server.tool(
     'list_budgets',
-    "Liste les budgets annuels du groupe.",
+    'Liste les budgets annuels du groupe.',
     { saison: z.string().optional() },
-    ({ saison }) => {
-      const { groupId } = getCurrentContext();
-      let sql = 'SELECT * FROM budgets WHERE group_id = ?';
-      const params: (string | number)[] = [groupId];
-      if (saison) { sql += ' AND saison = ?'; params.push(saison); }
-      sql += ' ORDER BY saison DESC';
-      const rows = getDb().prepare(sql).all(...params);
+    async (params) => {
+      const rows = await api.get<BudgetRow[]>('/api/budgets', params);
       return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
-    }
+    },
   );
 
   server.tool(
@@ -34,21 +43,15 @@ export function registerBudgetTools(server: McpServer) {
       vote_le: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       notes: z.string().optional(),
     },
-    ({ saison, statut, vote_le, notes }) => {
-      const ctx = getCurrentContext();
-      const id = `bdg-${ctx.groupId}-${saison}`;
-      const now = currentTimestamp();
-      getDb().prepare(
-        `INSERT INTO budgets (id, group_id, saison, statut, vote_le, notes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(id, ctx.groupId, saison, statut ?? 'projet', vote_le ?? null, notes ?? null, now, now);
-      return { content: [{ type: 'text', text: `Budget ${id} créé (saison ${saison}).` }] };
-    }
+    async (params) => {
+      const created = await api.post<BudgetRow>('/api/budgets', params);
+      return { content: [{ type: 'text', text: `Budget ${created.id} créé (saison ${params.saison}).` }] };
+    },
   );
 
   server.tool(
     'create_budget_ligne',
-    "Ajoute une ligne à un budget (poste budgétaire).",
+    'Ajoute une ligne à un budget (poste budgétaire).',
     {
       budget_id: z.string(),
       libelle: z.string().min(1),
@@ -58,35 +61,30 @@ export function registerBudgetTools(server: McpServer) {
       category_id: z.string().optional(),
       notes: z.string().optional(),
     },
-    ({ budget_id, libelle, type, amount, unite_id, category_id, notes }) => {
-      const now = currentTimestamp();
+    async (params) => {
+      const { budget_id, amount, ...rest } = params;
       const cents = parseAmount(amount);
-      const id = `bdl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-      getDb().prepare(
-        `INSERT INTO budget_lignes (id, budget_id, unite_id, category_id, libelle, type, amount_cents, notes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(id, budget_id, unite_id ?? null, category_id ?? null, libelle, type, cents, notes ?? null, now, now);
-      return { content: [{ type: 'text', text: `Ligne ${id} ajoutée : ${libelle} (${formatAmount(cents)}).` }] };
-    }
+      const created = await api.post<BudgetLigneRow>(`/api/budgets/${encodeURIComponent(budget_id)}/lignes`, {
+        ...rest,
+        amount_cents: cents,
+      });
+      return { content: [{ type: 'text', text: `Ligne ${created.id} ajoutée : ${rest.libelle} (${formatAmount(cents)}).` }] };
+    },
   );
 
   server.tool(
     'list_budget_lignes',
     "Liste les lignes d'un budget, avec totaux par type.",
     { budget_id: z.string() },
-    ({ budget_id }) => {
-      const rows = getDb().prepare(
-        'SELECT id, unite_id, category_id, libelle, type, amount_cents, notes FROM budget_lignes WHERE budget_id = ? ORDER BY type, libelle'
-      ).all(budget_id) as { id: string; unite_id: string | null; category_id: string | null; libelle: string; type: string; amount_cents: number; notes: string | null }[];
-      const totalDepenses = rows.filter(r => r.type === 'depense').reduce((acc, r) => acc + r.amount_cents, 0);
-      const totalRecettes = rows.filter(r => r.type === 'recette').reduce((acc, r) => acc + r.amount_cents, 0);
+    async (params) => {
+      const data = await api.get<BudgetLignesResponse>(`/api/budgets/${encodeURIComponent(params.budget_id)}/lignes`);
       const result = {
-        lignes: rows.map(r => ({ ...r, montant: formatAmount(r.amount_cents) })),
-        total_depenses: formatAmount(totalDepenses),
-        total_recettes: formatAmount(totalRecettes),
-        solde: formatAmount(totalRecettes - totalDepenses),
+        lignes: data.lignes.map((l) => ({ ...l, montant: formatAmount(l.amount_cents) })),
+        total_depenses: formatAmount(data.total_depenses_cents),
+        total_recettes: formatAmount(data.total_recettes_cents),
+        solde: formatAmount(data.solde_cents),
       };
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-    }
+    },
   );
 }

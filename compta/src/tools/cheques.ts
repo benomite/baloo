@@ -1,12 +1,15 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { getDb, nextId, formatAmount, parseAmount, currentTimestamp } from '../db.js';
-import { getCurrentContext } from '../context.js';
+import { api } from '../api-client.js';
+import { formatAmount, parseAmount } from '../utils.js';
 
-// DEPRECATED (chantier 1, doc/p2-pivot-webapp.md) : la logique métier de cet
-// outil sera retirée au chantier 3 et remplacée par un appel HTTP à
-// `web/src/lib/services/cheques.ts` (canonique). En attendant, on conserve
-// l'implémentation directe pour ne rien casser côté trésorier.
+interface DepotChequesRow {
+  id: string;
+  total_amount_cents: number;
+  detail_cheques: string | null;
+  [key: string]: unknown;
+}
+
 export function registerChequesTools(server: McpServer) {
   server.tool(
     'list_depots_cheques',
@@ -16,26 +19,15 @@ export function registerChequesTools(server: McpServer) {
       confirmation_status: z.enum(['en_attente', 'confirme']).optional(),
       limit: z.number().default(50),
     },
-    (params) => {
-      const conditions: string[] = [];
-      const values: unknown[] = [];
-
-      if (params.type_depot) { conditions.push('type_depot = ?'); values.push(params.type_depot); }
-      if (params.confirmation_status) { conditions.push('confirmation_status = ?'); values.push(params.confirmation_status); }
-
-      const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-      values.push(params.limit);
-
-      const rows = getDb().prepare(
-        `SELECT * FROM depots_cheques ${where} ORDER BY date_depot DESC LIMIT ?`
-      ).all(...values) as Record<string, unknown>[];
-
-      return { content: [{ type: 'text', text: JSON.stringify(rows.map(r => ({
+    async (params) => {
+      const rows = await api.get<DepotChequesRow[]>('/api/cheques', params);
+      const result = rows.map((r) => ({
         ...r,
-        total: formatAmount(r.total_amount_cents as number),
-        detail_cheques: r.detail_cheques ? JSON.parse(r.detail_cheques as string) : null,
-      })), null, 2) }] };
-    }
+        total: formatAmount(r.total_amount_cents),
+        detail_cheques: r.detail_cheques ? JSON.parse(r.detail_cheques) : null,
+      }));
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    },
   );
 
   server.tool(
@@ -44,31 +36,33 @@ export function registerChequesTools(server: McpServer) {
     {
       date_depot: z.string().describe('Date du dépôt (YYYY-MM-DD)'),
       type_depot: z.enum(['banque', 'ancv']).describe('Type : banque ou ANCV'),
-      cheques: z.array(z.object({
-        emetteur: z.string().describe('Nom de l\'émetteur'),
-        montant: z.string().describe('Montant du chèque (ex: "50,00")'),
-        numero: z.string().optional().describe('Numéro du chèque'),
-      })).describe('Liste des chèques déposés'),
+      cheques: z
+        .array(
+          z.object({
+            emetteur: z.string().describe("Nom de l'émetteur"),
+            montant: z.string().describe('Montant du chèque (ex: "50,00")'),
+            numero: z.string().optional().describe('Numéro du chèque'),
+          }),
+        )
+        .describe('Liste des chèques déposés'),
       notes: z.string().optional(),
     },
-    (params) => {
-      const id = nextId('DCH');
-      const now = currentTimestamp();
-
-      const chequesParsed = params.cheques.map(c => ({
-        emetteur: c.emetteur,
-        montant_cents: parseAmount(c.montant),
-        numero: c.numero ?? null,
-      }));
-      const totalCents = chequesParsed.reduce((sum, c) => sum + c.montant_cents, 0);
-
-      getDb().prepare(`
-        INSERT INTO depots_cheques (id, group_id, date_depot, type_depot, total_amount_cents, nombre_cheques, detail_cheques, notes, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, getCurrentContext().groupId, params.date_depot, params.type_depot, totalCents, chequesParsed.length, JSON.stringify(chequesParsed), params.notes ?? null, now);
-
-      const row = getDb().prepare('SELECT * FROM depots_cheques WHERE id = ?').get(id);
-      return { content: [{ type: 'text', text: JSON.stringify({ ...row as object, total: formatAmount(totalCents) }, null, 2) }] };
-    }
+    async (params) => {
+      const created = await api.post<DepotChequesRow>('/api/cheques', {
+        date_depot: params.date_depot,
+        type_depot: params.type_depot,
+        cheques: params.cheques.map((c) => ({
+          emetteur: c.emetteur,
+          amount_cents: parseAmount(c.montant),
+          numero: c.numero ?? null,
+        })),
+        notes: params.notes ?? null,
+      });
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ ...created, total: formatAmount(created.total_amount_cents) }, null, 2) },
+        ],
+      };
+    },
   );
 }
