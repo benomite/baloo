@@ -23,6 +23,10 @@ function getMimeType(filename: string): string | null {
   return ext ? (mimes[ext] ?? null) : null;
 }
 
+// DEPRECATED (chantier 1, doc/p2-pivot-webapp.md) : la logique métier de cet
+// outil sera retirée au chantier 3 et remplacée par un appel HTTP à
+// `web/src/lib/services/justificatifs.ts` (canonique). En attendant, on conserve
+// l'implémentation directe pour ne rien casser côté trésorier.
 export function registerJustificatifTools(server: McpServer) {
   server.tool(
     'attach_justificatif',

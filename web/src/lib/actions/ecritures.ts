@@ -2,63 +2,54 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { getDb } from '../db';
-import { nextId, currentTimestamp } from '../ids';
+import { getCurrentContext } from '../context';
+import {
+  createEcriture as createEcritureService,
+  updateEcriture as updateEcritureService,
+  updateEcritureStatus as updateEcritureStatusService,
+} from '../services/ecritures';
 import { parseAmount } from '../format';
 
 export async function createEcriture(formData: FormData) {
-  const type = formData.get('type') as string;
-  const prefix = type === 'depense' ? 'DEP' : 'REC';
-  const id = nextId(prefix);
-  const now = currentTimestamp();
-
-  getDb().prepare(`
-    INSERT INTO ecritures (id, date_ecriture, description, amount_cents, type, unite_id, category_id, mode_paiement_id, activite_id, numero_piece, notes, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id,
-    formData.get('date_ecriture'),
-    formData.get('description'),
-    parseAmount(formData.get('montant') as string),
-    type,
-    formData.get('unite_id') || null,
-    formData.get('category_id') || null,
-    formData.get('mode_paiement_id') || null,
-    formData.get('activite_id') || null,
-    formData.get('numero_piece') || null,
-    formData.get('notes') || null,
-    now,
-    now,
+  const { groupId } = getCurrentContext();
+  const created = createEcritureService(
+    { groupId },
+    {
+      date_ecriture: formData.get('date_ecriture') as string,
+      description: formData.get('description') as string,
+      amount_cents: parseAmount(formData.get('montant') as string),
+      type: formData.get('type') as 'depense' | 'recette',
+      unite_id: (formData.get('unite_id') as string) || null,
+      category_id: (formData.get('category_id') as string) || null,
+      mode_paiement_id: (formData.get('mode_paiement_id') as string) || null,
+      activite_id: (formData.get('activite_id') as string) || null,
+      numero_piece: (formData.get('numero_piece') as string) || null,
+      notes: (formData.get('notes') as string) || null,
+    },
   );
 
   revalidatePath('/ecritures');
   revalidatePath('/');
-  redirect(`/ecritures/${id}`);
+  redirect(`/ecritures/${created.id}`);
 }
 
 export async function updateEcriture(id: string, formData: FormData) {
-  const now = currentTimestamp();
-  const montant = formData.get('montant');
-
-  getDb().prepare(`
-    UPDATE ecritures SET
-      date_ecriture = ?, description = ?, amount_cents = ?, type = ?,
-      unite_id = ?, category_id = ?, mode_paiement_id = ?, activite_id = ?,
-      numero_piece = ?, notes = ?, updated_at = ?
-    WHERE id = ?
-  `).run(
-    formData.get('date_ecriture'),
-    formData.get('description'),
-    parseAmount(montant as string),
-    formData.get('type'),
-    formData.get('unite_id') || null,
-    formData.get('category_id') || null,
-    formData.get('mode_paiement_id') || null,
-    formData.get('activite_id') || null,
-    formData.get('numero_piece') || null,
-    formData.get('notes') || null,
-    now,
+  const { groupId } = getCurrentContext();
+  updateEcritureService(
+    { groupId },
     id,
+    {
+      date_ecriture: formData.get('date_ecriture') as string,
+      description: formData.get('description') as string,
+      amount_cents: parseAmount(formData.get('montant') as string),
+      type: formData.get('type') as 'depense' | 'recette',
+      unite_id: (formData.get('unite_id') as string) || null,
+      category_id: (formData.get('category_id') as string) || null,
+      mode_paiement_id: (formData.get('mode_paiement_id') as string) || null,
+      activite_id: (formData.get('activite_id') as string) || null,
+      numero_piece: (formData.get('numero_piece') as string) || null,
+      notes: (formData.get('notes') as string) || null,
+    },
   );
 
   revalidatePath('/ecritures');
@@ -68,14 +59,12 @@ export async function updateEcriture(id: string, formData: FormData) {
 }
 
 export async function updateEcritureStatus(id: string, status: string) {
-  const now = currentTimestamp();
-  const comptaweb = status === 'saisie_comptaweb' ? 1 : undefined;
-
-  if (comptaweb !== undefined) {
-    getDb().prepare('UPDATE ecritures SET status = ?, comptaweb_synced = ?, updated_at = ? WHERE id = ?').run(status, comptaweb, now, id);
-  } else {
-    getDb().prepare('UPDATE ecritures SET status = ?, updated_at = ? WHERE id = ?').run(status, now, id);
-  }
+  const { groupId } = getCurrentContext();
+  updateEcritureStatusService(
+    { groupId },
+    id,
+    status as 'brouillon' | 'valide' | 'saisie_comptaweb',
+  );
 
   revalidatePath('/ecritures');
   revalidatePath(`/ecritures/${id}`);

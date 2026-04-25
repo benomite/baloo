@@ -3,6 +3,10 @@ import { z } from 'zod';
 import { getDb, nextId, formatAmount, parseAmount, currentTimestamp } from '../db.js';
 import { getCurrentContext } from '../context.js';
 
+// DEPRECATED (chantier 1, doc/p2-pivot-webapp.md) : la logique métier de cet
+// outil sera retirée au chantier 3 et remplacée par un appel HTTP à
+// `web/src/lib/services/caisse.ts` (canonique). En attendant, on conserve
+// l'implémentation directe pour ne rien casser côté trésorier.
 export function registerCaisseTools(server: McpServer) {
   server.tool(
     'list_mouvements_caisse',
