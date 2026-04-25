@@ -6,6 +6,26 @@ Ce document est un **plan d'exécution**, pas un ADR. Les décisions structurell
 
 ---
 
+## 0. État d'avancement (2026-04-25)
+
+| Chantier | Statut | Notes |
+|---|---|---|
+| 1. Consolidation services | ✅ fait | 16 services dans `web/src/lib/services/`, queries+actions devenues des shims, MCP tools marqués DEPRECATED. Bugs latents `group_id` corrigés en passant. |
+| 2. Exposition API HTTP | ✅ fait | 26 route handlers dans `web/src/app/api/`, validation zod, helper `web/src/lib/api/route-helpers.ts`. Convention mix REST/RPC. Pas d'auth (suit en chantier 4). |
+| 3. Refonte MCP en client HTTP | ✅ fait | 17 outils sur 19 migrés. `compta/src/api-client.ts` (fetch wrapper) + `utils.ts` (helpers purs). 2 outils Comptaweb (`comptaweb` import CSV, `comptaweb-client` raw) restent en DB-direct jusqu'au chantier 6. |
+| 4. Auth multi-user | ⏳ à faire | Choix de lib (Auth.js, Better Auth, OIDC SGDF) à acter dans un ADR avant code. Remplacement de `BALOO_USER_EMAIL` par session/token. |
+| 5. Rôles + vues scopées | ⏳ à faire | Activation `chef_unite`/`parent`, pages `/u/[unite]` et `/moi`, filtres scope dans services + UI. |
+| 6. Upload UI + Comptaweb côté webapp | ⏳ à faire | Permet de retirer `compta/src/comptaweb-client/`, `compta/src/db.ts`, `better-sqlite3`. |
+| 7. Migration BDD + déploiement | ⏳ à faire | SQLite → Postgres (Neon ou autre), VPS/Vercel/Fly. ADR à créer. |
+
+Tant que les chantiers 4-7 ne sont pas faits, le système tourne en **mode hybride** :
+- La webapp est la source de vérité opérationnelle pour la majorité des opérations.
+- Les pages `web/` consomment les services en direct (pas via leur propre API).
+- Le MCP `baloo-compta` consomme l'API HTTP pour 17 outils ; les 2 outils Comptaweb restants tapent encore la SQLite locale.
+- L'auth est résolue par `BALOO_USER_EMAIL` partagé entre `compta/.env` et le serveur webapp.
+
+---
+
 ## 1. État actuel (constat technique)
 
 À date (2026-04-25), `web/` et `compta/` accèdent **tous les deux directement** à la même SQLite (`data/baloo.db`) via `better-sqlite3` :
@@ -50,7 +70,7 @@ Trésorier (Claude Code)          Chefs / parents (navigateur)
 
 Le pivot est découpé en **6 chantiers** qui peuvent en partie se chevaucher mais ont des dépendances logiques. Chaque chantier doit être livrable et arrêtable indépendamment.
 
-### Chantier 1 — Consolidation de la couche métier dans `web/`
+### Chantier 1 — Consolidation de la couche métier dans `web/` ✅
 
 **Objectif** : éliminer la duplication `compta/src/tools/` ↔ `web/src/lib/queries|actions/` en faisant de `web/` la **seule** source de logique métier, sans encore exposer d'API ni casser le MCP.
 
@@ -64,7 +84,14 @@ Le pivot est découpé en **6 chantiers** qui peuvent en partie se chevaucher ma
 
 **Livraison incrémentale possible** : par sous-domaine (ecritures, puis remboursements, puis caisse, etc.). Pas besoin de tout faire d'un coup.
 
-### Chantier 2 — Exposition de l'API HTTP
+**Réalisé (2026-04-25)** :
+- 16 services dans `web/src/lib/services/` : `overview`, `reference`, `caisse`, `remboursements`, `justificatifs`, `ecritures`, `drafts`, `abandons`, `budgets`, `cheques`, `comptes`, `groupes`, `notes`, `personnes`, `recherche`, `todos`.
+- Chaque service prend un `Context` typé (`{ groupId, userId? }`) et filtre par `group_id` — bug latent corrigé : aucun INSERT/SELECT côté `web/actions+queries` ni côté MCP ne passait `group_id` avant.
+- `web/src/lib/queries/*.ts` et `actions/*.ts` réduits à des shims qui résolvent `getCurrentContext()` puis appellent les services.
+- 19 modules `compta/src/tools/*.ts` marqués DEPRECATED (le code DB-direct reste actif jusqu'au chantier 3 pour ne rien casser).
+- Commits : `08dfaa6`, `6549bb0`, `298672a`, `cdd962f`, `4b00e9d`, `2c7d6f1`.
+
+### Chantier 2 — Exposition de l'API HTTP ✅
 
 **Objectif** : exposer `web/src/lib/services/` via des route handlers Next.js, avec un format de réponse stable.
 
@@ -82,7 +109,14 @@ Le pivot est découpé en **6 chantiers** qui peuvent en partie se chevaucher ma
 
 **Hors scope du chantier** : auth, déploiement, refonte MCP. C'est juste l'API.
 
-### Chantier 3 — Refonte du MCP `baloo-compta` en client HTTP
+**Réalisé (2026-04-25)** :
+- **Convention retenue : option C (mix REST/actions)**. REST pour les ressources standard (`/api/ecritures` + `/[id]`, `/api/remboursements` + `/[id]`, `/api/caisse`, `/api/justificatifs`, `/api/abandons` + `/[id]`, `/api/budgets` + `/[id]/lignes`, `/api/cheques`, `/api/comptes-bancaires` + `/[id]`, `/api/notes` + `/[id]`, `/api/personnes` + `/[id]`, `/api/todos` + `/[id]` + `/[id]/complete`). Endpoints "actions" pour le transverse (`/api/overview`, `/api/reference/{categories,modes-paiement,unites,activites}`, `/api/recherche`, `/api/drafts/scan`, `/api/drafts/[id]/sync`, `/api/groupe`).
+- 26 route handlers, validation des bodies par **zod**.
+- Helper commun `web/src/lib/api/route-helpers.ts` : `requireApiContext`, `parseJsonBody`, `jsonError`. Format d'erreur : `{ error, fields? }` avec status HTTP adapté.
+- Pas de tests d'intégration écrits dans cette session — `tsc` + `next build` validés.
+- Commit : `7de80db`.
+
+### Chantier 3 — Refonte du MCP `baloo-compta` en client HTTP ✅
 
 **Objectif** : le MCP n'attaque plus la BDD ; il appelle `web/`.
 
@@ -96,6 +130,15 @@ Le pivot est découpé en **6 chantiers** qui peuvent en partie se chevaucher ma
 **Critère** : on peut supprimer `data/baloo.db` (en dev) et le MCP continue de fonctionner tant que `web/` tourne.
 
 **Migration douce** : on peut maintenir les **deux** modes (DB direct + HTTP) pendant une journée de bascule via un flag, mais pas plus — on évite les feature flags persistants.
+
+**Réalisé (2026-04-25)** :
+- `compta/src/api-client.ts` : wrapper `fetch` typé (`api.get/post/patch/del`), base URL via `BALOO_API_URL` (défaut `http://localhost:3000`), header `Authorization: Bearer ${BALOO_API_TOKEN}` si la variable est définie (placeholder pour le chantier 4).
+- `compta/src/utils.ts` : helpers purs (`formatAmount`, `parseAmount`) extraits de `db.ts` pour ne plus traîner `better-sqlite3` dans la chaîne d'imports des outils HTTP.
+- 17 outils migrés (signatures stables côté Claude Code, formatage des montants conservé) : `overview`, `reference` (×4), `recherche`, `ecritures` (×3), `remboursements` (×3), `caisse` (×2), `abandons` (×3), `cheques` (×2), `justificatifs` (×2 — upload via `multipart/form-data` POST sur `/api/justificatifs`), `personnes` (×3), `comptes` (×3), `budgets` (×4), `groupes` (×2), `notes` (×4), `todos` (×4), `cw_scan_drafts`, `cw_sync_draft`.
+- 2 outils non migrés (chantier 6) : `comptaweb` (import CSV → `comptaweb_imports`/`comptaweb_lignes`) et `comptaweb-client` (5 opérations Comptaweb raw : `cw_list_rapprochement_bancaire`, `cw_referentiels_creer_ecriture`, `cw_create_depense`, `cw_create_recette`, `cw_ecriture_depuis_ligne_bancaire`). Tant qu'ils existent, `compta/` garde `better-sqlite3`, `db.ts`, `context.ts` et `comptaweb-client/`.
+- `index.ts` : retire l'appel `getDb()` au boot — la BDD locale n'est plus ouverte que paresseusement par les 2 outils restants.
+- `compta/.env.example` : documente `BALOO_API_URL` et `BALOO_API_TOKEN`.
+- Commit : `d225773`.
 
 ### Chantier 4 — Auth multi-user
 

@@ -22,5 +22,5 @@ Ce dossier contient la documentation de conception du projet **Baloo**, un assis
 
 ## État du projet
 
-**Phase actuelle** : Phase 1 — MVP perso CLI (en voie d'achèvement)
-**Dernière mise à jour** : 2026-04-25 (révision roadmap : pivot webapp = source de vérité en P2)
+**Phase actuelle** : Phase 2 — pivot webapp (chantiers 1, 2, 3 livrés)
+**Dernière mise à jour** : 2026-04-25 (P2 chantiers 1-3 livrés : services consolidés, API HTTP exposée, MCP refondu en client HTTP)
