@@ -1,54 +1,9 @@
-import { getDb } from '../db';
-import { formatAmount } from '../format';
+import { getCurrentContext } from '../context';
+import { getOverview as getOverviewService, type OverviewData } from '../services/overview';
 
-export interface OverviewData {
-  totalDepenses: number;
-  totalRecettes: number;
-  solde: number;
-  totalDepensesFormatted: string;
-  totalRecettesFormatted: string;
-  soldeFormatted: string;
-  parUnite: { code: string; name: string; depenses: number; recettes: number; solde: number }[];
-  remboursementsEnAttente: { count: number; total: number; totalFormatted: string };
-  alertes: { depensesSansJustificatif: number; nonSyncComptaweb: number };
-  dernierImport: { date: string; fichier: string } | null;
-}
+export type { OverviewData };
 
 export function getOverview(): OverviewData {
-  const db = getDb();
-
-  const dep = db.prepare("SELECT COALESCE(SUM(amount_cents), 0) as total FROM ecritures WHERE type = 'depense'").get() as { total: number };
-  const rec = db.prepare("SELECT COALESCE(SUM(amount_cents), 0) as total FROM ecritures WHERE type = 'recette'").get() as { total: number };
-
-  const parUnite = db.prepare(`
-    SELECT u.code, u.name,
-      COALESCE(SUM(CASE WHEN e.type = 'depense' THEN e.amount_cents ELSE 0 END), 0) as depenses,
-      COALESCE(SUM(CASE WHEN e.type = 'recette' THEN e.amount_cents ELSE 0 END), 0) as recettes
-    FROM unites u LEFT JOIN ecritures e ON e.unite_id = u.id
-    GROUP BY u.id ORDER BY u.code
-  `).all() as { code: string; name: string; depenses: number; recettes: number }[];
-
-  const rbt = db.prepare("SELECT COUNT(*) as count, COALESCE(SUM(amount_cents), 0) as total FROM remboursements WHERE status IN ('demande', 'valide')").get() as { count: number; total: number };
-
-  const sansJustif = db.prepare(`
-    SELECT COUNT(*) as count FROM ecritures e WHERE e.type = 'depense'
-    AND NOT EXISTS (SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id)
-  `).get() as { count: number };
-
-  const nonSync = db.prepare("SELECT COUNT(*) as count FROM ecritures WHERE comptaweb_synced = 0 AND status != 'brouillon'").get() as { count: number };
-
-  const lastImport = db.prepare('SELECT import_date as date, source_file as fichier FROM comptaweb_imports ORDER BY import_date DESC LIMIT 1').get() as { date: string; fichier: string } | undefined;
-
-  return {
-    totalDepenses: dep.total,
-    totalRecettes: rec.total,
-    solde: rec.total - dep.total,
-    totalDepensesFormatted: formatAmount(dep.total),
-    totalRecettesFormatted: formatAmount(rec.total),
-    soldeFormatted: formatAmount(rec.total - dep.total),
-    parUnite: parUnite.map(u => ({ ...u, solde: u.recettes - u.depenses })),
-    remboursementsEnAttente: { count: rbt.count, total: rbt.total, totalFormatted: formatAmount(rbt.total) },
-    alertes: { depensesSansJustificatif: sansJustif.count, nonSyncComptaweb: nonSync.count },
-    dernierImport: lastImport ?? null,
-  };
+  const { groupId } = getCurrentContext();
+  return getOverviewService({ groupId });
 }
