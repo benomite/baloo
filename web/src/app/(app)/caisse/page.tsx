@@ -8,8 +8,8 @@ import { listMouvementsCaisse } from '@/lib/queries/caisse';
 import { createMouvementCaisse } from '@/lib/actions/caisse';
 import { formatAmount } from '@/lib/format';
 
-export default function CaissePage() {
-  const { mouvements, solde } = listMouvementsCaisse();
+export default async function CaissePage() {
+  const { mouvements, solde } = await listMouvementsCaisse();
 
   return (
     <div>

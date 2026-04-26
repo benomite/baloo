@@ -8,7 +8,9 @@ const bodySchema = z.object({
 
 // POST /api/drafts/:id/sync — body optionnel, dryRun=true par défaut (safety).
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { groupId } = requireApiContext();
+  const ctxR = await requireApiContext(request);
+  if ('error' in ctxR) return ctxR.error;
+  const { groupId } = ctxR.ctx;
   const { id } = await params;
 
   let opts: { dryRun?: boolean } = {};

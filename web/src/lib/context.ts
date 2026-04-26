@@ -1,21 +1,44 @@
+import { redirect } from 'next/navigation';
+import { auth } from './auth/auth';
 import { getDb } from './db';
-import { ensureComptawebEnv } from './comptaweb/env-loader';
 
-let cached: { userId: string; groupId: string } | null = null;
+// Contexte courant côté serveur web (chantier 4, ADR-014).
+//
+// La session vient d'Auth.js (cookie). Pas de session → redirect vers /login.
+// On résout le `group_id` du user via la table `users`.
+//
+// Important : c'est utilisé par les server components, server actions et
+// shims `queries|actions/`. Pour les route handlers `/api/*`, voir
+// `requireApiContext` dans `lib/api/route-helpers.ts` qui supporte aussi
+// le Bearer token MCP.
 
-export function getCurrentContext(): { userId: string; groupId: string } {
-  if (cached) return cached;
-  ensureComptawebEnv();
-  const email = process.env.BALOO_USER_EMAIL;
-  if (!email) {
-    throw new Error("BALOO_USER_EMAIL manquant dans l'environnement Next (web/.env.local).");
+export interface CurrentContext {
+  userId: string;
+  groupId: string;
+  email: string;
+  name: string | null;
+}
+
+export async function getCurrentContext(): Promise<CurrentContext> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect('/login');
   }
+
   const row = getDb()
-    .prepare("SELECT id as user_id, group_id FROM users WHERE email = ? AND statut = 'actif' LIMIT 1")
-    .get(email) as { user_id: string; group_id: string } | undefined;
+    .prepare(
+      "SELECT id, email, nom_affichage AS name, group_id FROM users WHERE id = ? AND statut = 'actif'",
+    )
+    .get(session.user.id) as { id: string; email: string; name: string | null; group_id: string } | undefined;
+
   if (!row) {
-    throw new Error(`Aucun user actif trouvé pour ${email}. Lance \`cd compta && npm run bootstrap\`.`);
+    redirect('/login');
   }
-  cached = { userId: row.user_id, groupId: row.group_id };
-  return cached;
+
+  return {
+    userId: row.id,
+    groupId: row.group_id,
+    email: row.email,
+    name: row.name,
+  };
 }

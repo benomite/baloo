@@ -13,10 +13,10 @@ import { formatAmount } from '@/lib/format';
 
 export default async function EcritureDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const ecriture = getEcriture(id);
+  const ecriture = await getEcriture(id);
   if (!ecriture) notFound();
 
-  const justificatifs = listJustificatifs('ecriture', id);
+  const justificatifs = await listJustificatifs('ecriture', id);
   const updateAction = updateEcriture.bind(null, id);
 
   return (
@@ -59,9 +59,9 @@ export default async function EcritureDetailPage({ params }: { params: Promise<{
           <EcritureForm
             action={updateAction}
             categories={listCategories()}
-            unites={listUnites()}
+            unites={await listUnites()}
             modesPaiement={listModesPaiement()}
-            activites={listActivites()}
+            activites={await listActivites()}
             ecriture={ecriture}
           />
         </div>

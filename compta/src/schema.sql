@@ -368,3 +368,45 @@ CREATE TABLE IF NOT EXISTS comptaweb_lignes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_cwl_import ON comptaweb_lignes(import_id);
+
+-- =============================================================================
+-- TABLES AUTH (chantier 4, ADR-014)
+-- =============================================================================
+
+-- Sessions d'auth Auth.js (cookie -> user_id). En mode "database sessions".
+CREATE TABLE IF NOT EXISTS sessions (
+    session_token TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    expires TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires);
+
+-- Tokens de magic link Auth.js (Email provider). Consommés à la première
+-- utilisation puis supprimés.
+CREATE TABLE IF NOT EXISTS verification_tokens (
+    identifier TEXT NOT NULL,
+    token TEXT NOT NULL,
+    expires TEXT NOT NULL,
+    PRIMARY KEY (identifier, token)
+);
+
+-- Tokens API long-vie pour clients programmatiques (MCP baloo-compta).
+-- On stocke un hash SHA-256 du token brut (`token_hash`) ; le token brut
+-- n'est montré qu'une seule fois à la génération. `last_used_at` pour
+-- audit. `expires_at` NULL = pas d'expiration.
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    last_used_at TEXT,
+    expires_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    revoked_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash);

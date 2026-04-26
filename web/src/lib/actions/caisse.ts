@@ -7,7 +7,7 @@ import { parseAmount } from '../format';
 
 export async function createMouvementCaisse(formData: FormData) {
   createMouvementCaisseService(
-    { groupId: getCurrentContext().groupId },
+    { groupId: (await getCurrentContext()).groupId },
     {
       date_mouvement: formData.get('date_mouvement') as string,
       description: formData.get('description') as string,

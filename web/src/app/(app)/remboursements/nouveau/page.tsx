@@ -6,8 +6,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { createRemboursement } from '@/lib/actions/remboursements';
 import { listUnites, listModesPaiement } from '@/lib/queries/reference';
 
-export default function NouveauRemboursementPage() {
-  const unites = listUnites();
+export default async function NouveauRemboursementPage() {
+  const unites = await listUnites();
   const modes = listModesPaiement();
 
   return (

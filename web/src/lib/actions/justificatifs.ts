@@ -12,7 +12,7 @@ export async function uploadJustificatif(formData: FormData) {
   if (!file || !entityType || !entityId) return;
 
   await attachJustificatif(
-    { groupId: getCurrentContext().groupId },
+    { groupId: (await getCurrentContext()).groupId },
     {
       entity_type: entityType,
       entity_id: entityId,

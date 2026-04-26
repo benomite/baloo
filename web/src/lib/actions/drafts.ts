@@ -10,7 +10,7 @@ import {
 } from '../services/drafts';
 
 export async function scanDraftsFromComptaweb(): Promise<ScanDraftsResult> {
-  const result = await scanDraftsService({ groupId: getCurrentContext().groupId });
+  const result = await scanDraftsService({ groupId: (await getCurrentContext()).groupId });
   revalidatePath('/ecritures');
   return result;
 }
@@ -20,7 +20,7 @@ export async function syncDraftToComptaweb(
   opts: { dryRun?: boolean } = {},
 ): Promise<SyncDraftResult> {
   const result = await syncDraftService(
-    { groupId: getCurrentContext().groupId },
+    { groupId: (await getCurrentContext()).groupId },
     ecritureId,
     opts,
   );

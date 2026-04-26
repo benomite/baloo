@@ -8,10 +8,12 @@ import type { Remboursement } from '../types';
 
 export type { RemboursementFilters };
 
-export function listRemboursements(filters: RemboursementFilters = {}): Remboursement[] {
-  return listRemboursementsService({ groupId: getCurrentContext().groupId }, filters);
+export async function listRemboursements(filters: RemboursementFilters = {}): Promise<Remboursement[]> {
+  const { groupId } = await getCurrentContext();
+  return listRemboursementsService({ groupId }, filters);
 }
 
-export function getRemboursement(id: string): Remboursement | undefined {
-  return getRemboursementService({ groupId: getCurrentContext().groupId }, id);
+export async function getRemboursement(id: string): Promise<Remboursement | undefined> {
+  const { groupId } = await getCurrentContext();
+  return getRemboursementService({ groupId }, id);
 }

@@ -5,14 +5,19 @@ import {
   listUnites as listUnitesService,
   listActivites as listActivitesService,
 } from '../services/reference';
+import type { Category, Unite, ModePaiement, Activite } from '../types';
 
 export const listCategories = listCategoriesService;
 export const listModesPaiement = listModesPaiementService;
 
-export function listUnites() {
-  return listUnitesService({ groupId: getCurrentContext().groupId });
+export async function listUnites(): Promise<Unite[]> {
+  const { groupId } = await getCurrentContext();
+  return listUnitesService({ groupId });
 }
 
-export function listActivites() {
-  return listActivitesService({ groupId: getCurrentContext().groupId });
+export async function listActivites(): Promise<Activite[]> {
+  const { groupId } = await getCurrentContext();
+  return listActivitesService({ groupId });
 }
+
+export type { Category, ModePaiement };

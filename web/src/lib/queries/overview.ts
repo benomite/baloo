@@ -3,7 +3,7 @@ import { getOverview as getOverviewService, type OverviewData } from '../service
 
 export type { OverviewData };
 
-export function getOverview(): OverviewData {
-  const { groupId } = getCurrentContext();
+export async function getOverview(): Promise<OverviewData> {
+  const { groupId } = await getCurrentContext();
   return getOverviewService({ groupId });
 }

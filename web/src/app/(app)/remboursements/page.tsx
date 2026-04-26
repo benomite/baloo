@@ -8,7 +8,7 @@ import { formatAmount } from '@/lib/format';
 
 export default async function RemboursementsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const params = await searchParams;
-  const remboursements = listRemboursements({
+  const remboursements = await listRemboursements({
     status: params.status || undefined,
     unite_id: params.unite_id || undefined,
     search: params.search || undefined,

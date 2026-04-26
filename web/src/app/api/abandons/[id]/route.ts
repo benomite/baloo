@@ -8,7 +8,9 @@ const patchSchema = z.object({
 });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { groupId } = requireApiContext();
+  const ctxR = await requireApiContext(request);
+  if ('error' in ctxR) return ctxR.error;
+  const { groupId } = ctxR.ctx;
   const { id } = await params;
   const parsed = await parseJsonBody(request, patchSchema);
   if ('error' in parsed) return parsed.error;

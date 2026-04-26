@@ -2,8 +2,10 @@ import { z } from 'zod';
 import { getRemboursement, updateRemboursement } from '@/lib/services/remboursements';
 import { jsonError, parseJsonBody, requireApiContext } from '@/lib/api/route-helpers';
 
-export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { groupId } = requireApiContext();
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const ctxR = await requireApiContext(request);
+  if ('error' in ctxR) return ctxR.error;
+  const { groupId } = ctxR.ctx;
   const { id } = await params;
   const remboursement = getRemboursement({ groupId }, id);
   if (!remboursement) return jsonError('Remboursement introuvable.', 404);
@@ -21,7 +23,9 @@ const patchSchema = z.object({
 });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { groupId } = requireApiContext();
+  const ctxR = await requireApiContext(request);
+  if ('error' in ctxR) return ctxR.error;
+  const { groupId } = ctxR.ctx;
   const { id } = await params;
   const parsed = await parseJsonBody(request, patchSchema);
   if ('error' in parsed) return parsed.error;

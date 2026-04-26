@@ -53,6 +53,8 @@ function migrate(database: Database.Database): void {
   database.exec(
     'CREATE INDEX IF NOT EXISTS idx_ecritures_ligne_bancaire ON ecritures(ligne_bancaire_id, ligne_bancaire_sous_index)',
   );
+  // Auth (chantier 4, ADR-014) : flag de vérification email côté users.
+  ensureColumn(database, 'users', 'email_verified', 'TEXT');
 }
 
 export function nextId(prefix: string, year?: number): string {

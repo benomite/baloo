@@ -11,10 +11,12 @@ export type { EcritureFilters };
 
 export const computeMissingFields = computeMissingFieldsService;
 
-export function listEcritures(filters: EcritureFilters = {}): { ecritures: Ecriture[]; total: number } {
-  return listEcrituresService({ groupId: getCurrentContext().groupId }, filters);
+export async function listEcritures(filters: EcritureFilters = {}): Promise<{ ecritures: Ecriture[]; total: number }> {
+  const { groupId } = await getCurrentContext();
+  return listEcrituresService({ groupId }, filters);
 }
 
-export function getEcriture(id: string): Ecriture | undefined {
-  return getEcritureService({ groupId: getCurrentContext().groupId }, id);
+export async function getEcriture(id: string): Promise<Ecriture | undefined> {
+  const { groupId } = await getCurrentContext();
+  return getEcritureService({ groupId }, id);
 }

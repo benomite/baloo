@@ -17,7 +17,9 @@ const listSchema = z
   .strict();
 
 export async function GET(request: Request) {
-  const { groupId } = requireApiContext();
+  const ctxR = await requireApiContext(request);
+  if ('error' in ctxR) return ctxR.error;
+  const { groupId } = ctxR.ctx;
   const params = Object.fromEntries(new URL(request.url).searchParams);
   const parsed = listSchema.safeParse(params);
   if (!parsed.success) return jsonError('Paramètres invalides.', 400);
@@ -36,7 +38,9 @@ const createSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const { groupId } = requireApiContext();
+  const ctxR = await requireApiContext(request);
+  if ('error' in ctxR) return ctxR.error;
+  const { groupId } = ctxR.ctx;
   const parsed = await parseJsonBody(request, createSchema);
   if ('error' in parsed) return parsed.error;
   const created = createRemboursement({ groupId }, parsed.data);

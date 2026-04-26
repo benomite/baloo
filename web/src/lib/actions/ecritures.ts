@@ -11,7 +11,7 @@ import {
 import { parseAmount } from '../format';
 
 export async function createEcriture(formData: FormData) {
-  const { groupId } = getCurrentContext();
+  const { groupId } = await getCurrentContext();
   const created = createEcritureService(
     { groupId },
     {
@@ -34,7 +34,7 @@ export async function createEcriture(formData: FormData) {
 }
 
 export async function updateEcriture(id: string, formData: FormData) {
-  const { groupId } = getCurrentContext();
+  const { groupId } = await getCurrentContext();
   updateEcritureService(
     { groupId },
     id,
@@ -59,7 +59,7 @@ export async function updateEcriture(id: string, formData: FormData) {
 }
 
 export async function updateEcritureStatus(id: string, status: string) {
-  const { groupId } = getCurrentContext();
+  const { groupId } = await getCurrentContext();
   updateEcritureStatusService(
     { groupId },
     id,

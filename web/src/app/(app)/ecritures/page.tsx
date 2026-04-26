@@ -21,9 +21,9 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     from_bank: params.from_bank === '1',
     limit: 200,
   };
-  const { ecritures, total } = listEcritures(filters);
+  const { ecritures, total } = await listEcritures(filters);
   const categories = listCategories();
-  const unites = listUnites();
+  const unites = await listUnites();
 
   const presetQS = (preset: 'all' | 'incomplete' | 'from_bank') => {
     const sp = new URLSearchParams();

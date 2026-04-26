@@ -10,7 +10,7 @@ import {
 import { parseAmount } from '../format';
 
 export async function createRemboursement(formData: FormData) {
-  const { groupId } = getCurrentContext();
+  const { groupId } = await getCurrentContext();
   const created = createRemboursementService(
     { groupId },
     {
@@ -34,7 +34,7 @@ export async function createRemboursement(formData: FormData) {
 }
 
 export async function updateRemboursementStatus(id: string, status: string) {
-  const { groupId } = getCurrentContext();
+  const { groupId } = await getCurrentContext();
   const today = new Date().toISOString().split('T')[0];
   updateRemboursementService(
     { groupId },

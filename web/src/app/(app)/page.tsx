@@ -4,8 +4,8 @@ import { PageHeader } from '@/components/layout/page-header';
 import { getOverview } from '@/lib/queries/overview';
 import { formatAmount } from '@/lib/format';
 
-export default function DashboardPage() {
-  const data = getOverview();
+export default async function DashboardPage() {
+  const data = await getOverview();
 
   return (
     <div>

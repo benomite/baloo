@@ -13,7 +13,7 @@ Ce document est un **plan d'exécution**, pas un ADR. Les décisions structurell
 | 1. Consolidation services | ✅ fait | 16 services dans `web/src/lib/services/`, queries+actions devenues des shims, MCP tools marqués DEPRECATED. Bugs latents `group_id` corrigés en passant. |
 | 2. Exposition API HTTP | ✅ fait | 26 route handlers dans `web/src/app/api/`, validation zod, helper `web/src/lib/api/route-helpers.ts`. Convention mix REST/RPC. Pas d'auth (suit en chantier 4). |
 | 3. Refonte MCP en client HTTP | ✅ fait | 17 outils sur 19 migrés. `compta/src/api-client.ts` (fetch wrapper) + `utils.ts` (helpers purs). 2 outils Comptaweb (`comptaweb` import CSV, `comptaweb-client` raw) restent en DB-direct jusqu'au chantier 6. |
-| 4. Auth multi-user | ⏳ à faire | Choix de lib (Auth.js, Better Auth, OIDC SGDF) à acter dans un ADR avant code. Remplacement de `BALOO_USER_EMAIL` par session/token. |
+| 4. Auth multi-user | ✅ fait | Auth.js v5 (next-auth@beta), magic link email, sessions DB, custom adapter SQLite. Token Bearer pour le MCP. ADR-014 acte le choix. Cf. `web/src/lib/auth/`, `web/src/app/login/`, `web/scripts/generate-api-token.ts`. |
 | 5. Rôles + vues scopées | ⏳ à faire | Activation `chef_unite`/`parent`, pages `/u/[unite]` et `/moi`, filtres scope dans services + UI. |
 | 6. Upload UI + Comptaweb côté webapp | ⏳ à faire | Permet de retirer `compta/src/comptaweb-client/`, `compta/src/db.ts`, `better-sqlite3`. |
 | 7. Migration BDD + déploiement | ⏳ à faire | SQLite → Postgres (Neon ou autre), VPS/Vercel/Fly. ADR à créer. |
@@ -161,7 +161,19 @@ Le pivot est découpé en **6 chantiers** qui peuvent en partie se chevaucher ma
 
 **Hors scope** : rôles/scopes (chantier 5).
 
-### Chantier 5 — Rôles applicatifs et vues scopées
+**Réalisé (2026-04-26)** :
+- Choix actés dans [ADR-014](decisions.md#adr-014--auth-multi-user--authjs-v5--magic-link--token-mcp) : Auth.js v5, magic link email, custom adapter SQLite, token Bearer pour le MCP.
+- Schéma : 3 tables ajoutées (`sessions`, `verification_tokens`, `api_tokens`) + colonne `email_verified` sur `users`. Migration via `compta/src/db.ts` (idempotent) et `web/src/lib/auth/schema.ts` (idempotent côté web).
+- `web/src/lib/auth/adapter.ts` : adapter custom (~150 lignes) qui mappe l'interface Auth.js sur la table `users` existante. La création de user via Auth.js est volontairement refusée (`createUser` throw) — seuls les users déjà en BDD peuvent se connecter (cf. ADR-014).
+- `web/src/lib/auth/auth.ts` : config NextAuth, magic link provider avec transport conditionnel (SMTP via nodemailer si `EMAIL_SERVER`, sinon log console pour dev).
+- `web/src/app/api/auth/[...nextauth]/route.ts` : handlers Auth.js standards.
+- `web/src/app/login/page.tsx` + `web/src/app/auth/verify/page.tsx` : UI minimale (email + bouton, info "vérifie ta boîte mail").
+- `web/src/lib/auth/api-tokens.ts` + `web/scripts/generate-api-token.ts` : génération CLI d'un token long-vie pour le MCP. Token brut affiché une fois, hash SHA-256 stocké en BDD.
+- `web/src/lib/api/route-helpers.ts` : `requireApiContext` accepte maintenant un `Request`, vérifie d'abord `Authorization: Bearer …` (token MCP) puis le cookie de session, sinon 401.
+- `web/src/lib/context.ts` : lit la session Auth.js au lieu de `BALOO_USER_EMAIL`. Redirect vers `/login` si pas de session. `BALOO_USER_EMAIL` reste utilisé **uniquement** par le seed `compta/scripts/bootstrap.ts` pour créer le premier user.
+- Route group `(app)/` : toutes les pages métier déplacées dedans avec un layout qui call `auth()` et redirige sur /login si pas de session. `/login` et `/auth/verify` restent au root.
+- Toutes les `queries/*.ts` et certains `actions/*.ts` migrés en `async` avec `await getCurrentContext()` ; les pages consommatrices ajustent leurs `await` en conséquence.
+- Templates env mis à jour : `compta/.env.example` documente `BALOO_API_TOKEN` et la procédure de génération ; nouveau `web/.env.example` avec `AUTH_SECRET`, `EMAIL_SERVER`, `EMAIL_FROM`.
 
 **Objectif** : ouvrir l'outil à `chef_unite` et `parent` (cf. [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git) pour le modèle).
 

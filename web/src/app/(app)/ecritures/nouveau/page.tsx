@@ -3,16 +3,16 @@ import { EcritureForm } from '@/components/ecritures/ecriture-form';
 import { createEcriture } from '@/lib/actions/ecritures';
 import { listCategories, listUnites, listModesPaiement, listActivites } from '@/lib/queries/reference';
 
-export default function NouvelleEcriturePage() {
+export default async function NouvelleEcriturePage() {
   return (
     <div>
       <PageHeader title="Nouvelle écriture" />
       <EcritureForm
         action={createEcriture}
         categories={listCategories()}
-        unites={listUnites()}
+        unites={await listUnites()}
         modesPaiement={listModesPaiement()}
-        activites={listActivites()}
+        activites={await listActivites()}
       />
     </div>
   );

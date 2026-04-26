@@ -11,10 +11,10 @@ import { formatAmount } from '@/lib/format';
 
 export default async function RemboursementDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const r = getRemboursement(id);
+  const r = await getRemboursement(id);
   if (!r) notFound();
 
-  const justificatifs = listJustificatifs('remboursement', id);
+  const justificatifs = await listJustificatifs('remboursement', id);
 
   return (
     <div>

@@ -2,8 +2,10 @@ import { z } from 'zod';
 import { getEcriture, updateEcriture } from '@/lib/services/ecritures';
 import { jsonError, parseJsonBody, requireApiContext } from '@/lib/api/route-helpers';
 
-export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { groupId } = requireApiContext();
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const ctxR = await requireApiContext(request);
+  if ('error' in ctxR) return ctxR.error;
+  const { groupId } = ctxR.ctx;
   const { id } = await params;
   const ecriture = getEcriture({ groupId }, id);
   if (!ecriture) return jsonError('Écriture introuvable.', 404);
@@ -26,7 +28,9 @@ const patchSchema = z.object({
 });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { groupId } = requireApiContext();
+  const ctxR = await requireApiContext(request);
+  if ('error' in ctxR) return ctxR.error;
+  const { groupId } = ctxR.ctx;
   const { id } = await params;
   const parsed = await parseJsonBody(request, patchSchema);
   if ('error' in parsed) return parsed.error;
