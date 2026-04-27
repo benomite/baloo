@@ -1,20 +1,21 @@
-import { currentTimestamp, getDb } from '../db.js';
-import { getCurrentContext } from '../context.js';
-
 // Script one-shot : crée des notes topic='outils' avec l'état spécifique
 // des intégrations du groupe courant, en complément de doc/integrations.md
 // (qui ne contient que le générique).
 //
 // Les valeurs ici sont lues dans compta/.env pour rester user-dépendantes.
 
+import { ensureComptawebEnv } from '../src/lib/comptaweb/env-loader';
+import { getDb } from '../src/lib/db';
+import { currentTimestamp } from '../src/lib/ids';
+import { getCliContext } from './cli-context';
+
 function main() {
-  const ctx = getCurrentContext();
-  const env = process.env;
+  ensureComptawebEnv();
+  const ctx = getCliContext();
   const db = getDb();
   const now = currentTimestamp();
 
-  const tresorierMail = env.BALOO_USER_EMAIL ?? '(non défini)';
-  const groupeContact = env.BALOO_GROUP_EMAIL_CONTACT;
+  const groupeContact = process.env.BALOO_GROUP_EMAIL_CONTACT;
 
   const notes: { id: string; title: string; content: string }[] = [
     {
@@ -91,7 +92,7 @@ function main() {
   for (const n of notes) {
     db.prepare(
       `INSERT OR REPLACE INTO notes (id, group_id, user_id, topic, title, content_md, created_at, updated_at)
-       VALUES (?, ?, NULL, 'outils', ?, ?, ?, ?)`
+       VALUES (?, ?, NULL, 'outils', ?, ?, ?, ?)`,
     ).run(n.id, ctx.groupId, n.title, n.content, now, now);
     console.log(`  + note ${n.id}`);
   }

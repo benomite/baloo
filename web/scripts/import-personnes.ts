@@ -1,11 +1,15 @@
+// Import de l'annuaire `mon-groupe/personnes.md` dans la table `personnes`.
+
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { currentTimestamp, getDb } from '../db.js';
-import { getCurrentContext } from '../context.js';
+
+import { getDb } from '../src/lib/db';
+import { currentTimestamp } from '../src/lib/ids';
+import { getCliContext } from './cli-context';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(__dirname, '..', '..', '..');
+const REPO_ROOT = resolve(__dirname, '..', '..');
 
 interface ParsedPersonne {
   prenom: string;
@@ -17,7 +21,7 @@ interface ParsedPersonne {
 function slugify(value: string): string {
   return value
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
@@ -56,13 +60,13 @@ function parsePersonnesMd(raw: string): ParsedPersonne[] {
     const headingMatch = line.match(/^###\s+(.+)$/);
     if (headingMatch) {
       flush();
-      const raw = headingMatch[1].trim();
+      const headerRaw = headingMatch[1].trim();
       // Ignore les titres placeholder type "[Utilisateur de Baloo]"
-      if (raw.startsWith('[')) continue;
+      if (headerRaw.startsWith('[')) continue;
       // Sépare "Prénom Nom — rôle" ou "Prénom — rôle"
-      const emDash = raw.indexOf(' — ');
-      const namePart = emDash !== -1 ? raw.slice(0, emDash).trim() : raw;
-      const rolePartRaw = emDash !== -1 ? raw.slice(emDash + 3).trim() : '';
+      const emDash = headerRaw.indexOf(' — ');
+      const namePart = emDash !== -1 ? headerRaw.slice(0, emDash).trim() : headerRaw;
+      const rolePartRaw = emDash !== -1 ? headerRaw.slice(emDash + 3).trim() : '';
       const nameParts = namePart.split(/\s+/);
       const prenom = nameParts[0];
       const nom = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null;
@@ -101,7 +105,7 @@ function main() {
   const path = resolve(REPO_ROOT, 'mon-groupe', 'personnes.md');
   const raw = readFileSync(path, 'utf-8');
   const personnes = parsePersonnesMd(raw);
-  const ctx = getCurrentContext();
+  const ctx = getCliContext();
   const db = getDb();
   const now = currentTimestamp();
 
@@ -120,7 +124,7 @@ function main() {
     }
     db.prepare(
       `INSERT INTO personnes (id, group_id, prenom, nom, role_groupe, statut, notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'actif', ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, 'actif', ?, ?, ?)`,
     ).run(baseId, ctx.groupId, p.prenom, p.nom, p.role_groupe, p.notes, now, now);
     console.log(`  + ${baseId} [${p.role_groupe ?? 'sans rôle'}] ${p.prenom} ${p.nom ?? ''}`);
     inserted++;

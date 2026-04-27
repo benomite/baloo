@@ -6,14 +6,7 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
-    "bootstrap": "tsx src/scripts/bootstrap.ts",
-    "import:todos": "tsx src/scripts/import-todos.ts",
-    "import:personnes": "tsx src/scripts/import-personnes.ts",
-    "import:comptes": "tsx src/scripts/import-comptes.ts",
-    "import:asso-finances": "tsx src/scripts/import-asso-finances.ts",
-    "import:outils-state": "tsx src/scripts/import-outils-state.ts",
-    "sync:referentiels": "tsx src/scripts/sync-referentiels.ts",
-    "flag:prelevements-auto": "tsx src/scripts/flag-prelevements-auto.ts"
+    "sync:referentiels": "tsx src/scripts/sync-referentiels.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
