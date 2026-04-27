@@ -16,10 +16,10 @@ export interface RemboursementFilters {
   limit?: number;
 }
 
-export function listRemboursements(
+export async function listRemboursements(
   { groupId, scopeUniteId }: RemboursementContext,
   filters: RemboursementFilters = {},
-): Remboursement[] {
+): Promise<Remboursement[]> {
   const conditions: string[] = ['r.group_id = ?'];
   const values: unknown[] = [groupId];
 
@@ -34,7 +34,7 @@ export function listRemboursements(
 
   const where = `WHERE ${conditions.join(' AND ')}`;
 
-  return getDb()
+  return await getDb()
     .prepare(
       `SELECT r.*, u.code as unite_code, m.name as mode_paiement_name
        FROM remboursements r
@@ -43,17 +43,17 @@ export function listRemboursements(
        ${where}
        ORDER BY r.created_at DESC LIMIT ?`,
     )
-    .all(...values, filters.limit ?? 50) as Remboursement[];
+    .all<Remboursement>(...values, filters.limit ?? 50);
 }
 
-export function getRemboursement(
+export async function getRemboursement(
   { groupId, scopeUniteId }: RemboursementContext,
   id: string,
-): Remboursement | undefined {
+): Promise<Remboursement | undefined> {
   const conditions = ['r.id = ?', 'r.group_id = ?'];
   const values: unknown[] = [id, groupId];
   if (scopeUniteId) { conditions.push('r.unite_id = ?'); values.push(scopeUniteId); }
-  return getDb()
+  return await getDb()
     .prepare(
       `SELECT r.*, u.code as unite_code, m.name as mode_paiement_name
        FROM remboursements r
@@ -61,7 +61,7 @@ export function getRemboursement(
        LEFT JOIN modes_paiement m ON m.id = r.mode_paiement_id
        WHERE ${conditions.join(' AND ')}`,
     )
-    .get(...values) as Remboursement | undefined;
+    .get<Remboursement>(...values);
 }
 
 export interface CreateRemboursementInput {
@@ -75,15 +75,15 @@ export interface CreateRemboursementInput {
   notes?: string | null;
 }
 
-export function createRemboursement(
+export async function createRemboursement(
   { groupId }: RemboursementContext,
   input: CreateRemboursementInput,
-): Remboursement {
+): Promise<Remboursement> {
   const db = getDb();
-  const id = nextId('RBT');
+  const id = await nextId('RBT');
   const now = currentTimestamp();
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO remboursements (id, group_id, demandeur, amount_cents, date_depense, nature, unite_id, justificatif_status, mode_paiement_id, notes, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
@@ -101,7 +101,7 @@ export function createRemboursement(
     now,
   );
 
-  return db.prepare('SELECT * FROM remboursements WHERE id = ?').get(id) as Remboursement;
+  return (await db.prepare('SELECT * FROM remboursements WHERE id = ?').get<Remboursement>(id))!;
 }
 
 export interface UpdateRemboursementInput {
@@ -114,11 +114,11 @@ export interface UpdateRemboursementInput {
   notes?: string | null;
 }
 
-export function updateRemboursement(
+export async function updateRemboursement(
   { groupId }: RemboursementContext,
   id: string,
   patch: UpdateRemboursementInput,
-): Remboursement | null {
+): Promise<Remboursement | null> {
   const sets: string[] = [];
   const values: unknown[] = [];
 
@@ -131,18 +131,18 @@ export function updateRemboursement(
   if (patch.notes !== undefined) { sets.push('notes = ?'); values.push(patch.notes); }
 
   if (sets.length === 0) {
-    return getRemboursement({ groupId }, id) ?? null;
+    return (await getRemboursement({ groupId }, id)) ?? null;
   }
 
   sets.push('updated_at = ?');
   values.push(currentTimestamp());
   values.push(id, groupId);
 
-  const result = getDb()
+  const result = await getDb()
     .prepare(`UPDATE remboursements SET ${sets.join(', ')} WHERE id = ? AND group_id = ?`)
     .run(...values);
 
   if (result.changes === 0) return null;
 
-  return getRemboursement({ groupId }, id) ?? null;
+  return (await getRemboursement({ groupId }, id)) ?? null;
 }

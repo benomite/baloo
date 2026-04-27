@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   const params = Object.fromEntries(new URL(request.url).searchParams);
   const parsed = listSchema.safeParse(params);
   if (!parsed.success) return jsonError('Paramètres invalides.', 400);
-  return Response.json(listMouvementsCaisse({ groupId }, parsed.data));
+  return Response.json(await listMouvementsCaisse({ groupId }, parsed.data));
 }
 
 const createSchema = z.object({
@@ -34,6 +34,6 @@ export async function POST(request: Request) {
   const { groupId } = ctxR.ctx;
   const parsed = await parseJsonBody(request, createSchema);
   if ('error' in parsed) return parsed.error;
-  const created = createMouvementCaisse({ groupId }, parsed.data);
+  const created = await createMouvementCaisse({ groupId }, parsed.data);
   return Response.json(created, { status: 201 });
 }

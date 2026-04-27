@@ -29,10 +29,10 @@ export interface ListAbandonsOptions {
   limit?: number;
 }
 
-export function listAbandons(
+export async function listAbandons(
   { groupId, scopeUniteId }: AbandonContext,
   options: ListAbandonsOptions = {},
-): Abandon[] {
+): Promise<Abandon[]> {
   const conditions: string[] = ['a.group_id = ?'];
   const values: unknown[] = [groupId];
 
@@ -40,13 +40,13 @@ export function listAbandons(
   if (options.annee_fiscale) { conditions.push('a.annee_fiscale = ?'); values.push(options.annee_fiscale); }
   if (options.donateur) { conditions.push('a.donateur LIKE ?'); values.push(`%${options.donateur}%`); }
 
-  return getDb().prepare(
+  return await getDb().prepare(
     `SELECT a.*, u.code as unite_code
      FROM abandons_frais a
      LEFT JOIN unites u ON u.id = a.unite_id
      WHERE ${conditions.join(' AND ')}
      ORDER BY a.created_at DESC LIMIT ?`,
-  ).all(...values, options.limit ?? 50) as Abandon[];
+  ).all<Abandon>(...values, options.limit ?? 50);
 }
 
 export interface CreateAbandonInput {
@@ -59,15 +59,15 @@ export interface CreateAbandonInput {
   notes?: string | null;
 }
 
-export function createAbandon(
+export async function createAbandon(
   { groupId }: AbandonContext,
   input: CreateAbandonInput,
-): Abandon {
+): Promise<Abandon> {
   const db = getDb();
-  const id = nextId('ABF');
+  const id = await nextId('ABF');
   const now = currentTimestamp();
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO abandons_frais (id, group_id, donateur, amount_cents, date_depense, nature, unite_id, annee_fiscale, notes, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
@@ -84,7 +84,7 @@ export function createAbandon(
     now,
   );
 
-  return db.prepare('SELECT * FROM abandons_frais WHERE id = ?').get(id) as Abandon;
+  return (await db.prepare('SELECT * FROM abandons_frais WHERE id = ?').get<Abandon>(id))!;
 }
 
 export interface UpdateAbandonInput {
@@ -92,11 +92,11 @@ export interface UpdateAbandonInput {
   notes?: string | null;
 }
 
-export function updateAbandon(
+export async function updateAbandon(
   { groupId }: AbandonContext,
   id: string,
   patch: UpdateAbandonInput,
-): Abandon | null {
+): Promise<Abandon | null> {
   const sets: string[] = [];
   const values: unknown[] = [];
 
@@ -104,21 +104,21 @@ export function updateAbandon(
   if (patch.notes !== undefined) { sets.push('notes = ?'); values.push(patch.notes); }
 
   if (sets.length === 0) {
-    return getDb()
+    return (await getDb()
       .prepare('SELECT * FROM abandons_frais WHERE id = ? AND group_id = ?')
-      .get(id, groupId) as Abandon | null;
+      .get<Abandon>(id, groupId)) ?? null;
   }
 
   sets.push('updated_at = ?');
   values.push(currentTimestamp());
   values.push(id, groupId);
 
-  const result = getDb()
+  const result = await getDb()
     .prepare(`UPDATE abandons_frais SET ${sets.join(', ')} WHERE id = ? AND group_id = ?`)
     .run(...values);
   if (result.changes === 0) return null;
 
-  return getDb()
+  return (await getDb()
     .prepare('SELECT * FROM abandons_frais WHERE id = ?')
-    .get(id) as Abandon;
+    .get<Abandon>(id))!;
 }

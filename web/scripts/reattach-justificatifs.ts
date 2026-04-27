@@ -31,8 +31,8 @@ function getMimeType(filename: string): string | null {
   return mimes[ext] ?? null;
 }
 
-function main() {
-  const ctx = getCliContext();
+async function main() {
+  const ctx = await getCliContext();
   const db = getDb();
 
   const entityTypes = readdirSync(JUSTIFICATIFS_DIR).filter((d) => {
@@ -74,7 +74,7 @@ function main() {
         console.log(`  ?? type inconnu ${entityType}/${entityId}, skip`);
         continue;
       }
-      const entityExists = !!db.prepare(`SELECT 1 FROM ${targetTable} WHERE id = ?`).get(entityId);
+      const entityExists = !!(await db.prepare(`SELECT 1 FROM ${targetTable} WHERE id = ?`).get(entityId));
       if (!entityExists) {
         console.log(`  !! entité absente ${entityType}/${entityId}, skip`);
         skippedMissing++;
@@ -84,7 +84,7 @@ function main() {
       const files = readdirSync(join(typeDir, entityId)).filter((f) => !f.startsWith('.'));
       for (const file of files) {
         const relativePath = join(entityType, entityId, file);
-        const alreadyAttached = db
+        const alreadyAttached = await db
           .prepare(
             'SELECT 1 FROM justificatifs WHERE entity_type = ? AND entity_id = ? AND file_path = ?',
           )
@@ -93,9 +93,9 @@ function main() {
           skippedExisting++;
           continue;
         }
-        const id = nextId('JUS');
+        const id = await nextId('JUS');
         const mimeType = getMimeType(file);
-        db.prepare(
+        await db.prepare(
           `INSERT INTO justificatifs (id, group_id, file_path, original_filename, mime_type, entity_type, entity_id, uploaded_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(id, ctx.groupId, relativePath, file, mimeType, entityType, entityId, currentTimestamp());
@@ -110,4 +110,7 @@ function main() {
   );
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

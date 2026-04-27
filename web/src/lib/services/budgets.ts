@@ -34,18 +34,18 @@ export interface ListBudgetsOptions {
   saison?: string;
 }
 
-export function listBudgets(
+export async function listBudgets(
   { groupId }: BudgetContext,
   options: ListBudgetsOptions = {},
-): Budget[] {
+): Promise<Budget[]> {
   const conditions: string[] = ['group_id = ?'];
   const values: unknown[] = [groupId];
 
   if (options.saison) { conditions.push('saison = ?'); values.push(options.saison); }
 
-  return getDb().prepare(
+  return await getDb().prepare(
     `SELECT * FROM budgets WHERE ${conditions.join(' AND ')} ORDER BY saison DESC`,
-  ).all(...values) as Budget[];
+  ).all<Budget>(...values);
 }
 
 export interface CreateBudgetInput {
@@ -55,14 +55,14 @@ export interface CreateBudgetInput {
   notes?: string | null;
 }
 
-export function createBudget(
+export async function createBudget(
   { groupId }: BudgetContext,
   input: CreateBudgetInput,
-): Budget {
+): Promise<Budget> {
   const id = `bdg-${groupId}-${input.saison}`;
   const now = currentTimestamp();
 
-  getDb().prepare(
+  await getDb().prepare(
     `INSERT INTO budgets (id, group_id, saison, statut, vote_le, notes, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
@@ -76,7 +76,7 @@ export function createBudget(
     now,
   );
 
-  return getDb().prepare('SELECT * FROM budgets WHERE id = ?').get(id) as Budget;
+  return (await getDb().prepare('SELECT * FROM budgets WHERE id = ?').get<Budget>(id))!;
 }
 
 export interface CreateBudgetLigneInput {
@@ -89,11 +89,11 @@ export interface CreateBudgetLigneInput {
   notes?: string | null;
 }
 
-export function createBudgetLigne(input: CreateBudgetLigneInput): BudgetLigne {
+export async function createBudgetLigne(input: CreateBudgetLigneInput): Promise<BudgetLigne> {
   const now = currentTimestamp();
   const id = `bdl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
-  getDb().prepare(
+  await getDb().prepare(
     `INSERT INTO budget_lignes (id, budget_id, unite_id, category_id, libelle, type, amount_cents, notes, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
@@ -109,7 +109,7 @@ export function createBudgetLigne(input: CreateBudgetLigneInput): BudgetLigne {
     now,
   );
 
-  return getDb().prepare('SELECT * FROM budget_lignes WHERE id = ?').get(id) as BudgetLigne;
+  return (await getDb().prepare('SELECT * FROM budget_lignes WHERE id = ?').get<BudgetLigne>(id))!;
 }
 
 export interface BudgetLignesSummary {
@@ -119,11 +119,11 @@ export interface BudgetLignesSummary {
   solde_cents: number;
 }
 
-export function listBudgetLignes(budgetId: string): BudgetLignesSummary {
-  const lignes = getDb().prepare(
+export async function listBudgetLignes(budgetId: string): Promise<BudgetLignesSummary> {
+  const lignes = await getDb().prepare(
     `SELECT id, unite_id, category_id, libelle, type, amount_cents, notes
      FROM budget_lignes WHERE budget_id = ? ORDER BY type, libelle`,
-  ).all(budgetId) as BudgetLigne[];
+  ).all<BudgetLigne>(budgetId);
 
   const total_depenses_cents = lignes.filter((l) => l.type === 'depense').reduce((acc, l) => acc + l.amount_cents, 0);
   const total_recettes_cents = lignes.filter((l) => l.type === 'recette').reduce((acc, l) => acc + l.amount_cents, 0);

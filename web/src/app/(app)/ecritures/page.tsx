@@ -26,9 +26,9 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     limit: 200,
   };
   const { ecritures, total } = await listEcritures(filters);
-  const categories = listCategories();
+  const categories = await listCategories();
   const unites = await listUnites();
-  const modesPaiement = listModesPaiement();
+  const modesPaiement = await listModesPaiement();
   const activites = await listActivites();
   const cartes = await listCartes();
 

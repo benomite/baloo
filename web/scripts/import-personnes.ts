@@ -101,11 +101,11 @@ function parsePersonnesMd(raw: string): ParsedPersonne[] {
   return out;
 }
 
-function main() {
+async function main() {
   const path = resolve(REPO_ROOT, 'mon-groupe', 'personnes.md');
   const raw = readFileSync(path, 'utf-8');
   const personnes = parsePersonnesMd(raw);
-  const ctx = getCliContext();
+  const ctx = await getCliContext();
   const db = getDb();
   const now = currentTimestamp();
 
@@ -114,15 +114,15 @@ function main() {
 
   for (const p of personnes) {
     const baseId = `per-${slugify(p.prenom)}${p.nom ? `-${slugify(p.nom)}` : ''}`;
-    const existing = db
+    const existing = await db
       .prepare('SELECT id FROM personnes WHERE group_id = ? AND prenom = ? AND (nom IS ? OR nom = ?)')
-      .get(ctx.groupId, p.prenom, p.nom, p.nom ?? '') as { id: string } | undefined;
+      .get<{ id: string }>(ctx.groupId, p.prenom, p.nom, p.nom ?? '');
     if (existing) {
       console.log(`  . ${existing.id} (déjà présent) ${p.prenom} ${p.nom ?? ''}`);
       skipped++;
       continue;
     }
-    db.prepare(
+    await db.prepare(
       `INSERT INTO personnes (id, group_id, prenom, nom, role_groupe, statut, notes, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, 'actif', ?, ?, ?)`,
     ).run(baseId, ctx.groupId, p.prenom, p.nom, p.role_groupe, p.notes, now, now);
@@ -133,4 +133,7 @@ function main() {
   console.log(`\nImport terminé : ${inserted} personnes importées, ${skipped} déjà présentes.`);
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

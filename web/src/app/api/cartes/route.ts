@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const params = Object.fromEntries(new URL(request.url).searchParams);
   const parsed = listSchema.safeParse(params);
   if (!parsed.success) return jsonError('Paramètres invalides.', 400);
-  return Response.json(listCartes({ groupId }, parsed.data));
+  return Response.json(await listCartes({ groupId }, parsed.data));
 }
 
 const createSchema = z.object({
@@ -31,6 +31,6 @@ export async function POST(request: Request) {
   const { groupId } = ctxR.ctx;
   const parsed = await parseJsonBody(request, createSchema);
   if ('error' in parsed) return parsed.error;
-  const created = createCarte({ groupId }, parsed.data);
+  const created = await createCarte({ groupId }, parsed.data);
   return Response.json(created, { status: 201 });
 }

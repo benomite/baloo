@@ -32,14 +32,14 @@ const PATTERNS = [
   '%Adhésion fiscalisée%',
 ];
 
-function main() {
+async function main() {
   const apply = process.argv.includes('--apply');
   const db = getDb();
 
   const includeWithJustif = process.argv.includes('--include-with-justif');
 
   const whereLikes = PATTERNS.map(() => 'description LIKE ?').join(' OR ');
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT e.id, e.date_ecriture, e.description, e.amount_cents, e.numero_piece,
               EXISTS(SELECT 1 FROM justificatifs j WHERE j.entity_type='ecriture' AND j.entity_id=e.id) AS has_justif
@@ -49,7 +49,7 @@ function main() {
          AND (${whereLikes})
        ORDER BY e.date_ecriture`,
     )
-    .all(...PATTERNS) as Row[];
+    .all<Row>(...PATTERNS);
 
   if (rows.length === 0) {
     console.log('Aucune dépense ne matche les patterns de prélèvement auto.');
@@ -93,10 +93,13 @@ function main() {
   const now = currentTimestamp();
   const ids = eligible.map((r) => r.id);
   const placeholders = ids.map(() => '?').join(',');
-  const result = db
+  const result = await db
     .prepare(`UPDATE ecritures SET justif_attendu = 0, updated_at = ? WHERE id IN (${placeholders})`)
     .run(now, ...ids);
   console.log(`\n✓ ${result.changes} écriture(s) mises à jour (justif_attendu = 0).`);
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

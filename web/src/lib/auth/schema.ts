@@ -9,11 +9,11 @@ let ensured = false;
 // Depuis le chantier 6, le `web/scripts/bootstrap.ts` est aussi
 // responsable de la création initiale du schéma métier. Ces tables auth
 // y vivent en complément.
-export function ensureAuthSchema(): void {
+export async function ensureAuthSchema(): Promise<void> {
   if (ensured) return;
   const db = getDb();
 
-  db.exec(`
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       session_token TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id),
@@ -45,16 +45,16 @@ export function ensureAuthSchema(): void {
   `);
 
   // Migrations idempotentes sur la table `users`.
-  const cols = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+  const cols = await db.prepare("PRAGMA table_info(users)").all<{ name: string }>();
   const has = (name: string) => cols.some((c) => c.name === name);
   if (!has('email_verified')) {
-    db.exec('ALTER TABLE users ADD COLUMN email_verified TEXT');
+    await db.exec('ALTER TABLE users ADD COLUMN email_verified TEXT');
   }
   // Chantier 5 : scope unitaire d'un chef d'unité ou d'un parent. NULL
   // pour tresorier (vue globale). Le rôle vit déjà dans la colonne `role`
   // (texte libre, valeurs documentées dans `web/src/lib/services/personnes.ts`).
   if (!has('scope_unite_id')) {
-    db.exec('ALTER TABLE users ADD COLUMN scope_unite_id TEXT REFERENCES unites(id)');
+    await db.exec('ALTER TABLE users ADD COLUMN scope_unite_id TEXT REFERENCES unites(id)');
   }
 
   ensured = true;

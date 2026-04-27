@@ -77,20 +77,20 @@ function sectionToStatus(
   return 'en_cours';
 }
 
-function nextTodoId(groupId: string, year: number): string {
+async function nextTodoId(groupId: string, year: number): Promise<string> {
   const prefix = `TODO-${year}-`;
-  const row = getDb()
+  const row = await getDb()
     .prepare(`SELECT id FROM todos WHERE group_id = ? AND id LIKE ? ORDER BY id DESC LIMIT 1`)
-    .get(groupId, `${prefix}%`) as { id: string } | undefined;
+    .get<{ id: string }>(groupId, `${prefix}%`);
   const next = row ? parseInt(row.id.slice(prefix.length), 10) + 1 : 1;
   return `${prefix}${String(next).padStart(3, '0')}`;
 }
 
-function main() {
+async function main() {
   const path = resolve(REPO_ROOT, 'mon-groupe', 'todo.md');
   const raw = readFileSync(path, 'utf-8');
   const todos = parseTodoMd(raw);
-  const ctx = getCliContext();
+  const ctx = await getCliContext();
   const db = getDb();
   const now = currentTimestamp();
   const year = new Date().getFullYear();
@@ -100,15 +100,15 @@ function main() {
 
   for (const todo of todos) {
     const status = sectionToStatus(todo.section, todo.checked);
-    const existing = db
+    const existing = await db
       .prepare('SELECT id FROM todos WHERE group_id = ? AND title = ?')
       .get(ctx.groupId, todo.title);
     if (existing) {
       skipped++;
       continue;
     }
-    const id = nextTodoId(ctx.groupId, year);
-    db.prepare(
+    const id = await nextTodoId(ctx.groupId, year);
+    await db.prepare(
       `INSERT INTO todos (id, group_id, user_id, title, description, status, due_date, completed_at, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
@@ -130,4 +130,7 @@ function main() {
   console.log(`\nImport terminé : ${inserted} tâches importées, ${skipped} déjà présentes (ignorées).`);
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

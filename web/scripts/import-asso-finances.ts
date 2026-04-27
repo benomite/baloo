@@ -41,8 +41,8 @@ function extractEmailFromText(text: string): string | null {
   return m ? m[0] : null;
 }
 
-function main() {
-  const ctx = getCliContext();
+async function main() {
+  const ctx = await getCliContext();
   const db = getDb();
   const now = currentTimestamp();
 
@@ -58,7 +58,7 @@ function main() {
       const email = extractEmailFromText(identite.content.match(/Contact trésorerie[^\n]*/i)?.[0] ?? '');
       const territoire = identite.content.match(/Territoire SGDF de rattachement[^\n]*/i)?.[0]
         ?.match(/\*\*([^*]+)\*\*/)?.[1] ?? null;
-      db.prepare(
+      await db.prepare(
         `UPDATE groupes SET email_contact = COALESCE(?, email_contact), territoire = COALESCE(?, territoire), updated_at = ? WHERE id = ?`,
       ).run(email, territoire, now, ctx.groupId);
       console.log(`  ~ groupe ${ctx.groupId} : email=${email ?? '(inchangé)'}, territoire=${territoire ?? '(inchangé)'}`);
@@ -75,7 +75,7 @@ function main() {
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '')
         .slice(0, 60)}`;
-      db.prepare(
+      await db.prepare(
         `INSERT OR REPLACE INTO notes (id, group_id, user_id, topic, title, content_md, created_at, updated_at)
          VALUES (?, ?, NULL, 'asso', ?, ?, ?, ?)`,
       ).run(id, ctx.groupId, s.title, s.content, now, now);
@@ -91,7 +91,7 @@ function main() {
 
     // Préambule → note
     if (preamble) {
-      db.prepare(
+      await db.prepare(
         `INSERT OR REPLACE INTO notes (id, group_id, user_id, topic, title, content_md, created_at, updated_at)
          VALUES (?, ?, NULL, 'finances', 'Préambule et rappels', ?, ?, ?)`,
       ).run(`note-finances-preambule`, ctx.groupId, preamble, now, now);
@@ -102,7 +102,7 @@ function main() {
     const budget2526 = sections.find((s) => /budget.*2025-2026/i.test(s.title));
     if (budget2526) {
       const bdgId = `bdg-${ctx.groupId}-2025-2026`;
-      db.prepare(
+      await db.prepare(
         `INSERT OR IGNORE INTO budgets (id, group_id, saison, statut, notes, created_at, updated_at)
          VALUES (?, ?, '2025-2026', 'vote', ?, ?, ?)`,
       ).run(bdgId, ctx.groupId, budget2526.content, now, now);
@@ -121,7 +121,7 @@ function main() {
         .replace(/^-+|-+$/g, '')
         .slice(0, 60);
       const id = `note-finances-${slug}`;
-      db.prepare(
+      await db.prepare(
         `INSERT OR REPLACE INTO notes (id, group_id, user_id, topic, title, content_md, created_at, updated_at)
          VALUES (?, ?, NULL, 'finances', ?, ?, ?, ?)`,
       ).run(id, ctx.groupId, s.title, s.content, now, now);
@@ -132,4 +132,7 @@ function main() {
   console.log(`\nImport terminé.`);
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

@@ -18,8 +18,8 @@ export interface Groupe {
   updated_at: string;
 }
 
-export function getGroupe({ groupId }: GroupeContext): Groupe | undefined {
-  return getDb().prepare('SELECT * FROM groupes WHERE id = ?').get(groupId) as Groupe | undefined;
+export async function getGroupe({ groupId }: GroupeContext): Promise<Groupe | undefined> {
+  return await getDb().prepare('SELECT * FROM groupes WHERE id = ?').get<Groupe>(groupId);
 }
 
 export interface UpdateGroupeInput {
@@ -31,10 +31,10 @@ export interface UpdateGroupeInput {
   notes?: string | null;
 }
 
-export function updateGroupe(
+export async function updateGroupe(
   { groupId }: GroupeContext,
   patch: UpdateGroupeInput,
-): Groupe | null {
+): Promise<Groupe | null> {
   const fields: string[] = [];
   const values: unknown[] = [];
 
@@ -45,17 +45,17 @@ export function updateGroupe(
   }
 
   if (fields.length === 0) {
-    return getGroupe({ groupId }) ?? null;
+    return (await getGroupe({ groupId })) ?? null;
   }
 
   fields.push('updated_at = ?');
   values.push(currentTimestamp());
   values.push(groupId);
 
-  const result = getDb()
+  const result = await getDb()
     .prepare(`UPDATE groupes SET ${fields.join(', ')} WHERE id = ?`)
     .run(...values);
   if (result.changes === 0) return null;
 
-  return getGroupe({ groupId }) ?? null;
+  return (await getGroupe({ groupId })) ?? null;
 }

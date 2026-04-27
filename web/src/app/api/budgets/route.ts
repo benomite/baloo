@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   const params = Object.fromEntries(new URL(request.url).searchParams);
   const parsed = listSchema.safeParse(params);
   if (!parsed.success) return jsonError('Paramètres invalides.', 400);
-  return Response.json(listBudgets({ groupId }, parsed.data));
+  return Response.json(await listBudgets({ groupId }, parsed.data));
 }
 
 const createSchema = z.object({
@@ -27,5 +27,5 @@ export async function POST(request: Request) {
   const { groupId } = ctxR.ctx;
   const parsed = await parseJsonBody(request, createSchema);
   if ('error' in parsed) return parsed.error;
-  return Response.json(createBudget({ groupId }, parsed.data), { status: 201 });
+  return Response.json(await createBudget({ groupId }, parsed.data), { status: 201 });
 }

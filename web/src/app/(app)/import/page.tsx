@@ -10,9 +10,9 @@ import { requireAdmin } from '@/lib/auth/access';
 export default async function ImportPage() {
   const ctx = await getCurrentContext();
   requireAdmin(ctx.role);
-  const imports = getDb().prepare(
+  const imports = await getDb().prepare(
     'SELECT * FROM comptaweb_imports ORDER BY import_date DESC'
-  ).all() as { id: string; import_date: string; source_file: string; row_count: number; total_depenses_cents: number; total_recettes_cents: number }[];
+  ).all<{ id: string; import_date: string; source_file: string; row_count: number; total_depenses_cents: number; total_recettes_cents: number }>();
 
   return (
     <div>

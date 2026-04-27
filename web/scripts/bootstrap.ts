@@ -30,16 +30,16 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-function upsertGroupe(
+async function upsertGroupe(
   db: ReturnType<typeof getDb>,
   id: string,
   code: string,
   nom: string,
   territoire: string | null,
   emailContact: string | null,
-): void {
+): Promise<void> {
   const now = currentTimestamp();
-  db.prepare(
+  await db.prepare(
     `INSERT INTO groupes (id, code, nom, territoire, email_contact, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (id) DO UPDATE SET
@@ -50,7 +50,7 @@ function upsertGroupe(
   ).run(id, code, nom, territoire, emailContact, now, now);
 }
 
-function upsertPersonne(
+async function upsertPersonne(
   db: ReturnType<typeof getDb>,
   id: string,
   groupId: string,
@@ -58,9 +58,9 @@ function upsertPersonne(
   nom: string | null,
   email: string,
   roleGroupe: string,
-): void {
+): Promise<void> {
   const now = currentTimestamp();
-  db.prepare(
+  await db.prepare(
     `INSERT INTO personnes (id, group_id, prenom, nom, email, role_groupe, statut, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, 'actif', ?, ?)
      ON CONFLICT (id) DO UPDATE SET
@@ -72,16 +72,16 @@ function upsertPersonne(
   ).run(id, groupId, prenom, nom, email, roleGroupe, now, now);
 }
 
-function upsertUser(
+async function upsertUser(
   db: ReturnType<typeof getDb>,
   id: string,
   groupId: string,
   personId: string | null,
   email: string,
   nomAffichage: string,
-): void {
+): Promise<void> {
   const now = currentTimestamp();
-  db.prepare(
+  await db.prepare(
     `INSERT INTO users (id, group_id, person_id, email, nom_affichage, role, statut, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, 'tresorier', 'actif', ?, ?)
      ON CONFLICT (group_id, email) DO UPDATE SET
@@ -97,7 +97,7 @@ function splitName(full: string): { prenom: string; nom: string | null } {
   return { prenom: parts[0], nom: parts.slice(1).join(' ') };
 }
 
-function main() {
+async function main() {
   ensureComptawebEnv();
   const groupCode = requireEnv('BALOO_GROUP_CODE');
   const groupName = requireEnv('BALOO_GROUP_NAME');
@@ -128,19 +128,19 @@ function main() {
     'Camps',
   ];
 
-  db.transaction(() => {
-    upsertGroupe(db, groupId, groupCode, groupName, groupTerritoire, groupContact);
-    upsertPersonne(db, personId, groupId, prenom, nom, userEmail, 'tresorier');
-    upsertUser(db, userId, groupId, personId, userEmail, userName);
+  await db.transaction(async (txDb) => {
+    await upsertGroupe(txDb, groupId, groupCode, groupName, groupTerritoire, groupContact);
+    await upsertPersonne(txDb, personId, groupId, prenom, nom, userEmail, 'tresorier');
+    await upsertUser(txDb, userId, groupId, personId, userEmail, userName);
 
-    const insertUnite = db.prepare(
+    const insertUnite = txDb.prepare(
       `INSERT OR IGNORE INTO unites (id, group_id, code, name) VALUES (?, ?, ?, ?)`,
     );
     for (const [code, name] of UNITES_SGDF) {
-      insertUnite.run(`u-${groupId}-${code.toLowerCase()}`, groupId, code, name);
+      await insertUnite.run(`u-${groupId}-${code.toLowerCase()}`, groupId, code, name);
     }
 
-    const insertActivite = db.prepare(
+    const insertActivite = txDb.prepare(
       `INSERT OR IGNORE INTO activites (id, group_id, name) VALUES (?, ?, ?)`,
     );
     for (const name of ACTIVITES_DEFAUT) {
@@ -150,9 +150,9 @@ function main() {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '');
-      insertActivite.run(`act-${groupId}-${slug}`, groupId, name);
+      await insertActivite.run(`act-${groupId}-${slug}`, groupId, name);
     }
-  })();
+  });
 
   console.log(
     `Bootstrap OK. Groupe: ${groupId} (${groupName}), user: ${userId} (${userEmail}), personne: ${personId}.`,
@@ -162,4 +162,7 @@ function main() {
   );
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

@@ -69,6 +69,7 @@ Le pivot conceptuel : la webapp porte la BDD, l'API et les règles métier. Le M
 **Livrables** :
 - **Activation effective du multi-tenant** côté webapp (le schéma est prêt depuis [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git), il s'agit d'activer les filtres `group_id` partout dans l'API et l'UI).
 - **Onboarding** de nouveaux groupes (wizard de création de groupe, import de la structure d'unités, peuplement initial).
+- **Credentials externes par user** : table `user_credentials(user_id, service='comptaweb', username_enc, password_enc, cookie_enc)` + UI `/settings/comptaweb` + chiffrement au repos (clé dans env Vercel ou KMS). Aujourd'hui les credentials Comptaweb vivent en env vars partagés (mono-trésorier) — bloquant pour ouvrir à 5+ groupes. Cf. [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git) (placeholder déjà posé) ; ADR dédié au moment de l'impl pour le chiffrement.
 - **Mutualisation infra** : un seul déploiement, plusieurs groupes.
 - **Migration éventuelle** vers un Postgres plus robuste si volumes/concurrence le justifient.
 - **Recherche sémantique** (pgvector ou équivalent) **uniquement** si le besoin s'en fait sentir à ce stade — pas par défaut.

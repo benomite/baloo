@@ -6,7 +6,7 @@ export async function GET(request: Request) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
   const { groupId } = ctxR.ctx;
-  const groupe = getGroupe({ groupId });
+  const groupe = await getGroupe({ groupId });
   if (!groupe) return jsonError('Groupe introuvable.', 404);
   return Response.json(groupe);
 }
@@ -26,7 +26,7 @@ export async function PATCH(request: Request) {
   const { groupId } = ctxR.ctx;
   const parsed = await parseJsonBody(request, patchSchema);
   if ('error' in parsed) return parsed.error;
-  const updated = updateGroupe({ groupId }, parsed.data);
+  const updated = await updateGroupe({ groupId }, parsed.data);
   if (!updated) return jsonError('Groupe introuvable.', 404);
   return Response.json(updated);
 }

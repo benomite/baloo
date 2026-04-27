@@ -50,12 +50,13 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-function nextPersonneId(groupId: string, prenom: string, nom: string | null): string {
+async function nextPersonneId(groupId: string, prenom: string, nom: string | null): Promise<string> {
   const base = `per-${slugify(prenom)}${nom ? `-${slugify(nom)}` : ''}`;
-  const existing = getDb()
+  const existing = await getDb()
     .prepare('SELECT COUNT(*) AS n FROM personnes WHERE group_id = ? AND id LIKE ?')
-    .get(groupId, `${base}%`) as { n: number };
-  return existing.n === 0 ? base : `${base}-${existing.n + 1}`;
+    .get<{ n: number }>(groupId, `${base}%`);
+  const n = existing?.n ?? 0;
+  return n === 0 ? base : `${base}-${n + 1}`;
 }
 
 export interface ListPersonnesOptions {
@@ -64,10 +65,10 @@ export interface ListPersonnesOptions {
   unite_id?: string;
 }
 
-export function listPersonnes(
+export async function listPersonnes(
   { groupId }: PersonneContext,
   options: ListPersonnesOptions = {},
-): Personne[] {
+): Promise<Personne[]> {
   const conditions: string[] = ['group_id = ?'];
   const values: unknown[] = [groupId];
 
@@ -80,9 +81,9 @@ export function listPersonnes(
   if (options.role) { conditions.push('role_groupe = ?'); values.push(options.role); }
   if (options.unite_id) { conditions.push('unite_id = ?'); values.push(options.unite_id); }
 
-  return getDb().prepare(
+  return await getDb().prepare(
     `SELECT * FROM personnes WHERE ${conditions.join(' AND ')} ORDER BY role_groupe, prenom, nom`,
-  ).all(...values) as Personne[];
+  ).all<Personne>(...values);
 }
 
 export interface CreatePersonneInput {
@@ -96,14 +97,14 @@ export interface CreatePersonneInput {
   notes?: string | null;
 }
 
-export function createPersonne(
+export async function createPersonne(
   { groupId }: PersonneContext,
   input: CreatePersonneInput,
-): Personne {
-  const id = nextPersonneId(groupId, input.prenom, input.nom ?? null);
+): Promise<Personne> {
+  const id = await nextPersonneId(groupId, input.prenom, input.nom ?? null);
   const now = currentTimestamp();
 
-  getDb().prepare(
+  await getDb().prepare(
     `INSERT INTO personnes (id, group_id, prenom, nom, email, telephone, role_groupe, unite_id, statut, depuis, notes, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'actif', ?, ?, ?, ?)`,
   ).run(
@@ -121,7 +122,7 @@ export function createPersonne(
     now,
   );
 
-  return getDb().prepare('SELECT * FROM personnes WHERE id = ?').get(id) as Personne;
+  return (await getDb().prepare('SELECT * FROM personnes WHERE id = ?').get<Personne>(id))!;
 }
 
 export interface UpdatePersonneInput {
@@ -137,11 +138,11 @@ export interface UpdatePersonneInput {
   notes?: string | null;
 }
 
-export function updatePersonne(
+export async function updatePersonne(
   { groupId }: PersonneContext,
   id: string,
   patch: UpdatePersonneInput,
-): Personne | null {
+): Promise<Personne | null> {
   const fields: string[] = [];
   const values: unknown[] = [];
 
@@ -152,19 +153,19 @@ export function updatePersonne(
   }
 
   if (fields.length === 0) {
-    return getDb()
+    return (await getDb()
       .prepare('SELECT * FROM personnes WHERE id = ? AND group_id = ?')
-      .get(id, groupId) as Personne | null;
+      .get<Personne>(id, groupId)) ?? null;
   }
 
   fields.push('updated_at = ?');
   values.push(currentTimestamp());
   values.push(id, groupId);
 
-  const result = getDb()
+  const result = await getDb()
     .prepare(`UPDATE personnes SET ${fields.join(', ')} WHERE id = ? AND group_id = ?`)
     .run(...values);
   if (result.changes === 0) return null;
 
-  return getDb().prepare('SELECT * FROM personnes WHERE id = ?').get(id) as Personne;
+  return (await getDb().prepare('SELECT * FROM personnes WHERE id = ?').get<Personne>(id))!;
 }

@@ -8,28 +8,28 @@ export interface ReferenceContext {
 // categories et modes_paiement sont des référentiels SGDF nationaux : pas de
 // group_id, mêmes valeurs pour tous les groupes.
 
-export function listCategories(): Category[] {
-  return getDb()
+export async function listCategories(): Promise<Category[]> {
+  return await getDb()
     .prepare('SELECT id, name, type, comptaweb_nature FROM categories ORDER BY name')
-    .all() as Category[];
+    .all<Category>();
 }
 
-export function listModesPaiement(): ModePaiement[] {
-  return getDb()
+export async function listModesPaiement(): Promise<ModePaiement[]> {
+  return await getDb()
     .prepare('SELECT id, name FROM modes_paiement ORDER BY name')
-    .all() as ModePaiement[];
+    .all<ModePaiement>();
 }
 
 // unites et activites sont spécifiques au groupe (group_id NOT NULL).
 
-export function listUnites({ groupId }: ReferenceContext): Unite[] {
-  return getDb()
+export async function listUnites({ groupId }: ReferenceContext): Promise<Unite[]> {
+  return await getDb()
     .prepare('SELECT id, code, name, couleur FROM unites WHERE group_id = ? ORDER BY code')
-    .all(groupId) as Unite[];
+    .all<Unite>(groupId);
 }
 
-export function listActivites({ groupId }: ReferenceContext): Activite[] {
-  return getDb()
+export async function listActivites({ groupId }: ReferenceContext): Promise<Activite[]> {
+  return await getDb()
     .prepare('SELECT id, name FROM activites WHERE group_id = ? ORDER BY name')
-    .all(groupId) as Activite[];
+    .all<Activite>(groupId);
 }

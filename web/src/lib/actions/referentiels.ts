@@ -30,7 +30,7 @@ export async function syncReferentielsFromComptaweb(): Promise<SyncActionResult>
       const c = await fetchAllCartes(cfg);
       return [r, c] as const;
     });
-    const report = applyReferentielsSync(
+    const report = await applyReferentielsSync(
       getDb(),
       ctx.groupId,
       {

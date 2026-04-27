@@ -11,7 +11,7 @@ import { parseAmount } from '../format';
 
 export async function createRemboursement(formData: FormData) {
   const { groupId, scopeUniteId } = await getCurrentContext();
-  const created = createRemboursementService(
+  const created = await createRemboursementService(
     { groupId, scopeUniteId },
     {
       demandeur: formData.get('demandeur') as string,
@@ -36,7 +36,7 @@ export async function createRemboursement(formData: FormData) {
 export async function updateRemboursementStatus(id: string, status: string) {
   const { groupId, scopeUniteId } = await getCurrentContext();
   const today = new Date().toISOString().split('T')[0];
-  updateRemboursementService(
+  await updateRemboursementService(
     { groupId, scopeUniteId },
     id,
     {

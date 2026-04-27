@@ -130,11 +130,11 @@ function attrsToNotes(attrs: ParsedAttr[]): string {
   return lines.join('\n');
 }
 
-function main() {
+async function main() {
   const path = resolve(REPO_ROOT, 'mon-groupe', 'comptes.md');
   const raw = readFileSync(path, 'utf-8');
   const { sections, preamble } = parseMd(raw);
-  const ctx = getCliContext();
+  const ctx = await getCliContext();
   const db = getDb();
   const now = currentTimestamp();
 
@@ -145,7 +145,7 @@ function main() {
   const preambleText = preamble.join('\n').trim();
   if (preambleText) {
     const id = `note-comptes-preambule`;
-    db.prepare(
+    await db.prepare(
       `INSERT OR REPLACE INTO notes (id, group_id, user_id, topic, title, content_md, created_at, updated_at)
        VALUES (?, ?, NULL, 'comptes', 'Préambule et contexte', ?, ?, ?)`,
     ).run(id, ctx.groupId, preambleText, now, now);
@@ -171,7 +171,7 @@ function main() {
         const notesFull = [extraNotes, freeNotes, hints].filter(Boolean).join('\n\n');
 
         const id = `cpt-${code || 'compte'}`;
-        db.prepare(
+        await db.prepare(
           `INSERT OR REPLACE INTO comptes_bancaires (id, group_id, code, nom, banque, iban, bic, type_compte, statut, notes, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'actif', ?, ?, ?)`,
         ).run(
@@ -195,7 +195,7 @@ function main() {
       const content = section.rawMd.join('\n').trim();
       if (!content) continue;
       const id = `note-comptes-${slugify(section.title)}`;
-      db.prepare(
+      await db.prepare(
         `INSERT OR REPLACE INTO notes (id, group_id, user_id, topic, title, content_md, created_at, updated_at)
          VALUES (?, ?, NULL, 'comptes', ?, ?, ?, ?)`,
       ).run(id, ctx.groupId, section.title, content, now, now);
@@ -207,4 +207,7 @@ function main() {
   console.log(`\nImport terminé : ${comptesInserted} comptes, ${notesInserted} notes.`);
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

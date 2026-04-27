@@ -10,23 +10,23 @@ export interface ListMouvementsCaisseOptions {
   limit?: number;
 }
 
-export function listMouvementsCaisse(
+export async function listMouvementsCaisse(
   { groupId }: CaisseContext,
   { limit = 50 }: ListMouvementsCaisseOptions = {},
-): { mouvements: MouvementCaisse[]; solde: number } {
+): Promise<{ mouvements: MouvementCaisse[]; solde: number }> {
   const db = getDb();
 
-  const mouvements = db
+  const mouvements = await db
     .prepare(
       'SELECT * FROM mouvements_caisse WHERE group_id = ? ORDER BY date_mouvement DESC, created_at DESC LIMIT ?',
     )
-    .all(groupId, limit) as MouvementCaisse[];
+    .all<MouvementCaisse>(groupId, limit);
 
-  const soldeRow = db
+  const soldeRow = await db
     .prepare('SELECT COALESCE(SUM(amount_cents), 0) as total FROM mouvements_caisse WHERE group_id = ?')
-    .get(groupId) as { total: number };
+    .get<{ total: number }>(groupId);
 
-  return { mouvements, solde: soldeRow.total };
+  return { mouvements, solde: soldeRow?.total ?? 0 };
 }
 
 export interface CreateMouvementCaisseInput {
@@ -36,23 +36,23 @@ export interface CreateMouvementCaisseInput {
   notes?: string | null;
 }
 
-export function createMouvementCaisse(
+export async function createMouvementCaisse(
   { groupId }: CaisseContext,
   input: CreateMouvementCaisseInput,
-): MouvementCaisse {
+): Promise<MouvementCaisse> {
   const db = getDb();
-  const id = nextId('CAI');
+  const id = await nextId('CAI');
   const now = currentTimestamp();
 
-  const soldeBefore = db
+  const soldeBefore = await db
     .prepare('SELECT COALESCE(SUM(amount_cents), 0) as total FROM mouvements_caisse WHERE group_id = ?')
-    .get(groupId) as { total: number };
-  const soldeAfter = soldeBefore.total + input.amount_cents;
+    .get<{ total: number }>(groupId);
+  const soldeAfter = (soldeBefore?.total ?? 0) + input.amount_cents;
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO mouvements_caisse (id, group_id, date_mouvement, description, amount_cents, solde_apres_cents, notes, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(id, groupId, input.date_mouvement, input.description, input.amount_cents, soldeAfter, input.notes ?? null, now);
 
-  return db.prepare('SELECT * FROM mouvements_caisse WHERE id = ?').get(id) as MouvementCaisse;
+  return (await db.prepare('SELECT * FROM mouvements_caisse WHERE id = ?').get<MouvementCaisse>(id))!;
 }

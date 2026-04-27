@@ -9,9 +9,9 @@ import { getDb } from '../src/lib/db';
 import { currentTimestamp } from '../src/lib/ids';
 import { getCliContext } from './cli-context';
 
-function main() {
+async function main() {
   ensureComptawebEnv();
-  const ctx = getCliContext();
+  const ctx = await getCliContext();
   const db = getDb();
   const now = currentTimestamp();
 
@@ -90,7 +90,7 @@ function main() {
   ];
 
   for (const n of notes) {
-    db.prepare(
+    await db.prepare(
       `INSERT OR REPLACE INTO notes (id, group_id, user_id, topic, title, content_md, created_at, updated_at)
        VALUES (?, ?, NULL, 'outils', ?, ?, ?, ?)`,
     ).run(n.id, ctx.groupId, n.title, n.content, now, now);
@@ -99,4 +99,7 @@ function main() {
   console.log(`\nImport terminé : ${notes.length} notes 'outils'.`);
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

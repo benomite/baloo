@@ -7,7 +7,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if ('error' in ctxR) return ctxR.error;
   const { groupId, scopeUniteId } = ctxR.ctx;
   const { id } = await params;
-  const remboursement = getRemboursement({ groupId, scopeUniteId }, id);
+  const remboursement = await getRemboursement({ groupId, scopeUniteId }, id);
   if (!remboursement) return jsonError('Remboursement introuvable.', 404);
   return Response.json(remboursement);
 }
@@ -29,7 +29,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { id } = await params;
   const parsed = await parseJsonBody(request, patchSchema);
   if ('error' in parsed) return parsed.error;
-  const updated = updateRemboursement({ groupId, scopeUniteId }, id, parsed.data);
+  const updated = await updateRemboursement({ groupId, scopeUniteId }, id, parsed.data);
   if (!updated) return jsonError('Remboursement introuvable.', 404);
   return Response.json(updated);
 }

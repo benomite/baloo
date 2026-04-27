@@ -58,9 +58,9 @@ export default async function EcritureDetailPage({ params }: { params: Promise<{
           <h2 className="text-lg font-semibold mb-4">Modifier</h2>
           <EcritureForm
             action={updateAction}
-            categories={listCategories()}
+            categories={await listCategories()}
             unites={await listUnites()}
-            modesPaiement={listModesPaiement()}
+            modesPaiement={await listModesPaiement()}
             activites={await listActivites()}
             cartes={await listCartes()}
             ecriture={ecriture}
