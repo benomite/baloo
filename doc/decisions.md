@@ -539,4 +539,93 @@ Quatre options ont été examinées :
 
 ---
 
+## ADR-017 — BDD production : SQLite hébergée (Turso) plutôt que Postgres
+**Date** : 2026-04-27
+**Statut** : accepté
+
+**Contexte** : le chantier 7 du pivot P2 (cf. [`p2-pivot-webapp.md`](p2-pivot-webapp.md)) doit sortir SQLite du dev local pour pouvoir héberger la webapp. Trois familles d'options ont été examinées :
+
+1. **SQLite hébergée** : Turso (libsql avec SDK HTTP) ou LiteFS (montage FUSE distribué sur Fly.io).
+2. **Postgres managé** : Neon (serverless, branches), Supabase (DB + auth + storage), Fly Postgres.
+3. **SQLite tel quel sur VPS** : on garde `better-sqlite3` + fichier `.db` sur le disque du VPS.
+
+L'audit de portabilité montre que migrer le code vers Postgres demande **~3-4 semaines** d'effort à cause de la conversion synchrone → async (97 appels `getDb()` dans 26 fichiers, 4 sites `db.transaction`, plus l'abstraction de `PRAGMA table_info`). Coût très élevé pour un MVP intra-groupe.
+
+Côté usage : 1 groupe SGDF, ~500 écritures/an, données mostly write-once-read-many, 5-10 users actifs. La charge est minuscule comparée aux limites de SQLite.
+
+**Décision** :
+
+1. **Turso en production** (`@libsql/client` SDK HTTP). On garde `better-sqlite3` en dev local — Turso expose une API libsql 100% compatible SQLite côté SQL.
+2. Plus précisément :
+   - Dev : `DB_PATH=../data/baloo.db` (better-sqlite3 → fichier local).
+   - Prod : `DB_URL=libsql://<groupe>.turso.io` + `DB_AUTH_TOKEN=...` (libsql HTTP).
+   - Adapter `web/src/lib/db.ts` pour exposer un client unifié.
+3. **Pas de Postgres au MVP** — option remise sur la table en P3 (multi-groupes), où l'effort async devient justifiable.
+4. **Stockage justifs** : reste en local au MVP. Si l'instance prod est serverless (Vercel), basculer vers blob storage — à arbitrer dans ADR-018.
+
+**Raisons** :
+
+- Turso = SQLite avec API HTTP : zéro refactoring async côté code.
+- Coût marginal : free tier généreux (500 BDD, 9 GB). On n'en utilisera qu'une.
+- Backups quotidiens managés par Turso, pas d'opérations à gérer.
+- Branches BDD (style git) pour les migrations risquées en prod.
+- Réversible : si on bascule sur Postgres en P3, l'audit de portabilité reste à faire mais le coût est connu.
+
+**Conséquences** :
+
+- **Refactoring async** : `@libsql/client` expose une API async (`await client.execute(...)`). better-sqlite3 est synchrone. Donc passer à libsql impose de convertir les ~97 appels `getDb().prepare().run/get/all()` synchrones en async (et la cascade de `await` dans tous les call-sites). Coût estimé : 3-4 semaines en mode rigoureux, plus rapide en mode automatisé. **C'est le coût qu'on a accepté** : le payback est qu'à terme, basculer sur Postgres en P3 devient gratuit (le refacto async est déjà fait).
+- `web/src/lib/db.ts` exporte un client `Database` unifié — wrapper minimal qui imite l'API `prepare/run/get/all/transaction/exec/pragma` mais async. Permet une conversion mécanique du reste du code.
+- Driver : `@libsql/client` avec `url: 'file:./data/baloo.db'` en dev (lit/écrit fichier local sans HTTP) et `url: 'libsql://...'` + `authToken` en prod.
+- `ensureColumn` (migrations idempotentes) : libsql supporte `PRAGMA table_info` à l'identique.
+- `db.transaction(...)` : libsql expose `client.transaction('write')` qui retourne un objet avec `commit()`/`rollback()`. Wrapper à écrire pour préserver le pattern existant.
+- Documentation `doc/distribution.md` à mettre à jour avec la procédure de provisioning Turso.
+
+**Liens** :
+- [`p2-pivot-webapp.md`](p2-pivot-webapp.md) — chantier 7
+- [ADR-010](#adr-010--outil-compta--sqlite--serveur-mcp-nodejstypescript) — choix initial SQLite
+- [ADR-018](#adr-018--hébergement--vercel--turso-pour-le-mvp-intra-groupe) — hébergement
+
+---
+
+## ADR-018 — Hébergement : Vercel + Turso pour le MVP intra-groupe
+**Date** : 2026-04-27
+**Statut** : accepté
+
+**Contexte** : suite à [ADR-017](#adr-017--bdd-production--sqlite-hébergée-turso-plutôt-que-postgres) (Turso retenu pour la BDD), il faut héberger la webapp Next.js. Trois options examinées :
+
+1. **Vercel** (managed PaaS) — déploiement par git push, env vars dans le dashboard, CDN intégré. Free tier (Hobby) ou ~$20/mois (Pro).
+2. **VPS Hetzner CX11** (~5 €/mois) — Docker compose (Next.js + Caddy/Nginx), contrôle total, demande des compétences DevOps.
+3. **Fly.io** — entre les deux, pricing à l'usage (~$5/mois shared-cpu).
+
+Charge attendue : 5-10 users actifs intra-groupe, pas de pic, accès depuis France métropolitaine. Trésorier bénévole = budget ops proche de zéro en heures comme en euros.
+
+**Décision** :
+
+1. **Vercel Hobby** au MVP. Gratuit pour usage non commercial (le projet est associatif). À surveiller : si Vercel reclasse, basculer vers Hobby payant ($20/mois) ou Hetzner.
+2. **Stockage justifs** : Vercel Blob (S3-compatible managé, ~$0.15/GB/mois). Service `web/src/lib/services/justificatifs.ts` adapté pour deux backends (FS local en dev, Vercel Blob en prod) selon env.
+3. **Domaine** : `baloo.benomite.com` (sous-domaine d'un domaine personnel existant, configuré en CNAME vers Vercel). Pas de coût supplémentaire.
+4. **Magic link en prod** : SMTP via Resend (free tier 100/jour, 3000/mois) ou Brevo (300/jour). `EMAIL_SERVER` côté env Vercel.
+5. **Backups** : Turso fournit des backups quotidiens. `git push` reste notre source canonique pour le code.
+
+**Raisons** :
+
+- Vercel + Next.js = intégration native, support SSR/ISR/Edge prêt.
+- Hetzner aurait demandé ~4h/mois d'ops (patches OS, certs, monitoring), incompatible avec un MVP bénévole.
+- Free tier réellement gratuit pour un usage 5-10 users.
+- Magic link via Resend reste gratuit pour le volume attendu.
+
+**Conséquences** :
+
+- Nouvelle dépendance `@vercel/blob` côté `web/`. Service `justificatifs.ts` adapté.
+- Env vars Vercel à provisionner : `AUTH_SECRET`, `DB_URL`, `DB_AUTH_TOKEN`, `BLOB_READ_WRITE_TOKEN`, `EMAIL_SERVER`, `EMAIL_FROM`, `BALOO_USER_EMAIL` (compat scripts CLI).
+- Le serveur MCP `baloo-compta` continue de tourner en local (machine du trésorier) et appelle Vercel via HTTPS : `BALOO_API_URL=https://baloo.benomite.com`.
+- Si Vercel devient payant pour notre usage, on reste libres de basculer vers Hetzner — la stack Next.js + Turso est portable.
+
+**Liens** :
+- [`p2-pivot-webapp.md`](p2-pivot-webapp.md) — chantier 7
+- [ADR-017](#adr-017--bdd-production--sqlite-hébergée-turso-plutôt-que-postgres)
+- [ADR-016](#adr-016--auth-multi-user--authjs-v5--magic-link--token-mcp) — magic link compat Resend SMTP
+
+---
+
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*

@@ -16,7 +16,7 @@ Ce document est un **plan d'exécution**, pas un ADR. Les décisions structurell
 | 4. Auth multi-user | ✅ fait | Auth.js v5 (next-auth@beta), magic link email, sessions DB, custom adapter SQLite. Token Bearer pour le MCP. ADR-016 acte le choix. Cf. `web/src/lib/auth/`, `web/src/app/login/`, `web/scripts/generate-api-token.ts`. |
 | 5. Rôles + vues scopées | ✅ fait | Filtre `scope_unite_id` propagé dans `services/{ecritures,remboursements,abandons}`, sidebar conditionnelle, garde role côté pages, espace parent `/moi`, script CLI `set-user-role`. Pas de page `/u/[unite]` dédiée — les pages globales filtrent automatiquement. Modèle parent (filtre `personne_id`) reporté au besoin réel. |
 | 6. Comptaweb côté webapp + vidage `compta/` | ✅ fait | 6 routes `/api/comptaweb/*`, 6 tools MCP migrés en HTTP, scripts admin déplacés vers `web/scripts/` (avec helper `cli-context.ts`), `compta/src/comptaweb-client/` + `db.ts` + `schema.sql` + `seed.sql` supprimés, `better-sqlite3` retiré du `compta/package.json`. Le serveur MCP est un client HTTP minimaliste (~250 lignes). |
-| 7. Migration BDD + déploiement | ⏳ à faire | SQLite → Postgres (Neon ou autre), VPS/Vercel/Fly. ADR à créer. Page upload justif côté UI (chef d'unité) — partiellement présente sur `(app)/ecritures/[id]`, à formaliser. |
+| 7. Migration BDD + déploiement | 🟡 ADRs proposés | Choix actés en ADR-017 (Turso pour la BDD prod) et ADR-018 (Vercel + Vercel Blob pour l'hébergement). Reste à coder l'adaptation `db.ts` libsql, `justificatifs.ts` Vercel Blob, doc déploiement. |
 
 Tant que le chantier 7 n'est pas fait, le système tourne en **mode dev local** :
 - La webapp est la source de vérité opérationnelle pour toutes les opérations.
