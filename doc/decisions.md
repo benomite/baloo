@@ -541,7 +541,7 @@ Quatre options ont été examinées :
 
 ## ADR-017 — BDD production : SQLite hébergée (Turso) plutôt que Postgres
 **Date** : 2026-04-27
-**Statut** : proposé
+**Statut** : accepté
 
 **Contexte** : le chantier 7 du pivot P2 (cf. [`p2-pivot-webapp.md`](p2-pivot-webapp.md)) doit sortir SQLite du dev local pour pouvoir héberger la webapp. Trois familles d'options ont été examinées :
 
@@ -573,10 +573,11 @@ Côté usage : 1 groupe SGDF, ~500 écritures/an, données mostly write-once-rea
 
 **Conséquences** :
 
-- Adaptation `web/src/lib/db.ts` : détection d'env (file path local vs URL libsql) + bascule du driver. ~50 lignes.
-- Nouvelle dépendance `@libsql/client` (uniquement utilisée si `DB_URL` configurée).
+- **Refactoring async** : `@libsql/client` expose une API async (`await client.execute(...)`). better-sqlite3 est synchrone. Donc passer à libsql impose de convertir les ~97 appels `getDb().prepare().run/get/all()` synchrones en async (et la cascade de `await` dans tous les call-sites). Coût estimé : 3-4 semaines en mode rigoureux, plus rapide en mode automatisé. **C'est le coût qu'on a accepté** : le payback est qu'à terme, basculer sur Postgres en P3 devient gratuit (le refacto async est déjà fait).
+- `web/src/lib/db.ts` exporte un client `Database` unifié — wrapper minimal qui imite l'API `prepare/run/get/all/transaction/exec/pragma` mais async. Permet une conversion mécanique du reste du code.
+- Driver : `@libsql/client` avec `url: 'file:./data/baloo.db'` en dev (lit/écrit fichier local sans HTTP) et `url: 'libsql://...'` + `authToken` en prod.
 - `ensureColumn` (migrations idempotentes) : libsql supporte `PRAGMA table_info` à l'identique.
-- `db.transaction(...)` : libsql supporte les transactions, syntaxe identique.
+- `db.transaction(...)` : libsql expose `client.transaction('write')` qui retourne un objet avec `commit()`/`rollback()`. Wrapper à écrire pour préserver le pattern existant.
 - Documentation `doc/distribution.md` à mettre à jour avec la procédure de provisioning Turso.
 
 **Liens** :
@@ -588,7 +589,7 @@ Côté usage : 1 groupe SGDF, ~500 écritures/an, données mostly write-once-rea
 
 ## ADR-018 — Hébergement : Vercel + Turso pour le MVP intra-groupe
 **Date** : 2026-04-27
-**Statut** : proposé
+**Statut** : accepté
 
 **Contexte** : suite à [ADR-017](#adr-017--bdd-production--sqlite-hébergée-turso-plutôt-que-postgres) (Turso retenu pour la BDD), il faut héberger la webapp Next.js. Trois options examinées :
 
@@ -602,7 +603,7 @@ Charge attendue : 5-10 users actifs intra-groupe, pas de pic, accès depuis Fran
 
 1. **Vercel Hobby** au MVP. Gratuit pour usage non commercial (le projet est associatif). À surveiller : si Vercel reclasse, basculer vers Hobby payant ($20/mois) ou Hetzner.
 2. **Stockage justifs** : Vercel Blob (S3-compatible managé, ~$0.15/GB/mois). Service `web/src/lib/services/justificatifs.ts` adapté pour deux backends (FS local en dev, Vercel Blob en prod) selon env.
-3. **Domaine** : sous-domaine fourni par Vercel au démarrage (`baloo-<groupe>.vercel.app`). Domaine custom (~10 €/an) reportable.
+3. **Domaine** : `baloo.benomite.com` (sous-domaine d'un domaine personnel existant, configuré en CNAME vers Vercel). Pas de coût supplémentaire.
 4. **Magic link en prod** : SMTP via Resend (free tier 100/jour, 3000/mois) ou Brevo (300/jour). `EMAIL_SERVER` côté env Vercel.
 5. **Backups** : Turso fournit des backups quotidiens. `git push` reste notre source canonique pour le code.
 
@@ -617,7 +618,7 @@ Charge attendue : 5-10 users actifs intra-groupe, pas de pic, accès depuis Fran
 
 - Nouvelle dépendance `@vercel/blob` côté `web/`. Service `justificatifs.ts` adapté.
 - Env vars Vercel à provisionner : `AUTH_SECRET`, `DB_URL`, `DB_AUTH_TOKEN`, `BLOB_READ_WRITE_TOKEN`, `EMAIL_SERVER`, `EMAIL_FROM`, `BALOO_USER_EMAIL` (compat scripts CLI).
-- Le serveur MCP `baloo-compta` continue de tourner en local (machine du trésorier) et appelle Vercel via HTTPS : `BALOO_API_URL=https://baloo-<groupe>.vercel.app`.
+- Le serveur MCP `baloo-compta` continue de tourner en local (machine du trésorier) et appelle Vercel via HTTPS : `BALOO_API_URL=https://baloo.benomite.com`.
 - Si Vercel devient payant pour notre usage, on reste libres de basculer vers Hetzner — la stack Next.js + Turso est portable.
 
 **Liens** :
