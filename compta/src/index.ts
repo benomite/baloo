@@ -27,11 +27,9 @@ const server = new McpServer({
   version: '0.1.0',
 });
 
-// Note (chantier 3) : la majorité des outils ne touche plus la BDD locale —
-// ils appellent l'API HTTP webapp via `api-client.ts`. Les outils Comptaweb
-// CSV/raw (`comptaweb`, `comptaweb-client`) gardent leur dépendance directe
-// à `getDb()` jusqu'au chantier 6 (déplacement complet côté webapp). La BDD
-// locale est ouverte de façon paresseuse au premier appel concerné.
+// Note (chantier 6) : tous les tools MCP appellent désormais l'API HTTP
+// webapp via `api-client.ts`. Aucun n'ouvre la BDD locale. Le client
+// Comptaweb (scraping HTML) vit côté webapp seul (`web/src/lib/comptaweb/`).
 
 registerReferenceTools(server);
 registerOverviewTools(server);

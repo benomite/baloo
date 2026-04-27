@@ -1,16 +1,23 @@
+// Import des comptes bancaires depuis `mon-groupe/comptes.md`.
+// Chaque sous-section ### sous une H2 "Comptes bancaires"/"Livrets"/"Caisse"
+// devient une ligne `comptes_bancaires`. Les sections narratives deviennent
+// des notes topic='comptes'.
+
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { currentTimestamp, getDb } from '../db.js';
-import { getCurrentContext } from '../context.js';
+
+import { getDb } from '../src/lib/db';
+import { currentTimestamp } from '../src/lib/ids';
+import { getCliContext } from './cli-context';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(__dirname, '..', '..', '..');
+const REPO_ROOT = resolve(__dirname, '..', '..');
 
 function slugify(value: string): string {
   return value
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
@@ -54,7 +61,12 @@ function parseMd(raw: string): { sections: ParsedSection[]; preamble: string[] }
       flushCompte();
       const title = h2[1].trim();
       currentSection = {
-        kind: title.toLowerCase().startsWith('comptes bancaires') || title.toLowerCase().startsWith('livrets') || title.toLowerCase().startsWith('caisse') ? 'compte' : 'section',
+        kind:
+          title.toLowerCase().startsWith('comptes bancaires') ||
+          title.toLowerCase().startsWith('livrets') ||
+          title.toLowerCase().startsWith('caisse')
+            ? 'compte'
+            : 'section',
         title,
         comptes: [],
         rawMd: [],
@@ -108,10 +120,8 @@ function mapAttrToColumn(key: string, value: string): Partial<Record<string, str
   return {};
 }
 
-function attrsToNotes(attrs: ParsedAttr[], mapped: Record<string, unknown>): string {
+function attrsToNotes(attrs: ParsedAttr[]): string {
   const lines: string[] = [];
-  const mappedKeys = Object.keys(mapped);
-  const alreadyMapped = new Set(['banque', 'iban', 'bic', 'type_compte']);
   for (const attr of attrs) {
     const k = attr.key.toLowerCase();
     if (k === 'banque' || k === 'iban' || k === 'bic' || k === 'type') continue;
@@ -124,7 +134,7 @@ function main() {
   const path = resolve(REPO_ROOT, 'mon-groupe', 'comptes.md');
   const raw = readFileSync(path, 'utf-8');
   const { sections, preamble } = parseMd(raw);
-  const ctx = getCurrentContext();
+  const ctx = getCliContext();
   const db = getDb();
   const now = currentTimestamp();
 
@@ -137,7 +147,7 @@ function main() {
     const id = `note-comptes-preambule`;
     db.prepare(
       `INSERT OR REPLACE INTO notes (id, group_id, user_id, topic, title, content_md, created_at, updated_at)
-       VALUES (?, ?, NULL, 'comptes', 'Préambule et contexte', ?, ?, ?)`
+       VALUES (?, ?, NULL, 'comptes', 'Préambule et contexte', ?, ?, ?)`,
     ).run(id, ctx.groupId, preambleText, now, now);
     notesInserted++;
     console.log(`  + note ${id}`);
@@ -155,20 +165,27 @@ function main() {
         for (const attr of c.attrs) {
           Object.assign(mapped, mapAttrToColumn(attr.key, attr.value));
         }
-        const extraNotes = attrsToNotes(c.attrs, mapped);
-        const freeNotes = c.notesLines.filter(l => !l.startsWith('> ')).join('\n').trim();
-        const hints = c.notesLines.filter(l => l.startsWith('> ')).join('\n').trim();
+        const extraNotes = attrsToNotes(c.attrs);
+        const freeNotes = c.notesLines.filter((l) => !l.startsWith('> ')).join('\n').trim();
+        const hints = c.notesLines.filter((l) => l.startsWith('> ')).join('\n').trim();
         const notesFull = [extraNotes, freeNotes, hints].filter(Boolean).join('\n\n');
 
         const id = `cpt-${code || 'compte'}`;
         db.prepare(
           `INSERT OR REPLACE INTO comptes_bancaires (id, group_id, code, nom, banque, iban, bic, type_compte, statut, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'actif', ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'actif', ?, ?, ?)`,
         ).run(
-          id, ctx.groupId, code, nom,
-          mapped.banque ?? null, mapped.iban ?? null, mapped.bic ?? null,
+          id,
+          ctx.groupId,
+          code,
+          nom,
+          mapped.banque ?? null,
+          mapped.iban ?? null,
+          mapped.bic ?? null,
           mapped.type_compte ?? null,
-          notesFull || null, now, now
+          notesFull || null,
+          now,
+          now,
         );
         comptesInserted++;
         console.log(`  + compte ${id} : ${nom}`);
@@ -180,7 +197,7 @@ function main() {
       const id = `note-comptes-${slugify(section.title)}`;
       db.prepare(
         `INSERT OR REPLACE INTO notes (id, group_id, user_id, topic, title, content_md, created_at, updated_at)
-         VALUES (?, ?, NULL, 'comptes', ?, ?, ?, ?)`
+         VALUES (?, ?, NULL, 'comptes', ?, ?, ?, ?)`,
       ).run(id, ctx.groupId, section.title, content, now, now);
       notesInserted++;
       console.log(`  + note ${id} : ${section.title}`);

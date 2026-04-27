@@ -7,10 +7,12 @@
 // Passer `--apply` pour exécuter la mise à jour.
 //
 // Usage :
-//   npx tsx src/scripts/flag-prelevements-auto.ts
-//   npx tsx src/scripts/flag-prelevements-auto.ts --apply
+//   pnpm flag:prelevements-auto
+//   pnpm flag:prelevements-auto --apply
 
-import { currentTimestamp, formatAmount, getDb } from '../db.js';
+import { getDb } from '../src/lib/db';
+import { currentTimestamp } from '../src/lib/ids';
+import { formatAmount } from '../src/lib/format';
 
 interface Row {
   id: string;
@@ -50,7 +52,7 @@ function main() {
     .all(...PATTERNS) as Row[];
 
   if (rows.length === 0) {
-    console.log("Aucune dépense ne matche les patterns de prélèvement auto.");
+    console.log('Aucune dépense ne matche les patterns de prélèvement auto.');
     return;
   }
 
@@ -75,16 +77,16 @@ function main() {
     for (const r of skipped) {
       console.log(`  ${r.id}  ${r.date_ecriture}  ${formatAmount(r.amount_cents).padStart(12)}  ${r.description}`);
     }
-    console.log("\nPour les inclure quand même, relancer avec --include-with-justif.");
+    console.log('\nPour les inclure quand même, relancer avec --include-with-justif.');
   }
 
   if (!apply) {
-    console.log("\nRien écrit. Relancer avec --apply pour marquer justif_attendu = 0.");
+    console.log('\nRien écrit. Relancer avec --apply pour marquer justif_attendu = 0.');
     return;
   }
 
   if (eligible.length === 0) {
-    console.log("\nAucune ligne éligible à mettre à jour.");
+    console.log('\nAucune ligne éligible à mettre à jour.');
     return;
   }
 

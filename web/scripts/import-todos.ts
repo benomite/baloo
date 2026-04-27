@@ -1,11 +1,15 @@
+// Import de la todo `mon-groupe/todo.md` dans la table `todos`.
+
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { currentTimestamp, getDb } from '../db.js';
-import { getCurrentContext } from '../context.js';
+
+import { getDb } from '../src/lib/db';
+import { currentTimestamp } from '../src/lib/ids';
+import { getCliContext } from './cli-context';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(__dirname, '..', '..', '..');
+const REPO_ROOT = resolve(__dirname, '..', '..');
 
 function parseDueDate(title: string): string | null {
   const match = title.match(/\[(\d{4}-\d{2}-\d{2})\]/);
@@ -61,10 +65,15 @@ function parseTodoMd(raw: string): ParsedTodo[] {
   return todos;
 }
 
-function sectionToStatus(section: string, checked: boolean): 'en_cours' | 'bientot' | 'fait' | 'recurrent' {
+function sectionToStatus(
+  section: string,
+  checked: boolean,
+): 'en_cours' | 'bientot' | 'fait' | 'recurrent' {
   if (checked || section.toLowerCase().startsWith('fait')) return 'fait';
-  if (section.toLowerCase().startsWith('bientot') || section.toLowerCase().startsWith('bientôt')) return 'bientot';
-  if (section.toLowerCase().includes('récurrent') || section.toLowerCase().includes('recurrent')) return 'recurrent';
+  if (section.toLowerCase().startsWith('bientot') || section.toLowerCase().startsWith('bientôt'))
+    return 'bientot';
+  if (section.toLowerCase().includes('récurrent') || section.toLowerCase().includes('recurrent'))
+    return 'recurrent';
   return 'en_cours';
 }
 
@@ -81,7 +90,7 @@ function main() {
   const path = resolve(REPO_ROOT, 'mon-groupe', 'todo.md');
   const raw = readFileSync(path, 'utf-8');
   const todos = parseTodoMd(raw);
-  const ctx = getCurrentContext();
+  const ctx = getCliContext();
   const db = getDb();
   const now = currentTimestamp();
   const year = new Date().getFullYear();
@@ -101,7 +110,7 @@ function main() {
     const id = nextTodoId(ctx.groupId, year);
     db.prepare(
       `INSERT INTO todos (id, group_id, user_id, title, description, status, due_date, completed_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       ctx.groupId,
@@ -112,7 +121,7 @@ function main() {
       todo.due_date,
       status === 'fait' ? now : null,
       now,
-      now
+      now,
     );
     console.log(`  + ${id} [${status}] ${todo.title}`);
     inserted++;

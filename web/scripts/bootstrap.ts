@@ -1,10 +1,30 @@
-import { getDb, currentTimestamp } from '../db.js';
-import { loadEnv, requireEnv } from '../config.js';
+// Bootstrap : crée le groupe + le user initial à partir des variables
+// d'environnement BALOO_* (chargées depuis compta/.env).
+//
+// Usage :
+//   pnpm bootstrap
+//
+// Ce script ne dépend pas d'un contexte préexistant : il *crée* le user
+// initial. Il lit les variables BALOO_GROUP_CODE, BALOO_GROUP_NAME,
+// BALOO_USER_EMAIL, BALOO_USER_NAME (et facultativement
+// BALOO_GROUP_TERRITOIRE, BALOO_GROUP_EMAIL_CONTACT).
+
+import { ensureComptawebEnv } from '../src/lib/comptaweb/env-loader';
+import { getDb } from '../src/lib/db';
+import { currentTimestamp } from '../src/lib/ids';
+
+function requireEnv(key: string): string {
+  const value = process.env[key];
+  if (!value) {
+    throw new Error(`Variable ${key} manquante (voir compta/.env.example).`);
+  }
+  return value;
+}
 
 function slugify(value: string): string {
   return value
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
@@ -26,7 +46,7 @@ function upsertGroupe(
        nom = excluded.nom,
        territoire = excluded.territoire,
        email_contact = excluded.email_contact,
-       updated_at = excluded.updated_at`
+       updated_at = excluded.updated_at`,
   ).run(id, code, nom, territoire, emailContact, now, now);
 }
 
@@ -48,7 +68,7 @@ function upsertPersonne(
        nom = excluded.nom,
        email = excluded.email,
        role_groupe = excluded.role_groupe,
-       updated_at = excluded.updated_at`
+       updated_at = excluded.updated_at`,
   ).run(id, groupId, prenom, nom, email, roleGroupe, now, now);
 }
 
@@ -67,7 +87,7 @@ function upsertUser(
      ON CONFLICT (group_id, email) DO UPDATE SET
        person_id = excluded.person_id,
        nom_affichage = excluded.nom_affichage,
-       updated_at = excluded.updated_at`
+       updated_at = excluded.updated_at`,
   ).run(id, groupId, personId, email, nomAffichage, now, now);
 }
 
@@ -78,13 +98,13 @@ function splitName(full: string): { prenom: string; nom: string | null } {
 }
 
 function main() {
-  loadEnv();
+  ensureComptawebEnv();
   const groupCode = requireEnv('BALOO_GROUP_CODE');
   const groupName = requireEnv('BALOO_GROUP_NAME');
   const userEmail = requireEnv('BALOO_USER_EMAIL');
   const userName = requireEnv('BALOO_USER_NAME');
-  const groupTerritoire = loadEnv().BALOO_GROUP_TERRITOIRE ?? null;
-  const groupContact = loadEnv().BALOO_GROUP_EMAIL_CONTACT ?? null;
+  const groupTerritoire = process.env.BALOO_GROUP_TERRITOIRE ?? null;
+  const groupContact = process.env.BALOO_GROUP_EMAIL_CONTACT ?? null;
 
   const db = getDb();
   const groupId = slugify(groupCode);
@@ -102,7 +122,7 @@ function main() {
     ['CO', 'Compagnons'],
   ];
   const ACTIVITES_DEFAUT: string[] = [
-    'Activités d\'année',
+    "Activités d'année",
     'Fonctionnement',
     'Formation',
     'Camps',
@@ -114,19 +134,19 @@ function main() {
     upsertUser(db, userId, groupId, personId, userEmail, userName);
 
     const insertUnite = db.prepare(
-      `INSERT OR IGNORE INTO unites (id, group_id, code, name) VALUES (?, ?, ?, ?)`
+      `INSERT OR IGNORE INTO unites (id, group_id, code, name) VALUES (?, ?, ?, ?)`,
     );
     for (const [code, name] of UNITES_SGDF) {
       insertUnite.run(`u-${groupId}-${code.toLowerCase()}`, groupId, code, name);
     }
 
     const insertActivite = db.prepare(
-      `INSERT OR IGNORE INTO activites (id, group_id, name) VALUES (?, ?, ?)`
+      `INSERT OR IGNORE INTO activites (id, group_id, name) VALUES (?, ?, ?)`,
     );
     for (const name of ACTIVITES_DEFAUT) {
       const slug = name
         .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[̀-ͯ]/g, '')
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '');
@@ -134,8 +154,12 @@ function main() {
     }
   })();
 
-  console.log(`Bootstrap OK. Groupe: ${groupId} (${groupName}), user: ${userId} (${userEmail}), personne: ${personId}.`);
-  console.log(`Unités SGDF standards et 4 activités par défaut créées pour ${groupId}.`);
+  console.log(
+    `Bootstrap OK. Groupe: ${groupId} (${groupName}), user: ${userId} (${userEmail}), personne: ${personId}.`,
+  );
+  console.log(
+    `Unités SGDF standards et 4 activités par défaut créées pour ${groupId}.`,
+  );
 }
 
 main();

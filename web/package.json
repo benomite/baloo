@@ -7,7 +7,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "generate-token": "tsx scripts/generate-api-token.ts"
+    "generate-token": "tsx scripts/generate-api-token.ts",
+    "bootstrap": "tsx scripts/bootstrap.ts",
+    "flag:prelevements-auto": "tsx scripts/flag-prelevements-auto.ts",
+    "import:asso-finances": "tsx scripts/import-asso-finances.ts",
+    "import:comptes": "tsx scripts/import-comptes.ts",
+    "import:outils-state": "tsx scripts/import-outils-state.ts",
+    "import:personnes": "tsx scripts/import-personnes.ts",
+    "import:todos": "tsx scripts/import-todos.ts",
+    "reattach:justificatifs": "tsx scripts/reattach-justificatifs.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",

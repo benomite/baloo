@@ -1,15 +1,26 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-import { currentTimestamp, getDb } from '../db.js';
-import { getCurrentContext } from '../context.js';
-import {
-  applyReferentielsSync,
-  fetchReferentielsCreer,
-  fetchAllCartes,
-  withAutoReLogin,
-  ComptawebSessionExpiredError,
-} from '../comptaweb-client/index.js';
-import type { SyncReferentielsReport, RefSyncStats } from '../comptaweb-client/index.js';
+import { api } from '../api-client.js';
+
+interface RefSyncStats {
+  ajoutees: number;
+  mappees: number;
+  inchangees: number;
+  orphelines: string[];
+}
+
+interface SyncReferentielsReport {
+  unites: RefSyncStats;
+  categories: RefSyncStats;
+  activites: RefSyncStats;
+  modes_paiement: RefSyncStats;
+  cartes: RefSyncStats;
+}
+
+interface SyncResult {
+  ok: boolean;
+  report?: SyncReferentielsReport;
+  erreur?: string;
+}
 
 function formatStats(label: string, s: RefSyncStats): string {
   const parts = [
@@ -46,41 +57,14 @@ function formatReport(r: SyncReferentielsReport): string {
 export function registerSyncReferentielsTool(server: McpServer) {
   server.tool(
     'cw_sync_referentiels',
-    "Synchronise les référentiels Comptaweb (branches/projets → unites, natures → categories, activités → activites, modes de transaction → modes_paiement). Additif : ajoute les entrées manquantes, mappe les entrées locales non mappées par name, signale les orphelines. Ne supprime jamais.",
+    "Synchronise les référentiels Comptaweb (branches/projets → unites, natures → categories, activités → activites, modes de transaction → modes_paiement, cartes CB + procurement → cartes). Additif : ajoute les entrées manquantes, mappe les entrées locales non mappées par name, signale les orphelines. Ne supprime jamais.",
     {},
     async () => {
-      try {
-        const ctx = getCurrentContext();
-        const [refs, cartes] = await withAutoReLogin(async (cfg) => {
-          const r = await fetchReferentielsCreer(cfg);
-          const c = await fetchAllCartes(cfg);
-          return [r, c] as const;
-        });
-        const report = applyReferentielsSync(
-          getDb(),
-          ctx.groupId,
-          {
-            brancheprojet: refs.brancheprojet,
-            nature: refs.nature,
-            activite: refs.activite,
-            modetransaction: refs.modetransaction,
-            cartes,
-          },
-          currentTimestamp(),
-        );
-        return {
-          content: [{ type: 'text', text: formatReport(report) }],
-        };
-      } catch (err) {
-        if (err instanceof ComptawebSessionExpiredError) {
-          return {
-            content: [{ type: 'text', text: 'Session Comptaweb expirée.' }],
-            isError: true,
-          };
-        }
-        const msg = err instanceof Error ? err.message : String(err);
-        return { content: [{ type: 'text', text: `Erreur : ${msg}` }], isError: true };
+      const result = await api.post<SyncResult>('/api/comptaweb/sync-referentiels', {});
+      if (!result.ok || !result.report) {
+        return { content: [{ type: 'text', text: result.erreur ?? 'Sync échouée.' }], isError: true };
       }
+      return { content: [{ type: 'text', text: formatReport(result.report) }] };
     },
   );
 }
