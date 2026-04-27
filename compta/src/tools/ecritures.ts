@@ -1,7 +1,18 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { getDb, nextId, formatAmount, parseAmount, currentTimestamp } from '../db.js';
-import { getCurrentContext } from '../context.js';
+import { api } from '../api-client.js';
+import { formatAmount, parseAmount } from '../utils.js';
+
+interface EcritureRow {
+  id: string;
+  amount_cents: number;
+  [key: string]: unknown;
+}
+
+interface ListEcrituresResponse {
+  ecritures: EcritureRow[];
+  total: number;
+}
 
 export function registerEcritureTools(server: McpServer) {
   server.tool(
@@ -19,53 +30,22 @@ export function registerEcritureTools(server: McpServer) {
       limit: z.number().default(50).describe('Nombre max de résultats'),
       offset: z.number().default(0),
     },
-    (params) => {
-      const conditions: string[] = [];
-      const values: unknown[] = [];
-
-      if (params.unite_id) { conditions.push('e.unite_id = ?'); values.push(params.unite_id); }
-      if (params.category_id) { conditions.push('e.category_id = ?'); values.push(params.category_id); }
-      if (params.type) { conditions.push('e.type = ?'); values.push(params.type); }
-      if (params.date_debut) { conditions.push('e.date_ecriture >= ?'); values.push(params.date_debut); }
-      if (params.date_fin) { conditions.push('e.date_ecriture <= ?'); values.push(params.date_fin); }
-      if (params.mode_paiement_id) { conditions.push('e.mode_paiement_id = ?'); values.push(params.mode_paiement_id); }
-      if (params.status) { conditions.push('e.status = ?'); values.push(params.status); }
-      if (params.search) { conditions.push("(e.description LIKE ? OR e.notes LIKE ?)"); values.push(`%${params.search}%`, `%${params.search}%`); }
-
-      const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-      values.push(params.limit, params.offset);
-
-      const rows = getDb().prepare(`
-        SELECT e.*, u.code as unite_code, c.name as category_name, m.name as mode_paiement_name, a.name as activite_name
-        FROM ecritures e
-        LEFT JOIN unites u ON u.id = e.unite_id
-        LEFT JOIN categories c ON c.id = e.category_id
-        LEFT JOIN modes_paiement m ON m.id = e.mode_paiement_id
-        LEFT JOIN activites a ON a.id = e.activite_id
-        ${where}
-        ORDER BY e.date_ecriture DESC, e.created_at DESC
-        LIMIT ? OFFSET ?
-      `).all(...values) as Record<string, unknown>[];
-
-      const count = getDb().prepare(
-        `SELECT COUNT(*) as total FROM ecritures e ${where}`
-      ).get(...values.slice(0, -2)) as { total: number };
-
-      const result = rows.map((r: Record<string, unknown>) => ({
-        ...r,
-        montant: formatAmount(r.amount_cents as number),
-      }));
-
-      return { content: [{ type: 'text', text: JSON.stringify({ total: count.total, ecritures: result }, null, 2) }] };
-    }
+    async (params) => {
+      const data = await api.get<ListEcrituresResponse>('/api/ecritures', params);
+      const result = {
+        total: data.total,
+        ecritures: data.ecritures.map((e) => ({ ...e, montant: formatAmount(e.amount_cents) })),
+      };
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    },
   );
 
   server.tool(
     'create_ecriture',
     'Crée une nouvelle écriture (dépense ou recette)',
     {
-      date_ecriture: z.string().describe('Date de l\'écriture (YYYY-MM-DD)'),
-      description: z.string().describe('Description de l\'opération'),
+      date_ecriture: z.string().describe("Date de l'écriture (YYYY-MM-DD)"),
+      description: z.string().describe("Description de l'opération"),
       montant: z.string().describe('Montant (ex: "42,50" ou "42.50")'),
       type: z.enum(['depense', 'recette']).describe('Type : dépense ou recette'),
       unite_id: z.string().optional().describe('Unité concernée (ex: u-lj)'),
@@ -76,29 +56,33 @@ export function registerEcritureTools(server: McpServer) {
       justif_attendu: z.boolean().optional().describe("Défaut true. Mettre à false pour les prélèvements auto SGDF / flux territoriaux qui n'auront jamais de justif papier."),
       notes: z.string().optional(),
     },
-    (params) => {
-      const prefix = params.type === 'depense' ? 'DEP' : 'REC';
-      const id = nextId(prefix);
-      const cents = parseAmount(params.montant);
-      const now = currentTimestamp();
-      const justifAttendu = params.justif_attendu === false ? 0 : 1;
-
-      const { groupId } = getCurrentContext();
-      getDb().prepare(`
-        INSERT INTO ecritures (id, group_id, date_ecriture, description, amount_cents, type, unite_id, category_id, mode_paiement_id, activite_id, numero_piece, justif_attendu, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, groupId, params.date_ecriture, params.description, cents, params.type, params.unite_id ?? null, params.category_id ?? null, params.mode_paiement_id ?? null, params.activite_id ?? null, params.numero_piece ?? null, justifAttendu, params.notes ?? null, now, now);
-
-      const row = getDb().prepare('SELECT * FROM ecritures WHERE id = ?').get(id);
-      return { content: [{ type: 'text', text: JSON.stringify({ ...row as object, montant: formatAmount(cents) }, null, 2) }] };
-    }
+    async (params) => {
+      const created = await api.post<EcritureRow>('/api/ecritures', {
+        date_ecriture: params.date_ecriture,
+        description: params.description,
+        amount_cents: parseAmount(params.montant),
+        type: params.type,
+        unite_id: params.unite_id ?? null,
+        category_id: params.category_id ?? null,
+        mode_paiement_id: params.mode_paiement_id ?? null,
+        activite_id: params.activite_id ?? null,
+        numero_piece: params.numero_piece ?? null,
+        justif_attendu: params.justif_attendu,
+        notes: params.notes ?? null,
+      });
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ ...created, montant: formatAmount(created.amount_cents) }, null, 2) },
+        ],
+      };
+    },
   );
 
   server.tool(
     'update_ecriture',
     'Met à jour une écriture existante (statut, notes, catégorie, etc.)',
     {
-      id: z.string().describe('ID de l\'écriture (ex: DEP-2026-001)'),
+      id: z.string().describe("ID de l'écriture (ex: DEP-2026-001)"),
       description: z.string().optional(),
       montant: z.string().optional().describe('Nouveau montant (ex: "42,50")'),
       unite_id: z.string().optional(),
@@ -111,37 +95,16 @@ export function registerEcritureTools(server: McpServer) {
       comptaweb_synced: z.boolean().optional(),
       notes: z.string().optional(),
     },
-    (params) => {
-      const sets: string[] = [];
-      const values: unknown[] = [];
-
-      if (params.description !== undefined) { sets.push('description = ?'); values.push(params.description); }
-      if (params.montant !== undefined) { sets.push('amount_cents = ?'); values.push(parseAmount(params.montant)); }
-      if (params.unite_id !== undefined) { sets.push('unite_id = ?'); values.push(params.unite_id); }
-      if (params.category_id !== undefined) { sets.push('category_id = ?'); values.push(params.category_id); }
-      if (params.mode_paiement_id !== undefined) { sets.push('mode_paiement_id = ?'); values.push(params.mode_paiement_id); }
-      if (params.activite_id !== undefined) { sets.push('activite_id = ?'); values.push(params.activite_id); }
-      if (params.numero_piece !== undefined) { sets.push('numero_piece = ?'); values.push(params.numero_piece); }
-      if (params.justif_attendu !== undefined) { sets.push('justif_attendu = ?'); values.push(params.justif_attendu ? 1 : 0); }
-      if (params.status !== undefined) { sets.push('status = ?'); values.push(params.status); }
-      if (params.comptaweb_synced !== undefined) { sets.push('comptaweb_synced = ?'); values.push(params.comptaweb_synced ? 1 : 0); }
-      if (params.notes !== undefined) { sets.push('notes = ?'); values.push(params.notes); }
-
-      if (sets.length === 0) {
-        return { content: [{ type: 'text', text: 'Aucun champ à mettre à jour.' }] };
-      }
-
-      sets.push('updated_at = ?');
-      values.push(currentTimestamp());
-      values.push(params.id);
-
-      const result = getDb().prepare(`UPDATE ecritures SET ${sets.join(', ')} WHERE id = ?`).run(...values);
-      if (result.changes === 0) {
-        return { content: [{ type: 'text', text: `Écriture ${params.id} non trouvée.` }] };
-      }
-
-      const row = getDb().prepare('SELECT * FROM ecritures WHERE id = ?').get(params.id);
-      return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
-    }
+    async (params) => {
+      const { id, montant, ...rest } = params;
+      const patch: Record<string, unknown> = { ...rest };
+      if (montant !== undefined) patch.amount_cents = parseAmount(montant);
+      const updated = await api.patch<EcritureRow>(`/api/ecritures/${encodeURIComponent(id)}`, patch);
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ ...updated, montant: formatAmount(updated.amount_cents) }, null, 2) },
+        ],
+      };
+    },
   );
 }

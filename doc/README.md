@@ -8,6 +8,7 @@ Ce dossier contient la documentation de conception du projet **Baloo**, un assis
 - [`DEVELOPING.md`](DEVELOPING.md) — Règles du mode dev (faire évoluer Baloo lui-même)
 - [`architecture.md`](architecture.md) — Choix techniques, structure, mémoire, outils
 - [`roadmap.md`](roadmap.md) — Plan en phases, du MVP perso au SaaS potentiel
+- [`p2-pivot-webapp.md`](p2-pivot-webapp.md) — Plan d'exécution détaillé du chantier P2 (webapp = source de vérité, MCP = client HTTP)
 - [`memory-design.md`](memory-design.md) — Comment la mémoire long terme est organisée
 - [`distribution.md`](distribution.md) — Réflexions sur la distribution future (app/SaaS)
 - [`process-skills.md`](process-skills.md) — Mini-apps / skills pour process métier
@@ -21,5 +22,5 @@ Ce dossier contient la documentation de conception du projet **Baloo**, un assis
 
 ## État du projet
 
-**Phase actuelle** : Phase 1 — MVP perso (en cours)
-**Dernière mise à jour** : 2026-04-22 (ADR-015)
+**Phase actuelle** : Phase 2 — pivot webapp (chantiers 1-4 livrés)
+**Dernière mise à jour** : 2026-04-26 (P2 chantier 4 livré : auth multi-user via Auth.js v5 magic link + token MCP, ADR-016)

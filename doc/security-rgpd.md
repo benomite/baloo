@@ -14,11 +14,11 @@ Baloo manipule des données sensibles : membres d'une asso (dont potentiellement
 
 ## Règles dès le MVP
 
-1. **Aucun secret dans git.** Tokens MCP, clés d'API, RIBs, mots de passe → `.env` ou keychain, jamais dans les fichiers trackés.
-2. **`.gitignore` strict.** `inbox/`, `*.pdf`, `*.xlsx`, `.env*`, `mon-groupe/secrets/` par défaut.
-3. **Repo privé.** Pas de push sur un remote public pour `mon-groupe/` tant que la séparation core/privé n'est pas 100% étanche.
+1. **Aucun secret dans git.** Tokens MCP, clés d'API, RIBs, mots de passe → `.env`, BDD locale (`user_credentials`) ou keychain, jamais dans les fichiers trackés.
+2. **`.gitignore` strict.** `inbox/`, `data/`, `justificatifs/`, `*.pdf`, `*.xlsx`, `.env*` par défaut. Les données spécifiques au groupe vivent en BDD (`data/baloo.db` aujourd'hui), jamais dans des fichiers markdown trackés (cf. [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git)).
+3. **Repo open-source-ready.** Le repo ne doit contenir **aucune** donnée nominative ou financière, ni au présent ni dans l'historique (squash prévu avant publication github, cf. ADR-013).
 4. **Minimiser les données de mineurs.** Si un process n'a pas besoin du nom d'un jeune, on utilise un identifiant anonyme ou un prénom seul. Jamais de nom + adresse + date de naissance dans le même endroit sans nécessité.
-5. **Éviter d'envoyer l'inutile à l'API Anthropic.** Claude Code charge ce que l'utilisateur lui demande. Ne pas prendre l'habitude de "tout coller dans le contexte" — utiliser les outils de lecture ciblée.
+5. **Éviter d'envoyer l'inutile à l'API Anthropic.** Claude Code charge ce que l'utilisateur lui demande. Ne pas prendre l'habitude de "tout coller dans le contexte" — utiliser les outils de lecture ciblée du MCP (`recherche`, `list_*`).
 
 ## Considérations spécifiques Anthropic / Claude Code
 
@@ -28,17 +28,26 @@ Baloo manipule des données sensibles : membres d'une asso (dont potentiellement
 
 **Conséquence pratique au MVP** : pas de blocage, mais on évite de charger par principe l'intégralité de la base membres dans chaque conversation. On préfère des lectures ciblées.
 
-## Règles supplémentaires à partir de la phase 3 (SaaS)
+## Règles supplémentaires à partir de la phase 2 (webapp ouverte)
 
-- Contrat de sous-traitance RGPD avec chaque groupe utilisateur.
-- Hébergement EU (Hetzner, Scaleway, OVH) pour tout stockage de données perso.
-- Chiffrement au repos des données membres.
-- Logs d'accès (qui a lu quoi, quand).
-- Procédure d'export et de suppression (droit à l'effacement).
-- DPO identifié.
-- Registre des traitements.
+Dès qu'un autre user que le trésorier accède à l'outil (chef d'unité, parent), on entre dans un cadre RGPD plus exigeant :
 
-Aucune de ces mesures n'est nécessaire au MVP, mais elles sont à **prévoir dans l'archi phase 3** dès qu'on la dessine.
+- **Auth réelle** (pas de "user implicite") : chaque accès est traçable.
+- **Hébergement EU** (Hetzner, Scaleway, OVH) pour la BDD webapp et les justificatifs.
+- **Chiffrement au repos** des données membres et des `user_credentials`.
+- **Logs d'accès** : qui a lu/écrit quoi, quand. Audit trail minimal.
+- **Procédure d'export et de suppression** (droit à l'effacement) — au moins documentée et exécutable manuellement.
+- **Information des users** : à minima un texte clair dans l'UI sur les données traitées et leur finalité.
+
+## Règles supplémentaires à partir de la phase 4 (SaaS multi-groupes facturé)
+
+En plus de tout ce qui précède :
+
+- **Contrat de sous-traitance RGPD** avec chaque groupe utilisateur (on traite les données pour leur compte).
+- **DPO identifié** (peut être externe / mutualisé).
+- **Registre des traitements**.
+- **CGU et politique de confidentialité** publiées.
+- **Assurance RC pro** si on devient responsable de données financières.
 
 ## Données WhatsApp — point d'attention
 
@@ -54,6 +63,6 @@ Lire les messages de groupes WhatsApp de l'asso soulève plusieurs questions :
 
 Si le laptop est partagé ou souvent nomade, envisager :
 - Chiffrement du disque (FileVault sur Mac — souvent déjà activé).
-- `git-crypt` ou `age` pour chiffrer `mon-groupe/` dans le repo.
+- Chiffrement applicatif des `user_credentials` en BDD (à trancher dans un ADR dédié quand on attaque la P2, cf. [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git)).
 
-Ce n'est pas bloquant pour démarrer, mais à trancher avant de commiter quoi que ce soit de vraiment sensible.
+Le fichier `data/baloo.db` est gitignored et doit être traité comme un secret tant qu'on est en P1.

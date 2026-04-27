@@ -1,6 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { getDb } from './db.js';
 import { registerReferenceTools } from './tools/reference.js';
 import { registerOverviewTools } from './tools/overview.js';
 import { registerEcritureTools } from './tools/ecritures.js';
@@ -27,7 +26,11 @@ const server = new McpServer({
   version: '0.1.0',
 });
 
-getDb();
+// Note (chantier 3) : la majorité des outils ne touche plus la BDD locale —
+// ils appellent l'API HTTP webapp via `api-client.ts`. Les outils Comptaweb
+// CSV/raw (`comptaweb`, `comptaweb-client`) gardent leur dépendance directe
+// à `getDb()` jusqu'au chantier 6 (déplacement complet côté webapp). La BDD
+// locale est ouverte de façon paresseuse au premier appel concerné.
 
 registerReferenceTools(server);
 registerOverviewTools(server);

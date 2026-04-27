@@ -18,7 +18,7 @@ Sans déclencheur explicite, **ne pas modifier** les fichiers de `doc/`, `sgdf-c
 1. **La doc est la source de vérité de la conception.** Avant tout changement structurel, lire les fichiers pertinents de `doc/` (en particulier `architecture.md`, `roadmap.md`, `decisions.md`).
 2. **Toute décision structurelle nouvelle = un nouvel ADR** dans `doc/decisions.md`. Format : titre, date, statut, contexte, décision, conséquences. Incrémenter le numéro ADR-00X.
 3. **Ne jamais "améliorer" sans raison** : la vision et la roadmap sont volontairement minimalistes. Pas de features spéculatives, pas de refactor cosmétique.
-4. **Respecter la séparation `sgdf-core/` vs `mon-groupe/`** (ADR-003). En cas de doute sur où placer une info : si elle est partageable avec un autre groupe SGDF → `sgdf-core/`, sinon → `mon-groupe/`.
+4. **Respecter la séparation générique / spécifique** (ADR-003 puis [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git)). En cas de doute sur où placer une info : si elle est partageable avec un autre groupe SGDF → `sgdf-core/` (markdown, en git) ; si elle dépend d'un user ou d'un groupe spécifique → BDD (`data/baloo.db`, gitignored). Aucune donnée nominative ou financière dans le repo.
 5. **Git discipline** : commits atomiques, messages en français au présent de l'indicatif. Voir la section "Git" plus bas.
 
 ## Ajouter ou modifier un skill
@@ -26,15 +26,15 @@ Sans déclencheur explicite, **ne pas modifier** les fichiers de `doc/`, `sgdf-c
 Référence : [`process-skills.md`](process-skills.md).
 
 Règles :
-- Un skill = un dossier dans `skills/<nom>/` (ou `sgdf-core/skills/` si générique, ou `mon-groupe/skills/` si spécifique) contenant au minimum un `SKILL.md`.
+- Un skill = un dossier dans `sgdf-core/skills/<nom>/` si générique, ou `skills/<nom>/` à la racine si spécifique au groupe — contenant au minimum un `SKILL.md`.
 - Le `SKILL.md` suit la structure : *Quand l'utiliser*, *Informations nécessaires*, *Étapes*, *Pièges connus*.
 - Un skill doit être compréhensible sans lire le reste du projet — autonome.
 - Avant de créer un nouveau skill, vérifier qu'il n'en existe pas un similaire à compléter à la place.
 - Lors de la modification d'un skill existant, éviter de casser son interface (ce qu'il demande en entrée, ce qu'il produit). Si c'est inévitable, noter le changement dans un ADR.
 
-## Modifier la mémoire (`mon-groupe/`, `sgdf-core/`)
+## Modifier la mémoire (BDD + `sgdf-core/`)
 
-Note : la mémoire est aussi modifiée en **mode assistant** au fil de l'usage. Les règles ci-dessous concernent les modifications **structurelles** (réorganiser un fichier, ajouter une section, changer une convention).
+Note : la mémoire est aussi modifiée en **mode assistant** au fil de l'usage (notes, personnes, écritures via le MCP `baloo-compta`). Les règles ci-dessous concernent les modifications **structurelles** (refondre une table, ajouter une convention de notes, modifier le contenu de `sgdf-core/`).
 
 - Suivre les conventions de [`memory-design.md`](memory-design.md) : faits atomiques, dates ISO, pas de résumés, mise à jour plutôt que suppression pour les infos qui deviennent obsolètes.
 - Ne pas inventer de contenu. Si une info manque, demander à l'utilisateur plutôt que combler avec des suppositions.
@@ -58,7 +58,7 @@ Avant d'introduire une nouvelle dépendance, une nouvelle couche technique ou un
 ## Sécurité
 
 - Ne jamais commiter de secrets, tokens, clés d'API, RIBs, mails exportés, pièces justificatives. Le `.gitignore` doit rester strict — si on y touche, c'est toujours pour **ajouter** des exclusions, rarement pour en retirer.
-- Les données de `mon-groupe/` ne doivent jamais être copiées dans `sgdf-core/` même par erreur. En cas de doute, ne rien déplacer et demander.
+- Les données spécifiques au groupe (BDD : personnes, comptes, montants, etc.) ne doivent jamais être copiées dans `sgdf-core/` ni dans `doc/`, même par erreur. En cas de doute, ne rien déplacer et demander.
 - Si on envisage un remote git, **vérifier qu'il est privé** avant tout push.
 
 ## Git
@@ -73,7 +73,7 @@ Avant d'introduire une nouvelle dépendance, une nouvelle couche technique ou un
 
 - [ ] La doc concernée est à jour (README du dossier, fichier thématique, ADR si décision structurelle).
 - [ ] Aucun secret ni donnée perso n'a été introduit dans les fichiers trackés.
-- [ ] La séparation `sgdf-core/` vs `mon-groupe/` est respectée.
+- [ ] La séparation générique (`sgdf-core/`, en git) vs spécifique (BDD, gitignored) est respectée. Aucune donnée nominative ou financière dans le repo.
 - [ ] Si un nouveau pattern est introduit, il est documenté quelque part dans `doc/`.
 - [ ] Commit atomique avec un message clair.
 - [ ] L'utilisateur a été informé de ce qui a été fait (résumé court en fin de réponse).

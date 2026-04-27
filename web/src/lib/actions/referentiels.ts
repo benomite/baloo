@@ -23,7 +23,7 @@ export interface SyncActionResult {
 
 export async function syncReferentielsFromComptaweb(): Promise<SyncActionResult> {
   try {
-    const ctx = getCurrentContext();
+    const ctx = await getCurrentContext();
     const refs = await withAutoReLogin((cfg) => fetchReferentielsCreer(cfg));
     const report = applyReferentielsSync(
       getDb(),

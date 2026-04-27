@@ -1,7 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { getDb, nextId, formatAmount, parseAmount, currentTimestamp } from '../db.js';
-import { getCurrentContext } from '../context.js';
+import { api } from '../api-client.js';
+import { formatAmount, parseAmount } from '../utils.js';
+
+interface RemboursementRow {
+  id: string;
+  amount_cents: number;
+  [key: string]: unknown;
+}
 
 export function registerRemboursementTools(server: McpServer) {
   server.tool(
@@ -14,38 +20,11 @@ export function registerRemboursementTools(server: McpServer) {
       search: z.string().optional().describe('Recherche dans demandeur, nature et notes'),
       limit: z.number().default(50),
     },
-    (params) => {
-      const conditions: string[] = [];
-      const values: unknown[] = [];
-
-      if (params.status) { conditions.push('r.status = ?'); values.push(params.status); }
-      if (params.unite_id) { conditions.push('r.unite_id = ?'); values.push(params.unite_id); }
-      if (params.demandeur) { conditions.push('r.demandeur LIKE ?'); values.push(`%${params.demandeur}%`); }
-      if (params.search) {
-        conditions.push("(r.demandeur LIKE ? OR r.nature LIKE ? OR r.notes LIKE ?)");
-        values.push(`%${params.search}%`, `%${params.search}%`, `%${params.search}%`);
-      }
-
-      const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-      values.push(params.limit);
-
-      const rows = getDb().prepare(`
-        SELECT r.*, u.code as unite_code, m.name as mode_paiement_name
-        FROM remboursements r
-        LEFT JOIN unites u ON u.id = r.unite_id
-        LEFT JOIN modes_paiement m ON m.id = r.mode_paiement_id
-        ${where}
-        ORDER BY r.created_at DESC
-        LIMIT ?
-      `).all(...values) as Record<string, unknown>[];
-
-      const result = rows.map(r => ({
-        ...r,
-        montant: formatAmount(r.amount_cents as number),
-      }));
-
+    async (params) => {
+      const rows = await api.get<RemboursementRow[]>('/api/remboursements', params);
+      const result = rows.map((r) => ({ ...r, montant: formatAmount(r.amount_cents) }));
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-    }
+    },
   );
 
   server.tool(
@@ -61,20 +40,23 @@ export function registerRemboursementTools(server: McpServer) {
       mode_paiement_id: z.string().optional().describe('Mode de paiement souhaité'),
       notes: z.string().optional(),
     },
-    (params) => {
-      const id = nextId('RBT');
-      const cents = parseAmount(params.montant);
-      const now = currentTimestamp();
-
-      const { groupId } = getCurrentContext();
-      getDb().prepare(`
-        INSERT INTO remboursements (id, group_id, demandeur, amount_cents, date_depense, nature, unite_id, justificatif_status, mode_paiement_id, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, groupId, params.demandeur, cents, params.date_depense, params.nature, params.unite_id ?? null, params.justificatif_status, params.mode_paiement_id ?? null, params.notes ?? null, now, now);
-
-      const row = getDb().prepare('SELECT * FROM remboursements WHERE id = ?').get(id);
-      return { content: [{ type: 'text', text: JSON.stringify({ ...row as object, montant: formatAmount(cents) }, null, 2) }] };
-    }
+    async (params) => {
+      const created = await api.post<RemboursementRow>('/api/remboursements', {
+        demandeur: params.demandeur,
+        amount_cents: parseAmount(params.montant),
+        date_depense: params.date_depense,
+        nature: params.nature,
+        unite_id: params.unite_id ?? null,
+        justificatif_status: params.justificatif_status,
+        mode_paiement_id: params.mode_paiement_id ?? null,
+        notes: params.notes ?? null,
+      });
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ ...created, montant: formatAmount(created.amount_cents) }, null, 2) },
+        ],
+      };
+    },
   );
 
   server.tool(
@@ -87,36 +69,17 @@ export function registerRemboursementTools(server: McpServer) {
       mode_paiement_id: z.string().optional(),
       justificatif_status: z.enum(['oui', 'en_attente', 'non']).optional(),
       comptaweb_synced: z.boolean().optional(),
-      ecriture_id: z.string().optional().describe('ID de l\'écriture liée dans le journal'),
+      ecriture_id: z.string().optional().describe("ID de l'écriture liée dans le journal"),
       notes: z.string().optional(),
     },
-    (params) => {
-      const sets: string[] = [];
-      const values: unknown[] = [];
-
-      if (params.status !== undefined) { sets.push('status = ?'); values.push(params.status); }
-      if (params.date_paiement !== undefined) { sets.push('date_paiement = ?'); values.push(params.date_paiement); }
-      if (params.mode_paiement_id !== undefined) { sets.push('mode_paiement_id = ?'); values.push(params.mode_paiement_id); }
-      if (params.justificatif_status !== undefined) { sets.push('justificatif_status = ?'); values.push(params.justificatif_status); }
-      if (params.comptaweb_synced !== undefined) { sets.push('comptaweb_synced = ?'); values.push(params.comptaweb_synced ? 1 : 0); }
-      if (params.ecriture_id !== undefined) { sets.push('ecriture_id = ?'); values.push(params.ecriture_id); }
-      if (params.notes !== undefined) { sets.push('notes = ?'); values.push(params.notes); }
-
-      if (sets.length === 0) {
-        return { content: [{ type: 'text', text: 'Aucun champ à mettre à jour.' }] };
-      }
-
-      sets.push('updated_at = ?');
-      values.push(currentTimestamp());
-      values.push(params.id);
-
-      const result = getDb().prepare(`UPDATE remboursements SET ${sets.join(', ')} WHERE id = ?`).run(...values);
-      if (result.changes === 0) {
-        return { content: [{ type: 'text', text: `Remboursement ${params.id} non trouvé.` }] };
-      }
-
-      const row = getDb().prepare('SELECT * FROM remboursements WHERE id = ?').get(params.id);
-      return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
-    }
+    async (params) => {
+      const { id, ...patch } = params;
+      const updated = await api.patch<RemboursementRow>(`/api/remboursements/${encodeURIComponent(id)}`, patch);
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ ...updated, montant: formatAmount(updated.amount_cents) }, null, 2) },
+        ],
+      };
+    },
   );
 }

@@ -1,6 +1,6 @@
 # Conception de la mémoire
 
-> **Note 2026-04-18** : [ADR-013](decisions.md) réoriente la mémoire vers un modèle BDD pour tout ce qui est spécifique à un user ou à un groupe (données nominatives, compta, todo, notes). Ce document décrit la structure markdown historique — il sera refondu au fil des migrations `mon-groupe/*.md` → tables SQLite. Les principes d'écriture (faits atomiques, dates ISO, mise à jour plutôt que suppression) restent valables et s'appliquent aussi aux entrées BDD.
+> **Note 2026-04-25** : la mémoire opérationnelle vit en BDD ([ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git)). `mon-groupe/` n'existe plus dans le repo ; les structures markdown décrites en bas de ce document sont **historiques** et conservées à titre de référence. La trajectoire P2 (cf. [`roadmap.md`](roadmap.md)) déplace en outre cette BDD côté webapp : la SQLite locale du MCP `baloo-compta` est provisoire. Les principes d'écriture (faits atomiques, dates ISO, mise à jour plutôt que suppression) **restent valables** et s'appliquent telles quelles aux entrées BDD (tables `notes`, `personnes`, etc.) et aux fichiers markdown encore vivants (`sgdf-core/`, `doc/`).
 
 La mémoire est **l'actif central** de Baloo. Le code est remplaçable, mais la formalisation de qui fait quoi, comment tient-on la compta, quelles sont les décisions passées — ça, c'est irremplaçable.
 
@@ -20,34 +20,54 @@ Tirés des bonnes pratiques actuelles (voir [`references.md`](references.md)) ad
 Géré par Claude Code automatiquement. Rien à faire.
 
 ### Moyen terme — l'état courant
-Ce qui est vrai **maintenant** dans l'asso : bureau en place, comptes ouverts, budgets votés, échéances à venir. Stocké dans `mon-groupe/` en markdown structuré.
+Ce qui est vrai **maintenant** dans l'asso : bureau en place, comptes ouverts, budgets votés, échéances à venir. Stocké en BDD via les tables `groupes`, `personnes`, `comptes_bancaires`, `budgets`, `notes` (cf. tableau ci-dessous), accessibles via le MCP `baloo-compta`.
 
 ### Long terme — le savoir
-Ce qui est stable ou historique : process compta, glossaire SGDF, décisions passées, historique des trésoriers. Stocké dans `mon-groupe/historique/` et `sgdf-core/`.
+Ce qui est stable ou historique : process compta, glossaire SGDF, décisions passées, historique des trésoriers. Stocké en BDD pour ce qui est spécifique au groupe (table `notes` topic='historique', `personnes` avec `jusqu_a`/`statut='ancien'`, etc.) et en markdown pour ce qui est partageable (`sgdf-core/`).
 
-Pas de vector store au MVP : Claude Code peut parcourir quelques dizaines de fichiers markdown sans problème. On ajoutera pgvector en phase 3 quand le volume grandira.
+Pas de vector store : Claude Code parcourt sans difficulté quelques dizaines de fichiers markdown et la BDD reste de petite taille tant qu'on est sur un seul groupe. pgvector ou équivalent ne sera introduit qu'à la P3 si le besoin émerge.
 
-## Structure des fichiers mémoire
+## Structure de mémoire (présent)
+
+**Markdown versionné en git** (générique, partageable, public-ready) :
 
 ```
 sgdf-core/
-├── glossaire.md             ← jargon SGDF (camp, camp scout, maîtrise, ISTC, etc.)
-├── compta-process.md        ← process compta génériques SGDF
-├── structure-groupe.md      ← organigramme type d'un groupe
-└── outils-officiels.md      ← Compta-Web, Intranet SGDF, etc.
+├── glossaire.md
+├── ressources-chefscadres/
+└── skills/
+    └── remboursement/SKILL.md
 
-mon-groupe/
-├── asso.md                  ← identité, mission, historique court
-├── personnes.md             ← bureau + membres clés, rôles, contacts
-├── comptes.md               ← comptes bancaires, livrets, structure
-├── budgets/
-│   ├── 2026.md              ← budget voté pour l'année courante
-│   └── archive/             ← années passées
-├── process-specifiques.md   ← nos particularités vs le core SGDF
-├── historique/
-│   ├── decisions.md         ← journal daté des décisions du bureau
-│   └── incidents.md         ← événements marquants (contrôle fiscal, sinistre…)
-└── inbox-notes.md           ← notes brutes, à trier
+doc/                  ← conception, décisions (ADRs), refs
+```
+
+**BDD multi-tenant** (`data/baloo.db` en P1, BDD côté webapp en P2 — gitignored) :
+
+| Table | Contenu |
+|---|---|
+| `groupes`, `users`, `personnes` | Identité du groupe et des humains qui gravitent autour. |
+| `comptes_bancaires`, `budgets`, `budget_lignes` | État financier structurel. |
+| `ecritures`, `remboursements`, `abandons_frais`, `mouvements_caisse`, `depots_cheques` | Journal opérationnel. |
+| `justificatifs` | Pointeurs vers fichiers (les fichiers eux-mêmes vivent dans `justificatifs/`, gitignored). |
+| `notes` | Notes libres avec `topic` (`asso`, `finances`, `comptes`, `outils`, `incidents`, `historique`…). C'est l'équivalent BDD des anciens `mon-groupe/*.md`. |
+| `todos` | Liste de tâches du trésorier. |
+| `user_credentials` | Tokens/cookies d'intégrations externes (Comptaweb, etc.), par user. |
+
+Le schéma est SQL-standard et déjà multi-tenant (`group_id` partout, cf. [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git)), ce qui permet la migration mécanique vers la BDD webapp en P2.
+
+## Structure markdown historique (avant ADR-013)
+
+> Cette section est conservée pour mémoire seulement. La structure ci-dessous **n'existe plus dans le repo** : `mon-groupe/` a été retiré et migré en BDD.
+
+```
+mon-groupe/                  ← retiré du repo (ADR-013)
+├── asso.md                  ← migré vers notes(topic='asso') + groupes
+├── personnes.md             ← migré vers personnes
+├── comptes.md               ← migré vers comptes_bancaires
+├── budgets/                 ← migré vers budgets / budget_lignes
+├── process-specifiques.md   ← migré vers notes(topic='asso')
+├── historique/              ← migré vers notes(topic='historique')
+└── inbox-notes.md           ← migré vers notes (sans topic)
 ```
 
 ## Conventions d'écriture
@@ -79,17 +99,17 @@ Présents : A, B, C. Absents : D.
 
 L'agent doit pouvoir modifier la mémoire. Dans `CLAUDE.md`, on lui indique :
 
-- Quand l'utilisateur confirme une info nouvelle ou corrige une existante → mettre à jour le fichier adéquat.
-- Quand une info devient obsolète (ex. ancien trésorier) → ne pas supprimer, mais **dater la fin de validité** (sauf erreur de saisie).
-- Avant toute modification, lire le fichier cible pour éviter les doublons.
-- Toujours commit git après modification significative.
+- Quand l'utilisateur confirme une info nouvelle ou corrige une existante → mettre à jour la table BDD adéquate via le MCP (`update_personne`, `update_note`, `update_compte_bancaire`, etc.) ou le fichier markdown si c'est du partageable.
+- Quand une info devient obsolète (ex. ancien trésorier) → ne pas supprimer, mais **dater la fin de validité** (`update_personne` avec `jusqu_a` et `statut='ancien'`), sauf erreur de saisie.
+- Avant toute modification, lire l'état courant (`list_personnes`, `list_notes`, etc.) pour éviter les doublons.
+- Pour les fichiers markdown trackés en git (`sgdf-core/`, `doc/`) : commit après modification significative. Pour la BDD : pas de commit (les écritures sont persistées par le MCP).
 
 ## RGPD dans la mémoire
 
-Les fichiers de `mon-groupe/` contiennent des données personnelles. Règles :
-- Jamais commitées dans un repo public.
-- Pas de données de mineurs sans nécessité (noms de jeunes scouts → éviter ou pseudonymiser).
-- `.gitignore` strict sur `inbox/` (où atterrissent les pièces brutes).
-- Chiffrement du dossier si le laptop est partagé (git-crypt ou équivalent, à évaluer).
+Les données personnelles vivent **exclusivement** en BDD (gitignored), jamais dans les fichiers markdown trackés. Règles :
+- Aucune donnée nominative ou financière dans `sgdf-core/` ou `doc/`.
+- Pas de données de mineurs sans nécessité (noms de jeunes scouts → éviter ou pseudonymiser, même en BDD).
+- `.gitignore` strict sur `inbox/` (où atterrissent les pièces brutes), `data/`, `justificatifs/`.
+- Le fichier `data/baloo.db` est traité comme un secret (en P1) ; en P2 la BDD passe côté webapp avec auth + chiffrement à arbitrer.
 
 Voir [`security-rgpd.md`](security-rgpd.md) pour les détails.

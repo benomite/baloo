@@ -228,6 +228,8 @@ Compta-Web est imposé par l'asso nationale et ne peut **pas** être remplacé.
 **Date** : 2026-04-17
 **Statut** : accepté (remplace ADR-009 pour les nouvelles écritures)
 
+> **Note de statut (2026-04-25)** : la trajectoire phase 2 (cf. [`roadmap.md`](roadmap.md)) fait basculer la source de vérité opérationnelle vers la webapp `web/` (BDD + API HTTP côté serveur). Le MCP `baloo-compta` est refondu en client HTTP authentifié de cette API et n'attaque plus la BDD SQLite directement. ADR-010 reste valide pour la phase 1 (MVP CLI), mais la BDD SQLite locale qu'il introduit est **provisoire** et migrera vers la BDD webapp en P2. Le schéma SQL-standard prévu par cet ADR rend la migration mécanique. Pas de nouvel ADR à ce stade — la décision de pivot est documentée dans la roadmap.
+
 **Contexte** : ADR-007 prévoit que Baloo remplace Airtable et le Sheet. ADR-009 proposait un format markdown structuré pour les écritures. En pratique, le trésorier a besoin d'un vrai outil de compta opérationnel — requêtable, filtrable, avec vue d'ensemble — pas de fichiers markdown qu'il ne lira pas.
 
 **Décision** :
@@ -479,6 +481,61 @@ Le besoin : depuis l'app web, pouvoir **synchroniser les configs** d'un clic pou
 - [ADR-010](#adr-010--outil-compta--sqlite--serveur-mcp-nodejstypescript) — schéma de référence
 - [ADR-011](#adr-011--client-api-comptaweb-par-reverse-engineering) — client Comptaweb
 - [ADR-012](#adr-012--comptaweb--webapp-server-rendered-scraping-html-avec-cheerio) — parsing HTML (la source des options)
+
+---
+
+## ADR-016 — Auth multi-user : Auth.js v5 + magic link + token MCP
+**Date** : 2026-04-26
+**Statut** : accepté
+
+**Contexte** : le chantier 4 du pivot P2 (cf. [`p2-pivot-webapp.md`](p2-pivot-webapp.md)) doit remplacer le mécanisme actuel de résolution de contexte (`BALOO_USER_EMAIL` lu en env) par une vraie auth multi-user. Sans ça, on ne peut pas ouvrir l'outil aux chefs/parents (chantier 5) et l'API HTTP du chantier 2 reste publique.
+
+Quatre options ont été examinées :
+1. **Auth.js v5 (NextAuth)** — standard de fait Next.js, mature, magic link natif via `Email` provider, OAuth en bonus pour brancher OIDC SGDF plus tard.
+2. **Better Auth** — alternative récente, TS-first, plus contrôlable. Communauté plus jeune.
+3. **Custom maison** — magic link maison + cookie signé. Réinvente la roue (cf. interdits dans [`DEVELOPING.md`](DEVELOPING.md)).
+4. **OIDC SGDF (Keycloak)** — la fédération expose un IdP utilisé par Comptaweb. Idéal en théorie (les chefs/parents auraient un seul compte SGDF) mais demande une démarche administrative pour s'enregistrer comme application cliente, et rien ne garantit que c'est ouvert à des outils tiers non SGDF.
+
+**Décision** :
+
+1. **Lib retenue : Auth.js v5** (`next-auth@beta`, branche `5.0.0-beta.x`). Mature côté écosystème, intégration App Router native, providers prêts (Email magic link, et OIDC plus tard quand on tentera SGDF).
+
+2. **Mécanisme côté UI : magic link par email**. Pas de mot de passe maison. L'utilisateur entre son email sur `/login` → token de vérification généré et stocké en BDD → email envoyé avec le lien `/auth/verify?token=…` → click → session créée.
+
+3. **Transport email** :
+   - **Dev** : transport "console" (le lien magic link est loggé dans la sortie du serveur Next.js). Suffit pour le trésorier seul.
+   - **Prod** : SMTP via `nodemailer` (configuré par variables d'environnement `EMAIL_SERVER_*`). Sera branché au moment du déploiement (chantier 7).
+
+4. **Mécanisme côté MCP : token long-vie (`Authorization: Bearer ...`)**. Le serveur `baloo-compta` s'authentifie auprès de l'API webapp via un token associé à un user. Le token est stocké haché en BDD (table `api_tokens`), généré par un script CLI dans `web/scripts/`, copié dans `compta/.env` (variable `BALOO_API_TOKEN`).
+
+5. **Custom adapter SQLite** : Auth.js n'a pas d'adapter officiel `better-sqlite3`. On en écrit un dans `web/src/lib/auth/adapter.ts` qui implémente les fonctions Adapter nécessaires au flow Email + sessions DB. Schéma minimal côté BDD : trois tables ajoutées (`sessions`, `verification_tokens`, `api_tokens`) plus une colonne `email_verified` sur `users`.
+
+6. **Restriction au MVP** : seuls les users **déjà existants** dans la table `users` peuvent se connecter (vérification dans le callback `signIn`). Pas de création automatique à partir d'un email inconnu — ça viendra en chantier 5 quand un mécanisme d'invitation propre sera en place.
+
+7. **Middleware d'auth** : implémenté dans `web/src/lib/api/route-helpers.ts` (helper `requireApiContext` modifié pour vérifier `Authorization: Bearer …` puis cookie de session, sinon 401). Pas de `middleware.ts` Next.js edge — `better-sqlite3` ne tourne pas en edge runtime, donc on garde toute la logique dans Node runtime.
+
+**Raisons** :
+
+- Auth.js a la communauté la plus large : trouvable dans la doc Next.js officielle, des dizaines de tutos à jour, providers OAuth déjà câblés. C'est le choix le moins risqué.
+- Magic link évite tous les pièges des mots de passe maison (hashing, oubli, brute force).
+- Token Bearer pour le MCP est le standard pour les clients programmatiques (PAT GitHub, tokens Notion, etc.), bien plus simple qu'un OAuth machine-to-machine.
+- Custom adapter coûte ~150 lignes mais évite d'introduire un ORM (Prisma, Drizzle) juste pour Auth.js. Cohérent avec [ADR-010](#adr-010--outil-compta--sqlite--serveur-mcp-nodejstypescript) qui a refusé un ORM.
+
+**Conséquences** :
+
+- Nouvelle dépendance `next-auth@beta` dans `web/package.json`. Pas de dépendance ajoutée pour la BDD (on garde `better-sqlite3`).
+- Trois tables ajoutées au schéma : `sessions`, `verification_tokens`, `api_tokens`. Une colonne ajoutée à `users` : `email_verified`. Migration via `db.ts` (`ALTER TABLE` idempotent).
+- `web/src/lib/context.ts` change de source : il lit la session Auth.js (cookie ou Bearer) au lieu de `BALOO_USER_EMAIL`. Le fallback env var **est retiré** une fois l'auth en place — sinon n'importe quel process peut se faire passer pour le user.
+- L'API webapp refuse désormais les requêtes non authentifiées. Côté pages web, le layout fait redirect `/login` si pas de session.
+- Le MCP `baloo-compta` ne peut plus tourner sans `BALOO_API_TOKEN`. Documenter dans `compta/.env.example` la procédure de génération via le script.
+- `BALOO_USER_EMAIL` reste dans la config du serveur webapp **uniquement** pour le bootstrap initial du premier user (le trésorier) : le script de seed crée un user avec cet email, qui peut ensuite se connecter via magic link.
+- Branchement OIDC SGDF reporté : si la fédération expose un IdP utilisable, on l'ajoute comme provider Auth.js supplémentaire dans un ADR séparé.
+- **Pas de chiffrement des `api_tokens` au MVP** : on stocke le hash SHA-256 du token (le token brut n'est montré qu'une fois à la génération). Les `user_credentials` (Comptaweb) restent en clair tant qu'on n'attaque pas l'ADR chiffrement (cf. [ADR-013](#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git)).
+
+**Liens** :
+- [`p2-pivot-webapp.md`](p2-pivot-webapp.md) — chantier 4
+- [ADR-013](#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git) — schéma multi-user/multi-tenant déjà prévu
+- [ADR-010](#adr-010--outil-compta--sqlite--serveur-mcp-nodejstypescript) — pas d'ORM, donc adapter custom
 
 ---
 

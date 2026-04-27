@@ -35,12 +35,10 @@ pour l'asso et attend un remboursement.
 ## Étapes
 
 1. Demander à l'utilisateur les infos manquantes.
-2. Extraire le montant du justificatif si c'est une image/PDF.
-3. Vérifier que le montant est cohérent avec le budget ouvert.
-4. Créer une entrée dans Airtable "Remboursements".
-5. Générer un brouillon de mail au trésorier avec le justificatif en pièce jointe.
-6. Mettre à jour `mon-groupe/historique/remboursements.md`.
-7. Confirmer à l'utilisateur ce qui a été fait et ce qu'il reste à faire manuellement.
+2. Extraire le montant du justificatif si c'est une image/PDF (déposé dans `inbox/`).
+3. Vérifier que le montant est cohérent avec le budget ouvert (`list_budget_lignes`).
+4. Créer le remboursement via le MCP (`create_remboursement`) et attacher le justificatif (`attach_justificatif`).
+5. Confirmer à l'utilisateur ce qui a été fait et ce qu'il reste à faire manuellement (saisie Comptaweb, relance RIB, etc.).
 
 ## Pièges connus
 - Les tickets restaurants sont parfois ambigus sur le montant TTC.
@@ -59,9 +57,9 @@ pour l'asso et attend un remboursement.
 
 **À valider en Phase 1** lors de l'implémentation, en fonction des besoins réels.
 
-## Skills "core SGDF" vs skills "mon groupe"
+## Skills "core SGDF" vs skills "spécifiques au groupe"
 
-Même logique que pour la mémoire :
+Même logique que pour la mémoire (cf. [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git)) : les skills génériques vivent dans `sgdf-core/skills/` (partageables, public-ready) ; les skills spécifiques à un groupe vivent dans `skills/` à la racine (gitignored si jamais ils contenaient des références sensibles).
 
 ```
 sgdf-core/
@@ -69,18 +67,17 @@ sgdf-core/
     ├── remboursement/        ← générique, adaptable
     └── cloture-camp/
 
-mon-groupe/
-└── skills/
-    └── rapprochement-cic/    ← spécifique à notre banque
+skills/
+└── rapprochement-cic/        ← spécifique à notre banque (vide pour l'instant)
 ```
 
-Un skill de `mon-groupe/` peut **hériter ou surcharger** un skill de `sgdf-core/` en y référençant le process générique puis en ajoutant les spécificités.
+Un skill de `skills/` peut **hériter ou surcharger** un skill de `sgdf-core/skills/` en y référençant le process générique puis en ajoutant les spécificités. Aucune donnée nominative ou financière dans le contenu d'un skill — les références concrètes vivent en BDD.
 
 ## Évolution vers les phases suivantes
 
-- **Phase 1 (MVP)** : skills markdown, déclenchés manuellement depuis Claude Code.
-- **Phase 2** : mêmes skills, testés par d'autres utilisateurs, raffinés.
-- **Phase 3** : skills chargés par le backend Agent SDK, exposés comme "actions" dans la webapp ou commandes du bot.
-- **Phase 4** : skills comme feature commerciale — "Baloo automatise 15 process compta SGDF".
+- **Phase 1 (MVP CLI)** : skills markdown, déclenchés manuellement depuis Claude Code, opérations via le MCP `baloo-compta`.
+- **Phase 2 (ouverture intra-groupe)** : mêmes skills côté Claude Code, mais le MCP devient client HTTP de la webapp (cf. [`roadmap.md`](roadmap.md)). Certains skills peuvent gagner un équivalent "action" déclenchable depuis l'UI webapp pour les chefs/parents (ex. dépôt de justif). Le markdown reste la spec ; l'impl tape l'API.
+- **Phase 3 (multi-groupes)** : les skills `sgdf-core/` deviennent un actif partagé entre groupes ; chaque groupe peut surcharger via ses propres skills si besoin.
+- **Phase 4 (SaaS)** : skills comme feature commerciale — "Baloo automatise N process compta SGDF".
 
 **Le format ne change pas entre les phases.** C'est ça, l'intérêt principal du choix.

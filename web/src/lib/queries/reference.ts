@@ -1,18 +1,23 @@
-import { getDb } from '../db';
+import { getCurrentContext } from '../context';
+import {
+  listCategories as listCategoriesService,
+  listModesPaiement as listModesPaiementService,
+  listUnites as listUnitesService,
+  listActivites as listActivitesService,
+} from '../services/reference';
 import type { Category, Unite, ModePaiement, Activite } from '../types';
 
-export function listCategories(): Category[] {
-  return getDb().prepare('SELECT id, name, type, comptaweb_nature FROM categories ORDER BY name').all() as Category[];
+export const listCategories = listCategoriesService;
+export const listModesPaiement = listModesPaiementService;
+
+export async function listUnites(): Promise<Unite[]> {
+  const { groupId } = await getCurrentContext();
+  return listUnitesService({ groupId });
 }
 
-export function listUnites(): Unite[] {
-  return getDb().prepare('SELECT id, code, name FROM unites ORDER BY code').all() as Unite[];
+export async function listActivites(): Promise<Activite[]> {
+  const { groupId } = await getCurrentContext();
+  return listActivitesService({ groupId });
 }
 
-export function listModesPaiement(): ModePaiement[] {
-  return getDb().prepare('SELECT id, name FROM modes_paiement ORDER BY name').all() as ModePaiement[];
-}
-
-export function listActivites(): Activite[] {
-  return getDb().prepare('SELECT id, name FROM activites ORDER BY name').all() as Activite[];
-}
+export type { Category, ModePaiement };

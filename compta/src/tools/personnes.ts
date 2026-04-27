@@ -1,7 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { currentTimestamp, getDb } from '../db.js';
-import { getCurrentContext } from '../context.js';
+import { api } from '../api-client.js';
 
 const ROLES = [
   'tresorier',
@@ -19,21 +18,9 @@ const ROLES = [
   'autre',
 ] as const;
 
-function slugify(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
-function nextPersonneId(groupId: string, prenom: string, nom: string | null): string {
-  const base = `per-${slugify(prenom)}${nom ? `-${slugify(nom)}` : ''}`;
-  const existing = getDb()
-    .prepare('SELECT COUNT(*) AS n FROM personnes WHERE group_id = ? AND id LIKE ?')
-    .get(groupId, `${base}%`) as { n: number };
-  return existing.n === 0 ? base : `${base}-${existing.n + 1}`;
+interface PersonneRow {
+  id: string;
+  [key: string]: unknown;
 }
 
 export function registerPersonneTools(server: McpServer) {
@@ -45,18 +32,10 @@ export function registerPersonneTools(server: McpServer) {
       role: z.string().optional().describe("Filtre par role_groupe (ex: 'co-rg', 'chef_unite')"),
       unite_id: z.string().optional(),
     },
-    ({ statut, role, unite_id }) => {
-      const { groupId } = getCurrentContext();
-      let sql = 'SELECT * FROM personnes WHERE group_id = ?';
-      const params: (string | number)[] = [groupId];
-      if (statut) { sql += ' AND statut = ?'; params.push(statut); }
-      else { sql += " AND statut = 'actif'"; }
-      if (role) { sql += ' AND role_groupe = ?'; params.push(role); }
-      if (unite_id) { sql += ' AND unite_id = ?'; params.push(unite_id); }
-      sql += ' ORDER BY role_groupe, prenom, nom';
-      const rows = getDb().prepare(sql).all(...params);
+    async (params) => {
+      const rows = await api.get<PersonneRow[]>('/api/personnes', params);
       return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
-    }
+    },
   );
 
   server.tool(
@@ -72,16 +51,10 @@ export function registerPersonneTools(server: McpServer) {
       depuis: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       notes: z.string().optional(),
     },
-    ({ prenom, nom, email, telephone, role_groupe, unite_id, depuis, notes }) => {
-      const ctx = getCurrentContext();
-      const id = nextPersonneId(ctx.groupId, prenom, nom ?? null);
-      const now = currentTimestamp();
-      getDb().prepare(
-        `INSERT INTO personnes (id, group_id, prenom, nom, email, telephone, role_groupe, unite_id, statut, depuis, notes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'actif', ?, ?, ?, ?)`
-      ).run(id, ctx.groupId, prenom, nom ?? null, email ?? null, telephone ?? null, role_groupe ?? null, unite_id ?? null, depuis ?? null, notes ?? null, now, now);
-      return { content: [{ type: 'text', text: `Personne ${id} créée : ${prenom}${nom ? ' ' + nom : ''}.` }] };
-    }
+    async (params) => {
+      const created = await api.post<PersonneRow>('/api/personnes', params);
+      return { content: [{ type: 'text', text: `Personne ${created.id} créée : ${params.prenom}${params.nom ? ' ' + params.nom : ''}.` }] };
+    },
   );
 
   server.tool(
@@ -100,26 +73,10 @@ export function registerPersonneTools(server: McpServer) {
       jusqu_a: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
       notes: z.string().nullable().optional(),
     },
-    (args) => {
-      const { id, ...rest } = args;
-      const fields: string[] = [];
-      const values: (string | null)[] = [];
-      for (const [k, v] of Object.entries(rest)) {
-        if (v === undefined) continue;
-        fields.push(`${k} = ?`);
-        values.push(v as string | null);
-      }
-      if (fields.length === 0) {
-        return { content: [{ type: 'text', text: 'Rien à mettre à jour.' }], isError: true };
-      }
-      fields.push('updated_at = ?');
-      values.push(currentTimestamp());
-      values.push(id);
-      const info = getDb().prepare(`UPDATE personnes SET ${fields.join(', ')} WHERE id = ?`).run(...values);
-      if (info.changes === 0) {
-        return { content: [{ type: 'text', text: `Aucune personne trouvée avec l'id ${id}.` }], isError: true };
-      }
+    async (params) => {
+      const { id, ...patch } = params;
+      await api.patch(`/api/personnes/${encodeURIComponent(id)}`, patch);
       return { content: [{ type: 'text', text: `Personne ${id} mise à jour.` }] };
-    }
+    },
   );
 }

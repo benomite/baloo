@@ -11,6 +11,10 @@ import {
 } from '../comptaweb-client/index.js';
 import type { CreateEcritureInput, EcritureType } from '../comptaweb-client/index.js';
 
+// DEPRECATED (chantier 1, doc/p2-pivot-webapp.md) : sera retiré au chantier 3.
+// Les opérations Comptaweb (lecture rapprochement bancaire, création
+// d'écriture, lecture des référentiels) seront exposées par l'API webapp
+// au chantier 6 — le MCP les appellera alors via HTTP.
 export function registerComptawebClientTools(server: McpServer) {
   server.tool(
     'cw_list_rapprochement_bancaire',

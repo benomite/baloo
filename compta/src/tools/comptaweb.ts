@@ -115,6 +115,9 @@ function groupRows(rows: Row[]): Map<string, LineGroup> {
   return groups;
 }
 
+// DEPRECATED (chantier 1, doc/p2-pivot-webapp.md) : sera retiré au chantier 3
+// quand le MCP devient un client HTTP de la webapp. La logique d'import CSV
+// Comptaweb sera exposée par la webapp au chantier 6.
 export function registerComptawebTools(server: McpServer) {
   server.tool(
     'import_comptaweb_csv',

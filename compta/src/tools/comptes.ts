@@ -1,48 +1,29 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { currentTimestamp, getDb } from '../db.js';
-import { getCurrentContext } from '../context.js';
+import { api } from '../api-client.js';
 
 const TYPES = ['courant', 'livret', 'caisse', 'autre'] as const;
 const STATUTS = ['actif', 'ferme'] as const;
 
-function slugify(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
-function nextCompteId(groupId: string, code: string): string {
-  const base = `cpt-${slugify(code)}`;
-  const existing = getDb()
-    .prepare('SELECT COUNT(*) AS n FROM comptes_bancaires WHERE group_id = ? AND id LIKE ?')
-    .get(groupId, `${base}%`) as { n: number };
-  return existing.n === 0 ? base : `${base}-${existing.n + 1}`;
+interface CompteRow {
+  id: string;
+  [key: string]: unknown;
 }
 
 export function registerCompteTools(server: McpServer) {
   server.tool(
     'list_comptes_bancaires',
-    "Liste les comptes bancaires du groupe (comptes courants, livrets, caisses).",
+    'Liste les comptes bancaires du groupe (comptes courants, livrets, caisses).',
     { statut: z.enum(STATUTS).optional() },
-    ({ statut }) => {
-      const { groupId } = getCurrentContext();
-      let sql = 'SELECT * FROM comptes_bancaires WHERE group_id = ?';
-      const params: (string | number)[] = [groupId];
-      if (statut) { sql += ' AND statut = ?'; params.push(statut); }
-      else { sql += " AND statut = 'actif'"; }
-      sql += ' ORDER BY type_compte, nom';
-      const rows = getDb().prepare(sql).all(...params);
+    async (params) => {
+      const rows = await api.get<CompteRow[]>('/api/comptes-bancaires', params);
       return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
-    }
+    },
   );
 
   server.tool(
     'create_compte_bancaire',
-    "Ajoute un compte bancaire, livret ou caisse au groupe.",
+    'Ajoute un compte bancaire, livret ou caisse au groupe.',
     {
       code: z.string().min(1).describe("Identifiant court (ex: 'bnp-principal', 'livret-a')"),
       nom: z.string().min(1),
@@ -50,25 +31,19 @@ export function registerCompteTools(server: McpServer) {
       iban: z.string().optional(),
       bic: z.string().optional(),
       type_compte: z.enum(TYPES).optional(),
-      comptaweb_id: z.number().optional().describe("ID du compte dans Comptaweb (pour rapprochement)"),
+      comptaweb_id: z.number().optional().describe('ID du compte dans Comptaweb (pour rapprochement)'),
       ouvert_le: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       notes: z.string().optional(),
     },
-    ({ code, nom, banque, iban, bic, type_compte, comptaweb_id, ouvert_le, notes }) => {
-      const ctx = getCurrentContext();
-      const id = nextCompteId(ctx.groupId, code);
-      const now = currentTimestamp();
-      getDb().prepare(
-        `INSERT INTO comptes_bancaires (id, group_id, code, nom, banque, iban, bic, type_compte, comptaweb_id, statut, ouvert_le, notes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'actif', ?, ?, ?, ?)`
-      ).run(id, ctx.groupId, code, nom, banque ?? null, iban ?? null, bic ?? null, type_compte ?? null, comptaweb_id ?? null, ouvert_le ?? null, notes ?? null, now, now);
-      return { content: [{ type: 'text', text: `Compte ${id} créé : ${nom}.` }] };
-    }
+    async (params) => {
+      const created = await api.post<CompteRow>('/api/comptes-bancaires', params);
+      return { content: [{ type: 'text', text: `Compte ${created.id} créé : ${params.nom}.` }] };
+    },
   );
 
   server.tool(
     'update_compte_bancaire',
-    "Met à jour un compte (statut, notes, IBAN, etc.).",
+    'Met à jour un compte (statut, notes, IBAN, etc.).',
     {
       id: z.string(),
       nom: z.string().optional(),
@@ -82,26 +57,10 @@ export function registerCompteTools(server: McpServer) {
       ferme_le: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
       notes: z.string().nullable().optional(),
     },
-    (args) => {
-      const { id, ...rest } = args;
-      const fields: string[] = [];
-      const values: (string | number | null)[] = [];
-      for (const [k, v] of Object.entries(rest)) {
-        if (v === undefined) continue;
-        fields.push(`${k} = ?`);
-        values.push(v as string | number | null);
-      }
-      if (fields.length === 0) {
-        return { content: [{ type: 'text', text: 'Rien à mettre à jour.' }], isError: true };
-      }
-      fields.push('updated_at = ?');
-      values.push(currentTimestamp());
-      values.push(id);
-      const info = getDb().prepare(`UPDATE comptes_bancaires SET ${fields.join(', ')} WHERE id = ?`).run(...values);
-      if (info.changes === 0) {
-        return { content: [{ type: 'text', text: `Aucun compte trouvé avec l'id ${id}.` }], isError: true };
-      }
+    async (params) => {
+      const { id, ...patch } = params;
+      await api.patch(`/api/comptes-bancaires/${encodeURIComponent(id)}`, patch);
       return { content: [{ type: 'text', text: `Compte ${id} mis à jour.` }] };
-    }
+    },
   );
 }
