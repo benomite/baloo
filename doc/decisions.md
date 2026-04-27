@@ -393,7 +393,98 @@ ADR-008 avait déjà posé le principe "penser multi-tenant sans le construire",
 
 ---
 
-## ADR-014 — Auth multi-user : Auth.js v5 + magic link + token MCP
+## ADR-014 — Écritures : flag `justif_attendu` plutôt qu'enum à trois états
+**Date** : 2026-04-21
+**Statut** : accepté
+
+**Contexte** : une dépense dans `ecritures` peut se trouver dans trois situations vis-à-vis de son justificatif : (1) fichier rattaché côté Baloo, (2) pas de fichier mais `numero_piece` renseigné (sync vers Comptaweb possible, document à récupérer ultérieurement), (3) écriture pour laquelle **aucun justif papier n'existera jamais** — prélèvement national SGDF, contribution territoire, appel de fonds, cumul d'adhésions fiscalisées, etc. Avant cet ADR, le compteur `alertes.depenses_sans_justificatif` de `vue_ensemble` comptait indistinctement les cas (2) et (3), et la sync `cw_sync_draft` bloquait sur toute dépense sans `hasJustificatif && !numero_piece`, ce qui contraignait à renseigner un `numero_piece` fictif pour ces flux.
+
+On cherche un modèle qui :
+- permette de sortir les "non attendu" de l'alerte (sans bloquer la sync),
+- garde l'alerte active tant qu'un document n'est pas rattaché, même si un `numero_piece` est renseigné (le code Comptaweb ne remplace pas la pièce),
+- reste trivialement migrable (BDD en production dès le MVP).
+
+**Options envisagées** :
+1. **Enum à 3 états** `justif_status IN ('attendu', 'manquant_avec_code', 'non_attendu')` sur `ecritures`. Explicite mais redondant : « manquant avec code » se déduit déjà de `numero_piece IS NOT NULL AND hasJust = 0`, et « attendu » est le défaut. Introduit un état dénormalisé qui doit être maintenu en cohérence par l'UI et les server actions.
+2. **Flag booléen `justif_attendu`** sur `ecritures`. Les 4 états visibles en UI (✓ / ⌛ / 🚫 / ⚠) se dérivent de ce flag, de la présence d'un fichier, et de `numero_piece` — aucune dénormalisation.
+3. Ne rien faire, continuer à polluer le compteur.
+
+**Décision** : option 2. Colonne `justif_attendu INTEGER NOT NULL DEFAULT 1` ajoutée sur `ecritures`.
+
+- `justif_attendu = 1` + fichier rattaché → OK.
+- `justif_attendu = 1` + pas de fichier + `numero_piece` → sync Comptaweb autorisée, alerte "à compléter" maintenue tant qu'un document n'est pas rattaché.
+- `justif_attendu = 1` + pas de fichier + pas de `numero_piece` → sync bloquée, écriture dans « À compléter ».
+- `justif_attendu = 0` → aucune alerte, sync autorisée sans exigence de justif.
+
+**Raisons** :
+- Pas de dénormalisation : les 4 états se calculent depuis trois données de base déjà présentes.
+- Un bool migre plus proprement qu'un enum (pas de `CHECK` contraint à faire évoluer).
+- L'UX du formulaire est naturelle : une case à cocher « Justificatif attendu pour cette écriture », cochée par défaut, suffit à couvrir les 3 situations.
+
+**Conséquences** :
+- Migration additive dans `compta/src/db.ts` (`ensureColumn` avec `DEFAULT 1`) — toutes les écritures existantes restent "attendu", comportement inchangé.
+- `vue_ensemble.alertes.depenses_sans_justificatif` filtre désormais `justif_attendu = 1`.
+- `cw_sync_draft` ne bloque plus si `justif_attendu = 0`, même sans `numero_piece` ni fichier.
+- Front `/ecritures` : colonne `Just.` avec 4 états visuels distincts ; page détail avec checkbox + encart d'état.
+- Script `npm run flag:prelevements-auto` (additif) pour marquer en bulk les dépenses récurrentes type "Regroupement de N prélèvements nationaux", "Cumul 6161/6586", "Appel de fond Territoire" (skip automatique de celles qui ont déjà un justif rattaché).
+
+**Liens** :
+- [ADR-010](#adr-010--outil-compta--sqlite--serveur-mcp-nodejstypescript) — SQLite + MCP (table `ecritures`)
+- [ADR-011](#adr-011--client-api-comptaweb-par-reverse-engineering) — sync Comptaweb (contrainte de validation)
+
+---
+
+## ADR-015 — Sync additive des référentiels Comptaweb vers la BDD locale
+**Date** : 2026-04-22
+**Statut** : accepté
+
+**Contexte** : les référentiels Comptaweb (**branches/projets**, natures, activités, modes de transaction) sont **modifiables côté Comptaweb** : un groupe peut créer un nouveau projet de camp, ajouter une branche "Groupe" qui manquait, renommer une nature. Le script initial `map:referentiels` ne faisait qu'**attacher un `comptaweb_id`** aux entrées locales déjà présentes (via un match par nom normalisé). Il ne créait **pas** les entrées locales manquantes. Conséquence observée : la branche Comptaweb « Groupe » n'existait pas côté Baloo, donc impossible d'assigner une unité aux 14 prélèvements auto et de les pousser proprement vers Comptaweb.
+
+Le besoin : depuis l'app web, pouvoir **synchroniser les configs** d'un clic pour que les dropdowns d'édition (Unité, Catégorie, Activité, Mode de paiement) reflètent exactement ce que Comptaweb propose aujourd'hui.
+
+**Décision** :
+
+1. **Pattern unique** appliqué aux 4 référentiels. Pour chaque option récupérée depuis Comptaweb (`{value, label}` où `value = comptaweb_id`) :
+   - **Match 1** : ligne locale avec même `comptaweb_id` → inchangée.
+   - **Match 2** (fallback) : ligne locale sans `comptaweb_id`, dont le `name` normalisé (NFD → sans accents → lowercase → alphanumérique) correspond au `label` Comptaweb. Tolérance singulier/pluriel pour les unités (ex. « Impeesa » local vs « Impeesas » Comptaweb). → UPDATE `comptaweb_id`, entrée "mappée".
+   - Sinon → INSERT nouvelle entrée locale, entrée "ajoutée".
+
+2. **Additive uniquement** : aucune suppression, aucun archivage automatique. Les entrées locales avec un `comptaweb_id` introuvable côté CW sont signalées comme **orphelines** dans le rapport, mais jamais modifiées. L'utilisateur tranche manuellement (renommage en amont, suppression dans Comptaweb, ou désalignement délibéré).
+
+3. **Conventions à l'INSERT** :
+   - `unites` : `id = u-${groupId}-${slug(label)}`, `code` dérivé des initiales du label avec résolution de collision par suffixe numérique (ex. « Groupe » → `GR`, collision ultérieure → `GR2`).
+   - `categories` : `id = cat-${slug(label)}`, `type = 'les_deux'` par défaut (Comptaweb ne donne pas cette info), `comptaweb_nature = label`.
+   - `activites` : `id = act-${groupId}-${slug(label)}`.
+   - `modes_paiement` : `id = mp-${slug(label)}`.
+
+4. **Deux points d'entrée** partageant la même logique pure (`applyReferentielsSync(db, groupId, refs, now)`) :
+   - **Front web** : bouton « Synchroniser les configs » sur `/import`, server action `syncReferentielsFromComptaweb()`, `revalidatePath` sur `/ecritures` et `/import` pour rafraîchir les dropdowns.
+   - **MCP** : tool `cw_sync_referentiels` + script `npm run sync:referentiels`.
+   - La logique pure est **dupliquée à la main** entre `compta/src/comptaweb-client/` et `web/src/lib/comptaweb/`, cohérent avec le reste du client Comptaweb (pas de workspace pnpm pour l'instant).
+
+5. **Pas de dry-run** dans le flux : sync = un clic = un INSERT/UPDATE idempotent + toast avec le bilan. Le risque est faible (additif, transactionnel).
+
+**Raisons** :
+- Un match par `comptaweb_id` d'abord évite de dupliquer une entrée si son libellé a légèrement changé côté CW.
+- Le fallback par nom normalisé absorbe les entrées locales historiquement nommées à la main (les 5 branches-jeunes du bootstrap n'ont pas de `comptaweb_id` après un fresh install, il faut les mapper).
+- Le tout-additif garantit qu'on ne peut pas casser une entrée locale existante à cause d'un changement côté Comptaweb.
+- `type = 'les_deux'` par défaut sur les nouvelles natures n'est pas optimal (il faudra affiner manuellement) mais Comptaweb ne renvoie pas cette information, donc on fait avec.
+
+**Conséquences** :
+- `val-de-saone` a ajouté au premier run : 3 unités (Groupe, AJUSTEMENTS, Impeesas), 56 natures, 2 activités (ExtraJob, WET), 6 modes. La branche « Groupe » manquante est couverte.
+- Les dropdowns d'édition du front `/ecritures/[id]` listent désormais tous les choix de Comptaweb.
+- Le script initial `map:referentiels` reste dispo mais devient redondant — `sync:referentiels` le remplace fonctionnellement.
+- Nouveaux fichiers : `compta/src/comptaweb-client/sync-referentiels-logic.ts`, `compta/src/tools/sync-referentiels.ts`, `compta/src/scripts/sync-referentiels.ts`, `web/src/lib/comptaweb/sync-referentiels-logic.ts`, `web/src/lib/actions/referentiels.ts`, `web/src/components/config/sync-referentiels-button.tsx`.
+- Aucune nouvelle dépendance.
+
+**Liens** :
+- [ADR-010](#adr-010--outil-compta--sqlite--serveur-mcp-nodejstypescript) — schéma de référence
+- [ADR-011](#adr-011--client-api-comptaweb-par-reverse-engineering) — client Comptaweb
+- [ADR-012](#adr-012--comptaweb--webapp-server-rendered-scraping-html-avec-cheerio) — parsing HTML (la source des options)
+
+---
+
+## ADR-016 — Auth multi-user : Auth.js v5 + magic link + token MCP
 **Date** : 2026-04-26
 **Statut** : accepté
 

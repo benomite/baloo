@@ -43,6 +43,7 @@ const createSchema = z.object({
   mode_paiement_id: z.string().nullish(),
   activite_id: z.string().nullish(),
   numero_piece: z.string().nullish(),
+  justif_attendu: z.union([z.boolean(), z.literal(0), z.literal(1)]).optional(),
   notes: z.string().nullish(),
 });
 

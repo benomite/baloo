@@ -25,8 +25,10 @@ export interface EcritureFilters {
 
 // Renvoie la liste des champs manquants qui bloquent la synchronisation.
 // Les drafts issus d'une ligne bancaire sont considérés "à compléter" s'il
-// leur manque nature/activité/unité/mode ; une dépense doit en plus avoir un
-// justificatif (fichier ou numero_piece).
+// leur manque nature/activité/unité/mode ; une dépense est signalée "justif"
+// manquante dès que justif_attendu=1 et aucun fichier rattaché — même si
+// numero_piece est renseigné (le code Comptaweb permet la sync mais ne
+// remplace pas le document physique).
 export function computeMissingFields(e: {
   status: string;
   category_id: string | null;
@@ -35,6 +37,7 @@ export function computeMissingFields(e: {
   mode_paiement_id: string | null;
   type: string;
   numero_piece: string | null;
+  justif_attendu: number;
   has_justificatif?: boolean;
 }): string[] {
   if (e.status !== 'brouillon') return [];
@@ -43,7 +46,7 @@ export function computeMissingFields(e: {
   if (!e.activite_id) missing.push('activité');
   if (!e.unite_id) missing.push('unité');
   if (!e.mode_paiement_id) missing.push('mode');
-  if (e.type === 'depense' && !e.has_justificatif && !e.numero_piece) {
+  if (e.type === 'depense' && e.justif_attendu === 1 && !e.has_justificatif) {
     missing.push('justif');
   }
   return missing;
@@ -121,6 +124,7 @@ export interface CreateEcritureInput {
   mode_paiement_id?: string | null;
   activite_id?: string | null;
   numero_piece?: string | null;
+  justif_attendu?: 0 | 1 | boolean;
   notes?: string | null;
 }
 
@@ -132,10 +136,13 @@ export function createEcriture(
   const prefix = input.type === 'depense' ? 'DEP' : 'REC';
   const id = nextId(prefix);
   const now = currentTimestamp();
+  const justifAttendu = input.justif_attendu === undefined
+    ? 1
+    : (input.justif_attendu ? 1 : 0);
 
   db.prepare(
-    `INSERT INTO ecritures (id, group_id, date_ecriture, description, amount_cents, type, unite_id, category_id, mode_paiement_id, activite_id, numero_piece, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO ecritures (id, group_id, date_ecriture, description, amount_cents, type, unite_id, category_id, mode_paiement_id, activite_id, numero_piece, justif_attendu, notes, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     groupId,
@@ -148,6 +155,7 @@ export function createEcriture(
     input.mode_paiement_id ?? null,
     input.activite_id ?? null,
     input.numero_piece ?? null,
+    justifAttendu,
     input.notes ?? null,
     now,
     now,
@@ -166,6 +174,7 @@ export interface UpdateEcritureInput {
   mode_paiement_id?: string | null;
   activite_id?: string | null;
   numero_piece?: string | null;
+  justif_attendu?: 0 | 1 | boolean;
   status?: 'brouillon' | 'valide' | 'saisie_comptaweb';
   comptaweb_synced?: boolean;
   notes?: string | null;
@@ -188,6 +197,7 @@ export function updateEcriture(
   if (patch.mode_paiement_id !== undefined) { sets.push('mode_paiement_id = ?'); values.push(patch.mode_paiement_id); }
   if (patch.activite_id !== undefined) { sets.push('activite_id = ?'); values.push(patch.activite_id); }
   if (patch.numero_piece !== undefined) { sets.push('numero_piece = ?'); values.push(patch.numero_piece); }
+  if (patch.justif_attendu !== undefined) { sets.push('justif_attendu = ?'); values.push(patch.justif_attendu ? 1 : 0); }
   if (patch.status !== undefined) { sets.push('status = ?'); values.push(patch.status); }
   if (patch.comptaweb_synced !== undefined) { sets.push('comptaweb_synced = ?'); values.push(patch.comptaweb_synced ? 1 : 0); }
   if (patch.notes !== undefined) { sets.push('notes = ?'); values.push(patch.notes); }

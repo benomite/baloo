@@ -78,8 +78,25 @@ export function EcritureForm({ action, categories, unites, modesPaiement, activi
         </div>
         <div>
           <Label htmlFor="numero_piece">N° pièce</Label>
-          <Input id="numero_piece" name="numero_piece" defaultValue={ecriture?.numero_piece ?? ''} />
+          <Input id="numero_piece" name="numero_piece" defaultValue={ecriture?.numero_piece ?? ''} placeholder="Code Comptaweb si document pas encore reçu" />
         </div>
+      </div>
+
+      <div className="rounded border p-3 bg-muted/30">
+        <label className="flex items-start gap-2 cursor-pointer text-sm">
+          <input
+            type="checkbox"
+            name="justif_attendu"
+            defaultChecked={ecriture ? ecriture.justif_attendu === 1 : true}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="font-medium">Justificatif attendu pour cette écriture</span>
+            <span className="block text-muted-foreground text-xs mt-0.5">
+              Cocher = justif requis (tant qu'un fichier n'est pas rattaché, l'écriture reste dans « À compléter »). Décocher pour un prélèvement auto SGDF / flux territoire qui n'aura pas de pièce.
+            </span>
+          </span>
+        </label>
       </div>
 
       <div>

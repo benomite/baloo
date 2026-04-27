@@ -53,6 +53,7 @@ export function registerEcritureTools(server: McpServer) {
       mode_paiement_id: z.string().optional().describe('Mode de paiement (ex: mp-cb-sgdf)'),
       activite_id: z.string().optional().describe('Activité (ex: act-annee)'),
       numero_piece: z.string().optional().describe('Numéro de pièce'),
+      justif_attendu: z.boolean().optional().describe("Défaut true. Mettre à false pour les prélèvements auto SGDF / flux territoriaux qui n'auront jamais de justif papier."),
       notes: z.string().optional(),
     },
     async (params) => {
@@ -66,6 +67,7 @@ export function registerEcritureTools(server: McpServer) {
         mode_paiement_id: params.mode_paiement_id ?? null,
         activite_id: params.activite_id ?? null,
         numero_piece: params.numero_piece ?? null,
+        justif_attendu: params.justif_attendu,
         notes: params.notes ?? null,
       });
       return {
@@ -88,6 +90,7 @@ export function registerEcritureTools(server: McpServer) {
       mode_paiement_id: z.string().optional(),
       activite_id: z.string().optional(),
       numero_piece: z.string().optional(),
+      justif_attendu: z.boolean().optional().describe("false = justif non attendu (prélèvement auto SGDF, flux territoire). Retire l'écriture du compteur 'sans justif' et débloque la sync."),
       status: z.enum(['brouillon', 'valide', 'saisie_comptaweb']).optional(),
       comptaweb_synced: z.boolean().optional(),
       notes: z.string().optional(),

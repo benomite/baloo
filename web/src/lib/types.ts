@@ -17,6 +17,7 @@ export interface Ecriture {
   activite_id: string | null;
   numero_piece: string | null;
   status: EcritureStatus;
+  justif_attendu: number;
   comptaweb_synced: number;
   ligne_bancaire_id: number | null;
   ligne_bancaire_sous_index: number | null;

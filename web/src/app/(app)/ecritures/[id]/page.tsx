@@ -68,6 +68,23 @@ export default async function EcritureDetailPage({ params }: { params: Promise<{
 
         <div>
           <h2 className="text-lg font-semibold mb-4">Justificatifs ({justificatifs.length})</h2>
+
+          {justificatifs.length === 0 && (
+            ecriture.justif_attendu === 0 ? (
+              <div className="text-sm rounded border border-muted bg-muted/40 px-3 py-2 mb-3">
+                🚫 Justificatif non attendu (prélèvement auto / flux territoire).
+              </div>
+            ) : ecriture.numero_piece ? (
+              <div className="text-sm rounded border border-amber-200 bg-amber-50 px-3 py-2 mb-3 text-amber-900">
+                ⌛ En attente — code Comptaweb <code>{ecriture.numero_piece}</code> renseigné, document à rattacher.
+              </div>
+            ) : ecriture.type === 'depense' ? (
+              <div className="text-sm rounded border border-orange-200 bg-orange-50 px-3 py-2 mb-3 text-orange-900">
+                ⚠ Justificatif manquant.
+              </div>
+            ) : null
+          )}
+
           {justificatifs.map(j => (
             <div key={j.id} className="flex items-center gap-2 mb-2 text-sm">
               <span>📎</span>

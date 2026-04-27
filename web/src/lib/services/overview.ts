@@ -44,7 +44,7 @@ export function getOverview({ groupId }: OverviewContext): OverviewData {
 
   const sansJustif = db.prepare(`
     SELECT COUNT(*) as count FROM ecritures e
-    WHERE e.group_id = ? AND e.type = 'depense'
+    WHERE e.group_id = ? AND e.type = 'depense' AND e.justif_attendu = 1
     AND NOT EXISTS (SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id)
   `).get(groupId) as { count: number };
 

@@ -23,4 +23,4 @@ Ce dossier contient la documentation de conception du projet **Baloo**, un assis
 ## État du projet
 
 **Phase actuelle** : Phase 2 — pivot webapp (chantiers 1-4 livrés)
-**Dernière mise à jour** : 2026-04-26 (P2 chantier 4 livré : auth multi-user via Auth.js v5 magic link + token MCP, ADR-014)
+**Dernière mise à jour** : 2026-04-26 (P2 chantier 4 livré : auth multi-user via Auth.js v5 magic link + token MCP, ADR-016)

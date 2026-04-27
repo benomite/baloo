@@ -24,6 +24,7 @@ export async function createEcriture(formData: FormData) {
       mode_paiement_id: (formData.get('mode_paiement_id') as string) || null,
       activite_id: (formData.get('activite_id') as string) || null,
       numero_piece: (formData.get('numero_piece') as string) || null,
+      justif_attendu: formData.has('justif_attendu') ? 1 : 0,
       notes: (formData.get('notes') as string) || null,
     },
   );
@@ -48,6 +49,7 @@ export async function updateEcriture(id: string, formData: FormData) {
       mode_paiement_id: (formData.get('mode_paiement_id') as string) || null,
       activite_id: (formData.get('activite_id') as string) || null,
       numero_piece: (formData.get('numero_piece') as string) || null,
+      justif_attendu: formData.has('justif_attendu') ? 1 : 0,
       notes: (formData.get('notes') as string) || null,
     },
   );

@@ -142,6 +142,7 @@ interface DraftRow {
   mode_paiement_id: string | null;
   numero_piece: string | null;
   status: string;
+  justif_attendu: number;
 }
 
 function isoToFr(iso: string): string {
@@ -173,7 +174,7 @@ export async function syncDraftToComptaweb(
     const db = getDb();
     const ecr = db.prepare(
       `SELECT id, group_id, date_ecriture, description, amount_cents, type,
-              unite_id, category_id, activite_id, mode_paiement_id, numero_piece, status
+              unite_id, category_id, activite_id, mode_paiement_id, numero_piece, status, justif_attendu
        FROM ecritures WHERE id = ? AND group_id = ?`,
     ).get(ecritureId, groupId) as DraftRow | undefined;
     if (!ecr) return { ok: false, message: `Écriture ${ecritureId} introuvable.`, dryRun: opts.dryRun !== false };
@@ -194,7 +195,7 @@ export async function syncDraftToComptaweb(
     else if (uniteCw === null) missing.push('mapping unité');
     if (!ecr.mode_paiement_id) missing.push('mode');
     else if (modeCw === null) missing.push('mapping mode');
-    if (ecr.type === 'depense' && !hasJust && !ecr.numero_piece) missing.push('justif');
+    if (ecr.type === 'depense' && ecr.justif_attendu === 1 && !hasJust && !ecr.numero_piece) missing.push('justif');
 
     const dryRun = opts.dryRun !== false;
     if (missing.length && !dryRun) {
