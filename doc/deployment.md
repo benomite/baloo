@@ -16,14 +16,14 @@ brew install turso  # ou curl -sSfL https://get.tur.so/install.sh | bash
 turso auth signup    # ou turso auth login
 
 # 3. Créer une BDD
-turso db create baloo-val-de-saone --location cdg  # CDG = Paris
+turso db create baloo-prod --location cdg  # CDG = Paris
 
 # 4. Récupérer l'URL de connexion
-turso db show baloo-val-de-saone --url
-# → libsql://baloo-val-de-saone-<org>.turso.io
+turso db show baloo-prod --url
+# → libsql://baloo-prod-<org>.turso.io
 
 # 5. Générer un token read-write
-turso db tokens create baloo-val-de-saone --expiration none
+turso db tokens create baloo-prod --expiration none
 # → eyJ... (long string)
 ```
 
@@ -33,12 +33,12 @@ turso db tokens create baloo-val-de-saone --expiration none
 
 ```sh
 # Depuis la racine du repo
-turso db shell baloo-val-de-saone < <(sqlite3 data/baloo.db .dump)
+turso db shell baloo-prod < <(sqlite3 data/baloo.db .dump)
 ```
 
 Vérifier ensuite :
 ```sh
-turso db shell baloo-val-de-saone "SELECT COUNT(*) FROM ecritures;"
+turso db shell baloo-prod "SELECT COUNT(*) FROM ecritures;"
 ```
 
 ### Migration des justificatifs locaux → Vercel Blob
@@ -48,7 +48,7 @@ turso db shell baloo-val-de-saone "SELECT COUNT(*) FROM ecritures;"
 ```sh
 cd web
 BLOB_READ_WRITE_TOKEN=vercel_blob_rw_... \
-DB_URL=libsql://baloo-val-de-saone-<org>.turso.io \
+DB_URL=libsql://baloo-prod-<org>.turso.io \
 DB_AUTH_TOKEN=... \
 pnpm migrate:justifs-to-blob
 ```
@@ -103,7 +103,7 @@ Dashboard Vercel → Project → Settings → Environment Variables. Ajouter pou
 | `AUTH_SECRET` | `openssl rand -base64 32` | Secret unique par environnement |
 | `EMAIL_SERVER` | `smtp://resend:re_xxx@smtp.resend.com:465` | Resend |
 | `EMAIL_FROM` | `baloo@benomite.com` | Doit matcher un domaine vérifié Resend |
-| `DB_URL` | `libsql://baloo-val-de-saone-<org>.turso.io` | URL Turso |
+| `DB_URL` | `libsql://baloo-prod-<org>.turso.io` | URL Turso |
 | `DB_AUTH_TOKEN` | (token Turso) | Marquer comme "Sensitive" |
 | `BALOO_USER_EMAIL` | `<email-trésorier>` | Compat scripts CLI (cli-context) |
 | `COMPTAWEB_USERNAME` | `<email-comptaweb>` | Login Comptaweb (Sirom). Marquer "Sensitive" |
