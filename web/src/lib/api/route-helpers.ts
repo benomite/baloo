@@ -2,12 +2,16 @@
 // doc/p2-pivot-webapp.md). Centralise la résolution du contexte courant et
 // le format de réponse d'erreur.
 //
-// Auth (chantier 4, ADR-014) :
+// Auth (chantier 4, ADR-016) :
 // - Si la requête porte un `Authorization: Bearer <token>`, le token est
 //   vérifié contre `api_tokens` → contexte = user+group du token.
 // - Sinon, on utilise la session Auth.js (cookie) → contexte = user+group
 //   du user de session.
 // - Sinon, 401.
+//
+// Le contexte porte aussi `role` et `scopeUniteId` (chantier 5) que les
+// services utilisent pour filtrer les données accessibles à un chef
+// d'unité ou un parent.
 //
 // Important : `requireApiContext` peut renvoyer une `Response` 401 que le
 // route handler doit retourner directement. C'est le pattern Next.js
@@ -22,6 +26,8 @@ import { getDb } from '../db';
 export interface ApiContext {
   userId: string;
   groupId: string;
+  role: string;
+  scopeUniteId: string | null;
 }
 
 export interface ApiError {
@@ -54,14 +60,20 @@ export async function requireApiContext(request: Request): Promise<RequireApiCon
     return { error: jsonError('Authentification requise.', 401) };
   }
 
-  // Le user `id` côté session vient de notre adapter (table `users`). On
-  // récupère le `group_id` correspondant.
+  // Le user `id` côté session vient de notre adapter (table `users`).
   const row = getDb()
-    .prepare("SELECT group_id FROM users WHERE id = ? AND statut = 'actif'")
-    .get(session.user.id) as { group_id: string } | undefined;
+    .prepare("SELECT group_id, role, scope_unite_id FROM users WHERE id = ? AND statut = 'actif'")
+    .get(session.user.id) as { group_id: string; role: string | null; scope_unite_id: string | null } | undefined;
   if (!row) return { error: jsonError('User inactif ou inconnu.', 401) };
 
-  return { ctx: { userId: session.user.id, groupId: row.group_id } };
+  return {
+    ctx: {
+      userId: session.user.id,
+      groupId: row.group_id,
+      role: row.role ?? 'tresorier',
+      scopeUniteId: row.scope_unite_id,
+    },
+  };
 }
 
 // Parse + valide un body JSON contre un schéma Zod. Retourne soit `{ data }`

@@ -45,6 +45,8 @@ export function createApiToken(opts: {
 export interface ApiTokenContext {
   userId: string;
   groupId: string;
+  role: string;
+  scopeUniteId: string | null;
 }
 
 // Vérifie un token Bearer. Renvoie le contexte user+group si valide, sinon
@@ -56,7 +58,8 @@ export function verifyApiToken(rawToken: string): ApiTokenContext | null {
 
   const row = db
     .prepare(
-      `SELECT t.id, t.user_id, t.expires_at, t.revoked_at, u.group_id, u.statut
+      `SELECT t.id, t.user_id, t.expires_at, t.revoked_at,
+              u.group_id, u.statut, u.role, u.scope_unite_id
        FROM api_tokens t JOIN users u ON u.id = t.user_id
        WHERE t.token_hash = ?`,
     )
@@ -68,6 +71,8 @@ export function verifyApiToken(rawToken: string): ApiTokenContext | null {
         revoked_at: string | null;
         group_id: string;
         statut: string;
+        role: string | null;
+        scope_unite_id: string | null;
       }
     | undefined;
 
@@ -85,5 +90,10 @@ export function verifyApiToken(rawToken: string): ApiTokenContext | null {
     /* ignore */
   }
 
-  return { userId: row.user_id, groupId: row.group_id };
+  return {
+    userId: row.user_id,
+    groupId: row.group_id,
+    role: row.role ?? 'tresorier',
+    scopeUniteId: row.scope_unite_id,
+  };
 }
