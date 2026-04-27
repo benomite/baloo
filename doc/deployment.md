@@ -41,6 +41,22 @@ Vérifier ensuite :
 turso db shell baloo-val-de-saone "SELECT COUNT(*) FROM ecritures;"
 ```
 
+### Migration des justificatifs locaux → Vercel Blob
+
+À faire **après** avoir créé le Blob côté Vercel (cf. § 4) et migré la BDD :
+
+```sh
+cd web
+BLOB_READ_WRITE_TOKEN=vercel_blob_rw_... \
+DB_URL=libsql://baloo-val-de-saone-<org>.turso.io \
+DB_AUTH_TOKEN=... \
+pnpm migrate:justifs-to-blob
+```
+
+Le script lit la table `justificatifs` (depuis Turso si `DB_URL` est défini, sinon SQLite local), vérifie pour chaque ligne si le fichier est déjà sur Blob (via `head()`), et upload sinon. Idempotent : peut être relancé plusieurs fois sans dupliquer.
+
+La BDD n'a **pas** besoin d'être mise à jour : le champ `file_path` (`<entity_type>/<entity_id>/<filename>`) est identique entre les deux backends.
+
 ---
 
 ## 2. Préparer Resend (envoi magic link)
