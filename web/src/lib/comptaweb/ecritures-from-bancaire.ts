@@ -113,8 +113,8 @@ export async function createEcritureFromLigneBancaire(
     numeropiece: input.numeropiece,
     modetransactionId,
     comptebancaireId: String(rapprochement.idCompte),
-    tiersCategId: input.tiersCategId ?? '4', // 'Mon groupe' par défaut
-    tiersStructureId: input.tiersStructureId ?? '498', // à adapter si multi-groupe
+    tiersCategId: input.tiersCategId ?? '10', // 'Autre : pas structure SGDF'
+    tiersStructureId: input.tiersStructureId ?? '', // vide quand catég='Autre'
     ventilations: [
       {
         montant,
