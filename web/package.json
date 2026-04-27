@@ -15,7 +15,8 @@
     "import:outils-state": "tsx scripts/import-outils-state.ts",
     "import:personnes": "tsx scripts/import-personnes.ts",
     "import:todos": "tsx scripts/import-todos.ts",
-    "reattach:justificatifs": "tsx scripts/reattach-justificatifs.ts"
+    "reattach:justificatifs": "tsx scripts/reattach-justificatifs.ts",
+    "set-user-role": "tsx scripts/set-user-role.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",
