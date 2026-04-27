@@ -13,11 +13,11 @@ const listSchema = z
 export async function GET(request: Request) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
-  const { groupId } = ctxR.ctx;
+  const { groupId, scopeUniteId } = ctxR.ctx;
   const params = Object.fromEntries(new URL(request.url).searchParams);
   const parsed = listSchema.safeParse(params);
   if (!parsed.success) return jsonError('Paramètres invalides.', 400);
-  return Response.json(listAbandons({ groupId }, parsed.data));
+  return Response.json(listAbandons({ groupId, scopeUniteId }, parsed.data));
 }
 
 const createSchema = z.object({
@@ -33,8 +33,8 @@ const createSchema = z.object({
 export async function POST(request: Request) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
-  const { groupId } = ctxR.ctx;
+  const { groupId, scopeUniteId } = ctxR.ctx;
   const parsed = await parseJsonBody(request, createSchema);
   if ('error' in parsed) return parsed.error;
-  return Response.json(createAbandon({ groupId }, parsed.data), { status: 201 });
+  return Response.json(createAbandon({ groupId, scopeUniteId }, parsed.data), { status: 201 });
 }

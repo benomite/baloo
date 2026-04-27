@@ -7,8 +7,12 @@ import { PageHeader } from '@/components/layout/page-header';
 import { listMouvementsCaisse } from '@/lib/queries/caisse';
 import { createMouvementCaisse } from '@/lib/actions/caisse';
 import { formatAmount } from '@/lib/format';
+import { getCurrentContext } from '@/lib/context';
+import { requireAdmin } from '@/lib/auth/access';
 
 export default async function CaissePage() {
+  const ctx = await getCurrentContext();
+  requireAdmin(ctx.role);
   const { mouvements, solde } = await listMouvementsCaisse();
 
   return (

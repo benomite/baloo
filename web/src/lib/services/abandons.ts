@@ -3,6 +3,8 @@ import { nextId, currentTimestamp } from '../ids';
 
 export interface AbandonContext {
   groupId: string;
+  // Chantier 5 : si défini, restreint aux abandons rattachés à cette unité.
+  scopeUniteId?: string | null;
 }
 
 export interface Abandon {
@@ -28,12 +30,13 @@ export interface ListAbandonsOptions {
 }
 
 export function listAbandons(
-  { groupId }: AbandonContext,
+  { groupId, scopeUniteId }: AbandonContext,
   options: ListAbandonsOptions = {},
 ): Abandon[] {
   const conditions: string[] = ['a.group_id = ?'];
   const values: unknown[] = [groupId];
 
+  if (scopeUniteId) { conditions.push('a.unite_id = ?'); values.push(scopeUniteId); }
   if (options.annee_fiscale) { conditions.push('a.annee_fiscale = ?'); values.push(options.annee_fiscale); }
   if (options.donateur) { conditions.push('a.donateur LIKE ?'); values.push(`%${options.donateur}%`); }
 

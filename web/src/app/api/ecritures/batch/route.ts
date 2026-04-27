@@ -18,9 +18,9 @@ const batchSchema = z.object({
 export async function POST(request: Request) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
-  const { groupId } = ctxR.ctx;
+  const { groupId, scopeUniteId } = ctxR.ctx;
   const parsed = await parseJsonBody(request, batchSchema);
   if ('error' in parsed) return parsed.error;
-  const result = batchUpdateEcritures({ groupId }, parsed.data.ids, parsed.data.patch);
+  const result = batchUpdateEcritures({ groupId, scopeUniteId }, parsed.data.ids, parsed.data.patch);
   return Response.json(result);
 }

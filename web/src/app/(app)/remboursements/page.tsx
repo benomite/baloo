@@ -5,8 +5,12 @@ import { PageHeader } from '@/components/layout/page-header';
 import { RemboursementStatusBadge } from '@/components/shared/status-badge';
 import { listRemboursements } from '@/lib/queries/remboursements';
 import { formatAmount } from '@/lib/format';
+import { getCurrentContext } from '@/lib/context';
+import { requireNotParent } from '@/lib/auth/access';
 
 export default async function RemboursementsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const ctx = await getCurrentContext();
+  requireNotParent(ctx.role);
   const params = await searchParams;
   const remboursements = await listRemboursements({
     status: params.status || undefined,

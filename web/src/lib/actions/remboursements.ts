@@ -10,9 +10,9 @@ import {
 import { parseAmount } from '../format';
 
 export async function createRemboursement(formData: FormData) {
-  const { groupId } = await getCurrentContext();
+  const { groupId, scopeUniteId } = await getCurrentContext();
   const created = createRemboursementService(
-    { groupId },
+    { groupId, scopeUniteId },
     {
       demandeur: formData.get('demandeur') as string,
       amount_cents: parseAmount(formData.get('montant') as string),
@@ -34,10 +34,10 @@ export async function createRemboursement(formData: FormData) {
 }
 
 export async function updateRemboursementStatus(id: string, status: string) {
-  const { groupId } = await getCurrentContext();
+  const { groupId, scopeUniteId } = await getCurrentContext();
   const today = new Date().toISOString().split('T')[0];
   updateRemboursementService(
-    { groupId },
+    { groupId, scopeUniteId },
     id,
     {
       status: status as 'demande' | 'valide' | 'paye' | 'refuse',

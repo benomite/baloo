@@ -5,9 +5,9 @@ import { jsonError, parseJsonBody, requireApiContext } from '@/lib/api/route-hel
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
-  const { groupId } = ctxR.ctx;
+  const { groupId, scopeUniteId } = ctxR.ctx;
   const { id } = await params;
-  const ecriture = getEcriture({ groupId }, id);
+  const ecriture = getEcriture({ groupId, scopeUniteId }, id);
   if (!ecriture) return jsonError('Écriture introuvable.', 404);
   return Response.json(ecriture);
 }
@@ -32,11 +32,11 @@ const patchSchema = z.object({
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
-  const { groupId } = ctxR.ctx;
+  const { groupId, scopeUniteId } = ctxR.ctx;
   const { id } = await params;
   const parsed = await parseJsonBody(request, patchSchema);
   if ('error' in parsed) return parsed.error;
-  const updated = updateEcriture({ groupId }, id, parsed.data);
+  const updated = updateEcriture({ groupId, scopeUniteId }, id, parsed.data);
   if (!updated) return jsonError('Écriture introuvable.', 404);
   return Response.json(updated);
 }

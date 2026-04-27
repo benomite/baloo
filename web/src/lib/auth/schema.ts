@@ -2,13 +2,13 @@ import { getDb } from '../db';
 
 let ensured = false;
 
-// Crée les tables nécessaires à Auth.js (chantier 4, ADR-014) si elles
+// Crée les tables nécessaires à Auth.js (chantier 4, ADR-016) si elles
 // n'existent pas déjà. Idempotent. Appelé au lazy-init du module auth pour
-// que `web/` puisse tourner sans dépendre du bootstrap `compta` ait été
-// exécuté en premier.
+// que `web/` puisse tourner sans dépendre du bootstrap.
 //
-// Le schéma source de vérité reste `compta/src/schema.sql` ; ces CREATE
-// sont strictement les mêmes, dupliqués ici pour l'autonomie côté web.
+// Depuis le chantier 6, le `web/scripts/bootstrap.ts` est aussi
+// responsable de la création initiale du schéma métier. Ces tables auth
+// y vivent en complément.
 export function ensureAuthSchema(): void {
   if (ensured) return;
   const db = getDb();
@@ -44,11 +44,17 @@ export function ensureAuthSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash);
   `);
 
-  // Migration idempotente : ajoute la colonne `email_verified` à users
-  // si elle n'existe pas déjà.
+  // Migrations idempotentes sur la table `users`.
   const cols = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
-  if (!cols.some((c) => c.name === 'email_verified')) {
+  const has = (name: string) => cols.some((c) => c.name === name);
+  if (!has('email_verified')) {
     db.exec('ALTER TABLE users ADD COLUMN email_verified TEXT');
+  }
+  // Chantier 5 : scope unitaire d'un chef d'unité ou d'un parent. NULL
+  // pour tresorier (vue globale). Le rôle vit déjà dans la colonne `role`
+  // (texte libre, valeurs documentées dans `web/src/lib/services/personnes.ts`).
+  if (!has('scope_unite_id')) {
+    db.exec('ALTER TABLE users ADD COLUMN scope_unite_id TEXT REFERENCES unites(id)');
   }
 
   ensured = true;

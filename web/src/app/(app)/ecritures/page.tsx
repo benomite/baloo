@@ -6,8 +6,12 @@ import { listCategories, listUnites, listModesPaiement, listActivites, listCarte
 import { EcritureFilters } from '@/components/ecritures/ecriture-filters';
 import { ScanDraftsButton } from '@/components/ecritures/scan-drafts-button';
 import { EcrituresTable } from '@/components/ecritures/ecritures-table';
+import { getCurrentContext } from '@/lib/context';
+import { requireNotParent } from '@/lib/auth/access';
 
 export default async function EcrituresPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const ctx = await getCurrentContext();
+  requireNotParent(ctx.role);
   const params = await searchParams;
   const filters = {
     type: params.type || undefined,

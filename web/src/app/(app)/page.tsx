@@ -3,8 +3,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { PageHeader } from '@/components/layout/page-header';
 import { getOverview } from '@/lib/queries/overview';
 import { formatAmount } from '@/lib/format';
+import { getCurrentContext } from '@/lib/context';
+import { requireNotParent } from '@/lib/auth/access';
 
 export default async function DashboardPage() {
+  const ctx = await getCurrentContext();
+  requireNotParent(ctx.role);
   const data = await getOverview();
 
   return (

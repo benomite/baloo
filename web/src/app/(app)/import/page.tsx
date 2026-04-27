@@ -4,8 +4,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { SyncReferentielsButton } from '@/components/config/sync-referentiels-button';
 import { getDb } from '@/lib/db';
 import { formatAmount } from '@/lib/format';
+import { getCurrentContext } from '@/lib/context';
+import { requireAdmin } from '@/lib/auth/access';
 
-export default function ImportPage() {
+export default async function ImportPage() {
+  const ctx = await getCurrentContext();
+  requireAdmin(ctx.role);
   const imports = getDb().prepare(
     'SELECT * FROM comptaweb_imports ORDER BY import_date DESC'
   ).all() as { id: string; import_date: string; source_file: string; row_count: number; total_depenses_cents: number; total_recettes_cents: number }[];
