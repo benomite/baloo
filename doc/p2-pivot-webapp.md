@@ -6,7 +6,7 @@ Ce document est un **plan d'exécution**, pas un ADR. Les décisions structurell
 
 ---
 
-## 0. État d'avancement (2026-04-25)
+## 0. État d'avancement (2026-04-27)
 
 | Chantier | Statut | Notes |
 |---|---|---|
@@ -15,14 +15,15 @@ Ce document est un **plan d'exécution**, pas un ADR. Les décisions structurell
 | 3. Refonte MCP en client HTTP | ✅ fait | 17 outils sur 19 migrés. `compta/src/api-client.ts` (fetch wrapper) + `utils.ts` (helpers purs). 2 outils Comptaweb (`comptaweb` import CSV, `comptaweb-client` raw) restent en DB-direct jusqu'au chantier 6. |
 | 4. Auth multi-user | ✅ fait | Auth.js v5 (next-auth@beta), magic link email, sessions DB, custom adapter SQLite. Token Bearer pour le MCP. ADR-016 acte le choix. Cf. `web/src/lib/auth/`, `web/src/app/login/`, `web/scripts/generate-api-token.ts`. |
 | 5. Rôles + vues scopées | ⏳ à faire | Activation `chef_unite`/`parent`, pages `/u/[unite]` et `/moi`, filtres scope dans services + UI. |
-| 6. Upload UI + Comptaweb côté webapp | ⏳ à faire | Permet de retirer `compta/src/comptaweb-client/`, `compta/src/db.ts`, `better-sqlite3`. |
-| 7. Migration BDD + déploiement | ⏳ à faire | SQLite → Postgres (Neon ou autre), VPS/Vercel/Fly. ADR à créer. |
+| 6. Comptaweb côté webapp + vidage `compta/` | ✅ fait | 6 routes `/api/comptaweb/*`, 6 tools MCP migrés en HTTP, scripts admin déplacés vers `web/scripts/` (avec helper `cli-context.ts`), `compta/src/comptaweb-client/` + `db.ts` + `schema.sql` + `seed.sql` supprimés, `better-sqlite3` retiré du `compta/package.json`. Le serveur MCP est un client HTTP minimaliste (~250 lignes). |
+| 7. Migration BDD + déploiement | ⏳ à faire | SQLite → Postgres (Neon ou autre), VPS/Vercel/Fly. ADR à créer. Page upload justif côté UI (chef d'unité) — partiellement présente sur `(app)/ecritures/[id]`, à formaliser. |
 
-Tant que les chantiers 4-7 ne sont pas faits, le système tourne en **mode hybride** :
-- La webapp est la source de vérité opérationnelle pour la majorité des opérations.
+Tant que le chantier 7 n'est pas fait, le système tourne en **mode dev local** :
+- La webapp est la source de vérité opérationnelle pour toutes les opérations.
 - Les pages `web/` consomment les services en direct (pas via leur propre API).
-- Le MCP `baloo-compta` consomme l'API HTTP pour 17 outils ; les 2 outils Comptaweb restants tapent encore la SQLite locale.
-- L'auth est résolue par `BALOO_USER_EMAIL` partagé entre `compta/.env` et le serveur webapp.
+- Le MCP `baloo-compta` consomme exclusivement l'API HTTP pour ses 19 outils. Aucun accès BDD direct côté MCP.
+- L'auth tourne en magic link Auth.js (sessions DB côté `web/`). Le MCP s'authentifie via un Bearer token long-vie.
+- `BALOO_USER_EMAIL` reste utilisé uniquement par les scripts CLI (`web/scripts/`) pour résoudre `groupId` sans session HTTP.
 
 ---
 
@@ -187,17 +188,28 @@ Le pivot est découpé en **6 chantiers** qui peuvent en partie se chevaucher ma
 
 **Critère** : un chef d'unité connecté ne voit que ce qui est dans son scope, et peut déposer un justif sur une de ses écritures. Un parent ne voit que ses propres remboursements.
 
-### Chantier 6 — Upload justif depuis l'UI + déplacement client Comptaweb
+### Chantier 6 — Comptaweb côté webapp + vidage `compta/`
 
-**Objectif** : finaliser le périmètre P2 côté UI et finir de vider `compta/`.
+**Objectif** : finaliser le périmètre P2 côté backend en déplaçant le client Comptaweb dans `web/` et en vidant `compta/` de toute logique BDD-direct.
 
 **Travaux** :
-- Page d'upload de justif côté UI (chef d'unité). Stockage : commencer en local (`justificatifs/` côté serveur), prévoir abstraction pour S3-compatible plus tard.
-- Déplacer `compta/src/comptaweb-client/` vers `web/src/lib/comptaweb/` (intégrer aux routes API existantes, ex. `POST /api/comptaweb/sync`).
+- Déplacer `compta/src/comptaweb-client/` vers `web/src/lib/comptaweb/` (intégrer aux routes API).
 - Le MCP appelle ces routes au lieu d'avoir son propre client.
+- Migrer les scripts admin (bootstrap, imports, flag-prelevements-auto, reattach-justificatifs, sync-referentiels) vers `web/scripts/` avec un helper `cli-context.ts` pour résoudre `groupId` hors HTTP.
+- Page d'upload de justif côté UI (chef d'unité). Stockage : commencer en local (`justificatifs/` côté serveur), prévoir abstraction pour S3-compatible plus tard. **Reporté en chantier 7** — la fonctionnalité existe déjà partiellement sur `(app)/ecritures/[id]`.
 - À l'issue : `compta/` ne contient plus que la couche client HTTP MCP. Si la dette résiduelle est faible, le repo `compta/` peut même fusionner dans `web/` — à arbitrer.
 
 **Critère** : `compta/` est un client HTTP minimaliste (~quelques centaines de lignes), `web/` porte tout le reste.
+
+**Réalisé (2026-04-27)** :
+- 6 routes `/api/comptaweb/*` ajoutées : `rapprochement-bancaire` (GET), `referentiels-creer` (GET), `ecriture` (POST, type=depense|recette), `ecriture-from-bancaire` (POST), `import-csv` (POST avec body `{ filename, content }`), `sync-referentiels` (POST).
+- 6 tools MCP migrés en HTTP wrappers (les 5 `cw_*` + `import_comptaweb_csv`). Le tool `cw_sync_referentiels` aussi.
+- Nouveau service `web/src/lib/services/comptaweb-import.ts` (~330 lignes) qui porte la logique d'import CSV (parse, group lines Ecriture+Ventilation, mapping nature/activité/unité, transferts internes, idempotence par purge des `saisie_comptaweb`).
+- Suppression de `compta/src/comptaweb-client/` (12 fichiers dupliqués), `try-comptaweb.ts`, `try-login.ts`, `map-referentiels.ts` (legacy).
+- 8 scripts admin portés depuis `compta/src/scripts/` vers `web/scripts/` : `bootstrap`, `flag-prelevements-auto`, `import-asso-finances/comptes/outils-state/personnes/todos`, `reattach-justificatifs`. Nouveau helper `web/scripts/cli-context.ts` qui résout `{ userId, groupId }` depuis `BALOO_USER_EMAIL` (chargé par `ensureComptawebEnv()`) en SELECT sur la table `users`. Imports adaptés vers `web/src/lib/{db,ids,format}`.
+- Cleanup `compta/` : `db.ts`, `context.ts`, `config.ts`, `schema.sql`, `seed.sql`, `test-import.ts` supprimés. Dépendances `better-sqlite3`, `@types/better-sqlite3`, `cheerio` retirées du `compta/package.json`.
+- Le serveur MCP `baloo-compta` est désormais ~250 lignes au total : `api-client.ts`, `utils.ts`, `index.ts`, 19 tools en HTTP wrappers, et le seul script `sync-referentiels.ts`.
+- Commits : `c9fbcad`, `579a606`, `3bc16d7`, `20b1644`, `7a672f5`. PR #5.
 
 ### Chantier 7 (transverse) — Migration BDD et déploiement
 
