@@ -11,8 +11,13 @@ import type { CreateEcritureInput } from '../comptaweb-client/index.js';
 
 // Défauts côté groupe courant (à externaliser dans la table groupes
 // quand on aura du vrai multi-tenant).
-const DEFAULT_TIERS_CATEG_ID = '4'; // Mon groupe
-const DEFAULT_TIERS_STRUCTURE_ID = '498';
+// tierscateg=10 = 'Autre : pas structure SGDF' : par défaut toute écriture
+// créée depuis Baloo est vue comme une dépense/recette avec un tiers externe
+// (fournisseur, famille, banque...). 'Mon groupe' (4) est réservé aux
+// mouvements internes purs (caisse↔banque par exemple) ; quand on en aura
+// besoin, on override explicitement au niveau appelant.
+const DEFAULT_TIERS_CATEG_ID = '10';
+const DEFAULT_TIERS_STRUCTURE_ID = ''; // vide quand catég = 'Autre'
 const DEFAULT_COMPTE_BANCAIRE_ID = '791';
 
 interface EcritureRow {
@@ -32,6 +37,13 @@ interface EcritureRow {
   ligne_bancaire_id: number | null;
   ligne_bancaire_sous_index: number | null;
   comptaweb_ecriture_id: number | null;
+  carte_id: string | null;
+}
+
+interface CarteRow {
+  id: string;
+  type: 'cb' | 'procurement';
+  comptaweb_id: number | null;
 }
 
 interface RefComptawebRow { comptaweb_id: number | null; }
@@ -62,9 +74,10 @@ function validateDraft(
   else if (refs.uniteCwId === null) errs.push(`unite_id=${ecr.unite_id} n'a pas de comptaweb_id`);
   if (!ecr.mode_paiement_id) errs.push('mode_paiement_id manquant');
   else if (refs.modeCwId === null) errs.push(`mode_paiement_id=${ecr.mode_paiement_id} n'a pas de comptaweb_id (mode local sans équivalent, ex. 'Personnel')`);
-  if (ecr.type === 'depense' && ecr.justif_attendu === 1 && !hasJustificatif && !ecr.numero_piece) {
-    errs.push('justificatif manquant (dépense avec justif_attendu=1) : attacher via attach_justificatif, renseigner numero_piece, ou décocher justif_attendu');
-  }
+  // Le justif physique n'est plus requis pour sync : si rien n'est renseigné,
+  // on retombe sur l'ID de l'écriture comme code (voir numeropieceValue plus
+  // bas). La ligne reste signalée "justif manquant" dans Baloo tant qu'aucun
+  // fichier n'est rattaché.
   return errs;
 }
 
@@ -84,7 +97,7 @@ export function registerSyncDraftTool(server: McpServer) {
         `SELECT id, group_id, date_ecriture, description, amount_cents, type,
                 unite_id, category_id, activite_id, mode_paiement_id, numero_piece,
                 status, justif_attendu, ligne_bancaire_id, ligne_bancaire_sous_index,
-                comptaweb_ecriture_id
+                comptaweb_ecriture_id, carte_id
          FROM ecritures WHERE id = ? AND group_id = ?`,
       ).get(ecriture_id, ctx.groupId) as EcritureRow | undefined;
 
@@ -128,12 +141,25 @@ export function registerSyncDraftTool(server: McpServer) {
       // Construire l'input Comptaweb (même si validation échoue, pour montrer le
       // dry-run).
       let numeropieceValue = numeropiece_override ?? ecr.numero_piece ?? '';
-      if (!numeropieceValue && hasJustificatif) {
-        const firstJust = db.prepare(
-          "SELECT id FROM justificatifs WHERE entity_type = 'ecriture' AND entity_id = ? ORDER BY uploaded_at LIMIT 1",
-        ).get(ecr.id) as { id: string } | undefined;
-        if (firstJust) numeropieceValue = firstJust.id;
+      if (!numeropieceValue) {
+        if (hasJustificatif) {
+          const firstJust = db.prepare(
+            "SELECT id FROM justificatifs WHERE entity_type = 'ecriture' AND entity_id = ? ORDER BY uploaded_at LIMIT 1",
+          ).get(ecr.id) as { id: string } | undefined;
+          if (firstJust) numeropieceValue = firstJust.id;
+        }
+        // Fallback final : ID de l'écriture comme code stable.
+        if (!numeropieceValue) numeropieceValue = ecr.id;
       }
+
+      // Carte associée : si l'écriture en a une, on la mappe vers le bon champ
+      // Comptaweb selon son type. Une carte procurement va dans
+      // `carteprocurement`, une CB classique dans `cartebancaire`.
+      const carte = ecr.carte_id
+        ? (db.prepare('SELECT id, type, comptaweb_id FROM cartes WHERE id = ?').get(ecr.carte_id) as CarteRow | undefined)
+        : undefined;
+      const cartebancaireId = carte?.type === 'cb' && carte.comptaweb_id ? String(carte.comptaweb_id) : undefined;
+      const carteprocurementId = carte?.type === 'procurement' && carte.comptaweb_id ? String(carte.comptaweb_id) : undefined;
 
       const input: CreateEcritureInput = {
         type: ecr.type,
@@ -143,6 +169,8 @@ export function registerSyncDraftTool(server: McpServer) {
         numeropiece: numeropieceValue || undefined,
         modetransactionId: modeCwIdReal !== null ? String(modeCwIdReal) : '',
         comptebancaireId: DEFAULT_COMPTE_BANCAIRE_ID,
+        cartebancaireId,
+        carteprocurementId,
         tiersCategId: DEFAULT_TIERS_CATEG_ID,
         tiersStructureId: DEFAULT_TIERS_STRUCTURE_ID,
         ventilations: [
@@ -180,11 +208,12 @@ export function registerSyncDraftTool(server: McpServer) {
           };
         }
 
-        // Succès : mettre à jour le draft.
+        // Succès : mettre à jour le draft (on persiste le numero_piece réellement
+        // envoyé, y compris le fallback auto).
         db.prepare(
           `UPDATE ecritures SET status = 'saisie_comptaweb', comptaweb_synced = 1,
-           comptaweb_ecriture_id = ?, updated_at = ? WHERE id = ?`,
-        ).run(result.ecritureId ?? null, currentTimestamp(), ecr.id);
+           comptaweb_ecriture_id = ?, numero_piece = ?, updated_at = ? WHERE id = ?`,
+        ).run(result.ecritureId ?? null, numeropieceValue, currentTimestamp(), ecr.id);
 
         return {
           content: [{

@@ -37,6 +37,15 @@ function inferComptawebModeId(intituleParent: string): number | null {
   return null;
 }
 
+// Extrait un éventuel code de carte procurement depuis l'intitulé bancaire
+// (ex: "PAIEMENT C. PROC P168XLW4O" → "P168XLW4O"). Les cartes bancaires
+// classiques n'ont pas de code identifiable dans l'intitulé, donc on ne
+// tente d'inférer que les procurements ici.
+function extractCarteProcCode(intituleParent: string): string | null {
+  const m = intituleParent.toUpperCase().match(/PAIEMENT C\. PROC\s+([A-Z0-9]{6,})/);
+  return m ? m[1] : null;
+}
+
 function listCandidates(
   ecrituresBancaires: EcritureBancaireNonRapprochee[],
 ): CandidateLigne[] {
@@ -90,13 +99,17 @@ export function registerScanDraftsTool(server: McpServer) {
           'SELECT id FROM modes_paiement WHERE comptaweb_id = ? LIMIT 1',
         );
 
+        const findCarteByCode = db.prepare(
+          "SELECT id FROM cartes WHERE group_id = ? AND code_externe = ? AND statut = 'active' LIMIT 1",
+        );
+
         const insertEcriture = db.prepare(
           `INSERT INTO ecritures (
              id, group_id, unite_id, date_ecriture, description, amount_cents, type,
              category_id, mode_paiement_id, activite_id, numero_piece, status,
              comptaweb_synced, ligne_bancaire_id, ligne_bancaire_sous_index,
-             comptaweb_ecriture_id, notes, created_at, updated_at
-           ) VALUES (?, ?, NULL, ?, ?, ?, ?, NULL, ?, NULL, NULL, 'brouillon', 0, ?, ?, NULL, ?, ?, ?)`,
+             comptaweb_ecriture_id, carte_id, notes, created_at, updated_at
+           ) VALUES (?, ?, NULL, ?, ?, ?, ?, NULL, ?, NULL, NULL, 'brouillon', 0, ?, ?, NULL, ?, ?, ?, ?)`,
         );
 
         const created: string[] = [];
@@ -123,6 +136,13 @@ export function registerScanDraftsTool(server: McpServer) {
             modePaiementLocalId = row?.id ?? null;
           }
 
+          let carteLocalId: string | null = null;
+          const carteCode = extractCarteProcCode(c.intituleParent);
+          if (carteCode) {
+            const row = findCarteByCode.get(ctx.groupId, carteCode) as { id: string } | undefined;
+            carteLocalId = row?.id ?? null;
+          }
+
           const id = nextId('ECR');
           const now = currentTimestamp();
           const notes = c.sousLigneIndex !== null
@@ -139,6 +159,7 @@ export function registerScanDraftsTool(server: McpServer) {
             modePaiementLocalId,
             c.ligneBancaireId,
             c.sousLigneIndex,
+            carteLocalId,
             notes,
             now,
             now,
