@@ -4,6 +4,8 @@ import type { Remboursement } from '../types';
 
 export interface RemboursementContext {
   groupId: string;
+  // Chantier 5 : si défini, restreint aux remboursements de cette unité.
+  scopeUniteId?: string | null;
 }
 
 export interface RemboursementFilters {
@@ -15,14 +17,15 @@ export interface RemboursementFilters {
 }
 
 export function listRemboursements(
-  { groupId }: RemboursementContext,
+  { groupId, scopeUniteId }: RemboursementContext,
   filters: RemboursementFilters = {},
 ): Remboursement[] {
   const conditions: string[] = ['r.group_id = ?'];
   const values: unknown[] = [groupId];
 
   if (filters.status) { conditions.push('r.status = ?'); values.push(filters.status); }
-  if (filters.unite_id) { conditions.push('r.unite_id = ?'); values.push(filters.unite_id); }
+  if (scopeUniteId) { conditions.push('r.unite_id = ?'); values.push(scopeUniteId); }
+  else if (filters.unite_id) { conditions.push('r.unite_id = ?'); values.push(filters.unite_id); }
   if (filters.demandeur) { conditions.push('r.demandeur LIKE ?'); values.push(`%${filters.demandeur}%`); }
   if (filters.search) {
     conditions.push('(r.demandeur LIKE ? OR r.nature LIKE ? OR r.notes LIKE ?)');
@@ -44,18 +47,21 @@ export function listRemboursements(
 }
 
 export function getRemboursement(
-  { groupId }: RemboursementContext,
+  { groupId, scopeUniteId }: RemboursementContext,
   id: string,
 ): Remboursement | undefined {
+  const conditions = ['r.id = ?', 'r.group_id = ?'];
+  const values: unknown[] = [id, groupId];
+  if (scopeUniteId) { conditions.push('r.unite_id = ?'); values.push(scopeUniteId); }
   return getDb()
     .prepare(
       `SELECT r.*, u.code as unite_code, m.name as mode_paiement_name
        FROM remboursements r
        LEFT JOIN unites u ON u.id = r.unite_id
        LEFT JOIN modes_paiement m ON m.id = r.mode_paiement_id
-       WHERE r.id = ? AND r.group_id = ?`,
+       WHERE ${conditions.join(' AND ')}`,
     )
-    .get(id, groupId) as Remboursement | undefined;
+    .get(...values) as Remboursement | undefined;
 }
 
 export interface CreateRemboursementInput {

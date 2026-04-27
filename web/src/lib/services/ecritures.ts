@@ -4,6 +4,9 @@ import type { Ecriture } from '../types';
 
 export interface EcritureContext {
   groupId: string;
+  // Chantier 5 : si défini, restreint aux écritures de cette unité.
+  // Renseigné pour les users `chef_unite` ; NULL pour les `tresorier`.
+  scopeUniteId?: string | null;
 }
 
 export interface EcritureFilters {
@@ -58,13 +61,17 @@ export function computeMissingFields(e: {
 }
 
 export function listEcritures(
-  { groupId }: EcritureContext,
+  { groupId, scopeUniteId }: EcritureContext,
   filters: EcritureFilters = {},
 ): { ecritures: Ecriture[]; total: number } {
   const conditions: string[] = ['e.group_id = ?'];
   const values: unknown[] = [groupId];
 
-  if (filters.unite_id) { conditions.push('e.unite_id = ?'); values.push(filters.unite_id); }
+  // Scope chef_unite : ne voit que les écritures de son unité (chantier 5).
+  // Override silencieux du filtre `unite_id` côté UI : un chef ne peut pas
+  // élargir au-delà de son unité même en bidouillant l'URL.
+  if (scopeUniteId) { conditions.push('e.unite_id = ?'); values.push(scopeUniteId); }
+  else if (filters.unite_id) { conditions.push('e.unite_id = ?'); values.push(filters.unite_id); }
   if (filters.category_id) { conditions.push('e.category_id = ?'); values.push(filters.category_id); }
   if (filters.type) { conditions.push('e.type = ?'); values.push(filters.type); }
   if (filters.date_debut) { conditions.push('e.date_ecriture >= ?'); values.push(filters.date_debut); }
@@ -129,7 +136,10 @@ export function listEcritures(
   return { ecritures: filtered, total };
 }
 
-export function getEcriture({ groupId }: EcritureContext, id: string): Ecriture | undefined {
+export function getEcriture({ groupId, scopeUniteId }: EcritureContext, id: string): Ecriture | undefined {
+  const conditions = ['e.id = ?', 'e.group_id = ?'];
+  const values: unknown[] = [id, groupId];
+  if (scopeUniteId) { conditions.push('e.unite_id = ?'); values.push(scopeUniteId); }
   return getDb().prepare(
     `SELECT e.*, u.code as unite_code, u.name as unite_name, u.couleur as unite_couleur,
        c.name as category_name, m.name as mode_paiement_name, a.name as activite_name,
@@ -140,8 +150,8 @@ export function getEcriture({ groupId }: EcritureContext, id: string): Ecriture 
      LEFT JOIN modes_paiement m ON m.id = e.mode_paiement_id
      LEFT JOIN activites a ON a.id = e.activite_id
      LEFT JOIN cartes ca ON ca.id = e.carte_id
-     WHERE e.id = ? AND e.group_id = ?`,
-  ).get(id, groupId) as Ecriture | undefined;
+     WHERE ${conditions.join(' AND ')}`,
+  ).get(...values) as Ecriture | undefined;
 }
 
 export interface CreateEcritureInput {

@@ -5,9 +5,9 @@ import { jsonError, parseJsonBody, requireApiContext } from '@/lib/api/route-hel
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
-  const { groupId } = ctxR.ctx;
+  const { groupId, scopeUniteId } = ctxR.ctx;
   const { id } = await params;
-  const remboursement = getRemboursement({ groupId }, id);
+  const remboursement = getRemboursement({ groupId, scopeUniteId }, id);
   if (!remboursement) return jsonError('Remboursement introuvable.', 404);
   return Response.json(remboursement);
 }
@@ -25,11 +25,11 @@ const patchSchema = z.object({
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
-  const { groupId } = ctxR.ctx;
+  const { groupId, scopeUniteId } = ctxR.ctx;
   const { id } = await params;
   const parsed = await parseJsonBody(request, patchSchema);
   if ('error' in parsed) return parsed.error;
-  const updated = updateRemboursement({ groupId }, id, parsed.data);
+  const updated = updateRemboursement({ groupId, scopeUniteId }, id, parsed.data);
   if (!updated) return jsonError('Remboursement introuvable.', 404);
   return Response.json(updated);
 }

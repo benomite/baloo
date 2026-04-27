@@ -28,11 +28,11 @@ const listSchema = z
 export async function GET(request: Request) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
-  const { groupId } = ctxR.ctx;
+  const { groupId, scopeUniteId } = ctxR.ctx;
   const params = Object.fromEntries(new URL(request.url).searchParams);
   const parsed = listSchema.safeParse(params);
   if (!parsed.success) return jsonError('Paramètres invalides.', 400);
-  return Response.json(listEcritures({ groupId }, parsed.data as EcritureFilters));
+  return Response.json(listEcritures({ groupId, scopeUniteId }, parsed.data as EcritureFilters));
 }
 
 const createSchema = z.object({
@@ -53,9 +53,9 @@ const createSchema = z.object({
 export async function POST(request: Request) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
-  const { groupId } = ctxR.ctx;
+  const { groupId, scopeUniteId } = ctxR.ctx;
   const parsed = await parseJsonBody(request, createSchema);
   if ('error' in parsed) return parsed.error;
-  const created = createEcriture({ groupId }, parsed.data);
+  const created = createEcriture({ groupId, scopeUniteId }, parsed.data);
   return Response.json(created, { status: 201 });
 }
