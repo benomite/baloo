@@ -11,6 +11,7 @@
 
 import type Database from 'better-sqlite3';
 import type { RefOption } from './types';
+import type { ScrapedCarte } from './cartes-scrape';
 
 export interface RefSyncStats {
   ajoutees: number;
@@ -24,6 +25,7 @@ export interface SyncReferentielsReport {
   categories: RefSyncStats;
   activites: RefSyncStats;
   modes_paiement: RefSyncStats;
+  cartes: RefSyncStats;
 }
 
 export interface ReferentielsInput {
@@ -31,6 +33,7 @@ export interface ReferentielsInput {
   nature: RefOption[];
   activite: RefOption[];
   modetransaction: RefOption[];
+  cartes: ScrapedCarte[];
 }
 
 function normalise(s: string | null | undefined): string {
@@ -50,6 +53,26 @@ function slugify(s: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+// Couleurs officielles SGDF par branche — permet d'auto-assigner la couleur
+// à la création d'une unité pour l'affichage graphique.
+const UNITE_COULEURS: Array<[RegExp, string]> = [
+  [/farfadets?/i, '#E8485F'],
+  [/louveteaux.jeannettes?/i, '#F39200'],
+  [/scouts.guides?/i, '#0082BE'],
+  [/pionniers.caravelles?/i, '#7D1C2F'],
+  [/compagnons?/i, '#00934D'],
+  [/impeesas?/i, '#9B4A97'],
+  [/^groupe$/i, '#4A4A4A'],
+  [/ajustements?/i, '#B0B0B0'],
+];
+
+function inferCouleurUnite(label: string): string | null {
+  for (const [re, color] of UNITE_COULEURS) {
+    if (re.test(label)) return color;
+  }
+  return null;
 }
 
 // Code court pour une nouvelle unité : initiales des mots majusculées, sinon
@@ -120,7 +143,7 @@ function syncUnites(
   );
   const updateCwId = db.prepare('UPDATE unites SET comptaweb_id = ? WHERE id = ?');
   const insertUnite = db.prepare(
-    'INSERT INTO unites (id, group_id, code, name, comptaweb_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT INTO unites (id, group_id, code, name, comptaweb_id, couleur, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
   );
 
   for (const opt of options) {
@@ -149,7 +172,7 @@ function syncUnites(
     const code = deriveUniteCode(opt.label, existingCodes);
     existingCodes.add(code);
     const id = uniqueId(db, 'unites', `u-${groupId}-${slugify(opt.label)}`);
-    insertUnite.run(id, groupId, code, opt.label, cwId, now);
+    insertUnite.run(id, groupId, code, opt.label, cwId, inferCouleurUnite(opt.label), now);
     stats.ajoutees++;
   }
 
@@ -304,6 +327,62 @@ function syncModes(db: Database.Database, options: RefOption[], now: string): Re
   return stats;
 }
 
+function syncCartes(
+  db: Database.Database,
+  groupId: string,
+  cartes: ScrapedCarte[],
+  now: string,
+): RefSyncStats {
+  const stats: RefSyncStats = { ajoutees: 0, mappees: 0, inchangees: 0, orphelines: [] };
+  const cwIds = new Set<number>();
+
+  const getByCwId = db.prepare(
+    'SELECT id, type, porteur, code_externe, statut FROM cartes WHERE comptaweb_id = ? AND group_id = ? LIMIT 1',
+  );
+  const insertCarte = db.prepare(
+    `INSERT INTO cartes (id, group_id, type, porteur, comptaweb_id, code_externe, statut, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const updateCarte = db.prepare(
+    `UPDATE cartes SET porteur = ?, code_externe = ?, statut = ?, updated_at = ? WHERE id = ?`,
+  );
+
+  for (const c of cartes) {
+    cwIds.add(c.comptawebId);
+
+    const existing = getByCwId.get(c.comptawebId, groupId) as
+      | { id: string; type: string; porteur: string; code_externe: string | null; statut: string }
+      | undefined;
+
+    if (existing) {
+      if (
+        existing.porteur !== c.porteur
+        || (existing.code_externe ?? null) !== (c.codeExterne ?? null)
+        || existing.statut !== c.statut
+      ) {
+        updateCarte.run(c.porteur, c.codeExterne, c.statut, now, existing.id);
+        stats.mappees++;
+      } else {
+        stats.inchangees++;
+      }
+      continue;
+    }
+
+    const base = `carte-${c.type === 'procurement' ? 'proc' : 'cb'}-${slugify(c.porteur)}`;
+    const id = uniqueId(db, 'cartes', base);
+    insertCarte.run(id, groupId, c.type, c.porteur, c.comptawebId, c.codeExterne, c.statut, now, now);
+    stats.ajoutees++;
+  }
+
+  stats.orphelines = findOrphelines(db, 'cartes', cwIds).filter((id) => {
+    const row = db.prepare('SELECT group_id FROM cartes WHERE id = ?').get(id) as
+      | { group_id: string }
+      | undefined;
+    return row?.group_id === groupId;
+  });
+  return stats;
+}
+
 export function applyReferentielsSync(
   db: Database.Database,
   groupId: string,
@@ -315,5 +394,6 @@ export function applyReferentielsSync(
     categories: syncCategories(db, refs.nature, now),
     activites: syncActivites(db, groupId, refs.activite, now),
     modes_paiement: syncModes(db, refs.modetransaction, now),
+    cartes: syncCartes(db, groupId, refs.cartes, now),
   }))();
 }
