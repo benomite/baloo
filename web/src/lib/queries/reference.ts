@@ -5,7 +5,8 @@ import {
   listUnites as listUnitesService,
   listActivites as listActivitesService,
 } from '../services/reference';
-import type { Category, Unite, ModePaiement, Activite } from '../types';
+import { listCartes as listCartesService } from '../services/cartes';
+import type { Category, Unite, ModePaiement, Activite, Carte } from '../types';
 
 export const listCategories = listCategoriesService;
 export const listModesPaiement = listModesPaiementService;
@@ -18,6 +19,11 @@ export async function listUnites(): Promise<Unite[]> {
 export async function listActivites(): Promise<Activite[]> {
   const { groupId } = await getCurrentContext();
   return listActivitesService({ groupId });
+}
+
+export async function listCartes(): Promise<Carte[]> {
+  const { groupId } = await getCurrentContext();
+  return listCartesService({ groupId });
 }
 
 export type { Category, ModePaiement };

@@ -12,6 +12,8 @@ export { listRapprochementBancaire, parseRapprochementHtml } from './ecritures-b
 export { fetchReferentielsCreer, createEcriture } from './ecritures-write.js';
 export { createEcritureFromLigneBancaire } from './ecritures-from-bancaire.js';
 export { applyReferentielsSync } from './sync-referentiels-logic.js';
+export { fetchCartesProcurement, fetchCartesBancaires, fetchAllCartes } from './cartes-scrape.js';
+export type { ScrapedCarte, CarteType } from './cartes-scrape.js';
 export type {
   SyncReferentielsReport,
   RefSyncStats,

@@ -24,7 +24,7 @@ export function listModesPaiement(): ModePaiement[] {
 
 export function listUnites({ groupId }: ReferenceContext): Unite[] {
   return getDb()
-    .prepare('SELECT id, code, name FROM unites WHERE group_id = ? ORDER BY code')
+    .prepare('SELECT id, code, name, couleur FROM unites WHERE group_id = ? ORDER BY code')
     .all(groupId) as Unite[];
 }
 

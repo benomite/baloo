@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS unites (
     code TEXT NOT NULL,
     name TEXT NOT NULL,
     comptaweb_id INTEGER,
+    -- Couleur officielle de la branche SGDF (hex). Permet un affichage
+    -- graphique cohérent dans toutes les vues. Nullable : les unités locales
+    -- sans équivalent branche (Groupe, AJUSTEMENTS…) peuvent rester sans.
+    couleur TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
@@ -37,6 +41,28 @@ CREATE TABLE IF NOT EXISTS activites (
     comptaweb_id INTEGER,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+
+-- Cartes bancaires (CB classiques) et cartes procurement (CB pré-chargées SGDF)
+-- utilisées par le groupe. Le code_externe n'est renseigné que pour les
+-- procurements : il apparaît dans les intitulés bancaires des paiements
+-- (ex: "PAIEMENT C. PROC P168XLW4O") et permet d'inférer automatiquement la
+-- carte au moment du scan des drafts. Les CB classiques n'ont généralement
+-- pas de code identifiable dans l'intitulé, d'où le sélecteur manuel dans
+-- le form d'édition pour ce mode-là.
+CREATE TABLE IF NOT EXISTS cartes (
+    id TEXT PRIMARY KEY,
+    group_id TEXT NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('cb', 'procurement')),
+    porteur TEXT NOT NULL,
+    comptaweb_id INTEGER,
+    code_externe TEXT,
+    statut TEXT NOT NULL DEFAULT 'active' CHECK(statut IN ('active', 'ancienne')),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cartes_group ON cartes(group_id);
+CREATE INDEX IF NOT EXISTS idx_cartes_comptaweb ON cartes(comptaweb_id);
+CREATE INDEX IF NOT EXISTS idx_cartes_code ON cartes(code_externe);
 
 -- =============================================================================
 -- TABLES MÉTIER
