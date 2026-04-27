@@ -8,6 +8,7 @@ import { ensureComptawebEnv } from '../comptaweb/env-loader';
 import {
   applyReferentielsSync,
   fetchReferentielsCreer,
+  fetchAllCartes,
   withAutoReLogin,
   ComptawebSessionExpiredError,
 } from '../comptaweb';
@@ -24,7 +25,11 @@ export interface SyncActionResult {
 export async function syncReferentielsFromComptaweb(): Promise<SyncActionResult> {
   try {
     const ctx = await getCurrentContext();
-    const refs = await withAutoReLogin((cfg) => fetchReferentielsCreer(cfg));
+    const [refs, cartes] = await withAutoReLogin(async (cfg) => {
+      const r = await fetchReferentielsCreer(cfg);
+      const c = await fetchAllCartes(cfg);
+      return [r, c] as const;
+    });
     const report = applyReferentielsSync(
       getDb(),
       ctx.groupId,
@@ -33,6 +38,7 @@ export async function syncReferentielsFromComptaweb(): Promise<SyncActionResult>
         nature: refs.nature,
         activite: refs.activite,
         modetransaction: refs.modetransaction,
+        cartes,
       },
       currentTimestamp(),
     );

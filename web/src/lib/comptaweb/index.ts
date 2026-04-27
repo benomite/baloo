@@ -3,6 +3,8 @@ export { fetchHtml, ComptawebSessionExpiredError } from './http';
 export { listRapprochementBancaire, parseRapprochementHtml } from './ecritures-bancaires';
 export { fetchReferentielsCreer, createEcriture } from './ecritures-write';
 export { applyReferentielsSync } from './sync-referentiels-logic';
+export { fetchCartesProcurement, fetchCartesBancaires, fetchAllCartes } from './cartes-scrape';
+export type { ScrapedCarte, CarteType } from './cartes-scrape';
 export type {
   SyncReferentielsReport,
   RefSyncStats,

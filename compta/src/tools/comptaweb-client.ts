@@ -191,8 +191,8 @@ export function registerComptawebClientTools(server: McpServer) {
       libel_override: z.string().optional().describe("Si absent, libellé inféré depuis le commerçant ou l'intitulé bancaire."),
       modetransaction_id_override: z.string().optional().describe("Si absent, mode inféré depuis l'intitulé (VIR, PAIEMENT C. PROC, etc.)"),
       numeropiece: z.string().optional(),
-      tiers_categ_id: z.string().optional().describe("Défaut '4' = Mon groupe"),
-      tiers_structure_id: z.string().optional().describe("Défaut '498' (structure du groupe courant)"),
+      tiers_categ_id: z.string().optional().describe("Défaut '10' = 'Autre : pas structure SGDF' (fournisseur externe). Passer '4' (Mon groupe) seulement pour un mouvement interne."),
+      tiers_structure_id: z.string().optional().describe("Défaut '' (aucune, car catég 'Autre'). À renseigner uniquement si tiers_categ_id désigne une structure SGDF."),
       dry_run: z.boolean().optional().describe("Défaut true. Passer false pour créer réellement."),
     },
     async (args) => {

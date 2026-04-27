@@ -5,6 +5,7 @@ import { getCurrentContext } from '../context.js';
 import {
   applyReferentielsSync,
   fetchReferentielsCreer,
+  fetchAllCartes,
   withAutoReLogin,
   ComptawebSessionExpiredError,
 } from '../comptaweb-client/index.js';
@@ -26,12 +27,14 @@ function formatReport(r: SyncReferentielsReport): string {
     formatStats('Natures (catégories)', r.categories),
     formatStats('Activités', r.activites),
     formatStats('Modes de paiement', r.modes_paiement),
+    formatStats('Cartes (CB + procurement)', r.cartes),
   ];
   const orphelines = [
     ...r.unites.orphelines.map((id) => `unite ${id}`),
     ...r.categories.orphelines.map((id) => `categorie ${id}`),
     ...r.activites.orphelines.map((id) => `activite ${id}`),
     ...r.modes_paiement.orphelines.map((id) => `mode ${id}`),
+    ...r.cartes.orphelines.map((id) => `carte ${id}`),
   ];
   if (orphelines.length) {
     lines.push('', 'Orphelines (entrées locales avec comptaweb_id introuvable côté CW) :');
@@ -48,7 +51,11 @@ export function registerSyncReferentielsTool(server: McpServer) {
     async () => {
       try {
         const ctx = getCurrentContext();
-        const refs = await withAutoReLogin((cfg) => fetchReferentielsCreer(cfg));
+        const [refs, cartes] = await withAutoReLogin(async (cfg) => {
+          const r = await fetchReferentielsCreer(cfg);
+          const c = await fetchAllCartes(cfg);
+          return [r, c] as const;
+        });
         const report = applyReferentielsSync(
           getDb(),
           ctx.groupId,
@@ -57,6 +64,7 @@ export function registerSyncReferentielsTool(server: McpServer) {
             nature: refs.nature,
             activite: refs.activite,
             modetransaction: refs.modetransaction,
+            cartes,
           },
           currentTimestamp(),
         );

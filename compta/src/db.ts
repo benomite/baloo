@@ -45,16 +45,21 @@ function migrate(database: Database.Database): void {
   ensureColumn(database, 'ecritures', 'ligne_bancaire_sous_index', 'INTEGER');
   ensureColumn(database, 'ecritures', 'comptaweb_ecriture_id', 'INTEGER');
   ensureColumn(database, 'ecritures', 'justif_attendu', 'INTEGER NOT NULL DEFAULT 1');
+  // Lien écriture → carte (CB / procurement) utilisée. Nullable : seules les
+  // écritures payées par carte ont une valeur.
+  ensureColumn(database, 'ecritures', 'carte_id', 'TEXT REFERENCES cartes(id)');
   // Mapping référentiels locaux ↔ IDs numériques Comptaweb.
   ensureColumn(database, 'categories', 'comptaweb_id', 'INTEGER');
   ensureColumn(database, 'activites', 'comptaweb_id', 'INTEGER');
   ensureColumn(database, 'unites', 'comptaweb_id', 'INTEGER');
   ensureColumn(database, 'modes_paiement', 'comptaweb_id', 'INTEGER');
+  ensureColumn(database, 'unites', 'couleur', 'TEXT');
   // Index qui dépendent de colonnes ajoutées par migration.
   database.exec(
     'CREATE INDEX IF NOT EXISTS idx_ecritures_ligne_bancaire ON ecritures(ligne_bancaire_id, ligne_bancaire_sous_index)',
   );
-  // Auth (chantier 4, ADR-014) : flag de vérification email côté users.
+  database.exec('CREATE INDEX IF NOT EXISTS idx_ecritures_carte ON ecritures(carte_id)');
+  // Auth (chantier 4, ADR-016) : flag de vérification email côté users.
   ensureColumn(database, 'users', 'email_verified', 'TEXT');
 }
 

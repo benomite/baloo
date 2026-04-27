@@ -22,17 +22,31 @@ export interface Ecriture {
   ligne_bancaire_id: number | null;
   ligne_bancaire_sous_index: number | null;
   comptaweb_ecriture_id: number | null;
+  carte_id: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
   // Joined fields
   unite_code?: string | null;
+  unite_name?: string | null;
+  unite_couleur?: string | null;
   category_name?: string | null;
   mode_paiement_name?: string | null;
   activite_name?: string | null;
+  carte_porteur?: string | null;
+  carte_type?: 'cb' | 'procurement' | null;
   has_justificatif?: boolean;
   // Calculated fields (listing only)
   missing_fields?: string[];
+}
+
+export interface Carte {
+  id: string;
+  type: 'cb' | 'procurement';
+  porteur: string;
+  comptaweb_id: number | null;
+  code_externe: string | null;
+  statut: 'active' | 'ancienne';
 }
 
 export interface Remboursement {
@@ -77,6 +91,7 @@ export interface Unite {
   id: string;
   code: string;
   name: string;
+  couleur: string | null;
 }
 
 export interface ModePaiement {

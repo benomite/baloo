@@ -19,3 +19,17 @@ export function nextId(prefix: string, year?: number): string {
 export function currentTimestamp(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
+
+// Génère un id stable + unique pour une table donnée. Si `wanted` existe
+// déjà, suffixe `-2`, `-3`, etc. jusqu'à trouver une valeur libre.
+// Cap à 100 pour éviter une boucle infinie sur un slug saturé.
+export function uniqueId(table: string, wanted: string): string {
+  const db = getDb();
+  const check = db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`);
+  let id = wanted;
+  for (let i = 2; check.get(id); i++) {
+    id = `${wanted}-${i}`;
+    if (i > 100) throw new Error(`Impossible de générer un id unique pour ${wanted} dans ${table}`);
+  }
+  return id;
+}

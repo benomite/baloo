@@ -34,12 +34,14 @@ export function SyncReferentielsButton() {
             summarise('Natures', r.categories),
             summarise('Activités', r.activites),
             summarise('Modes', r.modes_paiement),
+            summarise('Cartes', r.cartes),
           ];
           const hasChanges =
             r.unites.ajoutees + r.unites.mappees +
               r.categories.ajoutees + r.categories.mappees +
               r.activites.ajoutees + r.activites.mappees +
-              r.modes_paiement.ajoutees + r.modes_paiement.mappees >
+              r.modes_paiement.ajoutees + r.modes_paiement.mappees +
+              r.cartes.ajoutees + r.cartes.mappees >
             0;
           if (hasChanges) {
             toast.success('Référentiels synchronisés', { description: lines.join(' · ') });

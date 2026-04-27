@@ -9,6 +9,7 @@ import { getCurrentContext } from '../context.js';
 import {
   applyReferentielsSync,
   fetchReferentielsCreer,
+  fetchAllCartes,
   withAutoReLogin,
 } from '../comptaweb-client/index.js';
 import type { RefSyncStats } from '../comptaweb-client/index.js';
@@ -24,9 +25,13 @@ function printStats(label: string, s: RefSyncStats): void {
 async function main() {
   const ctx = getCurrentContext();
   console.log(`Sync référentiels Comptaweb pour groupe ${ctx.groupId} …`);
-  const refs = await withAutoReLogin((cfg) => fetchReferentielsCreer(cfg));
+  const [refs, cartes] = await withAutoReLogin(async (cfg) => {
+    const r = await fetchReferentielsCreer(cfg);
+    const c = await fetchAllCartes(cfg);
+    return [r, c] as const;
+  });
   console.log(
-    `Reçu : ${refs.brancheprojet.length} branches/projets, ${refs.nature.length} natures, ${refs.activite.length} activités, ${refs.modetransaction.length} modes.`,
+    `Reçu : ${refs.brancheprojet.length} branches/projets, ${refs.nature.length} natures, ${refs.activite.length} activités, ${refs.modetransaction.length} modes, ${cartes.length} cartes.`,
   );
   const report = applyReferentielsSync(
     getDb(),
@@ -36,6 +41,7 @@ async function main() {
       nature: refs.nature,
       activite: refs.activite,
       modetransaction: refs.modetransaction,
+      cartes,
     },
     currentTimestamp(),
   );
@@ -44,6 +50,7 @@ async function main() {
   printStats('Natures (categories)', report.categories);
   printStats('Activités', report.activites);
   printStats('Modes de paiement', report.modes_paiement);
+  printStats('Cartes (CB + procurement)', report.cartes);
 }
 
 main().catch((err) => {

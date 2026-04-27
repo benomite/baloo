@@ -18,6 +18,7 @@ import { registerTodoTools } from './tools/todos.js';
 import { registerPersonneTools } from './tools/personnes.js';
 import { registerNoteTools } from './tools/notes.js';
 import { registerCompteTools } from './tools/comptes.js';
+import { registerCarteTools } from './tools/cartes.js';
 import { registerBudgetTools } from './tools/budgets.js';
 import { registerGroupeTools } from './tools/groupes.js';
 
@@ -50,6 +51,7 @@ registerTodoTools(server);
 registerPersonneTools(server);
 registerNoteTools(server);
 registerCompteTools(server);
+registerCarteTools(server);
 registerBudgetTools(server);
 registerGroupeTools(server);
 
