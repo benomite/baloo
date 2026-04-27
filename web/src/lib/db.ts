@@ -38,6 +38,21 @@ function bindArgs(args: unknown[]): InValue[] {
   }) as InValue[];
 }
 
+// libsql renvoie des Row qui sont array-like (accès par index ET par nom
+// de colonne) avec un prototype custom. Next.js refuse de passer ces
+// objets à un Client Component (« only plain objects »). On les convertit
+// en POJOs purs en filtrant les clés numériques.
+function toPlainRow<T = Record<string, unknown>>(row: Record<string, unknown> | undefined): T | undefined {
+  if (!row) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(row)) {
+    if (/^\d+$/.test(key)) continue;
+    const v = row[key];
+    out[key] = typeof v === 'bigint' ? Number(v) : v;
+  }
+  return out as T;
+}
+
 export interface RunResult {
   changes: number;
   lastInsertRowid: number | bigint;
@@ -74,11 +89,11 @@ function wrap(executor: Executor): DbWrapper {
         },
         async get(...args) {
           const r = await executor.execute({ sql, args: bindArgs(args) });
-          return r.rows[0] as never;
+          return toPlainRow(r.rows[0]) as never;
         },
         async all(...args) {
           const r = await executor.execute({ sql, args: bindArgs(args) });
-          return r.rows as never;
+          return r.rows.map((row) => toPlainRow(row)!) as never;
         },
       };
     },
@@ -87,7 +102,7 @@ function wrap(executor: Executor): DbWrapper {
     },
     async pragma(stmt: string): Promise<unknown[]> {
       const r = await executor.execute(`PRAGMA ${stmt}`);
-      return r.rows;
+      return r.rows.map((row) => toPlainRow(row)!);
     },
     async transaction<T>(fn: (db: DbWrapper) => Promise<T>): Promise<T> {
       // Une transaction libsql ne peut être ouverte que sur le client
