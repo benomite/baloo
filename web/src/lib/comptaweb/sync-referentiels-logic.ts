@@ -9,7 +9,7 @@
 // sur name normalisé. Les entrées locales avec un comptaweb_id qui n'existe
 // plus côté CW sont signalées comme orphelines mais jamais supprimées.
 
-import type Database from 'better-sqlite3';
+import type { DbWrapper } from '../db';
 import type { RefOption } from './types';
 import type { ScrapedCarte } from './cartes-scrape';
 
@@ -40,7 +40,7 @@ function normalise(s: string | null | undefined): string {
   if (!s) return '';
   return s
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '')
     .trim();
@@ -49,7 +49,7 @@ function normalise(s: string | null | undefined): string {
 function slugify(s: string): string {
   return s
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
@@ -80,7 +80,7 @@ function inferCouleurUnite(label: string): string | null {
 function deriveUniteCode(label: string, existingCodes: Set<string>): string {
   const clean = label
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .trim();
   const words = clean.split(/[\s\-']+/).filter(Boolean);
   let base: string;
@@ -101,10 +101,10 @@ function deriveUniteCode(label: string, existingCodes: Set<string>): string {
   return `${base}${Date.now().toString().slice(-3)}`;
 }
 
-function uniqueId(db: Database.Database, table: string, wanted: string): string {
+async function uniqueId(db: DbWrapper, table: string, wanted: string): Promise<string> {
   let id = wanted;
   const check = db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`);
-  for (let i = 2; check.get(id); i++) {
+  for (let i = 2; await check.get(id); i++) {
     id = `${wanted}-${i}`;
     if (i > 100) throw new Error(`Impossible de générer un id unique pour ${wanted} dans ${table}`);
   }
@@ -112,30 +112,27 @@ function uniqueId(db: Database.Database, table: string, wanted: string): string 
 }
 
 // Collecte les orphelines : local rows avec comptaweb_id NOT NULL absent de cwIds.
-function findOrphelines(
-  db: Database.Database,
+async function findOrphelines(
+  db: DbWrapper,
   table: string,
   cwIds: Set<number>,
-): string[] {
-  const rows = db
+): Promise<string[]> {
+  const rows = await db
     .prepare(`SELECT id, comptaweb_id FROM ${table} WHERE comptaweb_id IS NOT NULL`)
-    .all() as Array<{ id: string; comptaweb_id: number }>;
+    .all<{ id: string; comptaweb_id: number }>();
   return rows.filter((r) => !cwIds.has(r.comptaweb_id)).map((r) => r.id);
 }
 
-function syncUnites(
-  db: Database.Database,
+async function syncUnites(
+  db: DbWrapper,
   groupId: string,
   options: RefOption[],
   now: string,
-): RefSyncStats {
+): Promise<RefSyncStats> {
   const stats: RefSyncStats = { ajoutees: 0, mappees: 0, inchangees: 0, orphelines: [] };
   const cwIds = new Set<number>();
-  const existingCodes = new Set(
-    (db.prepare('SELECT code FROM unites WHERE group_id = ?').all(groupId) as Array<{ code: string }>).map(
-      (r) => r.code,
-    ),
-  );
+  const existingCodesRows = await db.prepare('SELECT code FROM unites WHERE group_id = ?').all<{ code: string }>(groupId);
+  const existingCodes = new Set(existingCodesRows.map((r) => r.code));
 
   const getByCwId = db.prepare('SELECT id FROM unites WHERE comptaweb_id = ? AND group_id = ? LIMIT 1');
   const getByName = db.prepare(
@@ -151,42 +148,42 @@ function syncUnites(
     if (!Number.isFinite(cwId) || !opt.label) continue;
     cwIds.add(cwId);
 
-    if (getByCwId.get(cwId, groupId)) {
+    if (await getByCwId.get(cwId, groupId)) {
       stats.inchangees++;
       continue;
     }
 
     // Fallback : match par name normalisé (avec tolérance s/singulier).
     const target = normalise(opt.label);
-    const candidates = getByName.all(groupId) as Array<{ id: string; name: string }>;
+    const candidates = await getByName.all<{ id: string; name: string }>(groupId);
     const matched = candidates.find((c) => {
       const n = normalise(c.name);
       return n === target || n + 's' === target || n === target + 's';
     });
     if (matched) {
-      updateCwId.run(cwId, matched.id);
+      await updateCwId.run(cwId, matched.id);
       stats.mappees++;
       continue;
     }
 
     const code = deriveUniteCode(opt.label, existingCodes);
     existingCodes.add(code);
-    const id = uniqueId(db, 'unites', `u-${groupId}-${slugify(opt.label)}`);
-    insertUnite.run(id, groupId, code, opt.label, cwId, inferCouleurUnite(opt.label), now);
+    const id = await uniqueId(db, 'unites', `u-${groupId}-${slugify(opt.label)}`);
+    await insertUnite.run(id, groupId, code, opt.label, cwId, inferCouleurUnite(opt.label), now);
     stats.ajoutees++;
   }
 
-  stats.orphelines = findOrphelines(db, 'unites', cwIds).filter((id) => {
-    // On ne remonte comme orphelines que les unités de CE groupe.
-    const row = db.prepare('SELECT group_id FROM unites WHERE id = ?').get(id) as
-      | { group_id: string }
-      | undefined;
-    return row?.group_id === groupId;
-  });
+  const orphelinesAll = await findOrphelines(db, 'unites', cwIds);
+  const filteredOrphelines: string[] = [];
+  for (const id of orphelinesAll) {
+    const row = await db.prepare('SELECT group_id FROM unites WHERE id = ?').get<{ group_id: string }>(id);
+    if (row?.group_id === groupId) filteredOrphelines.push(id);
+  }
+  stats.orphelines = filteredOrphelines;
   return stats;
 }
 
-function syncCategories(db: Database.Database, options: RefOption[], now: string): RefSyncStats {
+async function syncCategories(db: DbWrapper, options: RefOption[], now: string): Promise<RefSyncStats> {
   const stats: RefSyncStats = { ajoutees: 0, mappees: 0, inchangees: 0, orphelines: [] };
   const cwIds = new Set<number>();
 
@@ -204,41 +201,37 @@ function syncCategories(db: Database.Database, options: RefOption[], now: string
     if (!Number.isFinite(cwId) || !opt.label) continue;
     cwIds.add(cwId);
 
-    if (getByCwId.get(cwId)) {
+    if (await getByCwId.get(cwId)) {
       stats.inchangees++;
       continue;
     }
 
     const target = normalise(opt.label);
-    const candidates = getByLabel.all() as Array<{
-      id: string;
-      name: string;
-      comptaweb_nature: string | null;
-    }>;
+    const candidates = await getByLabel.all<{ id: string; name: string; comptaweb_nature: string | null }>();
     const matched = candidates.find(
       (c) => normalise(c.comptaweb_nature) === target || normalise(c.name) === target,
     );
     if (matched) {
-      updateCwId.run(cwId, opt.label, matched.id);
+      await updateCwId.run(cwId, opt.label, matched.id);
       stats.mappees++;
       continue;
     }
 
-    const id = uniqueId(db, 'categories', `cat-${slugify(opt.label)}`);
-    insertCat.run(id, opt.label, opt.label, cwId, now);
+    const id = await uniqueId(db, 'categories', `cat-${slugify(opt.label)}`);
+    await insertCat.run(id, opt.label, opt.label, cwId, now);
     stats.ajoutees++;
   }
 
-  stats.orphelines = findOrphelines(db, 'categories', cwIds);
+  stats.orphelines = await findOrphelines(db, 'categories', cwIds);
   return stats;
 }
 
-function syncActivites(
-  db: Database.Database,
+async function syncActivites(
+  db: DbWrapper,
   groupId: string,
   options: RefOption[],
   now: string,
-): RefSyncStats {
+): Promise<RefSyncStats> {
   const stats: RefSyncStats = { ajoutees: 0, mappees: 0, inchangees: 0, orphelines: [] };
   const cwIds = new Set<number>();
 
@@ -258,35 +251,36 @@ function syncActivites(
     if (!Number.isFinite(cwId) || !opt.label) continue;
     cwIds.add(cwId);
 
-    if (getByCwId.get(cwId, groupId)) {
+    if (await getByCwId.get(cwId, groupId)) {
       stats.inchangees++;
       continue;
     }
 
     const target = normalise(opt.label);
-    const candidates = getByName.all(groupId) as Array<{ id: string; name: string }>;
+    const candidates = await getByName.all<{ id: string; name: string }>(groupId);
     const matched = candidates.find((c) => normalise(c.name) === target);
     if (matched) {
-      updateCwId.run(cwId, matched.id);
+      await updateCwId.run(cwId, matched.id);
       stats.mappees++;
       continue;
     }
 
-    const id = uniqueId(db, 'activites', `act-${groupId}-${slugify(opt.label)}`);
-    insertAct.run(id, groupId, opt.label, cwId, now);
+    const id = await uniqueId(db, 'activites', `act-${groupId}-${slugify(opt.label)}`);
+    await insertAct.run(id, groupId, opt.label, cwId, now);
     stats.ajoutees++;
   }
 
-  stats.orphelines = findOrphelines(db, 'activites', cwIds).filter((id) => {
-    const row = db.prepare('SELECT group_id FROM activites WHERE id = ?').get(id) as
-      | { group_id: string }
-      | undefined;
-    return row?.group_id === groupId;
-  });
+  const orphelinesAll = await findOrphelines(db, 'activites', cwIds);
+  const filteredOrphelines: string[] = [];
+  for (const id of orphelinesAll) {
+    const row = await db.prepare('SELECT group_id FROM activites WHERE id = ?').get<{ group_id: string }>(id);
+    if (row?.group_id === groupId) filteredOrphelines.push(id);
+  }
+  stats.orphelines = filteredOrphelines;
   return stats;
 }
 
-function syncModes(db: Database.Database, options: RefOption[], now: string): RefSyncStats {
+async function syncModes(db: DbWrapper, options: RefOption[], now: string): Promise<RefSyncStats> {
   const stats: RefSyncStats = { ajoutees: 0, mappees: 0, inchangees: 0, orphelines: [] };
   const cwIds = new Set<number>();
 
@@ -304,35 +298,35 @@ function syncModes(db: Database.Database, options: RefOption[], now: string): Re
     if (!Number.isFinite(cwId) || !opt.label) continue;
     cwIds.add(cwId);
 
-    if (getByCwId.get(cwId)) {
+    if (await getByCwId.get(cwId)) {
       stats.inchangees++;
       continue;
     }
 
     const target = normalise(opt.label);
-    const candidates = getByName.all() as Array<{ id: string; name: string }>;
+    const candidates = await getByName.all<{ id: string; name: string }>();
     const matched = candidates.find((c) => normalise(c.name) === target);
     if (matched) {
-      updateCwId.run(cwId, matched.id);
+      await updateCwId.run(cwId, matched.id);
       stats.mappees++;
       continue;
     }
 
-    const id = uniqueId(db, 'modes_paiement', `mp-${slugify(opt.label)}`);
-    insertMode.run(id, opt.label, cwId, now);
+    const id = await uniqueId(db, 'modes_paiement', `mp-${slugify(opt.label)}`);
+    await insertMode.run(id, opt.label, cwId, now);
     stats.ajoutees++;
   }
 
-  stats.orphelines = findOrphelines(db, 'modes_paiement', cwIds);
+  stats.orphelines = await findOrphelines(db, 'modes_paiement', cwIds);
   return stats;
 }
 
-function syncCartes(
-  db: Database.Database,
+async function syncCartes(
+  db: DbWrapper,
   groupId: string,
   cartes: ScrapedCarte[],
   now: string,
-): RefSyncStats {
+): Promise<RefSyncStats> {
   const stats: RefSyncStats = { ajoutees: 0, mappees: 0, inchangees: 0, orphelines: [] };
   const cwIds = new Set<number>();
 
@@ -350,9 +344,7 @@ function syncCartes(
   for (const c of cartes) {
     cwIds.add(c.comptawebId);
 
-    const existing = getByCwId.get(c.comptawebId, groupId) as
-      | { id: string; type: string; porteur: string; code_externe: string | null; statut: string }
-      | undefined;
+    const existing = await getByCwId.get<{ id: string; type: string; porteur: string; code_externe: string | null; statut: string }>(c.comptawebId, groupId);
 
     if (existing) {
       if (
@@ -360,7 +352,7 @@ function syncCartes(
         || (existing.code_externe ?? null) !== (c.codeExterne ?? null)
         || existing.statut !== c.statut
       ) {
-        updateCarte.run(c.porteur, c.codeExterne, c.statut, now, existing.id);
+        await updateCarte.run(c.porteur, c.codeExterne, c.statut, now, existing.id);
         stats.mappees++;
       } else {
         stats.inchangees++;
@@ -369,31 +361,32 @@ function syncCartes(
     }
 
     const base = `carte-${c.type === 'procurement' ? 'proc' : 'cb'}-${slugify(c.porteur)}`;
-    const id = uniqueId(db, 'cartes', base);
-    insertCarte.run(id, groupId, c.type, c.porteur, c.comptawebId, c.codeExterne, c.statut, now, now);
+    const id = await uniqueId(db, 'cartes', base);
+    await insertCarte.run(id, groupId, c.type, c.porteur, c.comptawebId, c.codeExterne, c.statut, now, now);
     stats.ajoutees++;
   }
 
-  stats.orphelines = findOrphelines(db, 'cartes', cwIds).filter((id) => {
-    const row = db.prepare('SELECT group_id FROM cartes WHERE id = ?').get(id) as
-      | { group_id: string }
-      | undefined;
-    return row?.group_id === groupId;
-  });
+  const orphelinesAll = await findOrphelines(db, 'cartes', cwIds);
+  const filteredOrphelines: string[] = [];
+  for (const id of orphelinesAll) {
+    const row = await db.prepare('SELECT group_id FROM cartes WHERE id = ?').get<{ group_id: string }>(id);
+    if (row?.group_id === groupId) filteredOrphelines.push(id);
+  }
+  stats.orphelines = filteredOrphelines;
   return stats;
 }
 
-export function applyReferentielsSync(
-  db: Database.Database,
+export async function applyReferentielsSync(
+  db: DbWrapper,
   groupId: string,
   refs: ReferentielsInput,
   now: string,
-): SyncReferentielsReport {
-  return db.transaction(() => ({
-    unites: syncUnites(db, groupId, refs.brancheprojet, now),
-    categories: syncCategories(db, refs.nature, now),
-    activites: syncActivites(db, groupId, refs.activite, now),
-    modes_paiement: syncModes(db, refs.modetransaction, now),
-    cartes: syncCartes(db, groupId, refs.cartes, now),
-  }))();
+): Promise<SyncReferentielsReport> {
+  return await db.transaction(async (txDb) => ({
+    unites: await syncUnites(txDb, groupId, refs.brancheprojet, now),
+    categories: await syncCategories(txDb, refs.nature, now),
+    activites: await syncActivites(txDb, groupId, refs.activite, now),
+    modes_paiement: await syncModes(txDb, refs.modetransaction, now),
+    cartes: await syncCartes(txDb, groupId, refs.cartes, now),
+  }));
 }

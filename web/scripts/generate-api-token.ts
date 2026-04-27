@@ -29,18 +29,18 @@ function parseArgs(argv: string[]): { email?: string; name: string } {
   return { email, name };
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const { email, name } = parseArgs(process.argv);
   if (!email) {
     console.error("Usage: generate-api-token.ts <user-email> [--name 'MCP local']");
     process.exit(1);
   }
 
-  ensureAuthSchema();
+  await ensureAuthSchema();
 
-  const row = getDb()
+  const row = await getDb()
     .prepare("SELECT id FROM users WHERE email = ? AND statut = 'actif' LIMIT 1")
-    .get(email) as { id: string } | undefined;
+    .get<{ id: string }>(email);
 
   if (!row) {
     console.error(`Aucun user actif avec l'email ${email}.`);
@@ -48,7 +48,7 @@ function main(): void {
     process.exit(1);
   }
 
-  const created = createApiToken({ userId: row.id, name });
+  const created = await createApiToken({ userId: row.id, name });
 
   console.log(`Token créé pour ${email} ("${name}"). ID interne: ${created.id}`);
   console.log('');
@@ -59,4 +59,7 @@ function main(): void {
   console.log('Ce token n\'est affiché qu\'une fois. Stocké en BDD sous forme de hash SHA-256.');
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

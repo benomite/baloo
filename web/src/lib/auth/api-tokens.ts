@@ -24,16 +24,16 @@ export interface CreatedApiToken {
   name: string;
 }
 
-export function createApiToken(opts: {
+export async function createApiToken(opts: {
   userId: string;
   name: string;
   expiresAt?: Date | null;
-}): CreatedApiToken {
-  ensureAuthSchema();
+}): Promise<CreatedApiToken> {
+  await ensureAuthSchema();
   const rawToken = TOKEN_PREFIX + randomBytes(32).toString('base64url');
   const tokenHash = hashToken(rawToken);
   const id = `tok-${randomBytes(8).toString('hex')}`;
-  getDb()
+  await getDb()
     .prepare(
       `INSERT INTO api_tokens (id, user_id, name, token_hash, expires_at)
        VALUES (?, ?, ?, ?, ?)`,
@@ -51,30 +51,28 @@ export interface ApiTokenContext {
 
 // Vérifie un token Bearer. Renvoie le contexte user+group si valide, sinon
 // null. Met à jour `last_used_at` au passage (best-effort).
-export function verifyApiToken(rawToken: string): ApiTokenContext | null {
-  ensureAuthSchema();
+export async function verifyApiToken(rawToken: string): Promise<ApiTokenContext | null> {
+  await ensureAuthSchema();
   const tokenHash = hashToken(rawToken);
   const db = getDb();
 
-  const row = db
+  const row = await db
     .prepare(
       `SELECT t.id, t.user_id, t.expires_at, t.revoked_at,
               u.group_id, u.statut, u.role, u.scope_unite_id
        FROM api_tokens t JOIN users u ON u.id = t.user_id
        WHERE t.token_hash = ?`,
     )
-    .get(tokenHash) as
-    | {
-        id: string;
-        user_id: string;
-        expires_at: string | null;
-        revoked_at: string | null;
-        group_id: string;
-        statut: string;
-        role: string | null;
-        scope_unite_id: string | null;
-      }
-    | undefined;
+    .get<{
+      id: string;
+      user_id: string;
+      expires_at: string | null;
+      revoked_at: string | null;
+      group_id: string;
+      statut: string;
+      role: string | null;
+      scope_unite_id: string | null;
+    }>(tokenHash);
 
   if (!row) return null;
   if (row.revoked_at) return null;
@@ -83,7 +81,7 @@ export function verifyApiToken(rawToken: string): ApiTokenContext | null {
 
   // Best-effort, pas critique si ça échoue.
   try {
-    db.prepare(
+    await db.prepare(
       "UPDATE api_tokens SET last_used_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
     ).run(row.id);
   } catch {

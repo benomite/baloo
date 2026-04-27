@@ -5,5 +5,5 @@ export async function GET(request: Request) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
   const { groupId } = ctxR.ctx;
-  return Response.json(getOverview({ groupId }));
+  return Response.json(await getOverview({ groupId }));
 }

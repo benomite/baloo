@@ -49,7 +49,7 @@ export async function requireApiContext(request: Request): Promise<RequireApiCon
   const authz = request.headers.get('authorization');
   if (authz && authz.toLowerCase().startsWith('bearer ')) {
     const token = authz.slice(7).trim();
-    const ctx = verifyApiToken(token);
+    const ctx = await verifyApiToken(token);
     if (ctx) return { ctx };
     return { error: jsonError('Token invalide ou expiré.', 401) };
   }
@@ -61,9 +61,9 @@ export async function requireApiContext(request: Request): Promise<RequireApiCon
   }
 
   // Le user `id` côté session vient de notre adapter (table `users`).
-  const row = getDb()
+  const row = await getDb()
     .prepare("SELECT group_id, role, scope_unite_id FROM users WHERE id = ? AND statut = 'actif'")
-    .get(session.user.id) as { group_id: string; role: string | null; scope_unite_id: string | null } | undefined;
+    .get<{ group_id: string; role: string | null; scope_unite_id: string | null }>(session.user.id);
   if (!row) return { error: jsonError('User inactif ou inconnu.', 401) };
 
   return {

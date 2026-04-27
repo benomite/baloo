@@ -6,7 +6,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if ('error' in ctxR) return ctxR.error;
   const { groupId, userId } = ctxR.ctx;
   const { id } = await params;
-  const updated = completeTodo({ groupId, userId }, id);
+  const updated = await completeTodo({ groupId, userId }, id);
   if (!updated) return jsonError('Tâche introuvable.', 404);
   return Response.json(updated);
 }

@@ -15,7 +15,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { id } = await params;
   const parsed = await parseJsonBody(request, patchSchema);
   if ('error' in parsed) return parsed.error;
-  const updated = updateNote({ groupId, userId }, id, parsed.data);
+  const updated = await updateNote({ groupId, userId }, id, parsed.data);
   if (!updated) return jsonError('Note introuvable.', 404);
   return Response.json(updated);
 }
@@ -25,6 +25,6 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   if ('error' in ctxR) return ctxR.error;
   const { groupId, userId } = ctxR.ctx;
   const { id } = await params;
-  if (!deleteNote({ groupId, userId }, id)) return jsonError('Note introuvable.', 404);
+  if (!(await deleteNote({ groupId, userId }, id))) return jsonError('Note introuvable.', 404);
   return new Response(null, { status: 204 });
 }

@@ -6,7 +6,7 @@ import { createMouvementCaisse as createMouvementCaisseService } from '../servic
 import { parseAmount } from '../format';
 
 export async function createMouvementCaisse(formData: FormData) {
-  createMouvementCaisseService(
+  await createMouvementCaisseService(
     { groupId: (await getCurrentContext()).groupId },
     {
       date_mouvement: formData.get('date_mouvement') as string,

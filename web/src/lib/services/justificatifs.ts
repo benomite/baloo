@@ -35,19 +35,19 @@ export interface ListJustificatifsOptions {
   limit?: number;
 }
 
-export function listJustificatifs(
+export async function listJustificatifs(
   { groupId }: JustificatifContext,
   options: ListJustificatifsOptions = {},
-): Justificatif[] {
+): Promise<Justificatif[]> {
   const conditions: string[] = ['group_id = ?'];
   const values: unknown[] = [groupId];
 
   if (options.entity_type) { conditions.push('entity_type = ?'); values.push(options.entity_type); }
   if (options.entity_id) { conditions.push('entity_id = ?'); values.push(options.entity_id); }
 
-  return getDb()
+  return await getDb()
     .prepare(`SELECT * FROM justificatifs WHERE ${conditions.join(' AND ')} ORDER BY uploaded_at DESC LIMIT ?`)
-    .all(...values, options.limit ?? 50) as Justificatif[];
+    .all<Justificatif>(...values, options.limit ?? 50);
 }
 
 export interface AttachJustificatifInput {
@@ -66,14 +66,14 @@ export async function attachJustificatif(
   await mkdir(destDir, { recursive: true });
   await writeFile(join(destDir, input.filename), input.content);
 
-  const id = nextId('JUS');
+  const id = await nextId('JUS');
   const relativePath = join(input.entity_type, input.entity_id, input.filename);
   const mime = input.mime_type ?? guessMimeType(input.filename);
 
-  getDb().prepare(
+  await getDb().prepare(
     `INSERT INTO justificatifs (id, group_id, file_path, original_filename, mime_type, entity_type, entity_id, uploaded_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(id, groupId, relativePath, input.filename, mime, input.entity_type, input.entity_id, currentTimestamp());
 
-  return getDb().prepare('SELECT * FROM justificatifs WHERE id = ?').get(id) as Justificatif;
+  return (await getDb().prepare('SELECT * FROM justificatifs WHERE id = ?').get<Justificatif>(id))!;
 }

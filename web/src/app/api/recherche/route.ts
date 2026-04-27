@@ -18,5 +18,5 @@ export async function POST(request: Request) {
   const { groupId } = ctxR.ctx;
   const parsed = await parseJsonBody(request, bodySchema);
   if ('error' in parsed) return parsed.error;
-  return Response.json(recherche({ groupId }, parsed.data));
+  return Response.json(await recherche({ groupId }, parsed.data));
 }

@@ -60,10 +60,10 @@ export function computeMissingFields(e: {
   return missing;
 }
 
-export function listEcritures(
+export async function listEcritures(
   { groupId, scopeUniteId }: EcritureContext,
   filters: EcritureFilters = {},
-): { ecritures: Ecriture[]; total: number } {
+): Promise<{ ecritures: Ecriture[]; total: number }> {
   const conditions: string[] = ['e.group_id = ?'];
   const values: unknown[] = [groupId];
 
@@ -105,7 +105,7 @@ export function listEcritures(
   const limit = filters.limit ?? 50;
   const offset = filters.offset ?? 0;
 
-  const rows = getDb().prepare(
+  const rows = await getDb().prepare(
     `SELECT e.*, u.code as unite_code, u.name as unite_name, u.couleur as unite_couleur,
        c.name as category_name, m.name as mode_paiement_name, a.name as activite_name,
        ca.porteur as carte_porteur, ca.type as carte_type,
@@ -121,26 +121,26 @@ export function listEcritures(
        CASE e.status WHEN 'brouillon' THEN 0 WHEN 'valide' THEN 1 ELSE 2 END,
        e.date_ecriture DESC, e.created_at DESC
      LIMIT ? OFFSET ?`,
-  ).all(...values, limit, offset) as Ecriture[];
+  ).all<Ecriture>(...values, limit, offset);
 
   const ecritures = rows.map((e) => ({ ...e, missing_fields: computeMissingFields(e) }));
   const filtered = filters.incomplete
     ? ecritures.filter((e) => (e.missing_fields ?? []).length > 0)
     : ecritures;
 
-  const countRow = getDb()
+  const countRow = await getDb()
     .prepare(`SELECT COUNT(*) as total FROM ecritures e ${where}`)
-    .get(...values) as { total: number };
-  const total = filters.incomplete ? filtered.length : countRow.total;
+    .get<{ total: number }>(...values);
+  const total = filters.incomplete ? filtered.length : (countRow?.total ?? 0);
 
   return { ecritures: filtered, total };
 }
 
-export function getEcriture({ groupId, scopeUniteId }: EcritureContext, id: string): Ecriture | undefined {
+export async function getEcriture({ groupId, scopeUniteId }: EcritureContext, id: string): Promise<Ecriture | undefined> {
   const conditions = ['e.id = ?', 'e.group_id = ?'];
   const values: unknown[] = [id, groupId];
   if (scopeUniteId) { conditions.push('e.unite_id = ?'); values.push(scopeUniteId); }
-  return getDb().prepare(
+  return await getDb().prepare(
     `SELECT e.*, u.code as unite_code, u.name as unite_name, u.couleur as unite_couleur,
        c.name as category_name, m.name as mode_paiement_name, a.name as activite_name,
        ca.porteur as carte_porteur, ca.type as carte_type
@@ -151,7 +151,7 @@ export function getEcriture({ groupId, scopeUniteId }: EcritureContext, id: stri
      LEFT JOIN activites a ON a.id = e.activite_id
      LEFT JOIN cartes ca ON ca.id = e.carte_id
      WHERE ${conditions.join(' AND ')}`,
-  ).get(...values) as Ecriture | undefined;
+  ).get<Ecriture>(...values);
 }
 
 export interface CreateEcritureInput {
@@ -169,19 +169,19 @@ export interface CreateEcritureInput {
   notes?: string | null;
 }
 
-export function createEcriture(
+export async function createEcriture(
   { groupId }: EcritureContext,
   input: CreateEcritureInput,
-): Ecriture {
+): Promise<Ecriture> {
   const db = getDb();
   const prefix = input.type === 'depense' ? 'DEP' : 'REC';
-  const id = nextId(prefix);
+  const id = await nextId(prefix);
   const now = currentTimestamp();
   const justifAttendu = input.justif_attendu === undefined
     ? 1
     : (input.justif_attendu ? 1 : 0);
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO ecritures (id, group_id, date_ecriture, description, amount_cents, type, unite_id, category_id, mode_paiement_id, activite_id, numero_piece, carte_id, justif_attendu, notes, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
@@ -203,7 +203,7 @@ export function createEcriture(
     now,
   );
 
-  return db.prepare('SELECT * FROM ecritures WHERE id = ?').get(id) as Ecriture;
+  return (await db.prepare('SELECT * FROM ecritures WHERE id = ?').get<Ecriture>(id))!;
 }
 
 export interface UpdateEcritureInput {
@@ -230,19 +230,19 @@ const INLINE_FIELDS_SYNC = ['unite_id', 'category_id', 'activite_id', 'mode_paie
 const INLINE_FIELDS_INTERNAL = ['justif_attendu', 'notes'] as const;
 export type InlineField = (typeof INLINE_FIELDS_SYNC)[number] | (typeof INLINE_FIELDS_INTERNAL)[number];
 
-export function updateEcriture(
+export async function updateEcriture(
   { groupId }: EcritureContext,
   id: string,
   patch: UpdateEcritureInput,
-): Ecriture | null {
+): Promise<Ecriture | null> {
   // Une fois synchronisée avec Comptaweb, l'écriture devient en lecture seule
   // pour les champs sync (date, montant, type, unité, nature, carte, etc.).
   // Seuls les champs purement internes à Baloo (notes, justif_attendu) et la
   // transition de statut/comptaweb_synced restent applicables. Les autres
   // champs sont silencieusement ignorés — l'UX renvoie déjà la lecture seule.
-  const current = getDb()
+  const current = await getDb()
     .prepare('SELECT status FROM ecritures WHERE id = ? AND group_id = ?')
-    .get(id, groupId) as { status: string } | undefined;
+    .get<{ status: string }>(id, groupId);
   if (!current) return null;
   const lockSync = current.status === 'saisie_comptaweb';
 
@@ -265,50 +265,50 @@ export function updateEcriture(
   if (patch.notes !== undefined) { sets.push('notes = ?'); values.push(patch.notes); }
 
   if (sets.length === 0) {
-    return getEcriture({ groupId }, id) ?? null;
+    return (await getEcriture({ groupId }, id)) ?? null;
   }
 
   sets.push('updated_at = ?');
   values.push(currentTimestamp());
   values.push(id, groupId);
 
-  const result = getDb()
+  const result = await getDb()
     .prepare(`UPDATE ecritures SET ${sets.join(', ')} WHERE id = ? AND group_id = ?`)
     .run(...values);
   if (result.changes === 0) return null;
 
-  return getEcriture({ groupId }, id) ?? null;
+  return (await getEcriture({ groupId }, id)) ?? null;
 }
 
-export function updateEcritureStatus(
+export async function updateEcritureStatus(
   ctx: EcritureContext,
   id: string,
   status: 'brouillon' | 'valide' | 'saisie_comptaweb',
-): Ecriture | null {
+): Promise<Ecriture | null> {
   const patch: UpdateEcritureInput = { status };
   if (status === 'saisie_comptaweb') {
     patch.comptaweb_synced = true;
   }
-  return updateEcriture(ctx, id, patch);
+  return await updateEcriture(ctx, id, patch);
 }
 
 // Édition inline atomique sur un seul champ. Contrairement à updateEcriture
 // (qui ignore silencieusement), ici on retourne une erreur explicite si
 // l'écriture est verrouillée Comptaweb — l'UX a besoin de le savoir pour
 // afficher un toast.
-export function updateEcritureField(
+export async function updateEcritureField(
   { groupId }: EcritureContext,
   id: string,
   field: InlineField,
   value: string | number | null,
-): { ok: true; ecriture: Ecriture } | { ok: false; reason: 'not_found' | 'sync_locked' | 'invalid_field' } {
+): Promise<{ ok: true; ecriture: Ecriture } | { ok: false; reason: 'not_found' | 'sync_locked' | 'invalid_field' }> {
   const isSyncField = (INLINE_FIELDS_SYNC as readonly string[]).includes(field);
   const isInternalField = (INLINE_FIELDS_INTERNAL as readonly string[]).includes(field);
   if (!isSyncField && !isInternalField) return { ok: false, reason: 'invalid_field' };
 
-  const current = getDb()
+  const current = await getDb()
     .prepare('SELECT status FROM ecritures WHERE id = ? AND group_id = ?')
-    .get(id, groupId) as { status: string } | undefined;
+    .get<{ status: string }>(id, groupId);
   if (!current) return { ok: false, reason: 'not_found' };
   if (current.status === 'saisie_comptaweb' && isSyncField) {
     return { ok: false, reason: 'sync_locked' };
@@ -316,7 +316,7 @@ export function updateEcritureField(
 
   const normalised = value === '' ? null : value;
   const patch: UpdateEcritureInput = { [field]: normalised } as UpdateEcritureInput;
-  const updated = updateEcriture({ groupId }, id, patch);
+  const updated = await updateEcriture({ groupId }, id, patch);
   if (!updated) return { ok: false, reason: 'not_found' };
   return { ok: true, ecriture: updated };
 }
@@ -339,11 +339,11 @@ export interface BatchResult {
 // Mise à jour en masse : n'agit que sur les écritures modifiables (brouillon
 // ou valide). Les écritures synchronisées Comptaweb sont ignorées pour éviter
 // un décalage silencieux avec la prod.
-export function batchUpdateEcritures(
+export async function batchUpdateEcritures(
   { groupId }: EcritureContext,
   ids: string[],
   patch: BatchPatch,
-): BatchResult {
+): Promise<BatchResult> {
   if (ids.length === 0) return { updated: 0, skipped: 0 };
 
   const db = getDb();
@@ -362,33 +362,32 @@ export function batchUpdateEcritures(
   if (!hasChanges) return { updated: 0, skipped: 0 };
 
   const placeholders = ids.map(() => '?').join(',');
-  const rows = db
+  const rows = await db
     .prepare(`SELECT id, status, description FROM ecritures WHERE group_id = ? AND id IN (${placeholders})`)
-    .all(groupId, ...ids) as { id: string; status: string; description: string }[];
+    .all<{ id: string; status: string; description: string }>(groupId, ...ids);
 
   const editable = rows.filter((r) => r.status !== 'saisie_comptaweb');
   const skipped = ids.length - editable.length;
   if (editable.length === 0) return { updated: 0, skipped };
 
-  const updateCore = setClauses.length > 0
-    ? db.prepare(`UPDATE ecritures SET ${setClauses.join(', ')}, updated_at = ? WHERE id = ? AND group_id = ?`)
-    : null;
-  const updateDesc = prefix
-    ? db.prepare('UPDATE ecritures SET description = ?, updated_at = ? WHERE id = ? AND group_id = ?')
-    : null;
+  await db.transaction(async (txDb) => {
+    const updateCore = setClauses.length > 0
+      ? txDb.prepare(`UPDATE ecritures SET ${setClauses.join(', ')}, updated_at = ? WHERE id = ? AND group_id = ?`)
+      : null;
+    const updateDesc = prefix
+      ? txDb.prepare('UPDATE ecritures SET description = ?, updated_at = ? WHERE id = ? AND group_id = ?')
+      : null;
 
-  const tx = db.transaction(() => {
     for (const row of editable) {
-      if (updateCore) updateCore.run(...setValues, now, row.id, groupId);
+      if (updateCore) await updateCore.run(...setValues, now, row.id, groupId);
       if (updateDesc) {
         const sep = ' — ';
         const already = row.description.startsWith(prefix + sep);
         const next = already ? row.description : `${prefix}${sep}${row.description}`;
-        updateDesc.run(next, now, row.id, groupId);
+        await updateDesc.run(next, now, row.id, groupId);
       }
     }
   });
-  tx();
 
   return { updated: editable.length, skipped };
 }

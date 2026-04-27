@@ -14,7 +14,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { id } = await params;
   const parsed = await parseJsonBody(request, fieldSchema);
   if ('error' in parsed) return parsed.error;
-  const result = updateEcritureField({ groupId, scopeUniteId }, id, parsed.data.field as InlineField, parsed.data.value);
+  const result = await updateEcritureField({ groupId, scopeUniteId }, id, parsed.data.field as InlineField, parsed.data.value);
   if (!result.ok) {
     if (result.reason === 'not_found') return jsonError('Écriture introuvable.', 404);
     if (result.reason === 'sync_locked') return jsonError('Écriture synchronisée Comptaweb — champ non modifiable.', 409);

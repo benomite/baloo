@@ -32,7 +32,7 @@ export async function GET(request: Request) {
   const params = Object.fromEntries(new URL(request.url).searchParams);
   const parsed = listSchema.safeParse(params);
   if (!parsed.success) return jsonError('Paramètres invalides.', 400);
-  return Response.json(listEcritures({ groupId, scopeUniteId }, parsed.data as EcritureFilters));
+  return Response.json(await listEcritures({ groupId, scopeUniteId }, parsed.data as EcritureFilters));
 }
 
 const createSchema = z.object({
@@ -56,6 +56,6 @@ export async function POST(request: Request) {
   const { groupId, scopeUniteId } = ctxR.ctx;
   const parsed = await parseJsonBody(request, createSchema);
   if ('error' in parsed) return parsed.error;
-  const created = createEcriture({ groupId, scopeUniteId }, parsed.data);
+  const created = await createEcriture({ groupId, scopeUniteId }, parsed.data);
   return Response.json(created, { status: 201 });
 }

@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   const { groupId } = ctxR.ctx;
   const parsed = await parseJsonBody(request, importSchema);
   if ('error' in parsed) return parsed.error;
-  const result = importComptawebCsv({ groupId }, parsed.data);
+  const result = await importComptawebCsv({ groupId }, parsed.data);
   if (!result.ok) return jsonError(result.message ?? 'Import échoué.', 400);
   return Response.json(result);
 }

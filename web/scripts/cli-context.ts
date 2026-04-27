@@ -14,7 +14,7 @@ export interface CliContext {
   email: string;
 }
 
-export function getCliContext(): CliContext {
+export async function getCliContext(): Promise<CliContext> {
   ensureComptawebEnv();
   const email = process.env.BALOO_USER_EMAIL;
   if (!email) {
@@ -22,9 +22,9 @@ export function getCliContext(): CliContext {
       'BALOO_USER_EMAIL non défini (compta/.env). Lance `cd compta && cp .env.example .env`.',
     );
   }
-  const row = getDb()
+  const row = await getDb()
     .prepare("SELECT id, group_id FROM users WHERE email = ? AND statut = 'actif' LIMIT 1")
-    .get(email) as { id: string; group_id: string } | undefined;
+    .get<{ id: string; group_id: string }>(email);
   if (!row) {
     throw new Error(
       `Aucun user actif avec l'email ${email}. Lance d'abord \`pnpm bootstrap\` dans web/.`,

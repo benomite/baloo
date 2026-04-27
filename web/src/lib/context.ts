@@ -43,11 +43,11 @@ export async function getCurrentContext(): Promise<CurrentContext> {
     redirect('/login');
   }
 
-  const row = getDb()
+  const row = await getDb()
     .prepare(
       "SELECT id, email, nom_affichage AS name, group_id, role, scope_unite_id FROM users WHERE id = ? AND statut = 'actif'",
     )
-    .get(session.user.id) as UserRow | undefined;
+    .get<UserRow>(session.user.id);
 
   if (!row) {
     redirect('/login');

@@ -141,28 +141,28 @@ function groupRows(rows: Row[]): Map<string, LineGroup> {
   return groups;
 }
 
-export function importComptawebCsv(
+export async function importComptawebCsv(
   { groupId }: ComptawebImportContext,
   { filename, content }: ImportCsvInput,
-): ImportCsvResult {
+): Promise<ImportCsvResult> {
   const { rows, errors } = parseComptawebCsv(content);
   if (rows.length === 0) {
     return { ok: false, message: `Aucune ligne parsée. Erreurs : ${errors.join(', ')}` };
   }
 
   const db = getDb();
-  const importId = nextId('CWI');
+  const importId = await nextId('CWI');
   const now = currentTimestamp();
   const sourceFile = filename;
 
   // Lookup catégories / activités / unités côté local pour mapper les IDs.
-  const categories = db.prepare(`SELECT id, name FROM categories`).all() as { id: string; name: string }[];
+  const categories = await db.prepare(`SELECT id, name FROM categories`).all<{ id: string; name: string }>();
   const categoriesByName = new Map(categories.map((c) => [normalize(c.name), c.id]));
 
-  const activites = db.prepare(`SELECT id, name FROM activites WHERE group_id = ?`).all(groupId) as { id: string; name: string }[];
+  const activites = await db.prepare(`SELECT id, name FROM activites WHERE group_id = ?`).all<{ id: string; name: string }>(groupId);
   const activitesByName = new Map(activites.map((a) => [normalize(a.name), a.id]));
 
-  const unites = db.prepare(`SELECT id, code FROM unites WHERE group_id = ?`).all(groupId) as { id: string; code: string }[];
+  const unites = await db.prepare(`SELECT id, code FROM unites WHERE group_id = ?`).all<{ id: string; code: string }>(groupId);
   const unitesByCode = new Map(unites.map((u) => [u.code, u.id]));
 
   function findCategoryId(name: string): string | null {
@@ -199,27 +199,13 @@ export function importComptawebCsv(
   }
 
   // Compteur local pour éviter les appels nextId() répétés (perf).
-  const existingIds = db.prepare(`SELECT id FROM ecritures WHERE id LIKE ? ORDER BY id DESC LIMIT 1`).get(`ECR-%`) as { id: string } | undefined;
+  const existingIds = await db.prepare(`SELECT id FROM ecritures WHERE id LIKE ? ORDER BY id DESC LIMIT 1`).get<{ id: string }>(`ECR-%`);
   let seqNum = existingIds ? parseInt(existingIds.id.split('-').pop()!, 10) : 0;
   const currentYear = new Date().getFullYear();
   function nextEcrId(): string {
     seqNum++;
     return `ECR-${currentYear}-${String(seqNum).padStart(4, '0')}`;
   }
-
-  const insertLigne = db.prepare(`
-    INSERT INTO comptaweb_lignes (import_id, date_ecriture, intitule, depense_cents, recette_cents, mode_transaction, type_ligne, nature, activite, branche, numero_piece, raw_data)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  // Idempotence : on purge TOUTES les écritures saisie_comptaweb avant ré-import.
-  // Les ajustements manuels (status=brouillon ou valide) ne sont pas touchés.
-  const deleteAllSynced = db.prepare(`DELETE FROM ecritures WHERE status = 'saisie_comptaweb'`);
-
-  const insertEcriture = db.prepare(`
-    INSERT INTO ecritures (id, group_id, unite_id, date_ecriture, description, amount_cents, type, category_id, mode_paiement_id, activite_id, numero_piece, status, comptaweb_synced, notes, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'saisie_comptaweb', 1, ?, ?, ?)
-  `);
 
   let totalDepensesCents = 0;
   let totalRecettesCents = 0;
@@ -232,8 +218,22 @@ export function importComptawebCsv(
   let transfertsInternesCents = 0;
   const warnings: string[] = [];
 
-  const runAll = db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async (txDb) => {
+    const insertLigne = txDb.prepare(`
+      INSERT INTO comptaweb_lignes (import_id, date_ecriture, intitule, depense_cents, recette_cents, mode_transaction, type_ligne, nature, activite, branche, numero_piece, raw_data)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    // Idempotence : on purge TOUTES les écritures saisie_comptaweb avant ré-import.
+    // Les ajustements manuels (status=brouillon ou valide) ne sont pas touchés.
+    const deleteAllSynced = txDb.prepare(`DELETE FROM ecritures WHERE status = 'saisie_comptaweb'`);
+
+    const insertEcriture = txDb.prepare(`
+      INSERT INTO ecritures (id, group_id, unite_id, date_ecriture, description, amount_cents, type, category_id, mode_paiement_id, activite_id, numero_piece, status, comptaweb_synced, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'saisie_comptaweb', 1, ?, ?, ?)
+    `);
+
+    await txDb.prepare(`
       INSERT INTO comptaweb_imports (id, group_id, import_date, source_file, row_count, total_depenses_cents, total_recettes_cents, notes, created_at)
       VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?)
     `).run(
@@ -252,7 +252,7 @@ export function importComptawebCsv(
       totalDepensesCents += depCents;
       totalRecettesCents += recCents;
 
-      insertLigne.run(
+      await insertLigne.run(
         importId,
         parseFrenchDate(row['Date'] ?? ''),
         row['Intitulé'] ?? row['Intitule'] ?? '',
@@ -268,7 +268,7 @@ export function importComptawebCsv(
       );
     }
 
-    deleteAllSynced.run();
+    await deleteAllSynced.run();
 
     const groups = groupRows(rows);
 
@@ -304,7 +304,7 @@ export function importComptawebCsv(
         const categoryId = findCategoryId(nature);
         const activiteId = findActiviteId(activite);
 
-        insertEcriture.run(
+        await insertEcriture.run(
           nextEcrId(), groupId, uniteId, date, intitule, ecrAmount, ecrType,
           categoryId, modeId, activiteId, piece,
           notesBase, now, now,
@@ -341,7 +341,7 @@ export function importComptawebCsv(
 
           const type: 'depense' | 'recette' = depV > 0 ? 'depense' : 'recette';
           const amt = depV || recV;
-          insertEcriture.run(
+          await insertEcriture.run(
             nextEcrId(), groupId, uniteId, date, intitule, amt, type,
             categoryId, modeId, activiteId, piece,
             notesBase + suffix, now, now,
@@ -355,14 +355,12 @@ export function importComptawebCsv(
       }
     }
 
-    db.prepare(`UPDATE comptaweb_imports SET total_depenses_cents = ?, total_recettes_cents = ? WHERE id = ?`)
+    await txDb.prepare(`UPDATE comptaweb_imports SET total_depenses_cents = ?, total_recettes_cents = ? WHERE id = ?`)
       .run(totalDepensesCents, totalRecettesCents, importId);
   });
 
-  runAll();
-
   // Totaux réels dans ecritures (hors transferts internes).
-  const totEcr = db.prepare(`SELECT type, COALESCE(SUM(amount_cents),0) as s FROM ecritures WHERE status='saisie_comptaweb' AND group_id = ? GROUP BY type`).all(groupId) as { type: string; s: number }[];
+  const totEcr = await db.prepare(`SELECT type, COALESCE(SUM(amount_cents),0) as s FROM ecritures WHERE status='saisie_comptaweb' AND group_id = ? GROUP BY type`).all<{ type: string; s: number }>(groupId);
   const depsEcr = totEcr.find((t) => t.type === 'depense')?.s ?? 0;
   const recsEcr = totEcr.find((t) => t.type === 'recette')?.s ?? 0;
 

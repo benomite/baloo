@@ -17,7 +17,7 @@ import { parseAmount } from '../format';
 
 export async function createEcriture(formData: FormData) {
   const { groupId, scopeUniteId } = await getCurrentContext();
-  const created = createEcritureService(
+  const created = await createEcritureService(
     { groupId, scopeUniteId },
     {
       date_ecriture: formData.get('date_ecriture') as string,
@@ -42,7 +42,7 @@ export async function createEcriture(formData: FormData) {
 
 export async function updateEcriture(id: string, formData: FormData) {
   const { groupId, scopeUniteId } = await getCurrentContext();
-  updateEcritureService(
+  await updateEcritureService(
     { groupId, scopeUniteId },
     id,
     {
@@ -69,7 +69,7 @@ export async function updateEcriture(id: string, formData: FormData) {
 
 export async function updateEcritureStatus(id: string, status: string) {
   const { groupId, scopeUniteId } = await getCurrentContext();
-  updateEcritureStatusService(
+  await updateEcritureStatusService(
     { groupId, scopeUniteId },
     id,
     status as 'brouillon' | 'valide' | 'saisie_comptaweb',
@@ -89,7 +89,7 @@ export async function updateEcritureField(
   value: string | number | null,
 ): Promise<{ ok: boolean; message?: string }> {
   const { groupId, scopeUniteId } = await getCurrentContext();
-  const result = updateEcritureFieldService({ groupId, scopeUniteId }, id, field, value);
+  const result = await updateEcritureFieldService({ groupId, scopeUniteId }, id, field, value);
   if (!result.ok) {
     if (result.reason === 'not_found') return { ok: false, message: `Écriture ${id} introuvable.` };
     if (result.reason === 'sync_locked') return { ok: false, message: 'Écriture synchronisée Comptaweb — champ non modifiable.' };
@@ -102,7 +102,7 @@ export async function updateEcritureField(
 
 export async function batchUpdateEcritures(ids: string[], patch: BatchPatch): Promise<BatchResult> {
   const { groupId, scopeUniteId } = await getCurrentContext();
-  const result = batchUpdateEcrituresService({ groupId, scopeUniteId }, ids, patch);
+  const result = await batchUpdateEcrituresService({ groupId, scopeUniteId }, ids, patch);
   if (result.updated > 0) revalidatePath('/ecritures');
   return result;
 }

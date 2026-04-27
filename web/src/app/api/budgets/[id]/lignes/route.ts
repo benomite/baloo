@@ -6,7 +6,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
   const { id } = await params;
-  return Response.json(listBudgetLignes(id));
+  return Response.json(await listBudgetLignes(id));
 }
 
 const createSchema = z.object({
@@ -24,6 +24,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   const parsed = await parseJsonBody(request, createSchema);
   if ('error' in parsed) return parsed.error;
-  const created = createBudgetLigne({ ...parsed.data, budget_id: id });
+  const created = await createBudgetLigne({ ...parsed.data, budget_id: id });
   return Response.json(created, { status: 201 });
 }

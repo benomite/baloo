@@ -16,7 +16,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { id } = await params;
   const parsed = await parseJsonBody(request, patchSchema);
   if ('error' in parsed) return parsed.error;
-  const updated = updateTodo({ groupId, userId }, id, parsed.data);
+  const updated = await updateTodo({ groupId, userId }, id, parsed.data);
   if (!updated) return jsonError('Tâche introuvable.', 404);
   return Response.json(updated);
 }

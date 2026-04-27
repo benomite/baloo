@@ -18,15 +18,15 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-export function listCartes({ groupId }: CartesContext, opts: { statut?: 'active' | 'ancienne' } = {}): Carte[] {
+export async function listCartes({ groupId }: CartesContext, opts: { statut?: 'active' | 'ancienne' } = {}): Promise<Carte[]> {
   const statut = opts.statut ?? 'active';
-  return getDb()
+  return await getDb()
     .prepare(
       `SELECT id, type, porteur, comptaweb_id, code_externe, statut
        FROM cartes WHERE group_id = ? AND statut = ?
        ORDER BY type, porteur`,
     )
-    .all(groupId, statut) as Carte[];
+    .all<Carte>(groupId, statut);
 }
 
 export interface CreateCarteInput {
@@ -36,17 +36,17 @@ export interface CreateCarteInput {
   code_externe?: string | null;
 }
 
-export function createCarte({ groupId }: CartesContext, input: CreateCarteInput): Carte {
+export async function createCarte({ groupId }: CartesContext, input: CreateCarteInput): Promise<Carte> {
   const base = `carte-${input.type === 'procurement' ? 'proc' : 'cb'}-${slugify(input.porteur)}`;
-  const id = uniqueId('cartes', base);
+  const id = await uniqueId('cartes', base);
   const now = currentTimestamp();
-  getDb()
+  await getDb()
     .prepare(
       `INSERT INTO cartes (id, group_id, type, porteur, comptaweb_id, code_externe, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(id, groupId, input.type, input.porteur, input.comptaweb_id ?? null, input.code_externe ?? null, now, now);
-  return getDb().prepare('SELECT id, type, porteur, comptaweb_id, code_externe, statut FROM cartes WHERE id = ?').get(id) as Carte;
+  return (await getDb().prepare('SELECT id, type, porteur, comptaweb_id, code_externe, statut FROM cartes WHERE id = ?').get<Carte>(id))!;
 }
 
 export interface UpdateCarteInput {
@@ -56,7 +56,7 @@ export interface UpdateCarteInput {
   statut?: 'active' | 'ancienne';
 }
 
-export function updateCarte({ groupId }: CartesContext, id: string, patch: UpdateCarteInput): Carte | null {
+export async function updateCarte({ groupId }: CartesContext, id: string, patch: UpdateCarteInput): Promise<Carte | null> {
   const sets: string[] = [];
   const values: unknown[] = [];
   if (patch.porteur !== undefined) { sets.push('porteur = ?'); values.push(patch.porteur); }
@@ -64,19 +64,19 @@ export function updateCarte({ groupId }: CartesContext, id: string, patch: Updat
   if (patch.code_externe !== undefined) { sets.push('code_externe = ?'); values.push(patch.code_externe); }
   if (patch.statut !== undefined) { sets.push('statut = ?'); values.push(patch.statut); }
   if (sets.length === 0) {
-    const row = getDb()
+    const row = await getDb()
       .prepare('SELECT id, type, porteur, comptaweb_id, code_externe, statut FROM cartes WHERE id = ? AND group_id = ?')
-      .get(id, groupId) as Carte | undefined;
+      .get<Carte>(id, groupId);
     return row ?? null;
   }
   sets.push('updated_at = ?');
   values.push(currentTimestamp());
   values.push(id, groupId);
-  const info = getDb()
+  const info = await getDb()
     .prepare(`UPDATE cartes SET ${sets.join(', ')} WHERE id = ? AND group_id = ?`)
     .run(...values);
   if (info.changes === 0) return null;
-  return getDb()
+  return (await getDb()
     .prepare('SELECT id, type, porteur, comptaweb_id, code_externe, statut FROM cartes WHERE id = ?')
-    .get(id) as Carte;
+    .get<Carte>(id))!;
 }

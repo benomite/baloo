@@ -2,8 +2,7 @@ import type { Adapter, AdapterSession, AdapterUser } from 'next-auth/adapters';
 import { getDb } from '../db';
 import { ensureAuthSchema } from './schema';
 
-// Adapter Auth.js custom pour better-sqlite3 sur le schéma Baloo (chantier 4,
-// ADR-014).
+// Adapter Auth.js custom pour le schéma Baloo (chantier 4, ADR-014).
 //
 // Choix :
 // - Pas d'OAuth providers en P2 → on n'implémente PAS Account / linkAccount /
@@ -33,8 +32,8 @@ function toAdapterUser(row: UserRow): AdapterUser {
 }
 
 export const SqliteAdapter: Adapter = {
-  createUser(user) {
-    ensureAuthSchema();
+  async createUser(user) {
+    await ensureAuthSchema();
     // Création non supportée via Auth.js — il manque group_id et role qui
     // sont des champs métier obligatoires.
     throw new Error(
@@ -42,26 +41,26 @@ export const SqliteAdapter: Adapter = {
     );
   },
 
-  getUser(id) {
-    ensureAuthSchema();
-    const row = getDb()
+  async getUser(id) {
+    await ensureAuthSchema();
+    const row = await getDb()
       .prepare('SELECT id, email, nom_affichage, email_verified FROM users WHERE id = ?')
-      .get(id) as UserRow | undefined;
+      .get<UserRow>(id);
     return row ? toAdapterUser(row) : null;
   },
 
-  getUserByEmail(email) {
-    ensureAuthSchema();
-    const row = getDb()
+  async getUserByEmail(email) {
+    await ensureAuthSchema();
+    const row = await getDb()
       .prepare(
         "SELECT id, email, nom_affichage, email_verified FROM users WHERE email = ? AND statut = 'actif' LIMIT 1",
       )
-      .get(email) as UserRow | undefined;
+      .get<UserRow>(email);
     return row ? toAdapterUser(row) : null;
   },
 
-  updateUser(user) {
-    ensureAuthSchema();
+  async updateUser(user) {
+    await ensureAuthSchema();
     const db = getDb();
     const sets: string[] = [];
     const values: unknown[] = [];
@@ -74,40 +73,38 @@ export const SqliteAdapter: Adapter = {
     sets.push("updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')");
     values.push(user.id);
 
-    db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...values);
-    const row = db
+    await db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+    const row = await db
       .prepare('SELECT id, email, nom_affichage, email_verified FROM users WHERE id = ?')
-      .get(user.id) as UserRow;
-    return toAdapterUser(row);
+      .get<UserRow>(user.id);
+    return toAdapterUser(row!);
   },
 
-  createSession({ sessionToken, userId, expires }) {
-    ensureAuthSchema();
-    getDb()
+  async createSession({ sessionToken, userId, expires }) {
+    await ensureAuthSchema();
+    await getDb()
       .prepare('INSERT INTO sessions (session_token, user_id, expires) VALUES (?, ?, ?)')
       .run(sessionToken, userId, expires.toISOString());
     return { sessionToken, userId, expires };
   },
 
-  getSessionAndUser(sessionToken) {
-    ensureAuthSchema();
+  async getSessionAndUser(sessionToken) {
+    await ensureAuthSchema();
     const db = getDb();
-    const row = db.prepare(
+    const row = await db.prepare(
       `SELECT s.session_token, s.user_id, s.expires,
               u.id, u.email, u.nom_affichage, u.email_verified
        FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.session_token = ?`,
-    ).get(sessionToken) as
-      | {
-          session_token: string;
-          user_id: string;
-          expires: string;
-          id: string;
-          email: string;
-          nom_affichage: string | null;
-          email_verified: string | null;
-        }
-      | undefined;
+    ).get<{
+      session_token: string;
+      user_id: string;
+      expires: string;
+      id: string;
+      email: string;
+      nom_affichage: string | null;
+      email_verified: string | null;
+    }>(sessionToken);
     if (!row) return null;
     const session: AdapterSession = {
       sessionToken: row.session_token,
@@ -123,8 +120,8 @@ export const SqliteAdapter: Adapter = {
     return { session, user };
   },
 
-  updateSession(session) {
-    ensureAuthSchema();
+  async updateSession(session) {
+    await ensureAuthSchema();
     const db = getDb();
     const sets: string[] = [];
     const values: unknown[] = [];
@@ -135,12 +132,10 @@ export const SqliteAdapter: Adapter = {
     }
     if (sets.length === 0) return undefined;
     values.push(session.sessionToken);
-    db.prepare(`UPDATE sessions SET ${sets.join(', ')} WHERE session_token = ?`).run(...values);
-    const row = db
+    await db.prepare(`UPDATE sessions SET ${sets.join(', ')} WHERE session_token = ?`).run(...values);
+    const row = await db
       .prepare('SELECT session_token, user_id, expires FROM sessions WHERE session_token = ?')
-      .get(session.sessionToken) as
-      | { session_token: string; user_id: string; expires: string }
-      | undefined;
+      .get<{ session_token: string; user_id: string; expires: string }>(session.sessionToken);
     if (!row) return null;
     return {
       sessionToken: row.session_token,
@@ -150,26 +145,26 @@ export const SqliteAdapter: Adapter = {
   },
 
   async deleteSession(sessionToken) {
-    ensureAuthSchema();
-    getDb().prepare('DELETE FROM sessions WHERE session_token = ?').run(sessionToken);
+    await ensureAuthSchema();
+    await getDb().prepare('DELETE FROM sessions WHERE session_token = ?').run(sessionToken);
   },
 
-  createVerificationToken(verificationToken) {
-    ensureAuthSchema();
-    getDb()
+  async createVerificationToken(verificationToken) {
+    await ensureAuthSchema();
+    await getDb()
       .prepare('INSERT INTO verification_tokens (identifier, token, expires) VALUES (?, ?, ?)')
       .run(verificationToken.identifier, verificationToken.token, verificationToken.expires.toISOString());
     return verificationToken;
   },
 
-  useVerificationToken({ identifier, token }) {
-    ensureAuthSchema();
+  async useVerificationToken({ identifier, token }) {
+    await ensureAuthSchema();
     const db = getDb();
-    const row = db
+    const row = await db
       .prepare('SELECT identifier, token, expires FROM verification_tokens WHERE identifier = ? AND token = ?')
-      .get(identifier, token) as { identifier: string; token: string; expires: string } | undefined;
+      .get<{ identifier: string; token: string; expires: string }>(identifier, token);
     if (!row) return null;
-    db.prepare('DELETE FROM verification_tokens WHERE identifier = ? AND token = ?').run(identifier, token);
+    await db.prepare('DELETE FROM verification_tokens WHERE identifier = ? AND token = ?').run(identifier, token);
     return {
       identifier: row.identifier,
       token: row.token,

@@ -22,12 +22,12 @@ export interface Todo {
   updated_at: string;
 }
 
-function nextTodoId(groupId: string): string {
+async function nextTodoId(groupId: string): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `TODO-${year}-`;
-  const row = getDb()
+  const row = await getDb()
     .prepare('SELECT id FROM todos WHERE group_id = ? AND id LIKE ? ORDER BY id DESC LIMIT 1')
-    .get(groupId, `${prefix}%`) as { id: string } | undefined;
+    .get<{ id: string }>(groupId, `${prefix}%`);
   const next = row ? parseInt(row.id.slice(prefix.length), 10) + 1 : 1;
   return `${prefix}${String(next).padStart(3, '0')}`;
 }
@@ -37,10 +37,10 @@ export interface ListTodosOptions {
   include_fait?: boolean;
 }
 
-export function listTodos(
+export async function listTodos(
   { groupId }: TodosContext,
   options: ListTodosOptions = {},
-): Todo[] {
+): Promise<Todo[]> {
   const conditions: string[] = ['group_id = ?'];
   const values: unknown[] = [groupId];
 
@@ -51,10 +51,10 @@ export function listTodos(
     conditions.push("status NOT IN ('fait', 'annule')");
   }
 
-  return getDb().prepare(
+  return await getDb().prepare(
     `SELECT * FROM todos WHERE ${conditions.join(' AND ')}
      ORDER BY CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date, created_at`,
-  ).all(...values) as Todo[];
+  ).all<Todo>(...values);
 }
 
 export interface CreateTodoInput {
@@ -64,14 +64,14 @@ export interface CreateTodoInput {
   due_date?: string | null;
 }
 
-export function createTodo(
+export async function createTodo(
   { groupId, userId }: TodosContext,
   input: CreateTodoInput,
-): Todo {
-  const id = nextTodoId(groupId);
+): Promise<Todo> {
+  const id = await nextTodoId(groupId);
   const now = currentTimestamp();
 
-  getDb().prepare(
+  await getDb().prepare(
     `INSERT INTO todos (id, group_id, user_id, title, description, status, due_date, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
@@ -86,17 +86,17 @@ export function createTodo(
     now,
   );
 
-  return getDb().prepare('SELECT * FROM todos WHERE id = ?').get(id) as Todo;
+  return (await getDb().prepare('SELECT * FROM todos WHERE id = ?').get<Todo>(id))!;
 }
 
-export function completeTodo({ groupId }: TodosContext, id: string): Todo | null {
+export async function completeTodo({ groupId }: TodosContext, id: string): Promise<Todo | null> {
   const now = currentTimestamp();
-  const result = getDb().prepare(
+  const result = await getDb().prepare(
     `UPDATE todos SET status = 'fait', completed_at = ?, updated_at = ? WHERE id = ? AND group_id = ?`,
   ).run(now, now, id, groupId);
   if (result.changes === 0) return null;
 
-  return getDb().prepare('SELECT * FROM todos WHERE id = ?').get(id) as Todo;
+  return (await getDb().prepare('SELECT * FROM todos WHERE id = ?').get<Todo>(id))!;
 }
 
 export interface UpdateTodoInput {
@@ -106,11 +106,11 @@ export interface UpdateTodoInput {
   due_date?: string | null;
 }
 
-export function updateTodo(
+export async function updateTodo(
   { groupId }: TodosContext,
   id: string,
   patch: UpdateTodoInput,
-): Todo | null {
+): Promise<Todo | null> {
   const fields: string[] = [];
   const values: unknown[] = [];
 
@@ -120,17 +120,17 @@ export function updateTodo(
   if (patch.due_date !== undefined) { fields.push('due_date = ?'); values.push(patch.due_date); }
 
   if (fields.length === 0) {
-    return getDb().prepare('SELECT * FROM todos WHERE id = ? AND group_id = ?').get(id, groupId) as Todo | null;
+    return (await getDb().prepare('SELECT * FROM todos WHERE id = ? AND group_id = ?').get<Todo>(id, groupId)) ?? null;
   }
 
   fields.push('updated_at = ?');
   values.push(currentTimestamp());
   values.push(id, groupId);
 
-  const result = getDb()
+  const result = await getDb()
     .prepare(`UPDATE todos SET ${fields.join(', ')} WHERE id = ? AND group_id = ?`)
     .run(...values);
   if (result.changes === 0) return null;
 
-  return getDb().prepare('SELECT * FROM todos WHERE id = ?').get(id) as Todo;
+  return (await getDb().prepare('SELECT * FROM todos WHERE id = ?').get<Todo>(id))!;
 }

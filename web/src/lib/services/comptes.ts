@@ -38,22 +38,23 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-function nextCompteId(groupId: string, code: string): string {
+async function nextCompteId(groupId: string, code: string): Promise<string> {
   const base = `cpt-${slugify(code)}`;
-  const existing = getDb()
+  const existing = await getDb()
     .prepare('SELECT COUNT(*) AS n FROM comptes_bancaires WHERE group_id = ? AND id LIKE ?')
-    .get(groupId, `${base}%`) as { n: number };
-  return existing.n === 0 ? base : `${base}-${existing.n + 1}`;
+    .get<{ n: number }>(groupId, `${base}%`);
+  const n = existing?.n ?? 0;
+  return n === 0 ? base : `${base}-${n + 1}`;
 }
 
 export interface ListComptesOptions {
   statut?: CompteStatut;
 }
 
-export function listComptesBancaires(
+export async function listComptesBancaires(
   { groupId }: ComptesContext,
   options: ListComptesOptions = {},
-): CompteBancaire[] {
+): Promise<CompteBancaire[]> {
   const conditions: string[] = ['group_id = ?'];
   const values: unknown[] = [groupId];
 
@@ -64,9 +65,9 @@ export function listComptesBancaires(
     conditions.push("statut = 'actif'");
   }
 
-  return getDb().prepare(
+  return await getDb().prepare(
     `SELECT * FROM comptes_bancaires WHERE ${conditions.join(' AND ')} ORDER BY type_compte, nom`,
-  ).all(...values) as CompteBancaire[];
+  ).all<CompteBancaire>(...values);
 }
 
 export interface CreateCompteInput {
@@ -81,14 +82,14 @@ export interface CreateCompteInput {
   notes?: string | null;
 }
 
-export function createCompteBancaire(
+export async function createCompteBancaire(
   { groupId }: ComptesContext,
   input: CreateCompteInput,
-): CompteBancaire {
-  const id = nextCompteId(groupId, input.code);
+): Promise<CompteBancaire> {
+  const id = await nextCompteId(groupId, input.code);
   const now = currentTimestamp();
 
-  getDb().prepare(
+  await getDb().prepare(
     `INSERT INTO comptes_bancaires (id, group_id, code, nom, banque, iban, bic, type_compte, comptaweb_id, statut, ouvert_le, notes, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'actif', ?, ?, ?, ?)`,
   ).run(
@@ -107,7 +108,7 @@ export function createCompteBancaire(
     now,
   );
 
-  return getDb().prepare('SELECT * FROM comptes_bancaires WHERE id = ?').get(id) as CompteBancaire;
+  return (await getDb().prepare('SELECT * FROM comptes_bancaires WHERE id = ?').get<CompteBancaire>(id))!;
 }
 
 export interface UpdateCompteInput {
@@ -123,11 +124,11 @@ export interface UpdateCompteInput {
   notes?: string | null;
 }
 
-export function updateCompteBancaire(
+export async function updateCompteBancaire(
   { groupId }: ComptesContext,
   id: string,
   patch: UpdateCompteInput,
-): CompteBancaire | null {
+): Promise<CompteBancaire | null> {
   const fields: string[] = [];
   const values: unknown[] = [];
 
@@ -138,19 +139,19 @@ export function updateCompteBancaire(
   }
 
   if (fields.length === 0) {
-    return getDb()
+    return (await getDb()
       .prepare('SELECT * FROM comptes_bancaires WHERE id = ? AND group_id = ?')
-      .get(id, groupId) as CompteBancaire | null;
+      .get<CompteBancaire>(id, groupId)) ?? null;
   }
 
   fields.push('updated_at = ?');
   values.push(currentTimestamp());
   values.push(id, groupId);
 
-  const result = getDb()
+  const result = await getDb()
     .prepare(`UPDATE comptes_bancaires SET ${fields.join(', ')} WHERE id = ? AND group_id = ?`)
     .run(...values);
   if (result.changes === 0) return null;
 
-  return getDb().prepare('SELECT * FROM comptes_bancaires WHERE id = ?').get(id) as CompteBancaire;
+  return (await getDb().prepare('SELECT * FROM comptes_bancaires WHERE id = ?').get<CompteBancaire>(id))!;
 }

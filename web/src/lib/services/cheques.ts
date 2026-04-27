@@ -25,19 +25,19 @@ export interface ListDepotChequesOptions {
   limit?: number;
 }
 
-export function listDepotsCheques(
+export async function listDepotsCheques(
   { groupId }: ChequesContext,
   options: ListDepotChequesOptions = {},
-): DepotCheques[] {
+): Promise<DepotCheques[]> {
   const conditions: string[] = ['group_id = ?'];
   const values: unknown[] = [groupId];
 
   if (options.type_depot) { conditions.push('type_depot = ?'); values.push(options.type_depot); }
   if (options.confirmation_status) { conditions.push('confirmation_status = ?'); values.push(options.confirmation_status); }
 
-  return getDb().prepare(
+  return await getDb().prepare(
     `SELECT * FROM depots_cheques WHERE ${conditions.join(' AND ')} ORDER BY date_depot DESC LIMIT ?`,
-  ).all(...values, options.limit ?? 50) as DepotCheques[];
+  ).all<DepotCheques>(...values, options.limit ?? 50);
 }
 
 export interface ChequeInput {
@@ -53,12 +53,12 @@ export interface CreateDepotChequesInput {
   notes?: string | null;
 }
 
-export function createDepotCheques(
+export async function createDepotCheques(
   { groupId }: ChequesContext,
   input: CreateDepotChequesInput,
-): DepotCheques {
+): Promise<DepotCheques> {
   const db = getDb();
-  const id = nextId('DCH');
+  const id = await nextId('DCH');
   const now = currentTimestamp();
 
   const detail = input.cheques.map((c) => ({
@@ -68,7 +68,7 @@ export function createDepotCheques(
   }));
   const totalCents = detail.reduce((sum, c) => sum + c.montant_cents, 0);
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO depots_cheques (id, group_id, date_depot, type_depot, total_amount_cents, nombre_cheques, detail_cheques, notes, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
@@ -83,5 +83,5 @@ export function createDepotCheques(
     now,
   );
 
-  return db.prepare('SELECT * FROM depots_cheques WHERE id = ?').get(id) as DepotCheques;
+  return (await db.prepare('SELECT * FROM depots_cheques WHERE id = ?').get<DepotCheques>(id))!;
 }

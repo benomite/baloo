@@ -8,7 +8,7 @@ import { listUnites, listModesPaiement } from '@/lib/queries/reference';
 
 export default async function NouveauRemboursementPage() {
   const unites = await listUnites();
-  const modes = listModesPaiement();
+  const modes = await listModesPaiement();
 
   return (
     <div>

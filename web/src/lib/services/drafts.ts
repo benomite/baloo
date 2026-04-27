@@ -110,24 +110,24 @@ export async function scanDraftsFromComptaweb({ groupId }: DraftsContext): Promi
     let crees = 0;
     let existants = 0;
     for (const c of candidates) {
-      const existing = findExisting.get(groupId, c.ligneBancaireId, c.sousLigneIndex, c.sousLigneIndex);
+      const existing = await findExisting.get(groupId, c.ligneBancaireId, c.sousLigneIndex, c.sousLigneIndex);
       if (existing) { existants++; continue; }
       const type = c.montantCentimes < 0 ? 'depense' : 'recette';
       const amountAbs = Math.abs(c.montantCentimes);
       const cwMode = inferComptawebModeId(c.intituleParent);
       const modeLocal = cwMode !== null
-        ? (findMode.get(cwMode) as { id: string } | undefined)?.id ?? null
+        ? (await findMode.get<{ id: string }>(cwMode))?.id ?? null
         : null;
       const carteCode = extractCarteProcCode(c.intituleParent);
       const carteLocal = carteCode
-        ? (findCarte.get(groupId, carteCode) as { id: string } | undefined)?.id ?? null
+        ? (await findCarte.get<{ id: string }>(groupId, carteCode))?.id ?? null
         : null;
-      const id = nextId('ECR');
+      const id = await nextId('ECR');
       const now = currentTimestamp();
       const notes = c.sousLigneIndex !== null
         ? `Draft généré depuis ligne bancaire ${c.ligneBancaireId} sous-ligne ${c.sousLigneIndex} (intitulé parent: ${c.intituleParent.slice(0, 80)}).`
         : `Draft généré depuis ligne bancaire ${c.ligneBancaireId}.`;
-      insert.run(id, groupId, c.dateOperation, c.libelProposal, amountAbs, type, modeLocal, c.ligneBancaireId, c.sousLigneIndex, carteLocal, notes, now, now);
+      await insert.run(id, groupId, c.dateOperation, c.libelProposal, amountAbs, type, modeLocal, c.ligneBancaireId, c.sousLigneIndex, carteLocal, notes, now, now);
       crees++;
     }
 
@@ -177,9 +177,9 @@ function isoToFr(iso: string): string {
   return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
-function lookupComptawebId(table: string, id: string | null): number | null {
+async function lookupComptawebId(table: string, id: string | null): Promise<number | null> {
   if (!id) return null;
-  const row = getDb().prepare(`SELECT comptaweb_id FROM ${table} WHERE id = ?`).get(id) as { comptaweb_id: number | null } | undefined;
+  const row = await getDb().prepare(`SELECT comptaweb_id FROM ${table} WHERE id = ?`).get<{ comptaweb_id: number | null }>(id);
   return row?.comptaweb_id ?? null;
 }
 
@@ -198,18 +198,19 @@ export async function syncDraftToComptaweb(
 ): Promise<SyncDraftResult> {
   try {
     const db = getDb();
-    const ecr = db.prepare(
+    const ecr = await db.prepare(
       `SELECT id, group_id, date_ecriture, description, amount_cents, type,
               unite_id, category_id, activite_id, mode_paiement_id, numero_piece, status, justif_attendu, carte_id
        FROM ecritures WHERE id = ? AND group_id = ?`,
-    ).get(ecritureId, groupId) as DraftRow | undefined;
+    ).get<DraftRow>(ecritureId, groupId);
     if (!ecr) return { ok: false, message: `Écriture ${ecritureId} introuvable.`, dryRun: opts.dryRun !== false };
 
-    const natureCw = lookupComptawebId('categories', ecr.category_id);
-    const activiteCw = lookupComptawebId('activites', ecr.activite_id);
-    const uniteCw = lookupComptawebId('unites', ecr.unite_id);
-    const modeCw = lookupComptawebId('modes_paiement', ecr.mode_paiement_id);
-    const hasJust = (db.prepare("SELECT COUNT(*) as n FROM justificatifs WHERE entity_type = 'ecriture' AND entity_id = ?").get(ecr.id) as { n: number }).n > 0;
+    const natureCw = await lookupComptawebId('categories', ecr.category_id);
+    const activiteCw = await lookupComptawebId('activites', ecr.activite_id);
+    const uniteCw = await lookupComptawebId('unites', ecr.unite_id);
+    const modeCw = await lookupComptawebId('modes_paiement', ecr.mode_paiement_id);
+    const justRow = await db.prepare("SELECT COUNT(*) as n FROM justificatifs WHERE entity_type = 'ecriture' AND entity_id = ?").get<{ n: number }>(ecr.id);
+    const hasJust = (justRow?.n ?? 0) > 0;
 
     const missing: string[] = [];
     if (ecr.status !== 'brouillon') missing.push(`status '${ecr.status}' (seul 'brouillon' est synchronisable)`);
@@ -233,7 +234,7 @@ export async function syncDraftToComptaweb(
     let numeropiece = ecr.numero_piece ?? '';
     if (!numeropiece) {
       if (hasJust) {
-        const j = db.prepare("SELECT id FROM justificatifs WHERE entity_type = 'ecriture' AND entity_id = ? ORDER BY uploaded_at LIMIT 1").get(ecr.id) as { id: string } | undefined;
+        const j = await db.prepare("SELECT id FROM justificatifs WHERE entity_type = 'ecriture' AND entity_id = ? ORDER BY uploaded_at LIMIT 1").get<{ id: string }>(ecr.id);
         if (j) numeropiece = j.id;
       }
       if (!numeropiece) numeropiece = ecr.id;
@@ -242,7 +243,7 @@ export async function syncDraftToComptaweb(
     // Carte associée : selon son type, on envoie vers cartebancaire ou
     // carteprocurement.
     const carte = ecr.carte_id
-      ? (db.prepare('SELECT id, type, comptaweb_id FROM cartes WHERE id = ?').get(ecr.carte_id) as CarteRow | undefined)
+      ? await db.prepare('SELECT id, type, comptaweb_id FROM cartes WHERE id = ?').get<CarteRow>(ecr.carte_id)
       : undefined;
     const cartebancaireId = carte?.type === 'cb' && carte.comptaweb_id ? String(carte.comptaweb_id) : undefined;
     const carteprocurementId = carte?.type === 'procurement' && carte.comptaweb_id ? String(carte.comptaweb_id) : undefined;
@@ -273,7 +274,7 @@ export async function syncDraftToComptaweb(
     }
     // On persiste le numero_piece utilisé (y compris le fallback auto) pour
     // rester cohérent avec ce qu'on a envoyé côté Comptaweb.
-    db.prepare(
+    await db.prepare(
       `UPDATE ecritures SET status = 'saisie_comptaweb', comptaweb_synced = 1,
        comptaweb_ecriture_id = ?, numero_piece = ?, updated_at = ? WHERE id = ?`,
     ).run(result.ecritureId ?? null, numeropiece, currentTimestamp(), ecr.id);

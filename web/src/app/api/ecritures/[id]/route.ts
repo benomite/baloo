@@ -7,7 +7,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if ('error' in ctxR) return ctxR.error;
   const { groupId, scopeUniteId } = ctxR.ctx;
   const { id } = await params;
-  const ecriture = getEcriture({ groupId, scopeUniteId }, id);
+  const ecriture = await getEcriture({ groupId, scopeUniteId }, id);
   if (!ecriture) return jsonError('Écriture introuvable.', 404);
   return Response.json(ecriture);
 }
@@ -36,7 +36,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { id } = await params;
   const parsed = await parseJsonBody(request, patchSchema);
   if ('error' in parsed) return parsed.error;
-  const updated = updateEcriture({ groupId, scopeUniteId }, id, parsed.data);
+  const updated = await updateEcriture({ groupId, scopeUniteId }, id, parsed.data);
   if (!updated) return jsonError('Écriture introuvable.', 404);
   return Response.json(updated);
 }

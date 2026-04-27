@@ -9,9 +9,9 @@ export default async function NouvelleEcriturePage() {
       <PageHeader title="Nouvelle écriture" />
       <EcritureForm
         action={createEcriture}
-        categories={listCategories()}
+        categories={await listCategories()}
         unites={await listUnites()}
-        modesPaiement={listModesPaiement()}
+        modesPaiement={await listModesPaiement()}
         activites={await listActivites()}
         cartes={await listCartes()}
       />
