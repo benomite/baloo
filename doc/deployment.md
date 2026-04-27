@@ -90,6 +90,9 @@ Dashboard Vercel → Project → Settings → Environment Variables. Ajouter pou
 | `DB_URL` | `libsql://baloo-val-de-saone-<org>.turso.io` | URL Turso |
 | `DB_AUTH_TOKEN` | (token Turso) | Marquer comme "Sensitive" |
 | `BALOO_USER_EMAIL` | `<email-trésorier>` | Compat scripts CLI (cli-context) |
+| `COMPTAWEB_USERNAME` | `<email-comptaweb>` | Login Comptaweb (Sirom). Marquer "Sensitive" |
+| `COMPTAWEB_PASSWORD` | `<mot-de-passe>` | Idem. Marquer "Sensitive" |
+| `COMPTAWEB_COOKIE` (fallback) | `PHPSESSID=...; ...` | Optionnel : cookie collé à la main si l'auth automatisée échoue. Expire en ~quelques heures |
 
 ### Provisionner Vercel Blob
 
@@ -171,3 +174,14 @@ DB_URL=... DB_AUTH_TOKEN=... pnpm generate-token --name "MCP-trésorier"
 | **Total Y1** | | **~0 €** |
 
 Sortie de secours si Vercel reclasse l'usage en commercial : bascule sur **Hetzner CX11 (~5 €/mois)** + Docker compose (Caddy + Next.js + LiteFS pour la BDD). La stack reste portable.
+
+---
+
+## 9. Limites assumées du déploiement actuel
+
+Cette procédure couvre le cas **mono-trésorier d'un seul groupe SGDF**. Quelques limites à connaître :
+
+- **Credentials Comptaweb partagés au niveau instance.** `COMPTAWEB_USERNAME` / `COMPTAWEB_PASSWORD` / `COMPTAWEB_COOKIE` vivent dans les env vars Vercel — un seul jeu pour toute l'instance. Tous les chefs d'unité connectés voient les mêmes données Comptaweb (celles du compte du trésorier). C'est OK tant qu'on est intra-groupe (ils n'ont de toute façon que leur scope unité côté Baloo). Dès qu'on ouvrira à plusieurs groupes (P3), ce design ne tient plus.
+- **Évolution prévue P3** : table `user_credentials(user_id, service, value_enc)` + page `/settings/comptaweb` + chiffrement au repos. Placeholder dans [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git) (point 4) ; tâche listée dans [roadmap P3](roadmap.md#phase-3--multi-groupes-hébergé-mois-6--12-si-phase-2-concluante). ADR dédié à écrire au moment de l'implémentation pour le chiffrement (clé dans env Vercel ou KMS managé).
+- **Cookie Comptaweb** : si tu utilises `COMPTAWEB_COOKIE` plutôt que username/password, il expire au bout de quelques heures et il faut le re-coller manuellement. L'auth automatisée (`COMPTAWEB_USERNAME` + `COMPTAWEB_PASSWORD`) fait un re-login transparent — préféré.
+- **Pas de monitoring d'erreurs au MVP.** Vercel logs basiques uniquement. À surveiller : si Comptaweb change un endpoint ou son markup HTML, le scraping casse silencieusement (les routes `/api/comptaweb/*` renvoient des 502). Brancher Sentry quand le besoin se fait sentir.
