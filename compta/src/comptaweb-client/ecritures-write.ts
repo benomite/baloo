@@ -56,8 +56,9 @@ export async function fetchReferentielsCreer(config: ComptawebConfig): Promise<R
 }
 
 function normaliseMontant(s: string): string {
-  // Comptaweb attend le format français avec virgule.
-  return s.replace('.', ',').trim();
+  // Comptaweb parse côté serveur avec un équivalent floatval/parseFloat : une
+  // virgule tronque les décimales (16,45 → 16). On envoie donc le point.
+  return s.replace(',', '.').trim();
 }
 
 function buildPostBody(
