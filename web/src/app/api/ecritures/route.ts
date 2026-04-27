@@ -14,6 +14,8 @@ const listSchema = z
     date_debut: z.string().optional(),
     date_fin: z.string().optional(),
     mode_paiement_id: z.string().optional(),
+    carte_id: z.string().optional(),
+    month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
     status: z.enum(['brouillon', 'valide', 'saisie_comptaweb']).optional(),
     search: z.string().optional(),
     limit: z.coerce.number().int().min(1).max(500).optional(),
@@ -43,6 +45,7 @@ const createSchema = z.object({
   mode_paiement_id: z.string().nullish(),
   activite_id: z.string().nullish(),
   numero_piece: z.string().nullish(),
+  carte_id: z.string().nullish(),
   justif_attendu: z.union([z.boolean(), z.literal(0), z.literal(1)]).optional(),
   notes: z.string().nullish(),
 });
