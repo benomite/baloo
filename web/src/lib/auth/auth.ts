@@ -17,12 +17,18 @@ function magicLinkProvider(): EmailConfig {
   const smtp = process.env.EMAIL_SERVER;
   const from = process.env.EMAIL_FROM ?? 'baloo@localhost';
 
+  // Auth.js v5 (Nodemailer provider) refuse de démarrer si `server` est
+  // vide. En dev (pas de SMTP), on passe un dummy — l'override
+  // `sendVerificationRequest` ci-dessous court-circuite l'envoi réel et
+  // logge le lien sur stderr à la place.
+  const serverConfig = smtp || 'smtp://localhost:25';
+
   return {
     id: 'email',
     type: 'email',
     name: 'Email',
     from,
-    server: smtp ?? '',
+    server: serverConfig,
     maxAge: 60 * 60 * 24,
     options: {},
     async sendVerificationRequest({ identifier, url, provider }) {
