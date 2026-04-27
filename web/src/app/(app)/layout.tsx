@@ -1,16 +1,15 @@
 import { Sidebar } from '@/components/layout/sidebar';
-import { auth } from '@/lib/auth/auth';
-import { redirect } from 'next/navigation';
+import { getCurrentContext } from '@/lib/context';
 
-// Layout des pages authentifiées (chantier 4, ADR-014).
-// Toute page sous `(app)/` redirige vers `/login` si pas de session.
+// Layout des pages authentifiées (chantier 4 ADR-016 + chantier 5).
+// `getCurrentContext` redirige vers `/login` si pas de session, et
+// fournit le rôle pour adapter la sidebar.
 export default async function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
-  const session = await auth();
-  if (!session?.user) redirect('/login');
+  const ctx = await getCurrentContext();
 
   return (
     <>
-      <Sidebar />
+      <Sidebar role={ctx.role} />
       <main className="flex-1 overflow-auto p-8">{children}</main>
     </>
   );
