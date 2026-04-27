@@ -12,11 +12,8 @@
     "import:comptes": "tsx src/scripts/import-comptes.ts",
     "import:asso-finances": "tsx src/scripts/import-asso-finances.ts",
     "import:outils-state": "tsx src/scripts/import-outils-state.ts",
-    "map:referentiels": "tsx src/scripts/map-referentiels.ts",
     "sync:referentiels": "tsx src/scripts/sync-referentiels.ts",
-    "flag:prelevements-auto": "tsx src/scripts/flag-prelevements-auto.ts",
-    "try:comptaweb": "tsx src/try-comptaweb.ts",
-    "try:login": "tsx src/try-login.ts"
+    "flag:prelevements-auto": "tsx src/scripts/flag-prelevements-auto.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
