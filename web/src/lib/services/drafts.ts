@@ -40,6 +40,14 @@ function inferComptawebModeId(intitule: string): number | null {
   return null;
 }
 
+// Code carte procurement visible dans les intitulés "PAIEMENT C. PROC XXXX".
+// Les CB classiques n'ont pas d'identifiant dans l'intitulé bancaire, d'où
+// pas de regex pour elles ici (sélection manuelle dans le form).
+function extractCarteProcCode(intitule: string): string | null {
+  const m = intitule.toUpperCase().match(/PAIEMENT C\. PROC\s+([A-Z0-9]{6,})/);
+  return m ? m[1] : null;
+}
+
 function listCandidates(lignes: EcritureBancaireNonRapprochee[]): Candidate[] {
   const out: Candidate[] = [];
   for (const l of lignes) {
@@ -87,13 +95,16 @@ export async function scanDraftsFromComptaweb({ groupId }: DraftsContext): Promi
        LIMIT 1`,
     );
     const findMode = db.prepare('SELECT id FROM modes_paiement WHERE comptaweb_id = ? LIMIT 1');
+    const findCarte = db.prepare(
+      "SELECT id FROM cartes WHERE group_id = ? AND code_externe = ? AND statut = 'active' LIMIT 1",
+    );
     const insert = db.prepare(
       `INSERT INTO ecritures (
          id, group_id, unite_id, date_ecriture, description, amount_cents, type,
          category_id, mode_paiement_id, activite_id, numero_piece, status,
          comptaweb_synced, ligne_bancaire_id, ligne_bancaire_sous_index,
-         comptaweb_ecriture_id, notes, created_at, updated_at
-       ) VALUES (?, ?, NULL, ?, ?, ?, ?, NULL, ?, NULL, NULL, 'brouillon', 0, ?, ?, NULL, ?, ?, ?)`,
+         comptaweb_ecriture_id, carte_id, notes, created_at, updated_at
+       ) VALUES (?, ?, NULL, ?, ?, ?, ?, NULL, ?, NULL, NULL, 'brouillon', 0, ?, ?, NULL, ?, ?, ?, ?)`,
     );
 
     let crees = 0;
@@ -107,12 +118,16 @@ export async function scanDraftsFromComptaweb({ groupId }: DraftsContext): Promi
       const modeLocal = cwMode !== null
         ? (findMode.get(cwMode) as { id: string } | undefined)?.id ?? null
         : null;
+      const carteCode = extractCarteProcCode(c.intituleParent);
+      const carteLocal = carteCode
+        ? (findCarte.get(groupId, carteCode) as { id: string } | undefined)?.id ?? null
+        : null;
       const id = nextId('ECR');
       const now = currentTimestamp();
       const notes = c.sousLigneIndex !== null
         ? `Draft généré depuis ligne bancaire ${c.ligneBancaireId} sous-ligne ${c.sousLigneIndex} (intitulé parent: ${c.intituleParent.slice(0, 80)}).`
         : `Draft généré depuis ligne bancaire ${c.ligneBancaireId}.`;
-      insert.run(id, groupId, c.dateOperation, c.libelProposal, amountAbs, type, modeLocal, c.ligneBancaireId, c.sousLigneIndex, notes, now, now);
+      insert.run(id, groupId, c.dateOperation, c.libelProposal, amountAbs, type, modeLocal, c.ligneBancaireId, c.sousLigneIndex, carteLocal, notes, now, now);
       crees++;
     }
 
@@ -125,8 +140,12 @@ export async function scanDraftsFromComptaweb({ groupId }: DraftsContext): Promi
   }
 }
 
-const DEFAULT_TIERS_CATEG_ID = '4';
-const DEFAULT_TIERS_STRUCTURE_ID = '498';
+// tierscateg=10 = 'Autre : pas structure SGDF' : cas nominal pour toute
+// écriture Baloo (dépense chez un fournisseur, recette d'une famille, frais
+// bancaires...). 'Mon groupe' (4) est réservé aux mouvements internes purs —
+// à gérer explicitement quand on en aura besoin.
+const DEFAULT_TIERS_CATEG_ID = '10';
+const DEFAULT_TIERS_STRUCTURE_ID = ''; // vide quand catég = 'Autre'
 const DEFAULT_COMPTE_BANCAIRE_ID = '791';
 
 interface DraftRow {
@@ -143,6 +162,13 @@ interface DraftRow {
   numero_piece: string | null;
   status: string;
   justif_attendu: number;
+  carte_id: string | null;
+}
+
+interface CarteRow {
+  id: string;
+  type: 'cb' | 'procurement';
+  comptaweb_id: number | null;
 }
 
 function isoToFr(iso: string): string {
@@ -174,7 +200,7 @@ export async function syncDraftToComptaweb(
     const db = getDb();
     const ecr = db.prepare(
       `SELECT id, group_id, date_ecriture, description, amount_cents, type,
-              unite_id, category_id, activite_id, mode_paiement_id, numero_piece, status, justif_attendu
+              unite_id, category_id, activite_id, mode_paiement_id, numero_piece, status, justif_attendu, carte_id
        FROM ecritures WHERE id = ? AND group_id = ?`,
     ).get(ecritureId, groupId) as DraftRow | undefined;
     if (!ecr) return { ok: false, message: `Écriture ${ecritureId} introuvable.`, dryRun: opts.dryRun !== false };
@@ -195,7 +221,9 @@ export async function syncDraftToComptaweb(
     else if (uniteCw === null) missing.push('mapping unité');
     if (!ecr.mode_paiement_id) missing.push('mode');
     else if (modeCw === null) missing.push('mapping mode');
-    if (ecr.type === 'depense' && ecr.justif_attendu === 1 && !hasJust && !ecr.numero_piece) missing.push('justif');
+    // Le justif physique n'est plus requis pour sync : Comptaweb ne gère pas
+    // les fichiers, seul un code suffit. Si on n'a rien, on retombe sur l'ID
+    // de l'écriture (stable, unique, permet de rattacher le justif plus tard).
 
     const dryRun = opts.dryRun !== false;
     if (missing.length && !dryRun) {
@@ -203,10 +231,21 @@ export async function syncDraftToComptaweb(
     }
 
     let numeropiece = ecr.numero_piece ?? '';
-    if (!numeropiece && hasJust) {
-      const j = db.prepare("SELECT id FROM justificatifs WHERE entity_type = 'ecriture' AND entity_id = ? ORDER BY uploaded_at LIMIT 1").get(ecr.id) as { id: string } | undefined;
-      if (j) numeropiece = j.id;
+    if (!numeropiece) {
+      if (hasJust) {
+        const j = db.prepare("SELECT id FROM justificatifs WHERE entity_type = 'ecriture' AND entity_id = ? ORDER BY uploaded_at LIMIT 1").get(ecr.id) as { id: string } | undefined;
+        if (j) numeropiece = j.id;
+      }
+      if (!numeropiece) numeropiece = ecr.id;
     }
+
+    // Carte associée : selon son type, on envoie vers cartebancaire ou
+    // carteprocurement.
+    const carte = ecr.carte_id
+      ? (db.prepare('SELECT id, type, comptaweb_id FROM cartes WHERE id = ?').get(ecr.carte_id) as CarteRow | undefined)
+      : undefined;
+    const cartebancaireId = carte?.type === 'cb' && carte.comptaweb_id ? String(carte.comptaweb_id) : undefined;
+    const carteprocurementId = carte?.type === 'procurement' && carte.comptaweb_id ? String(carte.comptaweb_id) : undefined;
 
     const input: CreateEcritureInput = {
       type: ecr.type,
@@ -216,6 +255,8 @@ export async function syncDraftToComptaweb(
       numeropiece: numeropiece || undefined,
       modetransactionId: modeCw !== null ? String(modeCw) : '',
       comptebancaireId: DEFAULT_COMPTE_BANCAIRE_ID,
+      cartebancaireId,
+      carteprocurementId,
       tiersCategId: DEFAULT_TIERS_CATEG_ID,
       tiersStructureId: DEFAULT_TIERS_STRUCTURE_ID,
       ventilations: [{
@@ -230,10 +271,12 @@ export async function syncDraftToComptaweb(
     if (result.dryRun) {
       return { ok: missing.length === 0, message: missing.length ? `Preview : il manque ${missing.join(', ')}.` : 'Preview OK, prêt à synchroniser.', dryRun: true, missingFields: missing };
     }
+    // On persiste le numero_piece utilisé (y compris le fallback auto) pour
+    // rester cohérent avec ce qu'on a envoyé côté Comptaweb.
     db.prepare(
       `UPDATE ecritures SET status = 'saisie_comptaweb', comptaweb_synced = 1,
-       comptaweb_ecriture_id = ?, updated_at = ? WHERE id = ?`,
-    ).run(result.ecritureId ?? null, currentTimestamp(), ecr.id);
+       comptaweb_ecriture_id = ?, numero_piece = ?, updated_at = ? WHERE id = ?`,
+    ).run(result.ecritureId ?? null, numeropiece, currentTimestamp(), ecr.id);
     return { ok: true, message: `Synchronisé vers Comptaweb (id ${result.ecritureId}).`, dryRun: false, ecritureId: result.ecritureId };
   } catch (err) {
     if (err instanceof ComptawebSessionExpiredError) return { ok: false, message: 'Session Comptaweb expirée.', dryRun: opts.dryRun !== false };
