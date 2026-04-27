@@ -1,13 +1,11 @@
 import Link from 'next/link';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/page-header';
-import { EcritureStatusBadge } from '@/components/shared/status-badge';
 import { listEcritures } from '@/lib/queries/ecritures';
-import { listCategories, listUnites } from '@/lib/queries/reference';
-import { formatAmount } from '@/lib/format';
+import { listCategories, listUnites, listModesPaiement, listActivites, listCartes } from '@/lib/queries/reference';
 import { EcritureFilters } from '@/components/ecritures/ecriture-filters';
 import { ScanDraftsButton } from '@/components/ecritures/scan-drafts-button';
+import { EcrituresTable } from '@/components/ecritures/ecritures-table';
 
 export default async function EcrituresPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const params = await searchParams;
@@ -15,6 +13,8 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     type: params.type || undefined,
     unite_id: params.unite_id || undefined,
     category_id: params.category_id || undefined,
+    carte_id: params.carte_id || undefined,
+    month: params.month || undefined,
     status: params.status || undefined,
     search: params.search || undefined,
     incomplete: params.incomplete === '1',
@@ -24,6 +24,9 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
   const { ecritures, total } = listEcritures(filters);
   const categories = listCategories();
   const unites = listUnites();
+  const modesPaiement = listModesPaiement();
+  const activites = listActivites();
+  const cartes = listCartes();
 
   const presetQS = (preset: 'all' | 'incomplete' | 'from_bank') => {
     const sp = new URLSearchParams();
@@ -51,71 +54,18 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
         </Link>
       </div>
 
-      <EcritureFilters categories={categories} unites={unites} current={params} />
+      <EcritureFilters categories={categories} unites={unites} cartes={cartes} current={params} />
 
       <p className="text-sm text-muted-foreground mb-4">{total} écriture{total > 1 ? 's' : ''}</p>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Date</TableHead>
-            <TableHead>Description</TableHead>
-            <TableHead className="text-right">Montant</TableHead>
-            <TableHead>Unité</TableHead>
-            <TableHead>Catégorie</TableHead>
-            <TableHead>Statut</TableHead>
-            <TableHead>À compléter</TableHead>
-            <TableHead className="text-center">Src</TableHead>
-            <TableHead className="text-center">CW</TableHead>
-            <TableHead className="text-center">Just.</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {ecritures.map(e => (
-            <TableRow key={e.id}>
-              <TableCell className="whitespace-nowrap">{e.date_ecriture}</TableCell>
-              <TableCell>
-                <Link href={`/ecritures/${e.id}`} className="hover:underline">{e.description}</Link>
-              </TableCell>
-              <TableCell className={`text-right whitespace-nowrap font-medium ${e.type === 'depense' ? 'text-red-600' : 'text-green-600'}`}>
-                {e.type === 'depense' ? '-' : '+'}{formatAmount(e.amount_cents)}
-              </TableCell>
-              <TableCell>{e.unite_code ?? '—'}</TableCell>
-              <TableCell className="text-sm">{e.category_name ?? '—'}</TableCell>
-              <TableCell><EcritureStatusBadge status={e.status} /></TableCell>
-              <TableCell className="text-xs">
-                {e.missing_fields && e.missing_fields.length > 0 ? (
-                  <span className="inline-flex flex-wrap gap-1">
-                    {e.missing_fields.map((f) => (
-                      <span key={f} className="inline-block rounded bg-orange-100 text-orange-800 px-1.5 py-0.5">{f}</span>
-                    ))}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </TableCell>
-              <TableCell className="text-center" title={e.ligne_bancaire_id ? `Ligne bancaire ${e.ligne_bancaire_id}${e.ligne_bancaire_sous_index !== null ? ` sous-ligne ${e.ligne_bancaire_sous_index}` : ''}` : ''}>
-                {e.ligne_bancaire_id ? '🏦' : '—'}
-              </TableCell>
-              <TableCell className="text-center">{e.comptaweb_synced ? '✓' : '—'}</TableCell>
-              <TableCell className="text-center">
-                {e.has_justificatif ? (
-                  <span title="Justificatif rattaché">📎</span>
-                ) : e.justif_attendu === 0 ? (
-                  <span title="Justificatif non attendu" className="text-muted-foreground">🚫</span>
-                ) : e.numero_piece ? (
-                  <span title={`En attente — code Comptaweb ${e.numero_piece}`} className="text-amber-600">⌛</span>
-                ) : (
-                  <span title="Justificatif manquant" className="text-muted-foreground">—</span>
-                )}
-              </TableCell>
-            </TableRow>
-          ))}
-          {ecritures.length === 0 && (
-            <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">Aucune écriture</TableCell></TableRow>
-          )}
-        </TableBody>
-      </Table>
+      <EcrituresTable
+        ecritures={ecritures}
+        categories={categories}
+        unites={unites}
+        modesPaiement={modesPaiement}
+        activites={activites}
+        cartes={cartes}
+      />
     </div>
   );
 }

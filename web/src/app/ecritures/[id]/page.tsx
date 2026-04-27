@@ -5,7 +5,7 @@ import { EcritureStatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { getEcriture } from '@/lib/queries/ecritures';
 import { listJustificatifs } from '@/lib/queries/justificatifs';
-import { listCategories, listUnites, listModesPaiement, listActivites } from '@/lib/queries/reference';
+import { listCategories, listUnites, listModesPaiement, listActivites, listCartes } from '@/lib/queries/reference';
 import { updateEcriture, updateEcritureStatus } from '@/lib/actions/ecritures';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
 import { SyncDraftButton } from '@/components/ecritures/sync-draft-button';
@@ -62,6 +62,7 @@ export default async function EcritureDetailPage({ params }: { params: Promise<{
             unites={listUnites()}
             modesPaiement={listModesPaiement()}
             activites={listActivites()}
+            cartes={listCartes()}
             ecriture={ecriture}
           />
         </div>

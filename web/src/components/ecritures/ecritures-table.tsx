@@ -1,0 +1,339 @@
+'use client';
+
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { EcritureStatusBadge } from '@/components/shared/status-badge';
+import { UniteBadge } from '@/components/shared/unite-badge';
+import { InlineSelect } from '@/components/shared/inline-select';
+import { formatAmount } from '@/lib/format';
+import { BatchEditBar } from './batch-edit-bar';
+import { updateEcritureField } from '@/lib/actions/ecritures';
+import type { Ecriture, Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
+
+interface Props {
+  ecritures: Ecriture[];
+  categories: Category[];
+  unites: Unite[];
+  modesPaiement: ModePaiement[];
+  activites: Activite[];
+  cartes: Carte[];
+}
+
+// Extrait l'intitulé parent bancaire depuis les notes de draft
+// (format "… (intitulé parent: PAIEMENT C. PROC XXX).").
+function parseIntituleParent(notes: string | null): string | null {
+  if (!notes) return null;
+  const m = notes.match(/intitulé parent:\s*([^)]+)\)?/);
+  return m ? m[1].trim().replace(/\s*\.\.\.$/, '') : null;
+}
+
+interface GroupInfo {
+  intitule: string;
+  totalCents: number; // signé (dépenses négatives, recettes positives)
+  count: number;
+}
+
+function buildGroupInfo(entries: Ecriture[]): GroupInfo {
+  const intitule = parseIntituleParent(entries[0].notes) ?? `Ligne bancaire #${entries[0].ligne_bancaire_id ?? ''}`;
+  const totalCents = entries.reduce(
+    (sum, e) => sum + (e.type === 'depense' ? -e.amount_cents : e.amount_cents),
+    0,
+  );
+  return { intitule, totalCents, count: entries.length };
+}
+
+type Item =
+  | { kind: 'header'; key: string; ligneBancaireId: number; info: GroupInfo }
+  | { kind: 'row'; key: string; ecriture: Ecriture; index: number; inGroup: boolean };
+
+export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes }: Props) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [anchorIndex, setAnchorIndex] = useState<number | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+
+  const isEditable = (e: Ecriture) => e.status !== 'saisie_comptaweb';
+  const editableIds = useMemo(
+    () => ecritures.filter(isEditable).map((e) => e.id),
+    [ecritures],
+  );
+  const allEditableSelected = editableIds.length > 0 && editableIds.every((id) => selected.has(id));
+
+  // Pré-calcul des groupes par ligne bancaire + items rendus (header + rows).
+  // Un groupe est rendu comme tel dès qu'il y a >=2 entrées visibles pour la
+  // même ligne bancaire, OU 1 entrée avec sous_index (= c'est bien une
+  // sous-ligne DSP2 d'un paiement multi-commerçants).
+  const { items, groupsById } = useMemo(() => {
+    const buckets = new Map<number, Ecriture[]>();
+    for (const e of ecritures) {
+      if (e.ligne_bancaire_id) {
+        if (!buckets.has(e.ligne_bancaire_id)) buckets.set(e.ligne_bancaire_id, []);
+        buckets.get(e.ligne_bancaire_id)!.push(e);
+      }
+    }
+    const groupsById = new Map<number, GroupInfo>();
+    const isGrouped = (id: number): boolean => {
+      const b = buckets.get(id) ?? [];
+      return b.length > 1 || (b.length === 1 && b[0].ligne_bancaire_sous_index !== null);
+    };
+
+    const seen = new Set<number>();
+    const out: Item[] = [];
+    for (let i = 0; i < ecritures.length; i++) {
+      const e = ecritures[i];
+      const id = e.ligne_bancaire_id;
+      if (id && isGrouped(id)) {
+        if (!seen.has(id)) {
+          seen.add(id);
+          const info = buildGroupInfo(buckets.get(id)!);
+          groupsById.set(id, info);
+          out.push({ kind: 'header', key: `h-${id}`, ligneBancaireId: id, info });
+        }
+        out.push({ kind: 'row', key: e.id, ecriture: e, index: i, inGroup: true });
+      } else {
+        out.push({ kind: 'row', key: e.id, ecriture: e, index: i, inGroup: false });
+      }
+    }
+    return { items: out, groupsById };
+  }, [ecritures]);
+
+  const toggleRow = (index: number, shift: boolean) => {
+    const row = ecritures[index];
+    if (!row || !isEditable(row)) return;
+
+    if (shift && anchorIndex !== null && anchorIndex !== index) {
+      const start = Math.min(anchorIndex, index);
+      const end = Math.max(anchorIndex, index);
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (let i = start; i <= end; i++) {
+          const r = ecritures[i];
+          if (r && isEditable(r)) next.add(r.id);
+        }
+        return next;
+      });
+      return;
+    }
+
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(row.id)) next.delete(row.id); else next.add(row.id);
+      return next;
+    });
+    setAnchorIndex(index);
+  };
+
+  const toggleAll = () => {
+    if (allEditableSelected) setSelected(new Set());
+    else setSelected(new Set(editableIds));
+  };
+
+  const clear = () => { setSelected(new Set()); setAnchorIndex(null); };
+
+  const toggleGroup = (id: number) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const selectGroup = (id: number) => {
+    const bucket = ecritures.filter((e) => e.ligne_bancaire_id === id && isEditable(e));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const allAlready = bucket.every((e) => next.has(e.id));
+      if (allAlready) for (const e of bucket) next.delete(e.id);
+      else for (const e of bucket) next.add(e.id);
+      return next;
+    });
+  };
+
+  return (
+    <div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-8">
+              <input
+                type="checkbox"
+                aria-label="Tout sélectionner"
+                checked={allEditableSelected}
+                onChange={toggleAll}
+                disabled={editableIds.length === 0}
+              />
+            </TableHead>
+            <TableHead className="whitespace-nowrap">Date</TableHead>
+            <TableHead>Description</TableHead>
+            <TableHead className="text-right whitespace-nowrap">Montant</TableHead>
+            <TableHead className="whitespace-nowrap">Unité</TableHead>
+            <TableHead>Catégorie</TableHead>
+            <TableHead className="whitespace-nowrap">Statut</TableHead>
+            <TableHead className="text-center whitespace-nowrap" title="Champs manquants">⚠</TableHead>
+            <TableHead className="text-center whitespace-nowrap" title="Source / Comptaweb / Justificatif">État</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((item) => {
+            if (item.kind === 'header') {
+              const isCollapsed = collapsed.has(item.ligneBancaireId);
+              const signed = item.info.totalCents;
+              const sign = signed < 0 ? '-' : '+';
+              const colorClass = signed < 0 ? 'text-red-600' : 'text-green-600';
+              return (
+                <TableRow
+                  key={item.key}
+                  className="bg-muted/40 hover:bg-muted/60 cursor-pointer"
+                  onClick={() => toggleGroup(item.ligneBancaireId)}
+                >
+                  <TableCell
+                    onClick={(e) => e.stopPropagation()}
+                    style={isCollapsed ? undefined : { boxShadow: 'inset 3px 0 0 0 rgb(148 163 184 / 0.55)' }}
+                  >
+                    <input
+                      type="checkbox"
+                      aria-label={`Sélectionner le groupe ${item.ligneBancaireId}`}
+                      onChange={() => selectGroup(item.ligneBancaireId)}
+                      checked={(() => {
+                        const bucket = ecritures.filter((x) => x.ligne_bancaire_id === item.ligneBancaireId && isEditable(x));
+                        return bucket.length > 0 && bucket.every((x) => selected.has(x.id));
+                      })()}
+                    />
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground" colSpan={2}>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="text-xs">{isCollapsed ? '▶' : '▼'}</span>
+                      <span>🏦 Ligne bancaire <code>#{item.ligneBancaireId}</code></span>
+                      <span className="text-muted-foreground">·</span>
+                      <span className="truncate max-w-md font-medium">{item.info.intitule}</span>
+                      <span className="text-muted-foreground">·</span>
+                      <span>{item.info.count} sous-ligne{item.info.count > 1 ? 's' : ''}</span>
+                    </span>
+                  </TableCell>
+                  <TableCell className={`text-right whitespace-nowrap font-semibold ${colorClass}`}>
+                    {sign}{formatAmount(Math.abs(signed))}
+                  </TableCell>
+                  <TableCell colSpan={5} className="text-xs text-muted-foreground whitespace-nowrap">
+                    {isCollapsed ? 'cliquer pour déplier' : 'total des sous-lignes visibles'}
+                  </TableCell>
+                </TableRow>
+              );
+            }
+
+            const e = item.ecriture;
+            const editable = isEditable(e);
+            const isSelected = selected.has(e.id);
+            const groupInfo = e.ligne_bancaire_id ? groupsById.get(e.ligne_bancaire_id) : undefined;
+            if (groupInfo && collapsed.has(e.ligne_bancaire_id!)) return null;
+
+            // Les sous-lignes d'un même paiement bancaire partagent un fond
+            // légèrement teinté et un rail vertical (box-shadow inset sur la
+            // première cellule) pour donner un groupement visible sans ajouter
+            // d'icône parasite devant la description.
+            const rowBg = isSelected
+              ? 'bg-primary/5'
+              : item.inGroup ? 'bg-slate-50/70 dark:bg-slate-900/30' : '';
+            const railShadow = item.inGroup
+              ? { boxShadow: 'inset 3px 0 0 0 rgb(148 163 184 / 0.55)' }
+              : undefined;
+            return (
+              <TableRow key={item.key} className={rowBg}>
+                <TableCell style={railShadow}>
+                  <input
+                    type="checkbox"
+                    aria-label={`Sélectionner ${e.id}`}
+                    checked={isSelected}
+                    onChange={(ev) => toggleRow(item.index, (ev.nativeEvent as MouseEvent).shiftKey)}
+                    disabled={!editable}
+                    title={editable ? 'Shift+clic pour sélectionner une plage' : 'Écriture synchronisée Comptaweb — non modifiable'}
+                  />
+                </TableCell>
+                <TableCell className="whitespace-nowrap">{e.date_ecriture}</TableCell>
+                <TableCell className="max-w-[280px]">
+                  <Link
+                    href={`/ecritures/${e.id}`}
+                    className="hover:underline block truncate"
+                    title={e.description}
+                  >
+                    {e.description}
+                  </Link>
+                </TableCell>
+                <TableCell className={`text-right whitespace-nowrap font-medium ${e.type === 'depense' ? 'text-red-600' : 'text-green-600'}`}>
+                  {e.type === 'depense' ? '-' : '+'}{formatAmount(e.amount_cents)}
+                </TableCell>
+                <TableCell>
+                  <InlineSelect
+                    value={e.unite_id}
+                    disabled={!editable}
+                    placeholder="Aucune unité"
+                    options={unites.map((u) => ({ value: u.id, label: `${u.code} — ${u.name}` }))}
+                    display={<UniteBadge code={e.unite_code} name={e.unite_name} couleur={e.unite_couleur} />}
+                    onSave={(v) => updateEcritureField(e.id, 'unite_id', v)}
+                  />
+                </TableCell>
+                <TableCell className="text-sm">
+                  <InlineSelect
+                    value={e.category_id}
+                    disabled={!editable}
+                    placeholder="Aucune"
+                    options={categories.map((c) => ({ value: c.id, label: c.name }))}
+                    display={<span>{e.category_name ?? <span className="text-muted-foreground">—</span>}</span>}
+                    onSave={(v) => updateEcritureField(e.id, 'category_id', v)}
+                  />
+                </TableCell>
+                <TableCell className="whitespace-nowrap"><EcritureStatusBadge status={e.status} /></TableCell>
+                <TableCell className="text-xs text-center whitespace-nowrap">
+                  {e.missing_fields && e.missing_fields.length > 0 ? (
+                    <span
+                      className="inline-block rounded bg-orange-100 text-orange-800 px-1.5 py-0.5"
+                      title={`Champs manquants : ${e.missing_fields.join(', ')}`}
+                    >
+                      {e.missing_fields.length}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-center whitespace-nowrap">
+                  <span className="inline-flex items-center gap-1">
+                    <span title={e.ligne_bancaire_id ? `Ligne bancaire ${e.ligne_bancaire_id}${e.ligne_bancaire_sous_index !== null ? ` sous-ligne ${e.ligne_bancaire_sous_index}` : ''}` : 'Saisie manuelle'} className={e.ligne_bancaire_id ? '' : 'text-muted-foreground'}>
+                      {e.ligne_bancaire_id ? '🏦' : '·'}
+                    </span>
+                    <span title={e.comptaweb_synced ? 'Synchronisée Comptaweb' : 'Non synchronisée'} className={e.comptaweb_synced ? 'text-green-600' : 'text-muted-foreground'}>
+                      {e.comptaweb_synced ? '✓' : '·'}
+                    </span>
+                    {e.has_justificatif ? (
+                      <span title="Justificatif rattaché">📎</span>
+                    ) : e.justif_attendu === 0 ? (
+                      <span title="Justificatif non attendu" className="text-muted-foreground">🚫</span>
+                    ) : e.numero_piece ? (
+                      <span title={`En attente — code Comptaweb ${e.numero_piece}`} className="text-amber-600">⌛</span>
+                    ) : (
+                      <span title="Justificatif manquant" className="text-muted-foreground">·</span>
+                    )}
+                  </span>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+          {ecritures.length === 0 && (
+            <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Aucune écriture</TableCell></TableRow>
+          )}
+        </TableBody>
+      </Table>
+
+      {selected.size > 0 && (
+        <BatchEditBar
+          selectedIds={Array.from(selected)}
+          categories={categories}
+          unites={unites}
+          modesPaiement={modesPaiement}
+          activites={activites}
+          cartes={cartes}
+          onApplied={clear}
+          onCancel={clear}
+        />
+      )}
+    </div>
+  );
+}
