@@ -1,5 +1,5 @@
 import { getDb } from '../db';
-import { currentTimestamp } from '../ids';
+import { currentTimestamp, uniqueId } from '../ids';
 import type { Carte } from '../types';
 
 export interface CartesContext {
@@ -16,14 +16,6 @@ function slugify(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-}
-
-function nextCarteId(groupId: string, type: CarteType, porteur: string): string {
-  const base = `carte-${type === 'procurement' ? 'proc' : 'cb'}-${slugify(porteur)}`;
-  const existing = getDb()
-    .prepare('SELECT COUNT(*) AS n FROM cartes WHERE group_id = ? AND id LIKE ?')
-    .get(groupId, `${base}%`) as { n: number };
-  return existing.n === 0 ? base : `${base}-${existing.n + 1}`;
 }
 
 export function listCartes({ groupId }: CartesContext, opts: { statut?: 'active' | 'ancienne' } = {}): Carte[] {
@@ -45,7 +37,8 @@ export interface CreateCarteInput {
 }
 
 export function createCarte({ groupId }: CartesContext, input: CreateCarteInput): Carte {
-  const id = nextCarteId(groupId, input.type, input.porteur);
+  const base = `carte-${input.type === 'procurement' ? 'proc' : 'cb'}-${slugify(input.porteur)}`;
+  const id = uniqueId('cartes', base);
   const now = currentTimestamp();
   getDb()
     .prepare(
