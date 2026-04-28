@@ -34,7 +34,14 @@ function magicLinkProvider(): EmailConfig {
     async sendVerificationRequest({ identifier, url, provider }) {
       if (smtp) {
         const { createTransport } = await import('nodemailer');
-        const transport = createTransport(smtp);
+        // Timeouts courts pour éviter qu'une serverless function Vercel
+        // attende 2 min sur un retry SMTP. Resend répond en <1s en
+        // général ; 10s suffisent largement.
+        const transport = createTransport(smtp, {
+          connectionTimeout: 10_000,
+          greetingTimeout: 10_000,
+          socketTimeout: 15_000,
+        });
         await transport.sendMail({
           to: identifier,
           from: provider.from,
