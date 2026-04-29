@@ -81,13 +81,17 @@ async function main() {
       continue;
     }
 
-    // 3. Upload sur Blob.
+    // 3. Upload sur Blob (en `private` : aligné avec lib/storage.ts ;
+    //    les stores Vercel Blob créés récemment refusent `'public'`
+    //    par défaut, et de toute façon on ne veut plus servir les
+    //    justifs en URL publique devinable).
     try {
       const mime = row.mime_type ?? guessMime(row.original_filename);
       await put(row.file_path, content, {
-        access: 'public',
+        access: 'private',
         contentType: mime ?? undefined,
         addRandomSuffix: false,
+        allowOverwrite: true,
       });
       uploaded++;
       console.log(`  ✓ ${row.id} (${row.file_path}) — ${(content.length / 1024).toFixed(1)} KB`);
