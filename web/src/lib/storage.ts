@@ -7,52 +7,42 @@
 //   sur `@vercel/blob` (storage S3-compatible managé). Indispensable
 //   sur Vercel serverless (filesystem éphémère entre invocations).
 //
-// L'API exposée renvoie pour `put` un `path` opaque (clé de stockage)
-// et un éventuel `url` direct (Vercel Blob expose une URL publique).
-// La route `GET /api/justificatifs/...` route soit lit le fichier, soit
-// 302-redirect vers l'URL publique selon le backend.
+// Les blobs Vercel sont uploadés en `access: 'private'` : seule l'app
+// avec le token peut les lire, ce qui force tout accès à passer par
+// `GET /api/justificatifs/...` qui contrôle le `group_id`. Les
+// pathnames sont devinables (`<entity_type>/<entity_id>/<filename>`),
+// donc le `public` historique exposait les fichiers à qui les nommait
+// correctement.
 
 import { writeFile, mkdir, readFile } from 'fs/promises';
 import { join, resolve } from 'path';
 
-export interface PutResult {
-  // Clé de stockage à persister en BDD (champ `justificatifs.file_path`).
-  // FS : chemin relatif (`<entity_type>/<entity_id>/<filename>`).
-  // Vercel Blob : `<entity_type>/<entity_id>/<filename>` aussi (utilisé
-  // comme pathname du blob).
-  path: string;
-  // URL publique directe si le backend en expose une (Vercel Blob).
-  // NULL pour FS local — la route handler sert le fichier elle-même.
-  url: string | null;
-}
-
 export interface FetchResult {
-  // Soit le contenu binaire (FS local), soit une URL vers laquelle
-  // rediriger (Vercel Blob).
-  body: Buffer | null;
-  redirectUrl: string | null;
+  // `Uint8Array` pour le FS local, `ReadableStream` pour Vercel Blob.
+  // Les deux sont des `BodyInit` valides côté `Response`.
+  body: Uint8Array | ReadableStream<Uint8Array>;
   contentType: string | null;
 }
 
 interface StorageBackend {
-  put(opts: { path: string; content: Buffer; contentType?: string | null }): Promise<PutResult>;
+  put(opts: { path: string; content: Buffer; contentType?: string | null }): Promise<void>;
   fetch(path: string): Promise<FetchResult | null>;
 }
 
 class FsBackend implements StorageBackend {
   constructor(private readonly rootDir: string) {}
 
-  async put({ path: relPath, content }: { path: string; content: Buffer }): Promise<PutResult> {
+  async put({ path: relPath, content }: { path: string; content: Buffer }): Promise<void> {
     const dest = join(this.rootDir, relPath);
     await mkdir(dirname(dest), { recursive: true });
     await writeFile(dest, content);
-    return { path: relPath, url: null };
   }
 
   async fetch(relPath: string): Promise<FetchResult | null> {
     try {
       const buffer = await readFile(join(this.rootDir, relPath));
-      return { body: buffer, redirectUrl: null, contentType: guessMime(relPath) };
+      const bytes = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+      return { body: bytes, contentType: guessMime(relPath) };
     } catch {
       return null;
     }
@@ -60,25 +50,22 @@ class FsBackend implements StorageBackend {
 }
 
 class VercelBlobBackend implements StorageBackend {
-  async put({ path: relPath, content, contentType }: { path: string; content: Buffer; contentType?: string | null }): Promise<PutResult> {
+  async put({ path: relPath, content, contentType }: { path: string; content: Buffer; contentType?: string | null }): Promise<void> {
     const { put } = await import('@vercel/blob');
-    const result = await put(relPath, content, {
-      access: 'public',
+    await put(relPath, content, {
+      access: 'private',
       contentType: contentType ?? undefined,
       addRandomSuffix: false,
+      allowOverwrite: true,
     });
-    return { path: relPath, url: result.url };
   }
 
   async fetch(relPath: string): Promise<FetchResult | null> {
-    // Le pathname suffit à reconstruire l'URL publique : on stocke aussi
-    // bien justificatifs.file_path = chemin relatif que l'URL pleine.
-    // En cas de doute, on peut aussi `head(relPath)` pour récupérer
-    // l'URL canonique.
-    const { head } = await import('@vercel/blob');
+    const { get } = await import('@vercel/blob');
     try {
-      const meta = await head(relPath);
-      return { body: null, redirectUrl: meta.url, contentType: meta.contentType ?? null };
+      const result = await get(relPath, { access: 'private' });
+      if (!result || result.statusCode !== 200) return null;
+      return { body: result.stream, contentType: result.blob.contentType };
     } catch {
       return null;
     }

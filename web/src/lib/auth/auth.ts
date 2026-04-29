@@ -1,6 +1,7 @@
 import NextAuth from 'next-auth';
 import type { EmailConfig } from 'next-auth/providers/email';
 import { SqliteAdapter } from './adapter';
+import { recordSigninAttempt } from './rate-limit';
 
 // Auth.js v5 (chantier 4, ADR-014).
 //
@@ -29,9 +30,20 @@ function magicLinkProvider(): EmailConfig {
     name: 'Email',
     from,
     server: serverConfig,
-    maxAge: 60 * 60 * 24,
+    // 30 min : assez court pour qu'un lien intercepté ne soit pas
+    // exploitable longtemps, assez long pour gérer le délai SMTP +
+    // anti-spam + clic différé.
+    maxAge: 60 * 30,
     options: {},
     async sendVerificationRequest({ identifier, url, provider }) {
+      // Rate limit silencieux : on n'envoie pas le mail au-delà des
+      // bornes (cf. rate-limit.ts) mais on ne signale rien au client
+      // — pour éviter d'aider une énumération.
+      const { allowed } = await recordSigninAttempt(identifier);
+      if (!allowed) {
+        console.warn(`[baloo-auth] Magic link bloqué (rate limit) pour ${identifier}`);
+        return;
+      }
       if (smtp) {
         const { createTransport } = await import('nodemailer');
         // Timeouts courts pour éviter qu'une serverless function Vercel
@@ -49,7 +61,7 @@ function magicLinkProvider(): EmailConfig {
           text:
             `Bonjour,\n\n` +
             `Clique sur le lien suivant pour te connecter à Baloo :\n${url}\n\n` +
-            `Il expire dans 24h. Si tu n'es pas à l'origine de cette demande, ignore cet email.`,
+            `Il expire dans 30 minutes. Si tu n'es pas à l'origine de cette demande, ignore cet email.`,
         });
         return;
       }

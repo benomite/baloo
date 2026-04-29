@@ -1,5 +1,6 @@
 import type { Adapter, AdapterSession, AdapterUser } from 'next-auth/adapters';
 import { getDb } from '../db';
+import { hashToken } from './api-tokens';
 import { ensureAuthSchema } from './schema';
 
 // Adapter Auth.js custom pour le schéma Baloo (chantier 4, ADR-014).
@@ -149,25 +150,36 @@ export const SqliteAdapter: Adapter = {
     await getDb().prepare('DELETE FROM sessions WHERE session_token = ?').run(sessionToken);
   },
 
+  // Les magic-link tokens sont stockés hashés (SHA-256). Si la BDD est
+  // dumpée, les tokens pending ne sont pas immédiatement utilisables.
+  // Les anciens tokens en clair ne match plus après cette migration —
+  // les users concernés doivent redemander un lien (~24h max d'impact).
   async createVerificationToken(verificationToken) {
     await ensureAuthSchema();
     await getDb()
       .prepare('INSERT INTO verification_tokens (identifier, token, expires) VALUES (?, ?, ?)')
-      .run(verificationToken.identifier, verificationToken.token, verificationToken.expires.toISOString());
+      .run(
+        verificationToken.identifier,
+        hashToken(verificationToken.token),
+        verificationToken.expires.toISOString(),
+      );
     return verificationToken;
   },
 
   async useVerificationToken({ identifier, token }) {
     await ensureAuthSchema();
     const db = getDb();
+    const tokenHash = hashToken(token);
     const row = await db
-      .prepare('SELECT identifier, token, expires FROM verification_tokens WHERE identifier = ? AND token = ?')
-      .get<{ identifier: string; token: string; expires: string }>(identifier, token);
+      .prepare('SELECT identifier, expires FROM verification_tokens WHERE identifier = ? AND token = ?')
+      .get<{ identifier: string; expires: string }>(identifier, tokenHash);
     if (!row) return null;
-    await db.prepare('DELETE FROM verification_tokens WHERE identifier = ? AND token = ?').run(identifier, token);
+    await db
+      .prepare('DELETE FROM verification_tokens WHERE identifier = ? AND token = ?')
+      .run(identifier, tokenHash);
     return {
       identifier: row.identifier,
-      token: row.token,
+      token,
       expires: new Date(row.expires),
     };
   },

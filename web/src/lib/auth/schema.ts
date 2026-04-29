@@ -30,6 +30,12 @@ export async function ensureAuthSchema(): Promise<void> {
       PRIMARY KEY (identifier, token)
     );
 
+    CREATE TABLE IF NOT EXISTS signin_attempts (
+      identifier TEXT NOT NULL,
+      attempted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_signin_attempts_id ON signin_attempts(identifier, attempted_at);
+
     CREATE TABLE IF NOT EXISTS api_tokens (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id),
