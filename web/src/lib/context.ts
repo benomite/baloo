@@ -7,14 +7,17 @@ import { getDb } from './db';
 // La session vient d'Auth.js (cookie). Pas de session → redirect vers /login.
 // On résout le user complet (group_id, role, scope_unite_id) via la table
 // `users`. Le rôle et le scope unitaire (chantier 5) servent à filtrer ce
-// que voit un chef_unite ou un parent.
+// que voit un chef ou un parent.
+//
+// Hiérarchie de rôles : cf. ADR-019. Distinct de `personnes.role_groupe`
+// (annuaire SGDF, plus riche).
 //
 // Important : c'est utilisé par les server components, server actions et
 // shims `queries|actions/`. Pour les route handlers `/api/*`, voir
 // `requireApiContext` dans `lib/api/route-helpers.ts` qui supporte aussi
 // le Bearer token MCP.
 
-export type UserRole = 'tresorier' | 'cotresorier' | 'chef_unite' | 'parent' | string;
+export type UserRole = 'tresorier' | 'RG' | 'chef' | 'equipier' | 'parent' | string;
 
 export interface CurrentContext {
   userId: string;
@@ -23,8 +26,8 @@ export interface CurrentContext {
   name: string | null;
   role: UserRole;
   // ID de l'unité à laquelle l'accès du user est limité. NULL pour
-  // tresorier/cotresorier (vue globale du groupe), renseigné pour
-  // chef_unite / parent / chef_groupe scopés.
+  // tresorier/RG (vue globale du groupe), renseigné pour chef / parent
+  // scopés.
   scopeUniteId: string | null;
 }
 

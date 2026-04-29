@@ -628,4 +628,174 @@ Charge attendue : 5-10 users actifs intra-groupe, pas de pic, accès depuis Fran
 
 ---
 
+## ADR-019 — Hiérarchie de rôles applicatifs V2
+**Date** : 2026-04-29
+**Statut** : accepté
+
+**Contexte** : la P2 a livré 4 rôles `users.role` (`tresorier`, `cotresorier`, `chef_unite`, `parent`) qui couvraient les besoins du MVP. L'ouverture aux workflows internes du groupe (cf. [`p2-workflows-internes.md`](p2-workflows-internes.md)) demande deux ajustements : (1) un rôle pour les bénévoles autres que les chefs d'unité (parents organisateurs, équipiers d'unité, responsables matos, etc.) qui ne gèrent pas de budget mais doivent pouvoir déposer un justif et faire une demande, (2) un rôle pour le responsable de groupe (RG), supérieur hiérarchique du trésorier, qui valide certaines actions critiques.
+
+Par ailleurs `cotresorier` s'est révélé inutile : un cotrésorier travaille avec les mêmes droits qu'un trésorier ; le distinguer en BDD ne sert qu'à identifier "qui est le principal" — distinction qui n'a aucun impact applicatif.
+
+**Décision** :
+
+1. **Rôles applicatifs `users.role`** :
+   - `tresorier` — accès à tout. Multi-instance par groupe.
+   - `RG` — accès à tout. Au MVP droits identiques à `tresorier` ; à terme valide les actions critiques (remboursements > seuil, abandons, sortie de caisse exceptionnelle).
+   - `chef` — accès limité à la compta de son unité via `scope_unite_id`. Peut déposer justifs et faire des demandes.
+   - `equipier` — pas d'accès compta. Peut déposer justifs et faire des demandes.
+   - `parent` — accès lecture seule à `/moi` (ses propres dons / reçus fiscaux).
+2. **Migration BDD idempotente** dans `web/src/lib/auth/schema.ts` (`ensureAuthSchema`) :
+   - **DROP de la CHECK historique** sur `users.role` (héritée de l'ancien `compta/src/schema.sql` supprimé au chantier 6, qui imposait `role IN ('tresorier', 'cotresorier', 'chef_unite', 'parent', 'membre_autre_groupe')`). SQLite ne supporte pas DROP CONSTRAINT → recréation de la table sans CHECK sur `role` (procédure standard : new table, copy, drop, rename, recreate indexes). Idempotent : détecté via `sqlite_master.sql` contenant `'cotresorier'`. La CHECK sur `statut` est conservée.
+   - `UPDATE users SET role='tresorier' WHERE role='cotresorier'`
+   - `UPDATE users SET role='chef' WHERE role='chef_unite'`
+3. **Plus de CHECK constraint** sur `users.role` après migration : les valeurs valides sont définies côté code dans `web/src/lib/context.ts` (`UserRole` union). L'avantage : ajouter un rôle dans le futur ne demande plus de migration BDD.
+4. **`personnes.role_groupe` n'est PAS touché** : c'est l'annuaire SGDF avec un set de valeurs distinct (`co-rg`, `secretaire_principal`, `responsable_matos`, etc.). Confusion à éviter — un user peut être `tresorier` côté auth ET avoir `role_groupe='co-rg'` côté annuaire.
+
+**Raisons** :
+
+- **`cotresorier` supprimé** : aucun comportement applicatif ne distingue trésorier principal vs cotrésorier. La séniorité ou le rôle officiel SGDF se note via `personnes.role_groupe`. Garder deux rôles auth pour exprimer la même chose multiplie les comparaisons en dur (`['tresorier','cotresorier']`) sans bénéfice.
+- **`RG` introduit dès maintenant** même s'il a au MVP les mêmes droits que `tresorier` : le rôle est porté par l'organigramme du groupe, ne pas l'introduire forcerait à donner le rôle `tresorier` au RG ce qui prête à confusion. Quand la validation RG sera implémentée, on n'aura pas à migrer la BDD.
+- **`equipier` plutôt que d'élargir `chef`** : un chef d'unité a un budget à voir ; un parent organisateur n'en a pas. Leur donner le même rôle ouvre l'accès à des données qui ne le concernent pas. La page de dépôt et les pages de demande seront accessibles aux deux rôles via une whitelist explicite, pas via un rôle commun.
+- **`parent` conservé** : l'espace `/moi` (consultation des dons et reçus fiscaux) doit rester ouvert aux parents purs (pas organisateurs). Un parent qui aide à organiser une activité reçoit un rôle `equipier` en plus s'il doit déposer.
+
+**Conséquences** :
+
+- Type `UserRole` dans `web/src/lib/context.ts` mis à jour : `'tresorier' | 'RG' | 'chef' | 'equipier' | 'parent' | string`.
+- `web/src/lib/auth/access.ts` : `ALL_ADMIN_ROLES = ['tresorier', 'RG']`. Ajout de helpers `requireCanSubmit` (whitelist `tresorier/RG/chef/equipier`) et `requireCanViewCompta` (whitelist `tresorier/RG/chef`).
+- `web/src/components/layout/sidebar.tsx` : les liens `Caisse` et `Import Comptaweb` passent à `roles: ['tresorier', 'RG']`.
+- `web/src/lib/services/ecritures.ts` : commentaires mis à jour (`chef` au lieu de `chef_unite`).
+- Aucun changement côté `personnes.role_groupe` ni `personnes.ts`.
+- Aucun renommage de variable Comptaweb : la séparation auth/annuaire est claire.
+- Pas d'invalidation des sessions Auth.js existantes : le rôle est lu en BDD à chaque requête (cf. `getCurrentContext` qui SELECT `role` à chaque appel).
+- Documentation à jour dans [`p2-workflows-internes.md`](p2-workflows-internes.md) section 1.1.
+
+**Liens** :
+- [`p2-workflows-internes.md`](p2-workflows-internes.md) — chantier 0
+- [ADR-013](#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git) — schéma multi-user/multi-tenant
+- [ADR-016](#adr-016--auth-multi-user--authjs-v5--magic-link--token-mcp) — auth multi-user
+
+---
+
+## ADR-020 — Flux d'invitation par email
+**Date** : 2026-04-29
+**Statut** : accepté
+
+**Contexte** : [ADR-016](#adr-016--auth-multi-user--authjs-v5--magic-link--token-mcp) a fermé l'auto-création de users via Auth.js (`createUser` throw, `getUserByEmail` filtre `statut='actif'`). C'était une restriction MVP volontaire : le seed créait le trésorier, et seul lui pouvait se connecter. Pour l'ouverture aux workflows internes (cf. [`p2-workflows-internes.md`](p2-workflows-internes.md) — dépôt de justifs, demandes de remboursement par les chefs/équipiers), il faut permettre au trésorier d'inviter d'autres users sans entrer en SQL.
+
+Trois options ont été examinées :
+1. **Magic link auto-généré côté serveur**. Au moment de l'invitation, on génère soi-même un `verification_token` Auth.js (avec le format de hash interne d'Auth.js) et on envoie directement le lien magique au user. 1 seul email, 1 seul clic pour activer le compte.
+2. **2 emails (bienvenue + magic link standard)**. L'invitation envoie un email "bienvenue, va sur /login pour activer ton compte". Le user clique, arrive sur /login, saisit son email, reçoit un magic link standard, se connecte.
+3. **Table d'invitations dédiée + endpoint custom**. On crée une table `invitations(token, email, role, expires)` séparée des `verification_tokens` Auth.js. L'email pointe vers `/invitation/<token>` qui valide puis crée une session. Plus de code, plus de surface à maintenir.
+
+**Décision** : option 2 (2 emails). Au MVP, on garde la machinerie magic link Auth.js telle qu'elle est et on lui rajoute juste un email de bienvenue qui pointe vers /login.
+
+Concrètement :
+
+1. **Création du user en BDD** par le service `web/src/lib/services/invitations.ts` :
+   - INSERT dans `users` avec `statut='actif'` directement (pas de statut `invite` intermédiaire — l'absence d'`email_verified` suffit à indiquer "pas encore connecté").
+   - `role`, `scope_unite_id`, `nom_affichage` renseignés à la création.
+   - ID dérivé de l'email (slug du local part), avec `uniqueId` pour gérer les collisions.
+2. **Email de bienvenue** envoyé via le helper `web/src/lib/email/transport.ts` (réutilise le transport SMTP nodemailer configuré pour Auth.js, fallback console en dev).
+3. **Premier login** : le user va sur `/login`, saisit son email, reçoit un magic link standard, se connecte. Le callback `signIn` ne fait rien de spécial : `getUserByEmail` trouve le user (`statut='actif'`), `email_verified` est mis à jour automatiquement par Auth.js → on peut détecter dans l'admin que la connexion a eu lieu.
+4. **UI admin** : page `/admin/invitations` (réservée `tresorier` / `RG` via `requireAdmin`), formulaire de création + liste des invitations en attente (users avec `email_verified IS NULL`).
+5. **API HTTP** : route `POST/GET /api/invitations` (admin only, via `ADMIN_ROLES` exporté par `lib/auth/access.ts`).
+
+**Raisons** :
+
+- L'option 1 (magic link auto-généré) demanderait soit d'importer des internes Auth.js (instables entre versions), soit de réimplémenter le hash exact d'Auth.js (`createHash('sha256').update(token + secret).digest('hex')` côté Email provider). Le risque de désynchronisation à la première mise à jour Auth.js est trop élevé pour un gain UX d'1 clic.
+- L'option 3 (table dédiée) ajoute une table, un endpoint, et un mécanisme de session manuelle (créer une `session` Auth.js sans passer par le flow standard). Beaucoup de code, surface d'attaque non triviale (création de session = équivalent crypto à un token).
+- L'option 2 est la moins inventive : elle réutilise le flow magic link déjà éprouvé, et le coût UX d'un email supplémentaire est marginal pour un acte qui se produit une fois par user dans la vie d'un groupe.
+
+**Conséquences** :
+
+- Nouveau service `web/src/lib/services/invitations.ts` avec `createInvitation` et `listPendingInvitations`.
+- Nouveau helper email `web/src/lib/email/transport.ts` (factorise nodemailer + fallback console). Réutilisable pour les futurs notifs (relances justifs, transitions de statut remboursement, etc.).
+- Nouveau template `web/src/lib/email/invitation.ts` — texte simple, pas de HTML au MVP.
+- Nouvelle route API `web/src/app/api/invitations/route.ts` (POST création, GET liste).
+- Nouvelle server action `web/src/lib/actions/invitations.ts` (consommée par la page admin).
+- Nouvelle page `/admin/invitations` (UI admin), liée dans la sidebar pour `tresorier` / `RG`.
+- **Pas d'évolution du adapter Auth.js** : `createUser` continue à throw. Le service d'invitation insère directement dans `users` via SQL, sans passer par Auth.js.
+- **Pas de table `invitations` dédiée** : on s'appuie sur `users.email_verified IS NULL` pour identifier les invitations en attente.
+- **Pas de TTL d'invitation** au MVP : un user créé qui ne se connecte jamais reste en attente indéfiniment. Le trésorier peut le supprimer à la main si besoin (hors scope de cet ADR).
+- **Doublon possible** si le même email est invité deux fois dans le même groupe : le service vérifie via `(group_id, email)` et lève une erreur. Le contrainte d'unicité existe déjà côté schéma (cf. ON CONFLICT du seed `web/scripts/bootstrap.ts`).
+- **Sécurité du formulaire admin** : `requireAdmin` côté page + check `ADMIN_ROLES` côté API + check côté server action. Triple ceinture-bretelle (page, API, action) parce que les trois sont accessibles séparément.
+
+**Évolutions ultérieures non couvertes par cet ADR** :
+
+- Ré-envoi d'un email d'invitation depuis l'UI admin (un clic).
+- Suppression d'invitation en attente.
+- TTL et nettoyage automatique.
+- Magic link auto-généré (option 1) si le 2-mails se révèle douloureux à l'usage.
+- OIDC SGDF : si un jour la fédération expose un IdP, un user invité avec un email correspondant peut directement se connecter via OIDC sans passer par le magic link — l'email de bienvenue restera utile pour pointer vers `/login`.
+
+**Liens** :
+- [`p2-workflows-internes.md`](p2-workflows-internes.md) — chantier 0.2
+- [ADR-016](#adr-016--auth-multi-user--authjs-v5--magic-link--token-mcp) — auth multi-user
+- [ADR-019](#adr-019--hiérarchie-de-rôles-applicatifs-v2) — rôles V2
+
+---
+
+## ADR-021 — Dépôt de justificatif libre : table dédiée séparée des écritures
+**Date** : 2026-04-29
+**Statut** : accepté
+
+**Contexte** : le chantier 1 du plan workflows internes ([`p2-workflows-internes.md`](p2-workflows-internes.md)) doit permettre à n'importe quel user authentifié (sauf `parent`) de déposer un justif (photo / PDF + métadonnées : titre, montant, date, unité, catégorie, carte). Le trésorier rapproche ensuite ce dépôt avec une écriture comptable.
+
+Deux options de modélisation ont été discutées :
+1. **Le dépôt crée immédiatement une écriture en statut `brouillon`** + `justificatifs` attaché. Le trésorier traite le brouillon comme tous les autres (notamment ceux issus du scan Comptaweb).
+2. **Le dépôt vit dans une table dédiée** `depots_justificatifs`, distincte de `ecritures`. Le rapprochement avec une écriture est une étape explicite côté UI trésorier.
+
+**Décision** : option 2 (table dédiée).
+
+Modèle :
+```sql
+CREATE TABLE depots_justificatifs (
+  id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL REFERENCES groupes(id),
+  submitted_by_user_id TEXT NOT NULL REFERENCES users(id),
+  titre TEXT NOT NULL,
+  description TEXT,
+  category_id TEXT REFERENCES categories(id),
+  unite_id TEXT REFERENCES unites(id),
+  amount_cents INTEGER,
+  date_estimee TEXT,
+  carte_id TEXT REFERENCES cartes(id),
+  statut TEXT NOT NULL DEFAULT 'a_traiter',  -- a_traiter | rattache | rejete
+  ecriture_id TEXT REFERENCES ecritures(id), -- rempli quand statut=rattache
+  motif_rejet TEXT,                          -- rempli quand statut=rejete
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+```
+
+Le file lui-même reste dans `justificatifs` avec `entity_type='depot'` + `entity_id=depot.id`. Au rattachement (statut → `rattache`), on update `justificatifs.entity_type='ecriture'` et `entity_id=ecriture.id` ; ainsi les services existants qui cherchent les justifs d'une écriture (`overview`, `ecritures.has_justificatif`, `drafts`) continuent de fonctionner sans modification.
+
+**Raisons** :
+
+- **Risque de doublons écarté** : `scanDraftsFromComptaweb` génère un `brouillon` à partir de chaque ligne bancaire non rapprochée. Si le déposant créait aussi un `brouillon`, on aurait deux brouillons pour la même opération réelle (un côté banque, un côté humain) qu'il faudrait merger. La table dédiée rend l'opération de rapprochement explicite et évite le merge inverse.
+- **Workflow distinct** : `a_traiter → rattache | rejete` est un cycle de vie propre au dépôt. Le confondre avec celui d'une écriture (`brouillon → valide → saisie_comptaweb`) brouille la sémantique. Un dépôt peut être rejeté (justif illisible, hors scope) sans que ça touche une écriture.
+- **Métadonnées sans valeur comptable** : le déposant fournit titre/description/montant/date/carte qui sont des indices pour le trésorier, pas de la donnée comptable validée. Les stocker dans `ecritures` mélangerait données validées et indices à confirmer.
+- **Fonctionnellement compatible avec un changement futur** : si un jour on veut auto-créer un `brouillon` à partir du dépôt, on peut le faire — la table `depots_justificatifs` reste la trace d'audit du flux humain. L'inverse (auto-créer une `ecriture` puis revenir en arrière) serait beaucoup plus douloureux.
+- **Pas de CHECK sur `statut`** : cohérent avec ADR-019 (validation côté code, pas en BDD). Les valeurs valides sont déclarées dans `web/src/lib/services/depots.ts` (`DEPOT_STATUTS`).
+
+**Conséquences** :
+
+- Nouvelle table `depots_justificatifs`, créée idempotemment par `ensureDepotsSchema` au lazy-init du module `lib/services/depots.ts` (même pattern que `ensureAuthSchema`).
+- Nouveau service `web/src/lib/services/depots.ts` (CRUD + workflow + `listCandidateEcritures` qui propose les écritures sans justif matching ±10% montant et ±15j date).
+- Nouvelles server actions `web/src/lib/actions/depots.ts` (`createDepot`, `attachDepotToEcriture`, `rejectDepot`).
+- Nouvelles pages : `/depot` (form de soumission, mobile-first, accessible à `tresorier/RG/chef/equipier`) et `/depots` (file de traitement, accessible à `tresorier/RG`).
+- Bouton "Relancer pour le justif" sur la page d'une écriture sans justif (admin only), envoi mail via `lib/email/relance.ts`.
+- Liens dans la sidebar (`📎 Déposer un justif`, `📨 Dépôts à traiter`).
+- **Sécurité de la route file** : `/api/justificatifs/[...path]/route.ts` était auparavant ouverte (pas d'auth). Patchée dans ce chantier : `requireApiContext` (session ou Bearer MCP) + vérification que `justificatifs.group_id` matche le groupe du user. Pas de filtrage par rôle au MVP (tout user du groupe voit tous les justifs du groupe) — à raffiner si nécessaire (`chef` → unité, `equipier` → siens).
+- **Pas de pré-remplissage `?ecriture_hint=<id>`** au MVP : l'email de relance pointe vers `/depot` sans préremplir les champs depuis l'écriture relancée. À ajouter si l'usage le demande.
+- **Pas de notification au déposant** quand son dépôt est rattaché ou rejeté. Évolution possible.
+- **Pas de purge** des files de dépôts rejetés : le justif reste en storage avec `entity_type='depot'`. À rajouter si volume devient un souci.
+
+**Liens** :
+- [`p2-workflows-internes.md`](p2-workflows-internes.md) — chantier 1
+- [ADR-019](#adr-019--hiérarchie-de-rôles-applicatifs-v2) — pas de CHECK SQL sur enums applicatifs
+- [ADR-014](#adr-014--écritures--flag-justif_attendu-plutôt-quenum-à-trois-états) — modèle des justifs côté écritures (réutilisé sans modif)
+
+---
+
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*

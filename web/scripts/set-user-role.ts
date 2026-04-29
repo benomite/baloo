@@ -1,22 +1,22 @@
 // Assigne un rôle (et optionnellement un scope unité) à un user existant.
-// Outil d'admin manuel pour activer un chef_unite ou un parent (chantier 5).
+// Outil d'admin manuel (chantier 5, hiérarchie V2 : ADR-019).
 //
 // Usage :
 //   pnpm tsx scripts/set-user-role.ts <email> <role> [<unite_code>]
 //
 // Exemples :
-//   pnpm tsx scripts/set-user-role.ts cheflj@example.fr chef_unite LJ
+//   pnpm tsx scripts/set-user-role.ts cheflj@example.fr chef LJ
 //   pnpm tsx scripts/set-user-role.ts parent@example.fr parent
 //   pnpm tsx scripts/set-user-role.ts tres@example.fr tresorier
 //
-// Le user doit déjà exister en BDD (créé via le bootstrap ou le admin
-// console SQL — l'auth refuse la création automatique au premier login).
+// Le user doit déjà exister en BDD (créé via le bootstrap, le flux
+// d'invitation, ou le admin console SQL).
 
 import { ensureComptawebEnv } from '../src/lib/comptaweb/env-loader';
 import { getDb } from '../src/lib/db';
 import { currentTimestamp } from '../src/lib/ids';
 
-const ALLOWED_ROLES = ['tresorier', 'cotresorier', 'chef_unite', 'parent'];
+const ALLOWED_ROLES = ['tresorier', 'RG', 'chef', 'equipier', 'parent'];
 
 async function main() {
   ensureComptawebEnv();
@@ -59,13 +59,13 @@ async function main() {
     scopeUniteId = unite.id;
   }
 
-  if ((roleArg === 'tresorier' || roleArg === 'cotresorier') && uniteCodeArg) {
-    console.error("Un trésorier n'a pas de scope unité. Ne pas passer d'unité pour ce rôle.");
+  if ((roleArg === 'tresorier' || roleArg === 'RG' || roleArg === 'equipier') && uniteCodeArg) {
+    console.error(`Le rôle '${roleArg}' n'a pas de scope unité. Ne pas passer d'unité.`);
     process.exit(1);
   }
 
-  if (roleArg === 'chef_unite' && !uniteCodeArg) {
-    console.error("Un chef_unite doit avoir un scope unité (3e argument).");
+  if (roleArg === 'chef' && !uniteCodeArg) {
+    console.error("Un chef doit avoir un scope unité (3e argument).");
     process.exit(1);
   }
 

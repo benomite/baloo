@@ -45,12 +45,16 @@ Le pivot conceptuel : la webapp porte la BDD, l'API et les règles métier. Le M
 - **Migration BDD** : SQLite locale → BDD côté webapp (Postgres managé ou Postgres léger sur VPS — à arbitrer à l'impl). Le schéma [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git) étant SQL-standard et multi-tenant, la migration est mécanique.
 - **Refonte du MCP `baloo-compta`** : il devient un client HTTP de l'API webapp. Plus de `better-sqlite3`, plus de SQL en dur. Les commandes MCP exposées à Claude Code (`vue_ensemble`, `create_ecriture`, `list_remboursements`, etc.) restent stables côté usage ; leur impl tape l'API.
 - **Auth multi-user activée** sur la webapp (mécanisme à arbitrer à l'impl : magic link, OIDC SGDF si disponible, etc.). Le MCP s'authentifie comme un user "trésorier" via un token.
-- **Rôles applicatifs effectifs** (cf. [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git)) : `tresorier`, `cotresorier`, `chef_unite` (lecture filtrée à son unité, upload de justif), `parent` (lecture de ses propres paiements et reçu fiscal).
+- **Rôles applicatifs effectifs** (cf. [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git), révisés en [ADR-019](decisions.md#adr-019--hiérarchie-de-rôles-applicatifs-v2)) : `tresorier`, `RG`, `chef` (filtré à son unité), `equipier` (dépôts + demandes), `parent` (lecture de ses propres paiements et reçu fiscal).
 - **Vues UI scopées par rôle** : budget d'unité pour le chef, espace perso pour le parent, vue d'ensemble pour le trésorier.
 - **Upload de justificatifs** depuis la webapp (chef d'unité), stockage fichier hors BDD, référencé via chemin/URL.
 - **Client Comptaweb intégré côté webapp** : déplacé de `compta/src/comptaweb-client/` vers le backend de la webapp, exposé via l'API. Garde les acquis P1 (auth Keycloak, lecture rapprochement bancaire DSP2).
 - **Saisie assistée Compta-Web** : checklists et données pré-formatées prêtes à recopier, voire automation navigateur (Claude in Chrome) sur quelques opérations simples. Pas de saisie autonome, juste assistance. Cf. [ADR-007](decisions.md#adr-007--outil-compta-unifié--compta-web-reste-maître-baloo-devient-lamont).
 - Décision go/no-go pour la phase 3.
+
+**Plans d'exécution P2** :
+- [`p2-pivot-webapp.md`](p2-pivot-webapp.md) — pivot archi (webapp = source de vérité, MCP en client HTTP). 7 chantiers livrés, app en prod sur baloo.benomite.com.
+- [`p2-workflows-internes.md`](p2-workflows-internes.md) — 4 workflows internes self-service (dépôt justif, remb, abandon, caisse) qui complètent la P2 jusqu'au critère de succès "≥2 chefs actifs + ≥1 parent". Chantier 0 (rôles V2 + invitations) et chantier 1 (dépôt justif + relance) livrés.
 
 **Stack** : Next.js (déjà en place dans `web/`) + API + Postgres (ou équivalent) + déploiement (VPS/Vercel/Fly.io). MCP `baloo-compta` réécrit comme client HTTP TypeScript.
 

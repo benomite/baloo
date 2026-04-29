@@ -5,7 +5,7 @@ import type { Ecriture } from '../types';
 export interface EcritureContext {
   groupId: string;
   // Chantier 5 : si défini, restreint aux écritures de cette unité.
-  // Renseigné pour les users `chef_unite` ; NULL pour les `tresorier`.
+  // Renseigné pour les users `chef` ; NULL pour `tresorier` / `RG`.
   scopeUniteId?: string | null;
 }
 
@@ -67,7 +67,7 @@ export async function listEcritures(
   const conditions: string[] = ['e.group_id = ?'];
   const values: unknown[] = [groupId];
 
-  // Scope chef_unite : ne voit que les écritures de son unité (chantier 5).
+  // Scope chef : ne voit que les écritures de son unité (chantier 5).
   // Override silencieux du filtre `unite_id` côté UI : un chef ne peut pas
   // élargir au-delà de son unité même en bidouillant l'URL.
   if (scopeUniteId) { conditions.push('e.unite_id = ?'); values.push(scopeUniteId); }

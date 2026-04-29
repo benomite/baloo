@@ -3,21 +3,43 @@ import { PageHeader } from '@/components/layout/page-header';
 import { EcritureForm } from '@/components/ecritures/ecriture-form';
 import { EcritureStatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { getCurrentContext } from '@/lib/context';
 import { getEcriture } from '@/lib/queries/ecritures';
 import { listJustificatifs } from '@/lib/queries/justificatifs';
 import { listCategories, listUnites, listModesPaiement, listActivites, listCartes } from '@/lib/queries/reference';
 import { updateEcriture, updateEcritureStatus } from '@/lib/actions/ecritures';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
+import { sendRelance } from '@/lib/actions/relances';
 import { SyncDraftButton } from '@/components/ecritures/sync-draft-button';
 import { formatAmount } from '@/lib/format';
 
-export default async function EcritureDetailPage({ params }: { params: Promise<{ id: string }> }) {
+interface SearchParams {
+  error?: string;
+  relanced?: string;
+}
+
+const ADMIN_ROLES = ['tresorier', 'RG'];
+
+export default async function EcritureDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<SearchParams>;
+}) {
   const { id } = await params;
   const ecriture = await getEcriture(id);
   if (!ecriture) notFound();
 
+  const sp = await searchParams;
+  const ctx = await getCurrentContext();
+  const isAdmin = ADMIN_ROLES.includes(ctx.role);
   const justificatifs = await listJustificatifs('ecriture', id);
   const updateAction = updateEcriture.bind(null, id);
+  const noJustif = justificatifs.length === 0 && ecriture.justif_attendu !== 0;
 
   return (
     <div>
@@ -99,6 +121,36 @@ export default async function EcritureDetailPage({ params }: { params: Promise<{
             <input type="file" name="file" className="text-sm mb-2 block" />
             <Button type="submit" variant="outline" size="sm">Ajouter</Button>
           </form>
+
+          {noJustif && isAdmin && (
+            <div className="mt-6 border-t pt-4">
+              {sp.relanced && (
+                <p className="mb-3 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2 py-1">
+                  Relance envoyée à {sp.relanced}.
+                </p>
+              )}
+              {sp.error && (
+                <p className="mb-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">
+                  {sp.error}
+                </p>
+              )}
+              <details>
+                <summary className="cursor-pointer text-sm font-medium">📨 Relancer pour le justif</summary>
+                <form action={sendRelance} className="mt-3 space-y-2">
+                  <input type="hidden" name="ecriture_id" value={id} />
+                  <div>
+                    <Label htmlFor="destinataire" className="text-xs">Destinataire (email)</Label>
+                    <Input id="destinataire" name="destinataire" type="email" required placeholder="prenom@example.fr" />
+                  </div>
+                  <div>
+                    <Label htmlFor="message" className="text-xs">Message (optionnel)</Label>
+                    <Textarea id="message" name="message" rows={2} placeholder="Précision libre" />
+                  </div>
+                  <Button type="submit" size="sm">Envoyer la relance</Button>
+                </form>
+              </details>
+            </div>
+          )}
         </div>
       </div>
     </div>

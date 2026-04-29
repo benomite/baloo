@@ -16,8 +16,11 @@ const nav: NavItem[] = [
   { href: '/', label: 'Tableau de bord', icon: '📊' },
   { href: '/ecritures', label: 'Écritures', icon: '📒' },
   { href: '/remboursements', label: 'Remboursements', icon: '💶' },
-  { href: '/caisse', label: 'Caisse', icon: '🪙', roles: ['tresorier', 'cotresorier'] },
-  { href: '/import', label: 'Import Comptaweb', icon: '📥', roles: ['tresorier', 'cotresorier'] },
+  { href: '/depot', label: 'Déposer un justif', icon: '📎', roles: ['tresorier', 'RG', 'chef', 'equipier'] },
+  { href: '/depots', label: 'Dépôts à traiter', icon: '📨', roles: ['tresorier', 'RG'] },
+  { href: '/caisse', label: 'Caisse', icon: '🪙', roles: ['tresorier', 'RG'] },
+  { href: '/import', label: 'Import Comptaweb', icon: '📥', roles: ['tresorier', 'RG'] },
+  { href: '/admin/invitations', label: 'Invitations', icon: '✉️', roles: ['tresorier', 'RG'] },
   { href: '/moi', label: 'Mon espace', icon: '👤', roles: ['parent'] },
 ];
 

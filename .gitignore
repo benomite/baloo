@@ -48,14 +48,16 @@ logs/
 # Node
 node_modules/
 
-# SQLite database
-data/
+# SQLite database (dossier racine seulement — ne pas ignorer
+# `web/src/lib/db.ts` ou autres `data/` profondément imbriqués si jamais)
+/data/
 *.db
 *.db-wal
 *.db-shm
 
-# Justificatifs (fichiers pièces jointes)
-justificatifs/
+# Justificatifs (fichiers pièces jointes uploadés, racine seulement —
+# ne pas ignorer la route `web/src/app/api/justificatifs/`)
+/justificatifs/
 
 # Temp
 tmp/
