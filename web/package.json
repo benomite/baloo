@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "vitest run",
     "generate-token": "tsx scripts/generate-api-token.ts",
     "bootstrap": "tsx scripts/bootstrap.ts",
     "flag:prelevements-auto": "tsx scripts/flag-prelevements-auto.ts",
@@ -53,6 +54,7 @@
     "eslint-config-next": "16.2.4",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.5"
   }
 }
