@@ -5,10 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Link from 'next/link';
 import { getRemboursement } from '@/lib/queries/remboursements';
 import { listLignes } from '@/lib/services/remboursements';
 import { listSignatures, verifyChain } from '@/lib/services/signatures';
 import { listJustificatifs } from '@/lib/queries/justificatifs';
+import { patchNotesAndRib } from '@/lib/actions/remboursements';
+import { Textarea } from '@/components/ui/textarea';
 import { getCurrentContext } from '@/lib/context';
 import { updateRemboursementStatus } from '@/lib/actions/remboursements';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
@@ -16,6 +19,8 @@ import { formatAmount } from '@/lib/format';
 
 interface SearchParams {
   error?: string;
+  edited?: string;
+  patched?: string;
 }
 
 const STEPS = [
@@ -59,16 +64,36 @@ export default async function RemboursementDetailPage({
   const isTresorier = ctx.role === 'tresorier';
   const isRG = ctx.role === 'RG';
 
+  const isOwner = !!r.submitted_by_user_id && r.submitted_by_user_id === ctx.userId;
+  const canEditFull = (isOwner && r.status === 'a_traiter') || isAdmin;
+  const patchAction = patchNotesAndRib.bind(null, id);
+
   return (
     <div>
       <PageHeader title={`${r.id} — ${r.demandeur}`}>
         <RemboursementStatusBadge status={r.status} />
         <span className="text-lg font-bold">{formatAmount(r.total_cents || r.amount_cents)}</span>
+        {canEditFull && (
+          <Link href={`/remboursements/${id}/edit`}>
+            <Button variant="outline" size="sm">Modifier</Button>
+          </Link>
+        )}
       </PageHeader>
 
       {sp.error && (
         <p className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
           {sp.error}
+        </p>
+      )}
+      {sp.edited && (
+        <p className="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
+          Modifications enregistrées. Le PDF feuille a été régénéré et la chaîne de signatures
+          remise à jour.
+        </p>
+      )}
+      {sp.patched && (
+        <p className="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
+          Notes et RIB mis à jour.
         </p>
       )}
 
@@ -152,28 +177,64 @@ export default async function RemboursementDetailPage({
             </CardContent>
           </Card>
 
+          {/* Édition limitée post-validation : notes + RIB texte (cf. ADR-022).
+              Visible pour le demandeur et les admins une fois la demande validée. */}
+          {(isOwner || isAdmin) && r.status !== 'a_traiter' && r.status !== 'refuse' && (
+            <details className="mb-6 border rounded p-3">
+              <summary className="cursor-pointer text-sm font-medium">
+                Modifier notes / RIB
+                <span className="ml-2 text-xs text-muted-foreground font-normal">
+                  (édition limitée — la demande est déjà validée)
+                </span>
+              </summary>
+              <form action={patchAction} className="mt-3 space-y-3">
+                <div>
+                  <Label htmlFor="rib_texte" className="text-xs">IBAN / BIC (texte)</Label>
+                  <Textarea
+                    id="rib_texte"
+                    name="rib_texte"
+                    rows={2}
+                    defaultValue={r.rib_texte ?? ''}
+                    placeholder="FR76 ... · BIC ... · Banque ..."
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="notes" className="text-xs">Notes</Label>
+                  <Textarea
+                    id="notes"
+                    name="notes"
+                    rows={2}
+                    defaultValue={r.notes ?? ''}
+                    placeholder="Précisions libres"
+                  />
+                </div>
+                <Button type="submit" size="sm" variant="outline">Enregistrer</Button>
+              </form>
+            </details>
+          )}
+
           {isAdmin && (
             <>
               <h3 className="font-semibold mb-3">Actions</h3>
               <div className="flex gap-2 flex-wrap mb-4">
                 {r.status === 'a_traiter' && isTresorier && (
                   <form action={updateRemboursementStatus.bind(null, id, 'valide_tresorier')}>
-                    <Button size="sm">Valider (Trésorier)</Button>
+                    <Button type="submit" size="sm">Valider (Trésorier)</Button>
                   </form>
                 )}
                 {r.status === 'valide_tresorier' && isRG && (
                   <form action={updateRemboursementStatus.bind(null, id, 'valide_rg')}>
-                    <Button size="sm">Valider (RG)</Button>
+                    <Button type="submit" size="sm">Valider (RG)</Button>
                   </form>
                 )}
                 {r.status === 'valide_rg' && (
                   <form action={updateRemboursementStatus.bind(null, id, 'virement_effectue')}>
-                    <Button size="sm">Virement effectué</Button>
+                    <Button type="submit" size="sm">Virement effectué</Button>
                   </form>
                 )}
                 {r.status === 'virement_effectue' && (
                   <form action={updateRemboursementStatus.bind(null, id, 'termine')}>
-                    <Button size="sm">Marquer terminé</Button>
+                    <Button type="submit" size="sm">Marquer terminé</Button>
                   </form>
                 )}
               </div>

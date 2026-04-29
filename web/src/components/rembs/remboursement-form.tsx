@@ -13,18 +13,39 @@ interface UniteOption {
   name: string;
 }
 
-interface DefaultIdentity {
+interface Identity {
   prenom: string;
   nom: string;
   email: string;
 }
 
+interface InitialLigne {
+  date_depense: string;
+  amount_cents: number;
+  nature: string;
+}
+
 interface Props {
   action: (formData: FormData) => Promise<void>;
   unites: UniteOption[];
-  scopeUniteId: string | null;
-  defaultIdentity: DefaultIdentity;
   today: string;
+  // 'locked' = identité cachée (auto depuis user connecté, mode "ma demande")
+  // 'editable' = identité visible et modifiable (mode "saisie pour autrui" ou
+  // édition d'une demande existante).
+  identityMode: 'locked' | 'editable';
+  defaultIdentity: Identity;
+  scopeUniteId?: string | null;
+  // Pré-remplissage en mode édition.
+  initialLignes?: InitialLigne[];
+  initialRibTexte?: string | null;
+  initialNotes?: string | null;
+  initialUniteId?: string | null;
+  // S'il y a déjà des justifs attachés (mode édition), on relâche le
+  // `required` sur l'uploader.
+  existingJustifsCount?: number;
+  submitLabel?: string;
+  // Petite intro affichée au-dessus du form (optionnel).
+  introNode?: React.ReactNode;
 }
 
 interface Ligne {
@@ -35,24 +56,42 @@ interface Ligne {
 }
 
 let _rowSeq = 0;
-function newRow(today: string): Ligne {
+function newRow(today: string, init?: InitialLigne): Ligne {
+  if (init) {
+    return {
+      key: ++_rowSeq,
+      date: init.date_depense,
+      montant: (init.amount_cents / 100).toFixed(2).replace('.', ','),
+      nature: init.nature,
+    };
+  }
   return { key: ++_rowSeq, date: today, montant: '', nature: '' };
 }
 
 export function RemboursementForm({
   action,
   unites,
-  scopeUniteId,
-  defaultIdentity,
   today,
+  identityMode,
+  defaultIdentity,
+  scopeUniteId,
+  initialLignes,
+  initialRibTexte,
+  initialNotes,
+  initialUniteId,
+  existingJustifsCount = 0,
+  submitLabel = 'Envoyer la demande',
+  introNode,
 }: Props) {
-  const [lignes, setLignes] = useState<Ligne[]>(() => [newRow(today)]);
+  const [lignes, setLignes] = useState<Ligne[]>(() => {
+    if (initialLignes && initialLignes.length > 0) return initialLignes.map((l) => newRow(today, l));
+    return [newRow(today)];
+  });
 
-  const total = lignes
-    .reduce((s, l) => {
-      const v = parseFloat(l.montant.replace(',', '.').replace(/\s/g, ''));
-      return s + (isFinite(v) ? v : 0);
-    }, 0);
+  const total = lignes.reduce((s, l) => {
+    const v = parseFloat(l.montant.replace(',', '.').replace(/\s/g, ''));
+    return s + (isFinite(v) ? v : 0);
+  }, 0);
 
   const updateLigne = (key: number, patch: Partial<Ligne>) => {
     setLignes((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -63,23 +102,33 @@ export function RemboursementForm({
 
   return (
     <form action={action} encType="multipart/form-data" className="space-y-6">
-      <fieldset className="space-y-3 border rounded p-4">
-        <legend className="text-sm font-semibold px-2">Demandeur</legend>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label htmlFor="prenom">Prénom</Label>
-            <Input id="prenom" name="prenom" defaultValue={defaultIdentity.prenom} required />
+      {introNode}
+
+      {identityMode === 'editable' ? (
+        <fieldset className="space-y-3 border rounded p-4">
+          <legend className="text-sm font-semibold px-2">Bénéficiaire</legend>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="prenom">Prénom *</Label>
+              <Input id="prenom" name="prenom" defaultValue={defaultIdentity.prenom} required />
+            </div>
+            <div>
+              <Label htmlFor="nom">Nom *</Label>
+              <Input id="nom" name="nom" defaultValue={defaultIdentity.nom} required />
+            </div>
           </div>
           <div>
-            <Label htmlFor="nom">Nom</Label>
-            <Input id="nom" name="nom" defaultValue={defaultIdentity.nom} required />
+            <Label htmlFor="email">Email *</Label>
+            <Input id="email" name="email" type="email" defaultValue={defaultIdentity.email} required />
           </div>
-        </div>
-        <div>
-          <Label htmlFor="email">Email *</Label>
-          <Input id="email" name="email" type="email" defaultValue={defaultIdentity.email} required />
-        </div>
-      </fieldset>
+        </fieldset>
+      ) : (
+        <>
+          <input type="hidden" name="prenom" value={defaultIdentity.prenom} />
+          <input type="hidden" name="nom" value={defaultIdentity.nom} />
+          <input type="hidden" name="email" value={defaultIdentity.email} />
+        </>
+      )}
 
       <fieldset className="space-y-3 border rounded p-4">
         <legend className="text-sm font-semibold px-2">Détail des dépenses</legend>
@@ -143,12 +192,19 @@ export function RemboursementForm({
       </fieldset>
 
       <fieldset className="space-y-3 border rounded p-4">
-        <legend className="text-sm font-semibold px-2">Justificatifs</legend>
+        <legend className="text-sm font-semibold px-2">
+          Justificatifs
+          {existingJustifsCount > 0 && (
+            <span className="ml-2 text-xs text-muted-foreground font-normal">
+              ({existingJustifsCount} déjà attaché{existingJustifsCount > 1 ? 's' : ''} — ajoute pour compléter)
+            </span>
+          )}
+        </legend>
         <FileMultiUploader
           name="justifs"
-          required
+          required={existingJustifsCount === 0}
           accept="image/*,application/pdf"
-          helpText="Photos / PDF de tickets, factures, reçus. Tu peux en ajouter autant que nécessaire."
+          helpText="Photos / PDF de tickets, factures, reçus."
         />
       </fieldset>
 
@@ -156,7 +212,13 @@ export function RemboursementForm({
         <legend className="text-sm font-semibold px-2">Coordonnées bancaires</legend>
         <div>
           <Label htmlFor="rib_texte">IBAN / BIC (texte)</Label>
-          <Textarea id="rib_texte" name="rib_texte" rows={2} placeholder="FR76 ... · BIC ... · Banque ..." />
+          <Textarea
+            id="rib_texte"
+            name="rib_texte"
+            rows={2}
+            placeholder="FR76 ... · BIC ... · Banque ..."
+            defaultValue={initialRibTexte ?? ''}
+          />
         </div>
         <div>
           <Label htmlFor="rib_file">RIB (fichier — optionnel si IBAN renseigné)</Label>
@@ -167,7 +229,12 @@ export function RemboursementForm({
       {!scopeUniteId && unites.length > 0 && (
         <div>
           <Label htmlFor="unite_id">Unité concernée (optionnel)</Label>
-          <select id="unite_id" name="unite_id" className="w-full border rounded px-3 py-2 bg-background">
+          <select
+            id="unite_id"
+            name="unite_id"
+            defaultValue={initialUniteId ?? ''}
+            className="w-full border rounded px-3 py-2 bg-background"
+          >
             <option value="">— Aucune / groupe —</option>
             {unites.map((u) => (
               <option key={u.id} value={u.id}>{u.code} — {u.name}</option>
@@ -178,7 +245,7 @@ export function RemboursementForm({
 
       <div>
         <Label htmlFor="notes">Notes (optionnel)</Label>
-        <Textarea id="notes" name="notes" rows={2} placeholder="Précisions libres" />
+        <Textarea id="notes" name="notes" rows={2} placeholder="Précisions libres" defaultValue={initialNotes ?? ''} />
       </div>
 
       <label className="flex items-start gap-2 text-sm text-muted-foreground">
@@ -186,7 +253,7 @@ export function RemboursementForm({
         <span>Je certifie l&apos;exactitude des informations ci-dessus.</span>
       </label>
 
-      <Button type="submit">Envoyer la demande</Button>
+      <Button type="submit">{submitLabel}</Button>
     </form>
   );
 }

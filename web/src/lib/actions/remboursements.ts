@@ -100,21 +100,21 @@ export async function createRemboursement(formData: FormData) {
   redirect(`/remboursements/${created.id}`);
 }
 
-// Variante self-service côté demandeur : multi-lignes + RIB + génération
-// auto de la feuille de remboursement PDF (chantier 2-bis).
-//
-// Inputs FormData :
-//   prenom, nom, email, rib_texte, rib_file?, justifs (multiple, requis),
-//   ligne_count, ligne_0_date, ligne_0_montant, ligne_0_nature, ...,
-//   unite_id?, notes?, certif (checkbox)
-export async function createMyRemboursement(formData: FormData): Promise<void> {
-  const ctx = await getCurrentContext();
-  if (ctx.role === 'parent') {
-    redirect('/moi?error=' + encodeURIComponent('Action non autorisée pour ton rôle.'));
-  }
-
-  const back = '/moi/remboursements/nouveau?error=';
-  const fail = (msg: string): never => redirect(back + encodeURIComponent(msg));
+// Helper interne partagé entre `createMyRemboursement` (self-service
+// par le demandeur) et `createForeignRemboursement` (saisie pour
+// autrui par un admin). Retourne l'id de la demande créée. En cas
+// d'erreur de validation, redirect vers `backUrl?error=...` (lève donc
+// — never).
+async function createRemboursementFromForm(
+  formData: FormData,
+  ctx: { groupId: string; userId: string; email: string; scopeUniteId: string | null; name: string | null; role: string },
+  options: {
+    backUrl: string;
+    /** null en mode foreign (saisie pour autrui), userId en mode self. */
+    submittedByUserId: string | null;
+  },
+): Promise<{ rbtId: string; fullName: string; email: string; totalEstime: number; firstDate: string; firstNature: string }> {
+  const fail = (msg: string): never => redirect(options.backUrl + encodeURIComponent(msg));
 
   // Identité.
   const prenom = (formData.get('prenom') as string | null)?.trim() ?? '';
@@ -138,27 +138,23 @@ export async function createMyRemboursement(formData: FormData): Promise<void> {
       amount_cents = parseAmount(montantRaw);
     } catch {
       fail(`Ligne ${i + 1} : montant invalide « ${montantRaw} ».`);
-      return; // unreachable, fail() throws
+      return null as never;
     }
     lignes.push({ date, nature, amount_cents });
   }
 
-  // Justifs (multiple, au moins 1 requis).
   const justifFiles = formData.getAll('justifs').filter((f): f is File => f instanceof File && f.size > 0);
   if (justifFiles.length === 0) fail('Au moins un justificatif (photo / PDF) est requis.');
 
-  // RIB (file optionnel).
   const ribFileRaw = formData.get('rib_file');
   const ribFile = ribFileRaw instanceof File && ribFileRaw.size > 0 ? ribFileRaw : null;
   const ribTexte = (formData.get('rib_texte') as string | null)?.trim() || null;
 
-  // Crée la demande (sans lignes pour l'instant ; total et amount mis à 0,
-  // recalculés ensuite par addLigne).
   const fullName = `${prenom} ${nom}`.trim();
   const totalEstime = lignes.reduce((s, l) => s + l.amount_cents, 0);
-  // Normalise les FK potentiellement vides ("" → null) pour ne pas
-  // déclencher de FOREIGN KEY constraint failed.
   const uniteIdRaw = (formData.get('unite_id') as string | null)?.trim() || null;
+  // En mode self, on respecte le scope unité du chef ; en mode foreign,
+  // l'admin choisit librement (scopeUniteId est null ou ignoré).
   const uniteId = ctx.scopeUniteId || uniteIdRaw;
 
   let created;
@@ -177,16 +173,14 @@ export async function createMyRemboursement(formData: FormData): Promise<void> {
         unite_id: uniteId,
         justificatif_status: 'oui',
         notes: (formData.get('notes') as string | null)?.trim() || null,
-        submitted_by_user_id: ctx.userId,
+        submitted_by_user_id: options.submittedByUserId,
       },
     );
   } catch (err) {
     fail(err instanceof Error ? err.message : String(err));
-    return;
+    return null as never;
   }
 
-  // Insère les lignes (recalcul du total à chaque addLigne, c'est OK
-  // pour le volume attendu).
   for (const l of lignes) {
     await addLigne(created.id, {
       date_depense: l.date,
@@ -195,7 +189,6 @@ export async function createMyRemboursement(formData: FormData): Promise<void> {
     });
   }
 
-  // Attache les justifs (entity_type='remboursement').
   for (const file of justifFiles) {
     try {
       const buffer = Buffer.from(await file.arrayBuffer());
@@ -214,7 +207,6 @@ export async function createMyRemboursement(formData: FormData): Promise<void> {
     }
   }
 
-  // Attache le RIB si fichier fourni (entity_type='remboursement_rib').
   if (ribFile) {
     try {
       const buffer = Buffer.from(await ribFile.arrayBuffer());
@@ -228,7 +220,6 @@ export async function createMyRemboursement(formData: FormData): Promise<void> {
           mime_type: ribFile.type || null,
         },
       );
-      // Met à jour rib_file_path sur la demande pour le PDF.
       await getDb()
         .prepare('UPDATE remboursements SET rib_file_path = ?, updated_at = ? WHERE id = ?')
         .run(`remboursement_rib/${created.id}/${ribFile.name}`, new Date().toISOString(), created.id);
@@ -237,15 +228,14 @@ export async function createMyRemboursement(formData: FormData): Promise<void> {
     }
   }
 
-  // Signature électronique simple "demandeur" + génération du PDF
-  // feuille avec l'encart Signatures à jour (ADR-023).
+  // Signature "demandeur" + PDF.
   try {
     const meta = await captureClientMeta();
     await signAndRefreshRemboursementPdf({
       groupId: ctx.groupId,
       rbtId: created.id,
       signerRole: 'demandeur',
-      signerUserId: ctx.userId,
+      signerUserId: options.submittedByUserId,
       signerEmail: email,
       signerName: fullName,
       ip: meta.ip,
@@ -255,9 +245,9 @@ export async function createMyRemboursement(formData: FormData): Promise<void> {
     console.error('[remboursements] Signature + génération PDF feuille échouée :', err);
   }
 
-  // Notif admins.
+  // Notif admins (si la création vient d'un non-admin pour soi-même).
   const admins = (await listAdminEmails(ctx.groupId)).filter((e) => e !== ctx.email);
-  if (admins.length > 0) {
+  if (admins.length > 0 && options.submittedByUserId === ctx.userId && !ADMIN_ROLES.includes(ctx.role)) {
     try {
       await sendRemboursementCreatedEmail({
         to: admins,
@@ -273,10 +263,245 @@ export async function createMyRemboursement(formData: FormData): Promise<void> {
     }
   }
 
+  return {
+    rbtId: created.id,
+    fullName,
+    email,
+    totalEstime,
+    firstDate: lignes[0].date,
+    firstNature: lignes[0].nature,
+  };
+}
+
+// Self-service côté demandeur (depuis /moi/remboursements/nouveau).
+// La demande sera dans son espace personnel.
+export async function createMyRemboursement(formData: FormData): Promise<void> {
+  const ctx = await getCurrentContext();
+  if (ctx.role === 'parent') {
+    redirect('/moi?error=' + encodeURIComponent('Action non autorisée pour ton rôle.'));
+  }
+
+  const result = await createRemboursementFromForm(
+    formData,
+    ctx,
+    {
+      backUrl: '/moi/remboursements/nouveau?error=',
+      submittedByUserId: ctx.userId,
+    },
+  );
+
   revalidatePath('/moi');
   revalidatePath('/remboursements');
-  redirect('/moi?rbt_created=' + encodeURIComponent(created.id));
+  redirect('/moi?rbt_created=' + encodeURIComponent(result.rbtId));
 }
+
+// Saisie pour autrui par un admin (depuis /remboursements/nouveau).
+// La demande **n'apparaît PAS** dans l'espace perso du saisissant —
+// `submitted_by_user_id` est laissé NULL (le bénéficiaire identifié
+// par prenom/nom/email saisis ne correspond pas forcément à un user
+// Baloo). Si on veut un jour matcher l'email à un user existant pour
+// que la demande apparaisse dans /moi du bénéficiaire, on peut le
+// faire ici.
+export async function createForeignRemboursement(formData: FormData): Promise<void> {
+  const ctx = await getCurrentContext();
+  if (!['tresorier', 'RG', 'chef'].includes(ctx.role)) {
+    redirect('/?error=' + encodeURIComponent('Accès réservé aux trésoriers / RG / chefs.'));
+  }
+
+  const result = await createRemboursementFromForm(
+    formData,
+    ctx,
+    {
+      backUrl: '/remboursements/nouveau?error=',
+      submittedByUserId: null,
+    },
+  );
+
+  revalidatePath('/remboursements');
+  redirect(`/remboursements/${result.rbtId}`);
+}
+
+// Édition d'une demande existante (par le demandeur tant que le
+// statut est `a_traiter`, ou par un admin à tout moment). Replace les
+// lignes, les champs identité et le RIB. Resigne le document avec un
+// hash courant — supprime au préalable les signatures précédentes
+// pour garder une chaîne cohérente.
+//
+// Pour l'édition limitée post-validation (notes + RIB seulement), voir
+// `patchNotesAndRib`.
+export async function updateMyRemboursement(id: string, formData: FormData): Promise<void> {
+  const ctx = await getCurrentContext();
+  const back = `/remboursements/${id}/edit?error=`;
+  const fail = (msg: string): never => redirect(back + encodeURIComponent(msg));
+
+  const rbt = await getRemboursement({ groupId: ctx.groupId }, id);
+  if (!rbt) fail('Demande introuvable.');
+
+  const isAdmin = ADMIN_ROLES.includes(ctx.role);
+  const isOwner = !!rbt!.submitted_by_user_id && rbt!.submitted_by_user_id === ctx.userId;
+  if (!isAdmin && !isOwner) fail('Tu n’as pas le droit de modifier cette demande.');
+
+  // Édition full uniquement avant validation (statut a_traiter).
+  if (rbt!.status !== 'a_traiter' && !isAdmin) {
+    fail('La demande a déjà été validée. Seuls les admins peuvent encore la modifier en full.');
+  }
+
+  // Identité.
+  const prenom = (formData.get('prenom') as string | null)?.trim() ?? '';
+  const nom = (formData.get('nom') as string | null)?.trim() ?? '';
+  const email = (formData.get('email') as string | null)?.trim() ?? '';
+  if (!prenom || !nom || !email) fail('Prénom, nom et email obligatoires.');
+
+  // Lignes.
+  const ligneCount = parseInt((formData.get('ligne_count') as string | null) ?? '0', 10);
+  if (!ligneCount || ligneCount < 1) fail('Au moins une ligne de dépense est requise.');
+
+  type LigneInput = { date: string; nature: string; amount_cents: number };
+  const lignes: LigneInput[] = [];
+  for (let i = 0; i < ligneCount; i++) {
+    const date = (formData.get(`ligne_${i}_date`) as string | null) ?? '';
+    const nature = ((formData.get(`ligne_${i}_nature`) as string | null) ?? '').trim();
+    const montantRaw = ((formData.get(`ligne_${i}_montant`) as string | null) ?? '').trim();
+    if (!date || !nature || !montantRaw) fail(`Ligne ${i + 1} incomplète.`);
+    let amount_cents: number;
+    try {
+      amount_cents = parseAmount(montantRaw);
+    } catch {
+      fail(`Ligne ${i + 1} : montant invalide « ${montantRaw} ».`);
+      return null as never;
+    }
+    lignes.push({ date, nature, amount_cents });
+  }
+
+  const ribTexte = (formData.get('rib_texte') as string | null)?.trim() || null;
+  const uniteIdRaw = (formData.get('unite_id') as string | null)?.trim() || null;
+  const uniteId = ctx.scopeUniteId || uniteIdRaw;
+  const notes = (formData.get('notes') as string | null)?.trim() || null;
+
+  // 1. Update les champs identité + meta sur la table remboursements.
+  await getDb().prepare(
+    `UPDATE remboursements
+     SET demandeur = ?, prenom = ?, nom = ?, email = ?, rib_texte = ?,
+         unite_id = ?, notes = ?, updated_at = ?
+     WHERE id = ? AND group_id = ?`,
+  ).run(
+    `${prenom} ${nom}`.trim(),
+    prenom,
+    nom,
+    email,
+    ribTexte,
+    uniteId,
+    notes,
+    new Date().toISOString(),
+    id,
+    ctx.groupId,
+  );
+
+  // 2. Replace toutes les lignes.
+  await getDb().prepare('DELETE FROM remboursement_lignes WHERE remboursement_id = ?').run(id);
+  for (const l of lignes) {
+    await addLigne(id, {
+      date_depense: l.date,
+      amount_cents: l.amount_cents,
+      nature: l.nature,
+    });
+  }
+
+  // 3. Justifs supplémentaires éventuels (les anciens restent attachés).
+  const newJustifs = formData.getAll('justifs').filter((f): f is File => f instanceof File && f.size > 0);
+  for (const file of newJustifs) {
+    try {
+      const buffer = Buffer.from(await file.arrayBuffer());
+      await attachJustificatif(
+        { groupId: ctx.groupId },
+        {
+          entity_type: 'remboursement',
+          entity_id: id,
+          filename: file.name,
+          content: buffer,
+          mime_type: file.type || null,
+        },
+      );
+    } catch (err) {
+      console.error('[remboursements] Attach justif (edit) échoué :', err);
+    }
+  }
+
+  // 4. RIB file optionnel (remplace si nouveau).
+  const ribFileRaw = formData.get('rib_file');
+  const ribFile = ribFileRaw instanceof File && ribFileRaw.size > 0 ? ribFileRaw : null;
+  if (ribFile) {
+    try {
+      const buffer = Buffer.from(await ribFile.arrayBuffer());
+      await attachJustificatif(
+        { groupId: ctx.groupId },
+        {
+          entity_type: 'remboursement_rib',
+          entity_id: id,
+          filename: ribFile.name,
+          content: buffer,
+          mime_type: ribFile.type || null,
+        },
+      );
+      await getDb()
+        .prepare('UPDATE remboursements SET rib_file_path = ?, updated_at = ? WHERE id = ?')
+        .run(`remboursement_rib/${id}/${ribFile.name}`, new Date().toISOString(), id);
+    } catch (err) {
+      console.error('[remboursements] Attach RIB file (edit) échoué :', err);
+    }
+  }
+
+  // 5. Re-signature : on supprime les signatures précédentes pour
+  //    garder une chaîne cohérente, puis on signe à nouveau "demandeur".
+  await getDb().prepare("DELETE FROM signatures WHERE document_type = 'remboursement' AND document_id = ?").run(id);
+  try {
+    const meta = await captureClientMeta();
+    await signAndRefreshRemboursementPdf({
+      groupId: ctx.groupId,
+      rbtId: id,
+      signerRole: 'demandeur',
+      signerUserId: rbt!.submitted_by_user_id,
+      signerEmail: email,
+      signerName: `${prenom} ${nom}`.trim(),
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+  } catch (err) {
+    console.error('[remboursements] Re-signature (edit) échouée :', err);
+  }
+
+  revalidatePath(`/remboursements/${id}`);
+  revalidatePath('/moi');
+  revalidatePath('/remboursements');
+  redirect(`/remboursements/${id}?edited=1`);
+}
+
+// Édition limitée post-validation : seulement les notes + RIB texte.
+// Pas de re-signature (les notes ne sont pas dans le hash canonique ;
+// le RIB est dans le hash mais on assume que sa modification post-
+// validation est une exception tracée par audit BDD).
+export async function patchNotesAndRib(id: string, formData: FormData): Promise<void> {
+  const ctx = await getCurrentContext();
+  const rbt = await getRemboursement({ groupId: ctx.groupId }, id);
+  if (!rbt) redirect(`/remboursements/${id}?error=${encodeURIComponent('Demande introuvable.')}`);
+
+  const isAdmin = ADMIN_ROLES.includes(ctx.role);
+  const isOwner = !!rbt!.submitted_by_user_id && rbt!.submitted_by_user_id === ctx.userId;
+  if (!isAdmin && !isOwner) {
+    redirect(`/remboursements/${id}?error=${encodeURIComponent('Action non autorisée.')}`);
+  }
+
+  const notes = (formData.get('notes') as string | null)?.trim() || null;
+  const ribTexte = (formData.get('rib_texte') as string | null)?.trim() || null;
+
+  await getDb().prepare(
+    'UPDATE remboursements SET notes = ?, rib_texte = ?, updated_at = ? WHERE id = ? AND group_id = ?',
+  ).run(notes, ribTexte, new Date().toISOString(), id, ctx.groupId);
+
+  revalidatePath(`/remboursements/${id}`);
+  redirect(`/remboursements/${id}?patched=1`);
+}
+
 
 // Garde de transitions : qui peut faire quoi sur la timeline 5 statuts.
 const TRANSITIONS: Record<string, { from: string[]; allowedRoles: string[] }> = {

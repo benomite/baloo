@@ -3,7 +3,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { getCurrentContext } from '@/lib/context';
 import { listUnites } from '@/lib/queries/reference';
 import { createMyRemboursement } from '@/lib/actions/remboursements';
-import { RemboursementForm } from './remboursement-form';
+import { RemboursementForm } from '@/components/rembs/remboursement-form';
 
 interface SearchParams {
   error?: string;
@@ -50,9 +50,10 @@ export default async function MyNouveauRemboursementPage({
       <RemboursementForm
         action={createMyRemboursement}
         unites={unites}
-        scopeUniteId={ctx.scopeUniteId}
-        defaultIdentity={{ prenom, nom, email: ctx.email }}
         today={today}
+        identityMode="locked"
+        defaultIdentity={{ prenom, nom, email: ctx.email }}
+        scopeUniteId={ctx.scopeUniteId}
       />
     </div>
   );

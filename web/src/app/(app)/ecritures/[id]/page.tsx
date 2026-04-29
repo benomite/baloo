@@ -66,12 +66,12 @@ export default async function EcritureDetailPage({
       <div className="flex gap-2 mb-6">
         {ecriture.status === 'brouillon' && (
           <>
-            <form action={updateEcritureStatus.bind(null, id, 'valide')}><Button variant="outline" size="sm">Valider</Button></form>
+            <form action={updateEcritureStatus.bind(null, id, 'valide')}><Button type="submit" variant="outline" size="sm">Valider</Button></form>
             <SyncDraftButton ecritureId={id} />
           </>
         )}
         {ecriture.status === 'valide' && (
-          <form action={updateEcritureStatus.bind(null, id, 'saisie_comptaweb')}><Button variant="outline" size="sm">Marquer saisie Comptaweb</Button></form>
+          <form action={updateEcritureStatus.bind(null, id, 'saisie_comptaweb')}><Button type="submit" variant="outline" size="sm">Marquer saisie Comptaweb</Button></form>
         )}
       </div>
 

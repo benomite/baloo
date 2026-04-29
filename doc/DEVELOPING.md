@@ -102,6 +102,18 @@ await db.prepare('INSERT ...').run(..., nullIfEmpty(input.unite_id), ...);
 
 Tous les services exposant des `INSERT`/`UPDATE` avec FK doivent normaliser leurs inputs avant `.run(...)`. Audit fait dans `services/{ecritures,remboursements,abandons,caisse,depots,invitations,personnes,signatures}.ts` au 2026-04-29.
 
+### `<Button>` dans un `<form>` : `type="submit"` obligatoire
+
+Le composant `<Button>` du repo wrappe `@base-ui/react/button`, qui rend `type="button"` par défaut. Contrairement au `<button>` HTML natif qui est `type="submit"` par défaut dans un `<form>`. Symptôme : le bouton est cliquable mais ne soumet rien, le form action n'est jamais appelée — ni log côté serveur, ni redirect.
+
+**Règle** : tout `<Button>` qui doit déclencher un form action doit avoir `type="submit"` explicite. Même quand le `<Button>` est seul dans son `<form>`.
+
+```tsx
+<form action={updateRemboursementStatus.bind(null, id, 'valide_tresorier')}>
+  <Button type="submit" size="sm">Valider</Button> {/* ← obligatoire */}
+</form>
+```
+
 ### CHECK constraints SQL et évolution des enums
 
 SQLite ne supporte pas `ALTER TABLE … DROP CONSTRAINT`. Si une CHECK SQL est ajoutée sur une colonne au moment du seed initial, faire évoluer les valeurs autorisées demande une recréation complète de la table (procédure standard : new table, copy, drop, rename, recreate indexes, PRAGMA foreign_keys = OFF/ON pour ne pas faire sauter les FK reverse).
