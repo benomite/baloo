@@ -1,8 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/layout/page-header';
+import { Amount } from '@/components/shared/amount';
 import { getOverview } from '@/lib/queries/overview';
-import { formatAmount } from '@/lib/format';
 import { getCurrentContext } from '@/lib/context';
 import { requireNotParent } from '@/lib/auth/access';
 
@@ -18,15 +18,27 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-3 gap-4 mb-8">
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Dépenses</CardTitle></CardHeader>
-          <CardContent><div className="text-2xl font-bold text-red-600">{data.totalDepensesFormatted}</div></CardContent>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              <Amount cents={data.totalDepenses} tone="negative" />
+            </div>
+          </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Recettes</CardTitle></CardHeader>
-          <CardContent><div className="text-2xl font-bold text-green-600">{data.totalRecettesFormatted}</div></CardContent>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              <Amount cents={data.totalRecettes} tone="positive" />
+            </div>
+          </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Solde</CardTitle></CardHeader>
-          <CardContent><div className={`text-2xl font-bold ${data.solde >= 0 ? 'text-green-600' : 'text-red-600'}`}>{data.soldeFormatted}</div></CardContent>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              <Amount cents={data.solde} tone="signed" />
+            </div>
+          </CardContent>
         </Card>
       </div>
 
@@ -34,21 +46,21 @@ export default async function DashboardPage() {
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Remboursements en attente</CardTitle></CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{data.remboursementsEnAttente.count}</div>
+            <div className="text-2xl font-bold tabular-nums">{data.remboursementsEnAttente.count}</div>
             <p className="text-sm text-muted-foreground">{data.remboursementsEnAttente.totalFormatted}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Sans justificatif</CardTitle></CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{data.alertes.depensesSansJustificatif}</div>
+            <div className="text-2xl font-bold tabular-nums">{data.alertes.depensesSansJustificatif}</div>
             <p className="text-sm text-muted-foreground">dépenses</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Non saisies Comptaweb</CardTitle></CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{data.alertes.nonSyncComptaweb}</div>
+            <div className="text-2xl font-bold tabular-nums">{data.alertes.nonSyncComptaweb}</div>
             <p className="text-sm text-muted-foreground">écritures validées</p>
           </CardContent>
         </Card>
@@ -70,9 +82,9 @@ export default async function DashboardPage() {
               {data.parUnite.map(u => (
                 <TableRow key={u.code}>
                   <TableCell className="font-medium">{u.code} — {u.name}</TableCell>
-                  <TableCell className="text-right text-red-600">{formatAmount(u.depenses)}</TableCell>
-                  <TableCell className="text-right text-green-600">{formatAmount(u.recettes)}</TableCell>
-                  <TableCell className={`text-right font-medium ${u.solde >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatAmount(u.solde)}</TableCell>
+                  <TableCell className="text-right"><Amount cents={u.depenses} tone="negative" /></TableCell>
+                  <TableCell className="text-right"><Amount cents={u.recettes} tone="positive" /></TableCell>
+                  <TableCell className="text-right font-medium"><Amount cents={u.solde} tone="signed" /></TableCell>
                 </TableRow>
               ))}
             </TableBody>

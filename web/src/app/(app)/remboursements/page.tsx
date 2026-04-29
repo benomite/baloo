@@ -3,8 +3,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/page-header';
 import { RemboursementStatusBadge } from '@/components/shared/status-badge';
+import { Amount } from '@/components/shared/amount';
 import { listRemboursements } from '@/lib/queries/remboursements';
-import { formatAmount } from '@/lib/format';
 import { getCurrentContext } from '@/lib/context';
 import { requireNotParent } from '@/lib/auth/access';
 
@@ -44,7 +44,7 @@ export default async function RemboursementsPage({ searchParams }: { searchParam
                 <Link href={`/remboursements/${r.id}`} className="hover:underline font-medium">{r.demandeur}</Link>
               </TableCell>
               <TableCell>{r.nature}</TableCell>
-              <TableCell className="text-right font-medium">{formatAmount(r.amount_cents)}</TableCell>
+              <TableCell className="text-right font-medium"><Amount cents={r.amount_cents} /></TableCell>
               <TableCell>{r.unite_code ?? '—'}</TableCell>
               <TableCell><RemboursementStatusBadge status={r.status} /></TableCell>
               <TableCell>{r.justificatif_status === 'oui' ? '✓' : r.justificatif_status === 'en_attente' ? '⏳' : '✗'}</TableCell>

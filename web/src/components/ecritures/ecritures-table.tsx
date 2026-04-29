@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { EcritureStatusBadge } from '@/components/shared/status-badge';
 import { UniteBadge } from '@/components/shared/unite-badge';
 import { InlineSelect } from '@/components/shared/inline-select';
-import { formatAmount } from '@/lib/format';
+import { Amount } from '@/components/shared/amount';
 import { BatchEditBar } from './batch-edit-bar';
 import { updateEcritureField } from '@/lib/actions/ecritures';
 import type { Ecriture, Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
@@ -178,8 +178,6 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
             if (item.kind === 'header') {
               const isCollapsed = collapsed.has(item.ligneBancaireId);
               const signed = item.info.totalCents;
-              const sign = signed < 0 ? '-' : '+';
-              const colorClass = signed < 0 ? 'text-red-600' : 'text-green-600';
               return (
                 <TableRow
                   key={item.key}
@@ -210,8 +208,8 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                       <span>{item.info.count} sous-ligne{item.info.count > 1 ? 's' : ''}</span>
                     </span>
                   </TableCell>
-                  <TableCell className={`text-right whitespace-nowrap font-semibold ${colorClass}`}>
-                    {sign}{formatAmount(Math.abs(signed))}
+                  <TableCell className="text-right font-semibold">
+                    <Amount cents={signed} tone="signed" />
                   </TableCell>
                   <TableCell colSpan={5} className="text-xs text-muted-foreground whitespace-nowrap">
                     {isCollapsed ? 'cliquer pour déplier' : 'total des sous-lignes visibles'}
@@ -258,8 +256,8 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     {e.description}
                   </Link>
                 </TableCell>
-                <TableCell className={`text-right whitespace-nowrap font-medium ${e.type === 'depense' ? 'text-red-600' : 'text-green-600'}`}>
-                  {e.type === 'depense' ? '-' : '+'}{formatAmount(e.amount_cents)}
+                <TableCell className="text-right font-medium">
+                  <Amount cents={e.amount_cents} tone={e.type === 'depense' ? 'negative' : 'positive'} />
                 </TableCell>
                 <TableCell>
                   <InlineSelect

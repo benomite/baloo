@@ -7,7 +7,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { listMouvementsCaisse } from '@/lib/queries/caisse';
 import { listUnites, listActivites } from '@/lib/queries/reference';
 import { createMouvementCaisse } from '@/lib/actions/caisse';
-import { formatAmount } from '@/lib/format';
+import { Amount } from '@/components/shared/amount';
 import { getCurrentContext } from '@/lib/context';
 import { requireAdmin } from '@/lib/auth/access';
 
@@ -26,7 +26,7 @@ export default async function CaissePage() {
 
       <Card className="mb-6">
         <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Solde caisse</CardTitle></CardHeader>
-        <CardContent><div className={`text-3xl font-bold ${solde >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatAmount(solde)}</div></CardContent>
+        <CardContent><div className="text-3xl font-bold"><Amount cents={solde} tone="signed" /></div></CardContent>
       </Card>
 
       <Card className="mb-6">
@@ -97,8 +97,8 @@ export default async function CaissePage() {
               <TableCell>{m.description}</TableCell>
               <TableCell>{m.unite_code ?? '—'}</TableCell>
               <TableCell>{m.activite_name ?? '—'}</TableCell>
-              <TableCell className={`text-right font-medium ${m.amount_cents >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatAmount(m.amount_cents)}</TableCell>
-              <TableCell className="text-right">{m.solde_apres_cents != null ? formatAmount(m.solde_apres_cents) : '—'}</TableCell>
+              <TableCell className="text-right font-medium"><Amount cents={m.amount_cents} tone="signed" /></TableCell>
+              <TableCell className="text-right">{m.solde_apres_cents != null ? <Amount cents={m.solde_apres_cents} tone="muted" /> : '—'}</TableCell>
             </TableRow>
           ))}
           {mouvements.length === 0 && (

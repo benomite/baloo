@@ -4,7 +4,7 @@ import { getCurrentContext } from '@/lib/context';
 import { requireAdmin } from '@/lib/auth/access';
 import { listAbandons } from '@/lib/services/abandons';
 import { toggleCerfaEmis } from '@/lib/actions/abandons';
-import { formatAmount } from '@/lib/format';
+import { Amount } from '@/components/shared/amount';
 
 interface SearchParams {
   error?: string;
@@ -45,7 +45,7 @@ export default async function AbandonsPage({ searchParams }: { searchParams: Pro
           return (
             <section key={year} className="mb-8">
               <h2 className="font-semibold mb-2">
-                {year} <span className="text-sm text-muted-foreground">— total {formatAmount(total)}</span>
+                {year} <span className="text-sm text-muted-foreground">— total <Amount cents={total} /></span>
               </h2>
               <table className="w-full text-sm border-collapse">
                 <thead>
@@ -66,7 +66,7 @@ export default async function AbandonsPage({ searchParams }: { searchParams: Pro
                       <td className="py-2 pr-4">{a.donateur}</td>
                       <td className="py-2 pr-4">{a.date_depense}</td>
                       <td className="py-2 pr-4">{a.nature}</td>
-                      <td className="py-2 pr-4 text-right font-medium">{formatAmount(a.amount_cents)}</td>
+                      <td className="py-2 pr-4 text-right font-medium"><Amount cents={a.amount_cents} /></td>
                       <td className="py-2 pr-4">{a.unite_code ?? '—'}</td>
                       <td className="py-2 pr-4">
                         <form action={toggleCerfaEmis}>

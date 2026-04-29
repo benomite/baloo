@@ -12,7 +12,10 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
     >
       <table
         data-slot="table"
-        className={cn("w-full caption-bottom text-sm", className)}
+        // `tabular-nums` hérité par toutes les cellules : largeur de
+        // caractère fixe pour les chiffres (alignement propre des
+        // colonnes de montants, dates, IDs).
+        className={cn("w-full caption-bottom text-sm tabular-nums", className)}
         {...props}
       />
     </div>
@@ -23,7 +26,14 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   return (
     <thead
       data-slot="table-header"
-      className={cn("[&_tr]:border-b", className)}
+      // Sticky top-0 : le header reste visible quand on scrolle un
+      // tableau long. `bg-background` masque le contenu qui défile en
+      // dessous. `shadow-[0_1px_0]` matérialise la séparation avec la
+      // 1re ligne quand le `border-b` du <tr> est masqué par le sticky.
+      className={cn(
+        "sticky top-0 z-10 bg-background shadow-[inset_0_-1px_0_var(--border)] [&_tr]:border-b-0",
+        className,
+      )}
       {...props}
     />
   )

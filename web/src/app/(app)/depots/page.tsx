@@ -8,6 +8,7 @@ import { requireAdmin } from '@/lib/auth/access';
 import { listDepots, listCandidateEcritures, type DepotEnriched } from '@/lib/services/depots';
 import { rejectDepot, attachDepotToEcriture } from '@/lib/actions/depots';
 import { formatAmount } from '@/lib/format';
+import { Amount } from '@/components/shared/amount';
 
 interface SearchParams {
   error?: string;
@@ -15,10 +16,8 @@ interface SearchParams {
   attached?: string;
 }
 
-function formatDepotAmount(cents: number | null): string {
-  if (cents === null) return '—';
-  return formatAmount(cents);
-}
+// `formatAmount` est encore utilisé pour les `<option>` (texte uniquement,
+// pas de JSX possible) — ailleurs, on préfère <Amount/>.
 
 function formatDate(date: string | null): string {
   if (!date) return '—';
@@ -93,7 +92,7 @@ function DepotCard({
           )}
           <dl className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
             <Field label="Déposé par" value={depot.submitter_name ?? depot.submitter_email} />
-            <Field label="Montant" value={formatDepotAmount(depot.amount_cents)} />
+            <Field label="Montant" value={depot.amount_cents !== null ? <Amount cents={depot.amount_cents} /> : '—'} />
             <Field label="Date" value={formatDate(depot.date_estimee)} />
             <Field label="Unité" value={depot.unite_code ?? '—'} />
             <Field label="Catégorie" value={depot.category_name ?? '—'} />

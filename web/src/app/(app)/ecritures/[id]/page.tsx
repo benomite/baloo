@@ -14,7 +14,7 @@ import { updateEcriture, updateEcritureStatus } from '@/lib/actions/ecritures';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
 import { sendRelance } from '@/lib/actions/relances';
 import { SyncDraftButton } from '@/components/ecritures/sync-draft-button';
-import { formatAmount } from '@/lib/format';
+import { Amount } from '@/components/shared/amount';
 
 interface SearchParams {
   error?: string;
@@ -45,8 +45,8 @@ export default async function EcritureDetailPage({
     <div>
       <PageHeader title={`${ecriture.id} — ${ecriture.description}`}>
         <EcritureStatusBadge status={ecriture.status} />
-        <span className={`text-lg font-bold ${ecriture.type === 'depense' ? 'text-red-600' : 'text-green-600'}`}>
-          {ecriture.type === 'depense' ? '-' : '+'}{formatAmount(ecriture.amount_cents)}
+        <span className="text-lg font-bold">
+          <Amount cents={ecriture.amount_cents} tone={ecriture.type === 'depense' ? 'negative' : 'positive'} />
         </span>
       </PageHeader>
 

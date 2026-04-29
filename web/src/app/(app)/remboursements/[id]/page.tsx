@@ -15,7 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { getCurrentContext } from '@/lib/context';
 import { updateRemboursementStatus } from '@/lib/actions/remboursements';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
-import { formatAmount } from '@/lib/format';
+import { Amount } from '@/components/shared/amount';
 
 interface SearchParams {
   error?: string;
@@ -72,7 +72,7 @@ export default async function RemboursementDetailPage({
     <div>
       <PageHeader title={`${r.id} — ${r.demandeur}`}>
         <RemboursementStatusBadge status={r.status} />
-        <span className="text-lg font-bold">{formatAmount(r.total_cents || r.amount_cents)}</span>
+        <span className="text-lg font-bold"><Amount cents={r.total_cents || r.amount_cents} /></span>
         {canEditFull && (
           <Link href={`/remboursements/${id}/edit`}>
             <Button variant="outline" size="sm">Modifier</Button>
@@ -146,14 +146,14 @@ export default async function RemboursementDetailPage({
                     <tr key={l.id} className="border-b">
                       <td className="py-1 pr-4">{l.date_depense}</td>
                       <td className="py-1 pr-4">{l.nature}</td>
-                      <td className="py-1 pr-4 text-right font-medium">{formatAmount(l.amount_cents)}</td>
+                      <td className="py-1 pr-4 text-right font-medium"><Amount cents={l.amount_cents} /></td>
                     </tr>
                   ))}
                   <tr>
                     <td className="py-2 pr-4"></td>
                     <td className="py-2 pr-4 font-semibold">Total</td>
                     <td className="py-2 pr-4 text-right font-bold">
-                      {formatAmount(r.total_cents || r.amount_cents)}
+                      <Amount cents={r.total_cents || r.amount_cents} />
                     </td>
                   </tr>
                 </tbody>

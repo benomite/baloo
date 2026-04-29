@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { getCurrentContext } from '@/lib/context';
 import { listRemboursements } from '@/lib/services/remboursements';
 import { listAbandons } from '@/lib/services/abandons';
-import { formatAmount } from '@/lib/format';
+import { Amount } from '@/components/shared/amount';
 
 interface SearchParams {
   error?: string;
@@ -119,7 +119,7 @@ function RemboursementsCard({
                       {r.date_paiement ? ` · payé le ${r.date_paiement}` : ''}
                     </div>
                   </div>
-                  <span className="font-semibold whitespace-nowrap">{formatAmount(r.amount_cents)}</span>
+                  <span className="font-semibold"><Amount cents={r.amount_cents} /></span>
                 </Link>
               </li>
             );
@@ -168,7 +168,7 @@ function AbandonsCard({
                   {a.id} · {a.date_depense} · année fiscale {a.annee_fiscale}
                 </div>
               </div>
-              <span className="font-semibold">{formatAmount(a.amount_cents)}</span>
+              <span className="font-semibold"><Amount cents={a.amount_cents} /></span>
             </li>
           ))}
         </ul>
