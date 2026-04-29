@@ -17,7 +17,8 @@
     "import:todos": "tsx scripts/import-todos.ts",
     "reattach:justificatifs": "tsx scripts/reattach-justificatifs.ts",
     "set-user-role": "tsx scripts/set-user-role.ts",
-    "migrate:justifs-to-blob": "tsx scripts/migrate-justifs-to-blob.ts"
+    "migrate:justifs-to-blob": "tsx scripts/migrate-justifs-to-blob.ts",
+    "migrate:blobs-to-private": "tsx scripts/migrate-blobs-to-private.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",
