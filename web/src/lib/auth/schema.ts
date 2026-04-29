@@ -1,17 +1,40 @@
+// Schéma auth + migrations idempotentes des tables historiques.
+//
+// Ce module fait deux choses :
+//
+//  1. **Crée les tables d'auth** (`sessions`, `verification_tokens`,
+//     `signin_attempts`, `api_tokens`) en `IF NOT EXISTS`.
+//
+//  2. **Migre les tables historiques** dont le `CHECK` SQL d'origine
+//     bloquait des évolutions :
+//     - `users.role` (CHECK ancienne enum cotresorier/chef_unite/etc.)
+//       → recréée sans CHECK, valeurs validées en code (cf. ADR-019).
+//     - `remboursements.status` (CHECK ancienne enum demande/valide/
+//       paye/refuse) → recréée avec les nouveaux statuts P2-workflows
+//       2-bis et schéma multi-lignes.
+//     - Plus quelques ALTER TABLE ADD COLUMN idempotents pour les
+//       colonnes ajoutées au fil des chantiers (`email_verified`,
+//       `scope_unite_id`, `submitted_by_user_id`, etc.).
+//
+// Crée aussi les tables `remboursement_lignes` et `signatures` qui ont
+// été ajoutées après business-schema.ts.
+//
+// Idempotence :
+//  - Sur BDD vierge, `ensureBusinessSchema` (appelé en amont) a déjà
+//    créé les tables métier dans leur forme courante. Les blocs de
+//    migration ci-dessous détectent qu'il n'y a rien à faire (tests
+//    sur la présence de l'ancienne CHECK dans `sqlite_master`).
+//  - Sur BDD existante, business-schema est un no-op (les tables
+//    existent déjà avec un schéma plus ancien) et les migrations
+//    ci-dessous évoluent la BDD vers la forme courante.
+
 import { getDb } from '../db';
 import { ensureBusinessSchema } from '../db/business-schema';
 
 let ensured = false;
-
-// Crée les tables nécessaires à Auth.js (chantier 4, ADR-016) si elles
-// n'existent pas déjà. Idempotent. Appelé au lazy-init du module auth pour
-// que `web/` puisse tourner sans dépendre du bootstrap.
-//
-// Sur BDD vierge, `ensureBusinessSchema` (appelé en amont) a créé les
-// tables métier dans leur forme courante — donc les blocs de migration
-// ci-dessous (recréation `users` et `remboursements`) sont inertes.
-// Sur BDD existante, c'est l'inverse : business-schema est un no-op et
-// les migrations ci-dessous gèrent les évolutions de CHECK historiques.
+// Lazy-init appelé depuis l'adapter NextAuth (cf. adapter.ts) au
+// premier accès. Garde le flag `ensured` pour ne tourner qu'une fois
+// par process.
 export async function ensureAuthSchema(): Promise<void> {
   if (ensured) return;
   await ensureBusinessSchema();

@@ -1,3 +1,21 @@
+// Authentification automatisée à Comptaweb (Sirom).
+//
+// Comptaweb délègue son auth à Keycloak (`auth.sgdf.fr`) en OIDC +
+// PKCE. Ce module reproduit le flow navigateur en serveur :
+//
+//  1. GET sur Comptaweb sans cookie → 302 vers `auth.sgdf.fr/realms/...`
+//     avec `code_challenge` (PKCE) et `state`.
+//  2. POST du formulaire login Keycloak avec `COMPTAWEB_USERNAME` /
+//     `COMPTAWEB_PASSWORD` → redirection avec `code` + `state`.
+//  3. Redirection finale qui pose les cookies de session Comptaweb.
+//  4. La session est persistée dans `data/comptaweb-session.json`
+//     (cookie jar) et rejouée jusqu'à expiration (~quelques heures) ;
+//     en cas d'expiration, on relance le flow automatiquement.
+//
+// Fallback historique : si `COMPTAWEB_COOKIE` est dans l'env, on
+// l'utilise tel quel (utile pour debug / pas de mdp). Voir
+// `web/src/lib/comptaweb/auth.ts` pour le routage entre les deux modes.
+
 import * as cheerio from 'cheerio';
 import { CookieJar } from './cookie-jar';
 

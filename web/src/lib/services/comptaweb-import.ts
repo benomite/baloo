@@ -1,3 +1,27 @@
+// Import d'un export CSV Comptaweb dans Baloo (rapprochement / suivi).
+//
+// Flow :
+//  1. Parse du CSV ligne par ligne (détection séparateur, normalisation
+//     des noms de colonnes pour absorber les variations entre exports
+//     Comptaweb).
+//  2. Stockage brut dans `comptaweb_lignes` (audit trail, requérable).
+//  3. Reconstruction des écritures : on regroupe les lignes par
+//     `numero_piece` (1 pièce = 1 écriture comptable, qui peut être
+//     ventilée sur plusieurs lignes CSV — la ligne "Ecriture" donne le
+//     total, les lignes "Ventilation" détaillent).
+//  4. Mapping aux référentiels locaux (catégories par nature,
+//     activités par nom, unités par code — l'inférence par branche
+//     SGDF gère la majorité des cas, fallback sur le code de pièce).
+//  5. Insert en bloc dans `ecritures` avec `status='saisie_comptaweb'`,
+//     `comptaweb_synced=1`. Idempotent : on purge avant ré-import les
+//     écritures précédemment marquées `saisie_comptaweb` (les écritures
+//     saisies à la main, en `brouillon` ou `valide`, ne sont jamais
+//     touchées).
+//
+// Les imports manqués (sans unité / sans catégorie / sans mode de
+// paiement) sont remontés dans `warnings` pour que l'UI puisse
+// surfacer ce qu'il faut compléter à la main après import.
+
 import { getDb } from '../db';
 import { nextId, currentTimestamp } from '../ids';
 import { formatAmount } from '../format';
