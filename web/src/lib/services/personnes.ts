@@ -1,5 +1,6 @@
 import { getDb } from '../db';
 import { currentTimestamp } from '../ids';
+import { nullIfEmpty } from '../utils/form';
 
 export interface PersonneContext {
   groupId: string;
@@ -111,13 +112,13 @@ export async function createPersonne(
     id,
     groupId,
     input.prenom,
-    input.nom ?? null,
-    input.email ?? null,
-    input.telephone ?? null,
-    input.role_groupe ?? null,
-    input.unite_id ?? null,
-    input.depuis ?? null,
-    input.notes ?? null,
+    nullIfEmpty(input.nom),
+    nullIfEmpty(input.email),
+    nullIfEmpty(input.telephone),
+    nullIfEmpty(input.role_groupe),
+    nullIfEmpty(input.unite_id),
+    nullIfEmpty(input.depuis),
+    nullIfEmpty(input.notes),
     now,
     now,
   );

@@ -1,5 +1,6 @@
 import { getDb } from '../db';
 import { nextId, currentTimestamp } from '../ids';
+import { nullIfEmpty } from '../utils/form';
 
 export interface AbandonContext {
   groupId: string;
@@ -83,10 +84,10 @@ export async function createAbandon(
     input.amount_cents,
     input.date_depense,
     input.nature,
-    input.unite_id ?? null,
+    nullIfEmpty(input.unite_id),
     input.annee_fiscale,
-    input.notes ?? null,
-    input.submitted_by_user_id ?? null,
+    nullIfEmpty(input.notes),
+    nullIfEmpty(input.submitted_by_user_id),
     now,
     now,
   );

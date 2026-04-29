@@ -1,5 +1,6 @@
 import { getDb } from '../db';
 import { nextId, currentTimestamp } from '../ids';
+import { nullIfEmpty } from '../utils/form';
 import type { MouvementCaisse } from '../types';
 
 export interface CaisseContext {
@@ -89,10 +90,10 @@ export async function createMouvementCaisse(
     input.date_mouvement,
     input.description,
     input.amount_cents,
-    input.unite_id ?? null,
-    input.activite_id ?? null,
+    nullIfEmpty(input.unite_id),
+    nullIfEmpty(input.activite_id),
     soldeAfter,
-    input.notes ?? null,
+    nullIfEmpty(input.notes),
     now,
   );
 

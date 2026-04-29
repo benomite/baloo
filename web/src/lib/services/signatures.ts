@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { getDb } from '../db';
 import { currentTimestamp } from '../ids';
+import { nullIfEmpty } from '../utils/form';
 
 // Service de signature électronique simple (ADR-023).
 //
@@ -89,14 +90,14 @@ export async function signDocument(input: SignDocumentInput): Promise<Signature>
     input.document_type,
     input.document_id,
     input.signer_role,
-    input.signer_user_id ?? null,
+    nullIfEmpty(input.signer_user_id),
     input.signer_email,
-    input.signer_name ?? null,
+    nullIfEmpty(input.signer_name),
     input.data_hash,
     previous?.id ?? null,
     chain_hash,
-    input.ip ?? null,
-    input.user_agent ?? null,
+    nullIfEmpty(input.ip),
+    nullIfEmpty(input.user_agent),
     serverTimestamp,
     serverTimestamp,
   );

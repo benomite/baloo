@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { getDb } from '../db';
 import { nextId, currentTimestamp } from '../ids';
+import { nullIfEmpty } from '../utils/form';
 import type { Remboursement } from '../types';
 
 // Statuts du workflow remboursement (5 étapes valdesous + refus).
@@ -133,20 +134,20 @@ export async function createRemboursement(
     id,
     groupId,
     input.demandeur,
-    input.prenom ?? null,
-    input.nom ?? null,
-    input.email ?? null,
-    input.rib_texte ?? null,
-    input.rib_file_path ?? null,
+    nullIfEmpty(input.prenom),
+    nullIfEmpty(input.nom),
+    nullIfEmpty(input.email),
+    nullIfEmpty(input.rib_texte),
+    nullIfEmpty(input.rib_file_path),
     input.amount_cents,
     input.amount_cents,
     input.date_depense,
     input.nature,
-    input.unite_id ?? null,
+    nullIfEmpty(input.unite_id),
     input.justificatif_status ?? 'en_attente',
-    input.mode_paiement_id ?? null,
-    input.notes ?? null,
-    input.submitted_by_user_id ?? null,
+    nullIfEmpty(input.mode_paiement_id),
+    nullIfEmpty(input.notes),
+    nullIfEmpty(input.submitted_by_user_id),
     now,
     now,
   );
@@ -175,7 +176,7 @@ export async function addLigne(
   await db.prepare(
     `INSERT INTO remboursement_lignes (id, remboursement_id, date_depense, amount_cents, nature, notes, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, remboursementId, input.date_depense, input.amount_cents, input.nature, input.notes ?? null, now);
+  ).run(id, remboursementId, input.date_depense, input.amount_cents, input.nature, nullIfEmpty(input.notes), now);
   await recalcTotal(remboursementId);
   return (await db.prepare('SELECT * FROM remboursement_lignes WHERE id = ?').get<RemboursementLigne>(id))!;
 }
@@ -261,12 +262,12 @@ export async function updateRemboursement(
 
   if (patch.status !== undefined) { sets.push('status = ?'); values.push(patch.status); }
   if (patch.date_paiement !== undefined) { sets.push('date_paiement = ?'); values.push(patch.date_paiement); }
-  if (patch.mode_paiement_id !== undefined) { sets.push('mode_paiement_id = ?'); values.push(patch.mode_paiement_id); }
+  if (patch.mode_paiement_id !== undefined) { sets.push('mode_paiement_id = ?'); values.push(nullIfEmpty(patch.mode_paiement_id)); }
   if (patch.justificatif_status !== undefined) { sets.push('justificatif_status = ?'); values.push(patch.justificatif_status); }
   if (patch.comptaweb_synced !== undefined) { sets.push('comptaweb_synced = ?'); values.push(patch.comptaweb_synced ? 1 : 0); }
-  if (patch.ecriture_id !== undefined) { sets.push('ecriture_id = ?'); values.push(patch.ecriture_id); }
-  if (patch.notes !== undefined) { sets.push('notes = ?'); values.push(patch.notes); }
-  if (patch.motif_refus !== undefined) { sets.push('motif_refus = ?'); values.push(patch.motif_refus); }
+  if (patch.ecriture_id !== undefined) { sets.push('ecriture_id = ?'); values.push(nullIfEmpty(patch.ecriture_id)); }
+  if (patch.notes !== undefined) { sets.push('notes = ?'); values.push(nullIfEmpty(patch.notes)); }
+  if (patch.motif_refus !== undefined) { sets.push('motif_refus = ?'); values.push(nullIfEmpty(patch.motif_refus)); }
 
   if (sets.length === 0) {
     return (await getRemboursement({ groupId }, id)) ?? null;

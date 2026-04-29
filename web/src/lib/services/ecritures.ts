@@ -1,5 +1,6 @@
 import { getDb } from '../db';
 import { nextId, currentTimestamp } from '../ids';
+import { nullIfEmpty } from '../utils/form';
 import type { Ecriture } from '../types';
 
 export interface EcritureContext {
@@ -191,14 +192,14 @@ export async function createEcriture(
     input.description,
     input.amount_cents,
     input.type,
-    input.unite_id ?? null,
-    input.category_id ?? null,
-    input.mode_paiement_id ?? null,
-    input.activite_id ?? null,
-    input.numero_piece ?? null,
-    input.carte_id ?? null,
+    nullIfEmpty(input.unite_id),
+    nullIfEmpty(input.category_id),
+    nullIfEmpty(input.mode_paiement_id),
+    nullIfEmpty(input.activite_id),
+    nullIfEmpty(input.numero_piece),
+    nullIfEmpty(input.carte_id),
     justifAttendu,
-    input.notes ?? null,
+    nullIfEmpty(input.notes),
     now,
     now,
   );
@@ -253,12 +254,12 @@ export async function updateEcriture(
   if (!lockSync && patch.description !== undefined) { sets.push('description = ?'); values.push(patch.description); }
   if (!lockSync && patch.amount_cents !== undefined) { sets.push('amount_cents = ?'); values.push(patch.amount_cents); }
   if (!lockSync && patch.type !== undefined) { sets.push('type = ?'); values.push(patch.type); }
-  if (!lockSync && patch.unite_id !== undefined) { sets.push('unite_id = ?'); values.push(patch.unite_id); }
-  if (!lockSync && patch.category_id !== undefined) { sets.push('category_id = ?'); values.push(patch.category_id); }
-  if (!lockSync && patch.mode_paiement_id !== undefined) { sets.push('mode_paiement_id = ?'); values.push(patch.mode_paiement_id); }
-  if (!lockSync && patch.activite_id !== undefined) { sets.push('activite_id = ?'); values.push(patch.activite_id); }
-  if (!lockSync && patch.numero_piece !== undefined) { sets.push('numero_piece = ?'); values.push(patch.numero_piece); }
-  if (!lockSync && patch.carte_id !== undefined) { sets.push('carte_id = ?'); values.push(patch.carte_id); }
+  if (!lockSync && patch.unite_id !== undefined) { sets.push('unite_id = ?'); values.push(nullIfEmpty(patch.unite_id)); }
+  if (!lockSync && patch.category_id !== undefined) { sets.push('category_id = ?'); values.push(nullIfEmpty(patch.category_id)); }
+  if (!lockSync && patch.mode_paiement_id !== undefined) { sets.push('mode_paiement_id = ?'); values.push(nullIfEmpty(patch.mode_paiement_id)); }
+  if (!lockSync && patch.activite_id !== undefined) { sets.push('activite_id = ?'); values.push(nullIfEmpty(patch.activite_id)); }
+  if (!lockSync && patch.numero_piece !== undefined) { sets.push('numero_piece = ?'); values.push(nullIfEmpty(patch.numero_piece)); }
+  if (!lockSync && patch.carte_id !== undefined) { sets.push('carte_id = ?'); values.push(nullIfEmpty(patch.carte_id)); }
   if (patch.justif_attendu !== undefined) { sets.push('justif_attendu = ?'); values.push(patch.justif_attendu ? 1 : 0); }
   if (patch.status !== undefined) { sets.push('status = ?'); values.push(patch.status); }
   if (patch.comptaweb_synced !== undefined) { sets.push('comptaweb_synced = ?'); values.push(patch.comptaweb_synced ? 1 : 0); }

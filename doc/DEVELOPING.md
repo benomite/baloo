@@ -78,6 +78,36 @@ Avant d'introduire une nouvelle dépendance, une nouvelle couche technique ou un
 - [ ] Commit atomique avec un message clair.
 - [ ] L'utilisateur a été informé de ce qui a été fait (résumé court en fin de réponse).
 
+## Pièges techniques connus côté webapp
+
+Documentés ici pour ne pas y retomber. Un nouveau piège = une nouvelle entrée.
+
+### FormData et FK SQLite : `""` ≠ `null`
+
+Quand un `<select>` HTML pointe sur une option vide, ou qu'un `<input>` texte est laissé vide, `formData.get('xxx')` retourne `""` (chaîne vide), pas `null`. Si on insère ce `""` dans une colonne SQL qui a une contrainte de clé étrangère, on déclenche `FOREIGN KEY constraint failed` parce que `""` n'est pas un id valide et n'est pas non plus reconnu comme NULL par SQLite.
+
+**Règle** : pour tout champ FK (`unite_id`, `category_id`, `mode_paiement_id`, `activite_id`, `carte_id`, `scope_unite_id`, `ecriture_id`, `person_id`, etc.), passer la valeur par `nullIfEmpty(...)` avant l'INSERT/UPDATE. Le helper vit dans `web/src/lib/utils/form.ts` :
+
+```ts
+import { nullIfEmpty, formStringOrNull } from '@/lib/utils/form';
+
+// Côté server action
+const uniteId = formStringOrNull(formData, 'unite_id'); // '' / whitespace → null
+
+// Côté service (défense en profondeur)
+await db.prepare('INSERT ...').run(..., nullIfEmpty(input.unite_id), ...);
+```
+
+**À ne pas faire** : `input.unite_id ?? null`. L'opérateur `??` ne traite que `null`/`undefined`, pas `""`. `||` marche (chaîne vide est falsy) mais reste moins explicite que `nullIfEmpty`.
+
+Tous les services exposant des `INSERT`/`UPDATE` avec FK doivent normaliser leurs inputs avant `.run(...)`. Audit fait dans `services/{ecritures,remboursements,abandons,caisse,depots,invitations,personnes,signatures}.ts` au 2026-04-29.
+
+### CHECK constraints SQL et évolution des enums
+
+SQLite ne supporte pas `ALTER TABLE … DROP CONSTRAINT`. Si une CHECK SQL est ajoutée sur une colonne au moment du seed initial, faire évoluer les valeurs autorisées demande une recréation complète de la table (procédure standard : new table, copy, drop, rename, recreate indexes, PRAGMA foreign_keys = OFF/ON pour ne pas faire sauter les FK reverse).
+
+**Règle** : ne pas mettre de CHECK SQL sur les valeurs d'enums applicatifs. La validation vit côté code (constantes typées + zod). Cf. ADR-019 (rôles V2 sans CHECK) et ADR-022 (statuts remboursement sans CHECK).
+
 ## Ce qu'on ne fait PAS en mode dev (sauf demande explicite)
 
 - Introduire une base de données, un vector store, un framework de mémoire.

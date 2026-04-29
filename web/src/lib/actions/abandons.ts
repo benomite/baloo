@@ -73,7 +73,7 @@ export async function createMyAbandon(formData: FormData): Promise<void> {
         amount_cents,
         date_depense: dateDepense,
         nature,
-        unite_id: ctx.scopeUniteId ?? (formData.get('unite_id') as string | null) ?? null,
+        unite_id: ctx.scopeUniteId || (formData.get('unite_id') as string | null) || null,
         annee_fiscale: anneeFiscale,
         notes: (formData.get('notes') as string | null)?.trim() || null,
         submitted_by_user_id: ctx.userId,

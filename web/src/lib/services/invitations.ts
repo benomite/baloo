@@ -1,5 +1,6 @@
 import { getDb } from '../db';
 import { currentTimestamp, uniqueId } from '../ids';
+import { nullIfEmpty } from '../utils/form';
 import { sendInvitationEmail } from '../email/invitation';
 
 // Service d'invitation par email (chantier 0.2, ADR-020).
@@ -96,7 +97,7 @@ export async function createInvitation(
   await db.prepare(
     `INSERT INTO users (id, group_id, person_id, email, nom_affichage, role, scope_unite_id, statut, created_at, updated_at)
      VALUES (?, ?, NULL, ?, ?, ?, ?, 'actif', ?, ?)`,
-  ).run(id, groupId, email, nomAffichage, input.role, input.scope_unite_id ?? null, now, now);
+  ).run(id, groupId, email, nomAffichage, input.role, nullIfEmpty(input.scope_unite_id), now, now);
 
   // Envoi du mail. Si ça échoue, on garde quand même le user créé — le
   // trésorier peut renvoyer un mail manuellement plus tard.
