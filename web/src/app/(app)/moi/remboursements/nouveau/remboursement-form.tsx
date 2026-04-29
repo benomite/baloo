@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { FileMultiUploader } from '@/components/ui/file-multi-uploader';
 
 interface UniteOption {
   id: string;
@@ -143,18 +144,11 @@ export function RemboursementForm({
 
       <fieldset className="space-y-3 border rounded p-4">
         <legend className="text-sm font-semibold px-2">Justificatifs</legend>
-        <p className="text-xs text-muted-foreground">
-          Joins toutes les photos / PDF de tickets, factures et reçus. Tu peux en sélectionner plusieurs d&apos;un coup
-          (Cmd/Ctrl + clic) ou rappuyer sur « Choose files » pour ajouter d&apos;autres fichiers.
-        </p>
-        <input
-          id="justifs"
+        <FileMultiUploader
           name="justifs"
-          type="file"
-          accept="image/*,application/pdf"
-          multiple
           required
-          className="block text-sm w-full"
+          accept="image/*,application/pdf"
+          helpText="Photos / PDF de tickets, factures, reçus. Tu peux en ajouter autant que nécessaire."
         />
       </fieldset>
 
