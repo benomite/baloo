@@ -89,7 +89,18 @@ export interface CreateBudgetLigneInput {
   notes?: string | null;
 }
 
-export async function createBudgetLigne(input: CreateBudgetLigneInput): Promise<BudgetLigne> {
+// Renvoie null si le budget cible n'existe pas dans ce groupe — la
+// route handler répond alors 404 sans révéler "n'existe pas" vs
+// "n'est pas le tien" (anti-énumération inter-groupes).
+export async function createBudgetLigne(
+  { groupId }: BudgetContext,
+  input: CreateBudgetLigneInput,
+): Promise<BudgetLigne | null> {
+  const owns = await getDb()
+    .prepare('SELECT id FROM budgets WHERE id = ? AND group_id = ?')
+    .get<{ id: string }>(input.budget_id, groupId);
+  if (!owns) return null;
+
   const now = currentTimestamp();
   const id = `bdl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -119,11 +130,19 @@ export interface BudgetLignesSummary {
   solde_cents: number;
 }
 
-export async function listBudgetLignes(budgetId: string): Promise<BudgetLignesSummary> {
+// JOIN sur `budgets.group_id` : un budget d'un autre groupe renvoie
+// un tableau vide, indistinguable d'un budget vide.
+export async function listBudgetLignes(
+  { groupId }: BudgetContext,
+  budgetId: string,
+): Promise<BudgetLignesSummary> {
   const lignes = await getDb().prepare(
-    `SELECT id, unite_id, category_id, libelle, type, amount_cents, notes
-     FROM budget_lignes WHERE budget_id = ? ORDER BY type, libelle`,
-  ).all<BudgetLigne>(budgetId);
+    `SELECT bl.id, bl.unite_id, bl.category_id, bl.libelle, bl.type, bl.amount_cents, bl.notes
+     FROM budget_lignes bl
+     JOIN budgets b ON b.id = bl.budget_id
+     WHERE bl.budget_id = ? AND b.group_id = ?
+     ORDER BY bl.type, bl.libelle`,
+  ).all<BudgetLigne>(budgetId, groupId);
 
   const total_depenses_cents = lignes.filter((l) => l.type === 'depense').reduce((acc, l) => acc + l.amount_cents, 0);
   const total_recettes_cents = lignes.filter((l) => l.type === 'recette').reduce((acc, l) => acc + l.amount_cents, 0);

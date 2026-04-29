@@ -1,12 +1,12 @@
 import { z } from 'zod';
 import { listBudgetLignes, createBudgetLigne } from '@/lib/services/budgets';
-import { parseJsonBody, requireApiContext } from '@/lib/api/route-helpers';
+import { jsonError, parseJsonBody, requireApiContext } from '@/lib/api/route-helpers';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
   const { id } = await params;
-  return Response.json(await listBudgetLignes(id));
+  return Response.json(await listBudgetLignes({ groupId: ctxR.ctx.groupId }, id));
 }
 
 const createSchema = z.object({
@@ -24,6 +24,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   const parsed = await parseJsonBody(request, createSchema);
   if ('error' in parsed) return parsed.error;
-  const created = await createBudgetLigne({ ...parsed.data, budget_id: id });
+  const created = await createBudgetLigne(
+    { groupId: ctxR.ctx.groupId },
+    { ...parsed.data, budget_id: id },
+  );
+  if (!created) return jsonError('Budget introuvable', 404);
   return Response.json(created, { status: 201 });
 }
