@@ -49,14 +49,16 @@ interface RemboursementStatusChangedParams {
   rbtId: string;
   natureDescription: string;
   amountCents: number;
-  newStatus: 'valide' | 'paye' | 'refuse';
+  newStatus: 'valide_tresorier' | 'valide_rg' | 'virement_effectue' | 'termine' | 'refuse';
   motif?: string | null;
   appUrl: string;
 }
 
 const STATUS_HUMAN: Record<RemboursementStatusChangedParams['newStatus'], string> = {
-  valide: 'validée',
-  paye: 'payée',
+  valide_tresorier: 'validée par le trésorier',
+  valide_rg: 'validée par le RG',
+  virement_effectue: 'payée (virement effectué)',
+  termine: 'terminée',
   refuse: 'refusée',
 };
 
@@ -77,10 +79,14 @@ export async function sendRemboursementStatusChangedEmail(
     ``,
   ];
 
-  if (params.newStatus === 'paye') {
-    lines.push(`Le virement (ou paiement en espèces) a été effectué.`);
-  } else if (params.newStatus === 'valide') {
+  if (params.newStatus === 'virement_effectue') {
+    lines.push(`Le virement a été effectué.`);
+  } else if (params.newStatus === 'valide_tresorier') {
+    lines.push(`La demande passe maintenant en validation par le RG.`);
+  } else if (params.newStatus === 'valide_rg') {
     lines.push(`La demande sera payée prochainement.`);
+  } else if (params.newStatus === 'termine') {
+    lines.push(`Dossier clos.`);
   } else if (params.newStatus === 'refuse') {
     lines.push(`Motif : ${params.motif ?? '— non précisé.'}`);
   }

@@ -1,6 +1,29 @@
+import { randomUUID } from 'node:crypto';
 import { getDb } from '../db';
 import { nextId, currentTimestamp } from '../ids';
 import type { Remboursement } from '../types';
+
+// Statuts du workflow remboursement (5 étapes valdesous + refus).
+// Validation côté code (ADR-019 : pas de CHECK SQL).
+export const RBT_STATUTS = [
+  'a_traiter',
+  'valide_tresorier',
+  'valide_rg',
+  'virement_effectue',
+  'termine',
+  'refuse',
+] as const;
+export type RbtStatut = (typeof RBT_STATUTS)[number];
+
+export interface RemboursementLigne {
+  id: string;
+  remboursement_id: string;
+  date_depense: string;
+  amount_cents: number;
+  nature: string;
+  notes: string | null;
+  created_at: string;
+}
 
 export interface RemboursementContext {
   groupId: string;
@@ -82,6 +105,12 @@ export interface CreateRemboursementInput {
   mode_paiement_id?: string | null;
   notes?: string | null;
   submitted_by_user_id?: string | null;
+  // Champs valdesous-style (chantier 2-bis).
+  prenom?: string | null;
+  nom?: string | null;
+  email?: string | null;
+  rib_texte?: string | null;
+  rib_file_path?: string | null;
 }
 
 export async function createRemboursement(
@@ -93,12 +122,23 @@ export async function createRemboursement(
   const now = currentTimestamp();
 
   await db.prepare(
-    `INSERT INTO remboursements (id, group_id, demandeur, amount_cents, date_depense, nature, unite_id, justificatif_status, mode_paiement_id, notes, submitted_by_user_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO remboursements (
+       id, group_id, demandeur, prenom, nom, email, rib_texte, rib_file_path,
+       amount_cents, total_cents, date_depense, nature, unite_id,
+       justificatif_status, mode_paiement_id, notes, submitted_by_user_id,
+       created_at, updated_at
+     )
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     groupId,
     input.demandeur,
+    input.prenom ?? null,
+    input.nom ?? null,
+    input.email ?? null,
+    input.rib_texte ?? null,
+    input.rib_file_path ?? null,
+    input.amount_cents,
     input.amount_cents,
     input.date_depense,
     input.nature,
@@ -114,14 +154,70 @@ export async function createRemboursement(
   return (await db.prepare('SELECT * FROM remboursements WHERE id = ?').get<Remboursement>(id))!;
 }
 
+// =============================================================================
+// Multi-lignes (chantier 2-bis)
+// =============================================================================
+
+export interface CreateLigneInput {
+  date_depense: string;
+  amount_cents: number;
+  nature: string;
+  notes?: string | null;
+}
+
+export async function addLigne(
+  remboursementId: string,
+  input: CreateLigneInput,
+): Promise<RemboursementLigne> {
+  const db = getDb();
+  const id = randomUUID();
+  const now = currentTimestamp();
+  await db.prepare(
+    `INSERT INTO remboursement_lignes (id, remboursement_id, date_depense, amount_cents, nature, notes, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, remboursementId, input.date_depense, input.amount_cents, input.nature, input.notes ?? null, now);
+  await recalcTotal(remboursementId);
+  return (await db.prepare('SELECT * FROM remboursement_lignes WHERE id = ?').get<RemboursementLigne>(id))!;
+}
+
+export async function listLignes(remboursementId: string): Promise<RemboursementLigne[]> {
+  return await getDb()
+    .prepare('SELECT * FROM remboursement_lignes WHERE remboursement_id = ? ORDER BY date_depense ASC, created_at ASC')
+    .all<RemboursementLigne>(remboursementId);
+}
+
+export async function deleteLigne(ligneId: string): Promise<void> {
+  const db = getDb();
+  const ligne = await db
+    .prepare('SELECT remboursement_id FROM remboursement_lignes WHERE id = ?')
+    .get<{ remboursement_id: string }>(ligneId);
+  if (!ligne) return;
+  await db.prepare('DELETE FROM remboursement_lignes WHERE id = ?').run(ligneId);
+  await recalcTotal(ligne.remboursement_id);
+}
+
+// Recalcule total_cents et amount_cents (legacy mirror) depuis les lignes.
+export async function recalcTotal(remboursementId: string): Promise<number> {
+  const db = getDb();
+  const row = await db
+    .prepare('SELECT COALESCE(SUM(amount_cents), 0) AS total FROM remboursement_lignes WHERE remboursement_id = ?')
+    .get<{ total: number }>(remboursementId);
+  const total = row?.total ?? 0;
+  await db.prepare(
+    'UPDATE remboursements SET total_cents = ?, amount_cents = ?, updated_at = ? WHERE id = ?',
+  ).run(total, total, currentTimestamp(), remboursementId);
+  return total;
+}
+
 export interface UpdateRemboursementInput {
-  status?: 'demande' | 'valide' | 'paye' | 'refuse';
+  status?: RbtStatut;
   date_paiement?: string | null;
   mode_paiement_id?: string | null;
   justificatif_status?: 'oui' | 'en_attente' | 'non';
   comptaweb_synced?: boolean;
   ecriture_id?: string | null;
   notes?: string | null;
+  motif_refus?: string | null;
 }
 
 export async function updateRemboursement(
@@ -139,6 +235,7 @@ export async function updateRemboursement(
   if (patch.comptaweb_synced !== undefined) { sets.push('comptaweb_synced = ?'); values.push(patch.comptaweb_synced ? 1 : 0); }
   if (patch.ecriture_id !== undefined) { sets.push('ecriture_id = ?'); values.push(patch.ecriture_id); }
   if (patch.notes !== undefined) { sets.push('notes = ?'); values.push(patch.notes); }
+  if (patch.motif_refus !== undefined) { sets.push('motif_refus = ?'); values.push(patch.motif_refus); }
 
   if (sets.length === 0) {
     return (await getRemboursement({ groupId }, id)) ?? null;

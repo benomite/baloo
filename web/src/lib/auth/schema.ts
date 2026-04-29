@@ -147,5 +147,118 @@ export async function ensureAuthSchema(): Promise<void> {
     await db.exec('ALTER TABLE mouvements_caisse ADD COLUMN activite_id TEXT REFERENCES activites(id)');
   }
 
+  // Chantier 2-bis P2-workflows : refonte du modèle remboursement vers
+  // un modèle "1 demande = N lignes de dépense" (cf. workflow valdesous,
+  // doc à venir). Recréation de la table pour :
+  //  - retirer la CHECK SQL sur `status` (qui bloque les nouveaux statuts
+  //    `valide_tresorier`, `valide_rg`, `virement_effectue`, `termine`)
+  //  - ajouter les champs valdesous (prenom, nom, email, rib, tokens...)
+  //  - ajouter total_cents (recalculé depuis les lignes)
+  //  - ajouter motif_refus (auparavant fourré dans notes)
+  //
+  // SQLite ne supporte pas DROP CONSTRAINT → recréation. Idempotent :
+  // détecté via la présence de l'ancienne CHECK 'demande' dans
+  // sqlite_master.
+  const remboursementsDef = await db
+    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='remboursements'")
+    .get<{ sql: string }>();
+
+  if (remboursementsDef?.sql && /CHECK\s*\(\s*status\s+IN\s*\([^)]*'demande'/i.test(remboursementsDef.sql)) {
+    await db.exec('PRAGMA foreign_keys = OFF');
+    try {
+      await db.exec('DROP TABLE IF EXISTS remboursements_new');
+      await db.exec(`
+        CREATE TABLE remboursements_new (
+          id TEXT PRIMARY KEY,
+          group_id TEXT NOT NULL,
+          demandeur TEXT NOT NULL,
+          prenom TEXT,
+          nom TEXT,
+          email TEXT,
+          rib_texte TEXT,
+          rib_file_path TEXT,
+          amount_cents INTEGER NOT NULL DEFAULT 0,
+          total_cents INTEGER NOT NULL DEFAULT 0,
+          date_depense TEXT,
+          nature TEXT,
+          unite_id TEXT REFERENCES unites(id),
+          justificatif_status TEXT NOT NULL DEFAULT 'en_attente',
+          status TEXT NOT NULL DEFAULT 'a_traiter',
+          motif_refus TEXT,
+          date_paiement TEXT,
+          mode_paiement_id TEXT REFERENCES modes_paiement(id),
+          comptaweb_synced INTEGER NOT NULL DEFAULT 0,
+          ecriture_id TEXT REFERENCES ecritures(id),
+          notes TEXT,
+          submitted_by_user_id TEXT REFERENCES users(id),
+          edit_token TEXT,
+          validate_token TEXT,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+        INSERT INTO remboursements_new (
+          id, group_id, demandeur, amount_cents, total_cents, date_depense, nature,
+          unite_id, justificatif_status, status, date_paiement, mode_paiement_id,
+          comptaweb_synced, ecriture_id, notes, submitted_by_user_id, created_at, updated_at
+        )
+        SELECT
+          id, group_id, demandeur, amount_cents, amount_cents AS total_cents,
+          date_depense, nature, unite_id, justificatif_status,
+          CASE status
+            WHEN 'demande' THEN 'a_traiter'
+            WHEN 'valide' THEN 'valide_tresorier'
+            WHEN 'paye' THEN 'virement_effectue'
+            WHEN 'refuse' THEN 'refuse'
+            ELSE status
+          END AS status,
+          date_paiement, mode_paiement_id, comptaweb_synced, ecriture_id, notes,
+          submitted_by_user_id, created_at, updated_at
+        FROM remboursements;
+        DROP TABLE remboursements;
+        ALTER TABLE remboursements_new RENAME TO remboursements;
+        CREATE INDEX IF NOT EXISTS idx_rbt_group ON remboursements(group_id);
+        CREATE INDEX IF NOT EXISTS idx_rbt_status ON remboursements(status);
+        CREATE INDEX IF NOT EXISTS idx_rbt_demandeur ON remboursements(demandeur);
+        CREATE INDEX IF NOT EXISTS idx_rbt_edit_token ON remboursements(edit_token);
+        CREATE INDEX IF NOT EXISTS idx_rbt_validate_token ON remboursements(validate_token);
+      `);
+    } finally {
+      await db.exec('PRAGMA foreign_keys = ON');
+    }
+  }
+
+  // Table des lignes de dépense (chantier 2-bis). Une demande de
+  // remboursement contient N lignes (1 ligne = 1 ticket / facture).
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS remboursement_lignes (
+      id TEXT PRIMARY KEY,
+      remboursement_id TEXT NOT NULL REFERENCES remboursements(id),
+      date_depense TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      nature TEXT NOT NULL,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_rbt_ligne_rbt ON remboursement_lignes(remboursement_id);
+  `);
+
+  // Migration des anciennes demandes mono-ligne vers le modèle
+  // multi-lignes : pour chaque rbt qui n'a aucune ligne, on crée une
+  // ligne reprenant les anciens champs. Idempotent.
+  await db.exec(`
+    INSERT INTO remboursement_lignes (id, remboursement_id, date_depense, amount_cents, nature, created_at)
+    SELECT
+      'rbtl-' || r.id AS id,
+      r.id,
+      COALESCE(r.date_depense, DATE('now')),
+      COALESCE(r.amount_cents, 0),
+      COALESCE(r.nature, '(migré sans détail)'),
+      r.created_at
+    FROM remboursements r
+    WHERE NOT EXISTS (
+      SELECT 1 FROM remboursement_lignes l WHERE l.remboursement_id = r.id
+    )
+  `);
+
   ensured = true;
 }

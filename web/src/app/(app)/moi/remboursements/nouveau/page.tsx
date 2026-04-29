@@ -1,15 +1,21 @@
-import { PageHeader } from '@/components/layout/page-header';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { redirect } from 'next/navigation';
+import { PageHeader } from '@/components/layout/page-header';
 import { getCurrentContext } from '@/lib/context';
 import { listUnites } from '@/lib/queries/reference';
 import { createMyRemboursement } from '@/lib/actions/remboursements';
+import { RemboursementForm } from './remboursement-form';
 
 interface SearchParams {
   error?: string;
+}
+
+function splitName(full: string | null): { prenom: string; nom: string } {
+  if (!full) return { prenom: '', nom: '' };
+  const trimmed = full.trim();
+  if (!trimmed) return { prenom: '', nom: '' };
+  const idx = trimmed.indexOf(' ');
+  if (idx === -1) return { prenom: trimmed, nom: '' };
+  return { prenom: trimmed.slice(0, idx), nom: trimmed.slice(idx + 1) };
 }
 
 export default async function MyNouveauRemboursementPage({
@@ -23,15 +29,16 @@ export default async function MyNouveauRemboursementPage({
   const params = await searchParams;
   const unites = await listUnites();
   const today = new Date().toISOString().split('T')[0];
-  const defaultUnite = ctx.scopeUniteId ?? '';
+  const { prenom, nom } = splitName(ctx.name);
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-3xl">
       <PageHeader title="Demander un remboursement" />
 
       <p className="text-sm text-muted-foreground mb-6">
-        Tu as avancé des frais pour le groupe ? Remplis le formulaire et joins ton justificatif
-        (ticket, facture, capture). Le trésorier validera et te règlera ensuite.
+        Tu as avancé des frais pour le groupe ? Ajoute autant de lignes que de tickets,
+        joins les justificatifs et tes coordonnées bancaires. Une feuille de remboursement
+        PDF sera générée automatiquement et archivée avec ta demande.
       </p>
 
       {params.error && (
@@ -40,52 +47,13 @@ export default async function MyNouveauRemboursementPage({
         </p>
       )}
 
-      <form action={createMyRemboursement} encType="multipart/form-data" className="space-y-4">
-        <div>
-          <Label htmlFor="file">Justificatif (photo ou PDF) *</Label>
-          <Input id="file" name="file" type="file" accept="image/*,application/pdf" required />
-        </div>
-
-        <div>
-          <Label htmlFor="nature">Nature de la dépense *</Label>
-          <Input id="nature" name="nature" required placeholder="Ex. tickets de métro, achat goûter, matériel" />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label htmlFor="montant">Montant TTC *</Label>
-            <Input id="montant" name="montant" required placeholder="42,50" inputMode="decimal" />
-          </div>
-          <div>
-            <Label htmlFor="date_depense">Date de la dépense *</Label>
-            <Input id="date_depense" name="date_depense" type="date" required defaultValue={today} />
-          </div>
-        </div>
-
-        {!ctx.scopeUniteId && (
-          <div>
-            <Label htmlFor="unite_id">Unité concernée (optionnel)</Label>
-            <select
-              id="unite_id"
-              name="unite_id"
-              defaultValue={defaultUnite}
-              className="w-full border rounded px-3 py-2 bg-background"
-            >
-              <option value="">— Aucune / groupe —</option>
-              {unites.map((u) => (
-                <option key={u.id} value={u.id}>{u.code} — {u.name}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        <div>
-          <Label htmlFor="notes">Notes (optionnel)</Label>
-          <Textarea id="notes" name="notes" rows={2} placeholder="RIB, précisions, etc." />
-        </div>
-
-        <Button type="submit">Envoyer la demande</Button>
-      </form>
+      <RemboursementForm
+        action={createMyRemboursement}
+        unites={unites}
+        scopeUniteId={ctx.scopeUniteId}
+        defaultIdentity={{ prenom, nom, email: ctx.email }}
+        today={today}
+      />
     </div>
   );
 }

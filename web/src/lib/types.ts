@@ -1,6 +1,12 @@
 export type EcritureType = 'depense' | 'recette';
 export type EcritureStatus = 'brouillon' | 'valide' | 'saisie_comptaweb';
-export type RemboursementStatus = 'demande' | 'valide' | 'paye' | 'refuse';
+export type RemboursementStatus =
+  | 'a_traiter'
+  | 'valide_tresorier'
+  | 'valide_rg'
+  | 'virement_effectue'
+  | 'termine'
+  | 'refuse';
 export type JustificatifStatus = 'oui' | 'en_attente' | 'non';
 export type DepotType = 'banque' | 'ancv';
 
@@ -53,18 +59,27 @@ export interface Remboursement {
   id: string;
   group_id: string;
   demandeur: string;
+  prenom: string | null;
+  nom: string | null;
+  email: string | null;
+  rib_texte: string | null;
+  rib_file_path: string | null;
   amount_cents: number;
-  date_depense: string;
-  nature: string;
+  total_cents: number;
+  date_depense: string | null;
+  nature: string | null;
   unite_id: string | null;
   justificatif_status: JustificatifStatus;
   status: RemboursementStatus;
+  motif_refus: string | null;
   date_paiement: string | null;
   mode_paiement_id: string | null;
   comptaweb_synced: number;
   ecriture_id: string | null;
   notes: string | null;
   submitted_by_user_id: string | null;
+  edit_token: string | null;
+  validate_token: string | null;
   created_at: string;
   updated_at: string;
   unite_code?: string | null;

@@ -3,72 +3,223 @@ import { PageHeader } from '@/components/layout/page-header';
 import { RemboursementStatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { getRemboursement } from '@/lib/queries/remboursements';
+import { listLignes } from '@/lib/services/remboursements';
 import { listJustificatifs } from '@/lib/queries/justificatifs';
+import { getCurrentContext } from '@/lib/context';
 import { updateRemboursementStatus } from '@/lib/actions/remboursements';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
 import { formatAmount } from '@/lib/format';
 
-export default async function RemboursementDetailPage({ params }: { params: Promise<{ id: string }> }) {
+interface SearchParams {
+  error?: string;
+}
+
+const STEPS = [
+  { key: 'a_traiter', label: 'À traiter' },
+  { key: 'valide_tresorier', label: 'Validé Trésorier' },
+  { key: 'valide_rg', label: 'Validé RG' },
+  { key: 'virement_effectue', label: 'Virement effectué' },
+  { key: 'termine', label: 'Terminé' },
+];
+
+function stepIndex(status: string): number {
+  if (status === 'refuse') return -1;
+  const idx = STEPS.findIndex((s) => s.key === status);
+  return idx >= 0 ? idx : 0;
+}
+
+export default async function RemboursementDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<SearchParams>;
+}) {
   const { id } = await params;
+  const sp = await searchParams;
+  const ctx = await getCurrentContext();
   const r = await getRemboursement(id);
   if (!r) notFound();
 
-  const justificatifs = await listJustificatifs('remboursement', id);
+  const [lignes, justificatifs, feuilles, ribFiles] = await Promise.all([
+    listLignes(id),
+    listJustificatifs('remboursement', id),
+    listJustificatifs('remboursement_feuille', id),
+    listJustificatifs('remboursement_rib', id),
+  ]);
+
+  const currentIdx = stepIndex(r.status);
+  const isAdmin = ctx.role === 'tresorier' || ctx.role === 'RG';
+  const isTresorier = ctx.role === 'tresorier';
+  const isRG = ctx.role === 'RG';
 
   return (
     <div>
       <PageHeader title={`${r.id} — ${r.demandeur}`}>
         <RemboursementStatusBadge status={r.status} />
-        <span className="text-lg font-bold">{formatAmount(r.amount_cents)}</span>
+        <span className="text-lg font-bold">{formatAmount(r.total_cents || r.amount_cents)}</span>
       </PageHeader>
+
+      {sp.error && (
+        <p className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+          {sp.error}
+        </p>
+      )}
+
+      {/* Timeline */}
+      {r.status !== 'refuse' ? (
+        <div className="flex items-center gap-2 mb-8 text-xs">
+          {STEPS.map((s, i) => (
+            <div key={s.key} className="flex items-center gap-2">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white font-bold ${i <= currentIdx ? 'bg-blue-600' : 'bg-gray-300'}`}>
+                {i + 1}
+              </div>
+              <span className={i <= currentIdx ? 'font-medium' : 'text-muted-foreground'}>{s.label}</span>
+              {i < STEPS.length - 1 && (
+                <span className={`w-6 h-0.5 ${i < currentIdx ? 'bg-blue-600' : 'bg-gray-300'}`} />
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mb-8 px-3 py-2 rounded bg-red-50 border border-red-200 text-sm text-red-800">
+          🛑 Demande refusée{r.motif_refus ? ` — motif : ${r.motif_refus}` : ''}.
+        </div>
+      )}
 
       <div className="grid grid-cols-[1fr_300px] gap-8">
         <div>
           <Card className="mb-6">
-            <CardHeader><CardTitle>Détails</CardTitle></CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <div><strong>Demandeur :</strong> {r.demandeur}</div>
-              <div><strong>Date dépense :</strong> {r.date_depense}</div>
-              <div><strong>Nature :</strong> {r.nature}</div>
-              <div><strong>Montant :</strong> {formatAmount(r.amount_cents)}</div>
+            <CardHeader><CardTitle>Demandeur</CardTitle></CardHeader>
+            <CardContent className="space-y-1 text-sm">
+              <div><strong>Nom :</strong> {[r.prenom, r.nom].filter(Boolean).join(' ') || r.demandeur}</div>
+              {r.email && <div><strong>Email :</strong> {r.email}</div>}
               <div><strong>Unité :</strong> {r.unite_code ?? '—'}</div>
-              <div><strong>Mode paiement :</strong> {r.mode_paiement_name ?? '—'}</div>
-              <div><strong>Date paiement :</strong> {r.date_paiement ?? '—'}</div>
-              <div><strong>Comptaweb :</strong> {r.comptaweb_synced ? 'Saisi' : 'Non saisi'}</div>
               {r.notes && <div><strong>Notes :</strong> {r.notes}</div>}
             </CardContent>
           </Card>
 
-          <h3 className="font-semibold mb-3">Actions</h3>
-          <div className="flex gap-2">
-            {r.status === 'demande' && (
-              <>
-                <form action={updateRemboursementStatus.bind(null, id, 'valide')}><Button size="sm">Valider</Button></form>
-                <form action={updateRemboursementStatus.bind(null, id, 'refuse')}><Button variant="destructive" size="sm">Refuser</Button></form>
-              </>
-            )}
-            {r.status === 'valide' && (
-              <form action={updateRemboursementStatus.bind(null, id, 'paye')}><Button size="sm">Marquer payé</Button></form>
-            )}
-          </div>
+          <Card className="mb-6">
+            <CardHeader><CardTitle>Détail des dépenses ({lignes.length})</CardTitle></CardHeader>
+            <CardContent className="text-sm">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="py-1 pr-4">Date</th>
+                    <th className="py-1 pr-4">Nature</th>
+                    <th className="py-1 pr-4 text-right">Montant</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lignes.map((l) => (
+                    <tr key={l.id} className="border-b">
+                      <td className="py-1 pr-4">{l.date_depense}</td>
+                      <td className="py-1 pr-4">{l.nature}</td>
+                      <td className="py-1 pr-4 text-right font-medium">{formatAmount(l.amount_cents)}</td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td className="py-2 pr-4"></td>
+                    <td className="py-2 pr-4 font-semibold">Total</td>
+                    <td className="py-2 pr-4 text-right font-bold">
+                      {formatAmount(r.total_cents || r.amount_cents)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+
+          <Card className="mb-6">
+            <CardHeader><CardTitle>Coordonnées bancaires</CardTitle></CardHeader>
+            <CardContent className="text-sm space-y-1">
+              {r.rib_texte ? (
+                <div className="font-mono whitespace-pre-line">{r.rib_texte}</div>
+              ) : ribFiles.length === 0 ? (
+                <div className="text-muted-foreground italic">Aucune coordonnée bancaire fournie.</div>
+              ) : null}
+              {ribFiles.map((j) => (
+                <div key={j.id} className="text-sm">
+                  📄 <a href={`/api/justificatifs/${j.file_path}`} target="_blank" rel="noreferrer" className="text-blue-600 underline">RIB joint</a>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          {isAdmin && (
+            <>
+              <h3 className="font-semibold mb-3">Actions</h3>
+              <div className="flex gap-2 flex-wrap mb-4">
+                {r.status === 'a_traiter' && isTresorier && (
+                  <form action={updateRemboursementStatus.bind(null, id, 'valide_tresorier')}>
+                    <Button size="sm">Valider (Trésorier)</Button>
+                  </form>
+                )}
+                {r.status === 'valide_tresorier' && isRG && (
+                  <form action={updateRemboursementStatus.bind(null, id, 'valide_rg')}>
+                    <Button size="sm">Valider (RG)</Button>
+                  </form>
+                )}
+                {r.status === 'valide_rg' && (
+                  <form action={updateRemboursementStatus.bind(null, id, 'virement_effectue')}>
+                    <Button size="sm">Virement effectué</Button>
+                  </form>
+                )}
+                {r.status === 'virement_effectue' && (
+                  <form action={updateRemboursementStatus.bind(null, id, 'termine')}>
+                    <Button size="sm">Marquer terminé</Button>
+                  </form>
+                )}
+              </div>
+
+              {/* Refus possible à toute étape sauf termine/refuse */}
+              {!['termine', 'refuse'].includes(r.status) && (
+                <details className="border rounded p-3 max-w-md">
+                  <summary className="cursor-pointer text-sm font-medium text-red-600">Refuser la demande</summary>
+                  <form action={updateRemboursementStatus.bind(null, id, 'refuse')} className="mt-3 space-y-2">
+                    <Label htmlFor="motif" className="text-xs">Motif de refus</Label>
+                    <Input id="motif" name="motif" required placeholder="Ex. justif manquant, hors scope" />
+                    <Button type="submit" variant="destructive" size="sm">Refuser</Button>
+                  </form>
+                </details>
+              )}
+            </>
+          )}
         </div>
 
-        <div>
-          <h2 className="text-lg font-semibold mb-4">Justificatifs ({justificatifs.length})</h2>
-          {justificatifs.map(j => (
-            <div key={j.id} className="flex items-center gap-2 mb-2 text-sm">
-              <span>📎</span>
-              <a href={`/api/justificatifs/${j.file_path}`} target="_blank" className="hover:underline">{j.original_filename}</a>
-            </div>
-          ))}
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold mb-3">Feuille de remboursement</h2>
+            {feuilles.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic">PDF non généré (demande créée avant le chantier 2-bis).</p>
+            ) : (
+              feuilles.map((f) => (
+                <div key={f.id} className="text-sm mb-2">
+                  📄 <a href={`/api/justificatifs/${f.file_path}`} target="_blank" rel="noreferrer" className="text-blue-600 underline">{f.original_filename}</a>
+                </div>
+              ))
+            )}
+          </div>
 
-          <form action={uploadJustificatif} className="mt-4">
-            <input type="hidden" name="entity_type" value="remboursement" />
-            <input type="hidden" name="entity_id" value={id} />
-            <input type="file" name="file" className="text-sm mb-2 block" />
-            <Button type="submit" variant="outline" size="sm">Ajouter</Button>
-          </form>
+          <div>
+            <h2 className="text-lg font-semibold mb-3">Justificatifs ({justificatifs.length})</h2>
+            {justificatifs.map(j => (
+              <div key={j.id} className="flex items-center gap-2 mb-2 text-sm">
+                <span>📎</span>
+                <a href={`/api/justificatifs/${j.file_path}`} target="_blank" rel="noreferrer" className="hover:underline">{j.original_filename}</a>
+              </div>
+            ))}
+
+            <form action={uploadJustificatif} className="mt-4">
+              <input type="hidden" name="entity_type" value="remboursement" />
+              <input type="hidden" name="entity_id" value={id} />
+              <input type="file" name="file" className="text-sm mb-2 block" />
+              <Button type="submit" variant="outline" size="sm">Ajouter</Button>
+            </form>
+          </div>
         </div>
       </div>
     </div>

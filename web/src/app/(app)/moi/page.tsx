@@ -13,9 +13,11 @@ interface SearchParams {
 }
 
 const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
-  demande: { label: 'En attente', cls: 'bg-amber-100 text-amber-800 border-amber-200' },
-  valide: { label: 'Validée', cls: 'bg-blue-100 text-blue-800 border-blue-200' },
-  paye: { label: 'Payée', cls: 'bg-green-100 text-green-800 border-green-200' },
+  a_traiter: { label: 'À traiter', cls: 'bg-amber-100 text-amber-800 border-amber-200' },
+  valide_tresorier: { label: 'Validée Trésorier', cls: 'bg-blue-100 text-blue-800 border-blue-200' },
+  valide_rg: { label: 'Validée RG', cls: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
+  virement_effectue: { label: 'Virement effectué', cls: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+  termine: { label: 'Terminée', cls: 'bg-green-100 text-green-800 border-green-200' },
   refuse: { label: 'Refusée', cls: 'bg-red-100 text-red-800 border-red-200' },
 };
 

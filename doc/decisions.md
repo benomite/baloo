@@ -798,4 +798,84 @@ Le file lui-même reste dans `justificatifs` avec `entity_type='depot'` + `entit
 
 ---
 
+## ADR-022 — Refonte du modèle remboursement : multi-lignes + 5 statuts + feuille PDF générée
+**Date** : 2026-04-29
+**Statut** : accepté
+
+**Contexte** : la première impl du workflow remboursement self-service (chantier 2 du plan workflows internes, livrée juste avant) avait été écrite sans regarder le draft existant `~/Perso/valdesous` (app webapp Express + Airtable + Firebase utilisée jusqu'ici). Diff identifiée :
+1. valdesous saisit **prénom / nom / email / RIB** explicitement (pas auto-rempli depuis le user) — utile car les bénévoles occasionnels n'ont pas forcément de compte Baloo, et un trésorier peut saisir pour quelqu'un d'autre.
+2. valdesous demande une **feuille de remboursement** (Excel/PDF SGDF) signée à uploader, et **N justificatifs** (tickets) séparés. Côté Baloo, on n'avait qu'**un seul fichier**.
+3. valdesous a une **timeline 5 étapes** : `À traiter → Validé Trésorier → Validé RG → Virement effectué → Terminé` (avec rôle RG distinct du trésorier). Côté Baloo, on n'avait que `demande/valide/paye/refuse`.
+4. valdesous fonctionne **sans login** via tokens (`edit_token`, `validate_token`).
+
+Le user a tranché : garder l'impl Baloo (auth, scopes, etc.) **+** rapprocher du workflow valdesous, en remplaçant la "feuille de remboursement Excel" par une feuille **reconstruite côté Baloo** depuis des données structurées + génération PDF auto à la soumission. Avantage : plus de saisie redondante (le bénévole ne remplit plus à la main une feuille puis upload, tout se passe dans le form).
+
+**Décision** :
+
+1. **Modèle "1 demande = N lignes de dépense"** :
+   - Nouvelle table `remboursement_lignes(id, remboursement_id, date_depense, amount_cents, nature, notes, created_at)`.
+   - `remboursements.total_cents` (nouveau) recalculé à chaque modification de ligne via `recalcTotal(rbtId)`. `amount_cents` legacy mirroré sur `total_cents` pour compat avec les services historiques.
+   - Migration : pour chaque demande pré-existante (mono-ligne), création automatique d'une ligne reprenant les anciens champs `date_depense / amount_cents / nature`.
+
+2. **Nouveaux champs sur `remboursements`** :
+   - `prenom`, `nom`, `email` (auparavant tout dans `demandeur`).
+   - `rib_texte`, `rib_file_path` (le RIB devient un champ de premier ordre).
+   - `motif_refus` (auparavant fourré dans `notes`).
+   - `edit_token`, `validate_token` (pour la phase B = workflow public token-based, non implémentée ici mais champs ajoutés en avance).
+
+3. **Refonte des statuts** : 5 étapes valdesous + refus.
+   - `a_traiter → valide_tresorier → valide_rg → virement_effectue → termine` + `refuse` (depuis n'importe quelle étape avant `termine`).
+   - Migration des anciens statuts : `demande→a_traiter`, `valide→valide_tresorier`, `paye→virement_effectue`, `refuse→refuse`.
+   - DROP de la CHECK SQL historique sur `status` (recréation de table, idempotente, comme [ADR-019](#adr-019--hiérarchie-de-rôles-applicatifs-v2)). Validation des statuts désormais côté code (`RBT_STATUTS` dans `lib/services/remboursements.ts`).
+   - Garde de transition + check de rôle dans `updateRemboursementStatus` : `valide_tresorier` réservé au `tresorier`, `valide_rg` réservé au `RG`. Le RG n'est qu'un alias droits-équivalents-au-tresorier au MVP, mais cette transition impose qu'un humain "RG" l'effectue explicitement → introduit le **double validateur** prévu dans ADR-019.
+
+4. **Génération PDF "feuille de remboursement" à la soumission** :
+   - Lib retenue : **`pdfkit`** (impératif, ~250 KB). `@react-pdf/renderer` testé d'abord mais **incompatible types React 19** au moment du build (typeof View/Text non assignable à JSX.IntrinsicAttributes). Pas de patch propre disponible côté types — basculé sur pdfkit.
+   - Module `web/src/lib/pdf/feuille-remboursement.ts` : prend la demande + ses lignes + le nom du groupe, retourne un `Buffer` PDF.
+   - **Stockage** : pas de nouvelle table ni de nouveau champ dédié. Le PDF est attaché via `attachJustificatif` avec `entity_type='remboursement_feuille'` (cf. [ADR-021](#adr-021--dépôt-de-justificatif-libre--table-dédiée-séparée-des-écritures) qui pose ce pattern). Réutilise route + auth existantes.
+   - Idem pour le RIB file : `entity_type='remboursement_rib'`.
+   - Idem pour les justifs (tickets/factures) : `entity_type='remboursement'`.
+
+5. **UI** :
+   - Form `/moi/remboursements/nouveau` refait en client component avec éditeur multi-lignes (boutons + / − ligne, total live).
+   - Page `/remboursements/[id]` : timeline 5 étapes + boutons d'actions conditionnés au statut courant ET au rôle (le bouton "Valider Trésorier" n'apparaît que pour le rôle `tresorier` ; "Valider RG" seulement pour `RG`).
+   - Section refus accessible à toute étape avant `termine`, avec motif obligatoire.
+
+**Raisons** :
+
+- **Reconstruire la feuille depuis des données structurées plutôt que la stocker en Excel** : les données sont exploitables côté trésorier (matching avec lignes bancaires, recalcul, recherches), et le PDF généré reste produisible "en cas de contrôle" (citation du user). Plus fiable qu'un Excel reçu chiffres faits à la main qui peut contenir n'importe quoi.
+- **`pdfkit` plutôt que `@react-pdf/renderer`** : compatibilité types React 19. Si le projet revient à React 18 ou si `@react-pdf/renderer` patche ses types, on pourra réévaluer ; pour le moment pdfkit fait le job avec une syntaxe impérative un peu plus verbeuse mais sans surprise.
+- **Pas de nouvelle table dédiée pour la feuille** : `entity_type='remboursement_feuille'` dans `justificatifs` réutilise toute l'infra (storage backend, route auth, listing). Pattern aligné avec ADR-021 (dépôts de justif).
+- **Double validateur (Trésorier + RG)** : honore l'organigramme SGDF (le RG est supérieur hiérarchique du trésorier) et matérialise le rôle distinct posé dans ADR-019. Au MVP, RG et Trésorier ont les mêmes accès lecture, mais `valide_rg` ne peut être déclenché QUE par un user `role='RG'` — ce qui force qu'une seconde personne ait validé.
+- **Signature électronique simple** (case à cocher au form, horodatage en BDD) : suffit pour l'usage interne SGDF. Si un jour il faut une signature qualifiée (eIDAS), ce sera un autre chantier.
+
+**Conséquences** :
+
+- Migration BDD non triviale dans `web/src/lib/auth/schema.ts` :
+  - DROP CHECK `status` via recréation de table (procédure SQLite standard, PRAGMA foreign_keys = OFF / ON, DROP TABLE / RENAME).
+  - Mapping des anciens statuts vers les nouveaux dans le `INSERT … SELECT`.
+  - CREATE TABLE `remboursement_lignes` + INSERT auto pour les demandes pré-existantes mono-ligne.
+- Le service `remboursements.ts` gagne `addLigne`, `listLignes`, `deleteLigne`, `recalcTotal`, plus le filtre `submittedByUserId` (déjà ajouté au chantier 2). `RBT_STATUTS` exporté pour validation côté code.
+- Le service `updateRemboursement` accepte désormais `motif_refus`. La server action `updateRemboursementStatus` change de signature (FormData en dernier arg pour pouvoir être bind sur des forms).
+- Page admin `/remboursements/[id]` refaite avec timeline + actions par rôle.
+- Page demandeur `/moi/remboursements/nouveau` refaite en client component multi-lignes.
+- Nouvelle dépendance : `pdfkit` + `@types/pdfkit`. ~250 KB, pas d'impact runtime sensible. Les fonts core PDF (Helvetica, Times, Courier) sont fournies en AFM par pdfkit, pas besoin de fichiers supplémentaires.
+- Le component `RemboursementStatusBadge` connaît les 6 nouvelles valeurs. Pages `/moi`, `/remboursements`, `/remboursements/[id]` mises à jour.
+- Routes API `/api/remboursements` (zod enum) mises à jour avec les nouveaux statuts.
+- **Phase B reste à faire** : workflow public token-based (pages `/r/...`, envoi de tokens par email). Les colonnes `edit_token` et `validate_token` sont déjà en BDD ; il manque l'UI publique et la logique de génération / vérification des tokens.
+
+**Limites assumées** :
+
+- Le PDF est généré à la soumission, jamais regénéré ensuite. Si le RG modifie une ligne (par exemple via SQL en cas de pépin), le PDF archivé reste celui d'origine. Cohérent avec l'idée "trace immuable de ce qu'a soumis le bénévole".
+- Pas de versioning des PDF.
+- Pas de pré-validation côté client (autre que `required` HTML). Si le user soumet 0 ligne, le serveur refuse via redirect avec error.
+
+**Liens** :
+- [`p2-workflows-internes.md`](p2-workflows-internes.md) — chantier 2 / 2-bis
+- [ADR-019](#adr-019--hiérarchie-de-rôles-applicatifs-v2) — rôles V2 (RG distinct, validation côté code)
+- [ADR-021](#adr-021--dépôt-de-justificatif-libre--table-dédiée-séparée-des-écritures) — pattern `entity_type` réutilisé pour le PDF feuille
+- `~/Perso/valdesous` — draft Express+Airtable+Firebase d'origine (workflow source d'inspiration)
+
+---
+
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*

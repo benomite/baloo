@@ -13,13 +13,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 }
 
 const patchSchema = z.object({
-  status: z.enum(['demande', 'valide', 'paye', 'refuse']).optional(),
+  status: z.enum(['a_traiter', 'valide_tresorier', 'valide_rg', 'virement_effectue', 'termine', 'refuse']).optional(),
   date_paiement: z.string().nullish(),
   mode_paiement_id: z.string().nullish(),
   justificatif_status: z.enum(['oui', 'en_attente', 'non']).optional(),
   comptaweb_synced: z.boolean().optional(),
   ecriture_id: z.string().nullish(),
   notes: z.string().nullish(),
+  motif_refus: z.string().nullish(),
 });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {

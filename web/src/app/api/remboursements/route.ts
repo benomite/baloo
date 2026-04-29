@@ -8,7 +8,7 @@ import { jsonError, parseJsonBody, requireApiContext } from '@/lib/api/route-hel
 
 const listSchema = z
   .object({
-    status: z.enum(['demande', 'valide', 'paye', 'refuse']).optional(),
+    status: z.enum(['a_traiter', 'valide_tresorier', 'valide_rg', 'virement_effectue', 'termine', 'refuse']).optional(),
     unite_id: z.string().optional(),
     demandeur: z.string().optional(),
     search: z.string().optional(),
