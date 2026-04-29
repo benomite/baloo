@@ -106,16 +106,21 @@ function RemboursementsCard({
           {rbts.map((r) => {
             const st = STATUS_LABEL[r.status] ?? { label: r.status, cls: 'bg-gray-100 text-gray-800 border-gray-200' };
             return (
-              <li key={r.id} className="flex items-center gap-3 text-sm border rounded px-3 py-2 bg-background">
-                <span className={`text-xs px-2 py-0.5 rounded border ${st.cls}`}>{st.label}</span>
-                <div className="flex-1">
-                  <div className="font-medium">{r.nature}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {r.id} · {r.date_depense}
-                    {r.date_paiement ? ` · payé le ${r.date_paiement}` : ''}
+              <li key={r.id}>
+                <Link
+                  href={`/remboursements/${r.id}`}
+                  className="flex items-center gap-3 text-sm border rounded px-3 py-2 bg-background hover:bg-muted/40 transition-colors"
+                >
+                  <span className={`text-xs px-2 py-0.5 rounded border ${st.cls}`}>{st.label}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate">{r.nature}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {r.id} · {r.date_depense}
+                      {r.date_paiement ? ` · payé le ${r.date_paiement}` : ''}
+                    </div>
                   </div>
-                </div>
-                <span className="font-semibold">{formatAmount(r.amount_cents)}</span>
+                  <span className="font-semibold whitespace-nowrap">{formatAmount(r.amount_cents)}</span>
+                </Link>
               </li>
             );
           })}
