@@ -102,7 +102,7 @@ export function EcritureForm({ action, categories, unites, modesPaiement, activi
           ))}
         </select>
         <p className="text-xs text-muted-foreground mt-1">
-          Pré-rempli automatiquement pour les paiements procurement (reconnaissance du code dans l'intitulé bancaire).
+          Pré-rempli automatiquement pour les paiements procurement (reconnaissance du code dans l&apos;intitulé bancaire).
         </p>
       </div>
 
@@ -117,7 +117,7 @@ export function EcritureForm({ action, categories, unites, modesPaiement, activi
           <span>
             <span className="font-medium">Justificatif attendu pour cette écriture</span>
             <span className="block text-muted-foreground text-xs mt-0.5">
-              Cocher = justif requis (tant qu'un fichier n'est pas rattaché, l'écriture reste dans « À compléter »). Décocher pour un prélèvement auto SGDF / flux territoire qui n'aura pas de pièce.
+              Cocher = justif requis (tant qu&apos;un fichier n&apos;est pas rattaché, l&apos;écriture reste dans « À compléter »). Décocher pour un prélèvement auto SGDF / flux territoire qui n&apos;aura pas de pièce.
             </span>
           </span>
         </label>
