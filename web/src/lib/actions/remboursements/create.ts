@@ -20,6 +20,7 @@ import {
   listAdminEmails,
   parseIdentiteFromForm,
   parseLignesFromForm,
+  validateJustifFiles,
 } from './_helpers';
 
 // Ancienne action de création "monoligne" (sans `lignes`). Utilisée
@@ -103,6 +104,11 @@ async function createRemboursementFromForm(
   const ribFileRaw = formData.get('rib_file');
   const ribFile = ribFileRaw instanceof File && ribFileRaw.size > 0 ? ribFileRaw : null;
   const ribTexte = (formData.get('rib_texte') as string | null)?.trim() || null;
+
+  // Pré-validation : taille / extension / MIME. Échoue avant tout
+  // INSERT pour ne pas laisser de demande orpheline si un fichier est
+  // refusé.
+  validateJustifFiles(ribFile ? [...justifFiles, ribFile] : justifFiles, fail);
 
   const fullName = `${prenom} ${nom}`.trim();
   const totalEstime = lignes.reduce((s, l) => s + l.amount_cents, 0);

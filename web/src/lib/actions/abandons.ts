@@ -9,7 +9,11 @@ import {
   createAbandon as createAbandonService,
   updateAbandon as updateAbandonService,
 } from '../services/abandons';
-import { attachJustificatif } from '../services/justificatifs';
+import {
+  attachJustificatif,
+  JustificatifValidationError,
+  validateJustifAttachment,
+} from '../services/justificatifs';
 import { parseAmount } from '../format';
 import { sendAbandonCreatedEmail } from '../email/abandon';
 
@@ -42,6 +46,14 @@ export async function createMyAbandon(formData: FormData): Promise<void> {
   const file = formData.get('file');
   if (!(file instanceof File) || file.size === 0) {
     redirect('/moi/abandons/nouveau?error=' + encodeURIComponent('Photo / PDF du justificatif requis.'));
+  }
+  try {
+    validateJustifAttachment({ filename: file.name, size: file.size, mime_type: file.type || null });
+  } catch (err) {
+    if (err instanceof JustificatifValidationError) {
+      redirect('/moi/abandons/nouveau?error=' + encodeURIComponent(err.message));
+    }
+    throw err;
   }
 
   const nature = ((formData.get('nature') as string | null)?.trim()) ?? '';

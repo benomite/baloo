@@ -1,6 +1,10 @@
 import { headers } from 'next/headers';
 import { getDb } from '../../db';
 import { parseAmount } from '../../format';
+import {
+  JustificatifValidationError,
+  validateJustifAttachment,
+} from '../../services/justificatifs';
 
 // Helpers partagés par les server actions du domaine remboursement.
 // Pas de directive 'use server' ici : ces fonctions sont consommées
@@ -60,6 +64,25 @@ export interface LigneInput {
   date: string;
   nature: string;
   amount_cents: number;
+}
+
+// Pré-valide les justificatifs uploadés (taille, extension, MIME)
+// avant tout INSERT. Permet d'échouer tôt avec un message clair côté
+// utilisateur, plutôt que de créer la demande puis d'avaler les
+// erreurs au moment d'attacher (ce qui laisserait une rembs sans
+// justif, contre-intuitif).
+export function validateJustifFiles(
+  files: File[],
+  fail: (msg: string) => never,
+): void {
+  for (const f of files) {
+    try {
+      validateJustifAttachment({ filename: f.name, size: f.size, mime_type: f.type || null });
+    } catch (err) {
+      if (err instanceof JustificatifValidationError) fail(`${f.name} : ${err.message}`);
+      throw err;
+    }
+  }
 }
 
 export function parseLignesFromForm(

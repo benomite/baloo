@@ -13,6 +13,7 @@ import {
   captureClientMeta,
   parseIdentiteFromForm,
   parseLignesFromForm,
+  validateJustifFiles,
 } from './_helpers';
 
 // Édition full d'une demande : identité + lignes + justifs + RIB.
@@ -48,6 +49,14 @@ export async function updateMyRemboursement(id: string, formData: FormData): Pro
   const uniteId = ctx.scopeUniteId || uniteIdRaw;
   const notes = (formData.get('notes') as string | null)?.trim() || null;
 
+  // Pré-validation des éventuels nouveaux justifs / RIB avant tout
+  // UPDATE — on évite un état partiellement modifié si un fichier est
+  // refusé.
+  const newJustifs = formData.getAll('justifs').filter((f): f is File => f instanceof File && f.size > 0);
+  const ribFileRaw = formData.get('rib_file');
+  const ribFile = ribFileRaw instanceof File && ribFileRaw.size > 0 ? ribFileRaw : null;
+  validateJustifFiles(ribFile ? [...newJustifs, ribFile] : newJustifs, fail);
+
   await getDb().prepare(
     `UPDATE remboursements
      SET demandeur = ?, prenom = ?, nom = ?, email = ?, rib_texte = ?,
@@ -75,7 +84,6 @@ export async function updateMyRemboursement(id: string, formData: FormData): Pro
     });
   }
 
-  const newJustifs = formData.getAll('justifs').filter((f): f is File => f instanceof File && f.size > 0);
   for (const file of newJustifs) {
     try {
       const buffer = Buffer.from(await file.arrayBuffer());
@@ -94,8 +102,6 @@ export async function updateMyRemboursement(id: string, formData: FormData): Pro
     }
   }
 
-  const ribFileRaw = formData.get('rib_file');
-  const ribFile = ribFileRaw instanceof File && ribFileRaw.size > 0 ? ribFileRaw : null;
   if (ribFile) {
     try {
       const buffer = Buffer.from(await ribFile.arrayBuffer());
