@@ -1,14 +1,34 @@
-export type EcritureType = 'depense' | 'recette';
-export type EcritureStatus = 'brouillon' | 'valide' | 'saisie_comptaweb';
-export type RemboursementStatus =
-  | 'a_traiter'
-  | 'valide_tresorier'
-  | 'valide_rg'
-  | 'virement_effectue'
-  | 'termine'
-  | 'refuse';
-export type JustificatifStatus = 'oui' | 'en_attente' | 'non';
-export type DepotType = 'banque' | 'ancv';
+// Enums de domaine. Les `as const` permettent à la fois l'usage runtime
+// (Array.includes, validation) et la dérivation des types pour le
+// typage statique. Source de vérité unique : si un statut change ici,
+// le type suit automatiquement.
+//
+// Les CHECK SQL ne sont posées que sur les statuts qui ne bougent
+// jamais (cf. business-schema.ts) ; la validation des valeurs vivant
+// dans des CHECK fragiles (users.role, remboursements.status) a été
+// déplacée en code (ADR-019, P2-workflows 2-bis).
+
+export const ECRITURE_TYPES = ['depense', 'recette'] as const;
+export type EcritureType = (typeof ECRITURE_TYPES)[number];
+
+export const ECRITURE_STATUSES = ['brouillon', 'valide', 'saisie_comptaweb'] as const;
+export type EcritureStatus = (typeof ECRITURE_STATUSES)[number];
+
+export const REMBOURSEMENT_STATUSES = [
+  'a_traiter',
+  'valide_tresorier',
+  'valide_rg',
+  'virement_effectue',
+  'termine',
+  'refuse',
+] as const;
+export type RemboursementStatus = (typeof REMBOURSEMENT_STATUSES)[number];
+
+export const JUSTIFICATIF_STATUSES = ['oui', 'en_attente', 'non'] as const;
+export type JustificatifStatus = (typeof JUSTIFICATIF_STATUSES)[number];
+
+export const DEPOT_TYPES = ['banque', 'ancv'] as const;
+export type DepotType = (typeof DEPOT_TYPES)[number];
 
 export interface Ecriture {
   id: string;

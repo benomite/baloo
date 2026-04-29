@@ -2,19 +2,13 @@ import { createHash, randomUUID } from 'node:crypto';
 import { getDb } from '../db';
 import { nextId, currentTimestamp } from '../ids';
 import { nullIfEmpty } from '../utils/form';
-import type { Remboursement } from '../types';
+import { REMBOURSEMENT_STATUSES, type Remboursement, type RemboursementStatus } from '../types';
 
-// Statuts du workflow remboursement (5 étapes valdesous + refus).
-// Validation côté code (ADR-019 : pas de CHECK SQL).
-export const RBT_STATUTS = [
-  'a_traiter',
-  'valide_tresorier',
-  'valide_rg',
-  'virement_effectue',
-  'termine',
-  'refuse',
-] as const;
-export type RbtStatut = (typeof RBT_STATUTS)[number];
+// Re-exports legacy : `RBT_STATUTS` / `RbtStatut` étaient les noms
+// historiques avant la centralisation dans `types.ts`. Conservés pour
+// ne pas casser les imports existants.
+export const RBT_STATUTS = REMBOURSEMENT_STATUSES;
+export type RbtStatut = RemboursementStatus;
 
 export interface RemboursementLigne {
   id: string;

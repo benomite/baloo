@@ -11,6 +11,7 @@ import {
 import { sendRemboursementStatusChangedEmail } from '../../email/remboursement';
 import { signAndRefreshRemboursementPdf } from '../../services/remboursement-signing';
 import { logError } from '../../log';
+import type { RemboursementStatus } from '../../types';
 import { captureClientMeta, deriveAppUrl } from './_helpers';
 
 // Garde de transitions : qui peut faire quoi sur la timeline 5 statuts.
@@ -53,7 +54,7 @@ export async function updateRemboursementStatus(id: string, status: string, form
     { groupId: ctx.groupId, scopeUniteId: ctx.scopeUniteId },
     id,
     {
-      status: status as 'a_traiter' | 'valide_tresorier' | 'valide_rg' | 'virement_effectue' | 'termine' | 'refuse',
+      status: status as RemboursementStatus,
       ...(status === 'virement_effectue' ? { date_paiement: today } : {}),
       ...(status === 'refuse' && motif ? { motif_refus: motif } : {}),
     },
