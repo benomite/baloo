@@ -10,6 +10,7 @@ import {
 } from '../../services/remboursements';
 import { sendRemboursementStatusChangedEmail } from '../../email/remboursement';
 import { signAndRefreshRemboursementPdf } from '../../services/remboursement-signing';
+import { logError } from '../../log';
 import { captureClientMeta, deriveAppUrl } from './_helpers';
 
 // Garde de transitions : qui peut faire quoi sur la timeline 5 statuts.
@@ -75,7 +76,7 @@ export async function updateRemboursementStatus(id: string, status: string, form
         userAgent: meta.userAgent,
       });
     } catch (err) {
-      console.error('[remboursements] Signature validation échouée :', err);
+      logError('remboursements', 'Signature validation échouée', err);
     }
   }
 
@@ -99,7 +100,7 @@ export async function updateRemboursementStatus(id: string, status: string, form
         }
       }
     } catch (err) {
-      console.error('[remboursements] Notif demandeur échouée :', err);
+      logError('remboursements', 'Notif demandeur échouée', err);
     }
   }
 

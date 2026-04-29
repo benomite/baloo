@@ -12,6 +12,7 @@ import { attachJustificatif } from '../../services/justificatifs';
 import { parseAmount } from '../../format';
 import { sendRemboursementCreatedEmail } from '../../email/remboursement';
 import { signAndRefreshRemboursementPdf } from '../../services/remboursement-signing';
+import { logError } from '../../log';
 import {
   ADMIN_ROLES,
   captureClientMeta,
@@ -60,7 +61,7 @@ export async function createRemboursement(formData: FormData) {
           appUrl: await deriveAppUrl(),
         });
       } catch (err) {
-        console.error('[remboursements] Notif admins échouée :', err);
+        logError('remboursements', 'Notif admins échouée', err);
       }
     }
   }
@@ -154,7 +155,7 @@ async function createRemboursementFromForm(
         },
       );
     } catch (err) {
-      console.error('[remboursements] Attach justif échoué :', err);
+      logError('remboursements', 'Attach justif échoué', err);
     }
   }
 
@@ -175,7 +176,7 @@ async function createRemboursementFromForm(
         .prepare('UPDATE remboursements SET rib_file_path = ?, updated_at = ? WHERE id = ?')
         .run(`remboursement_rib/${created.id}/${ribFile.name}`, new Date().toISOString(), created.id);
     } catch (err) {
-      console.error('[remboursements] Attach RIB file échoué :', err);
+      logError('remboursements', 'Attach RIB file échoué', err);
     }
   }
 
@@ -192,7 +193,7 @@ async function createRemboursementFromForm(
       userAgent: meta.userAgent,
     });
   } catch (err) {
-    console.error('[remboursements] Signature + génération PDF feuille échouée :', err);
+    logError('remboursements', 'Signature + génération PDF feuille échouée', err);
   }
 
   const admins = (await listAdminEmails(ctx.groupId)).filter((e) => e !== ctx.email);
@@ -208,7 +209,7 @@ async function createRemboursementFromForm(
         appUrl: await deriveAppUrl(),
       });
     } catch (err) {
-      console.error('[remboursements] Notif admins échouée :', err);
+      logError('remboursements', 'Notif admins échouée', err);
     }
   }
 

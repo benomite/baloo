@@ -155,14 +155,15 @@ export async function importComptawebCsv(
   const now = currentTimestamp();
   const sourceFile = filename;
 
-  // Lookup catégories / activités / unités côté local pour mapper les IDs.
-  const categories = await db.prepare(`SELECT id, name FROM categories`).all<{ id: string; name: string }>();
+  // Lookup catégories / activités / unités en parallèle — 3 requêtes
+  // indépendantes, on économise 2 RTT sur libsql HTTP.
+  const [categories, activites, unites] = await Promise.all([
+    db.prepare(`SELECT id, name FROM categories`).all<{ id: string; name: string }>(),
+    db.prepare(`SELECT id, name FROM activites WHERE group_id = ?`).all<{ id: string; name: string }>(groupId),
+    db.prepare(`SELECT id, code FROM unites WHERE group_id = ?`).all<{ id: string; code: string }>(groupId),
+  ]);
   const categoriesByName = new Map(categories.map((c) => [normalize(c.name), c.id]));
-
-  const activites = await db.prepare(`SELECT id, name FROM activites WHERE group_id = ?`).all<{ id: string; name: string }>(groupId);
   const activitesByName = new Map(activites.map((a) => [normalize(a.name), a.id]));
-
-  const unites = await db.prepare(`SELECT id, code FROM unites WHERE group_id = ?`).all<{ id: string; code: string }>(groupId);
   const unitesByCode = new Map(unites.map((u) => [u.code, u.id]));
 
   function findCategoryId(name: string): string | null {

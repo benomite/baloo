@@ -1,6 +1,7 @@
 import NextAuth from 'next-auth';
 import type { EmailConfig } from 'next-auth/providers/email';
 import { SqliteAdapter } from './adapter';
+import { logError, logWarn } from '../log';
 import { recordSigninAttempt } from './rate-limit';
 
 // Auth.js v5 (chantier 4, ADR-014).
@@ -41,7 +42,7 @@ function magicLinkProvider(): EmailConfig {
       // — pour éviter d'aider une énumération.
       const { allowed } = await recordSigninAttempt(identifier);
       if (!allowed) {
-        console.warn(`[baloo-auth] Magic link bloqué (rate limit) pour ${identifier}`);
+        logWarn('auth', 'Magic link bloqué (rate limit)', undefined, { identifier });
         return;
       }
       if (smtp) {
@@ -67,9 +68,9 @@ function magicLinkProvider(): EmailConfig {
       }
       // Fallback dev : pas de SMTP configuré → log du lien dans la sortie
       // serveur. Le trésorier peut copier-coller le lien dans son navigateur.
-      console.error(
-        `\n[baloo-auth] Magic link pour ${identifier} :\n  ${url}\n` +
-          `(EMAIL_SERVER non défini → mode console. À configurer en prod.)\n`,
+      logError(
+        'auth',
+        `Magic link en mode console (EMAIL_SERVER non défini) pour ${identifier} : ${url}`,
       );
     },
   };

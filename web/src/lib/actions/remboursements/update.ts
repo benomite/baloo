@@ -7,6 +7,7 @@ import { getDb } from '../../db';
 import { getRemboursement, addLigne } from '../../services/remboursements';
 import { attachJustificatif } from '../../services/justificatifs';
 import { signAndRefreshRemboursementPdf } from '../../services/remboursement-signing';
+import { logError } from '../../log';
 import {
   ADMIN_ROLES,
   captureClientMeta,
@@ -89,7 +90,7 @@ export async function updateMyRemboursement(id: string, formData: FormData): Pro
         },
       );
     } catch (err) {
-      console.error('[remboursements] Attach justif (edit) échoué :', err);
+      logError('remboursements', 'Attach justif (edit) échoué', err);
     }
   }
 
@@ -112,7 +113,7 @@ export async function updateMyRemboursement(id: string, formData: FormData): Pro
         .prepare('UPDATE remboursements SET rib_file_path = ?, updated_at = ? WHERE id = ?')
         .run(`remboursement_rib/${id}/${ribFile.name}`, new Date().toISOString(), id);
     } catch (err) {
-      console.error('[remboursements] Attach RIB file (edit) échoué :', err);
+      logError('remboursements', 'Attach RIB file (edit) échoué', err);
     }
   }
 
@@ -134,7 +135,7 @@ export async function updateMyRemboursement(id: string, formData: FormData): Pro
       userAgent: meta.userAgent,
     });
   } catch (err) {
-    console.error('[remboursements] Re-signature (edit) échouée :', err);
+    logError('remboursements', 'Re-signature (edit) échouée', err);
   }
 
   revalidatePath(`/remboursements/${id}`);
