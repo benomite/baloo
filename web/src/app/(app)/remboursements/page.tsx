@@ -21,7 +21,7 @@ export default async function RemboursementsPage({ searchParams }: { searchParam
   return (
     <div>
       <PageHeader title="Remboursements">
-        <Link href="/remboursements/nouveau"><Button>Nouveau remboursement</Button></Link>
+        <Link href="/moi/remboursements/nouveau"><Button>Nouvelle demande</Button></Link>
       </PageHeader>
 
       <Table>
