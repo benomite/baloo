@@ -1,4 +1,5 @@
 import { getDb } from '../db';
+import { ensureBusinessSchema } from '../db/business-schema';
 
 let ensured = false;
 
@@ -6,11 +7,14 @@ let ensured = false;
 // n'existent pas déjà. Idempotent. Appelé au lazy-init du module auth pour
 // que `web/` puisse tourner sans dépendre du bootstrap.
 //
-// Depuis le chantier 6, le `web/scripts/bootstrap.ts` est aussi
-// responsable de la création initiale du schéma métier. Ces tables auth
-// y vivent en complément.
+// Sur BDD vierge, `ensureBusinessSchema` (appelé en amont) a créé les
+// tables métier dans leur forme courante — donc les blocs de migration
+// ci-dessous (recréation `users` et `remboursements`) sont inertes.
+// Sur BDD existante, c'est l'inverse : business-schema est un no-op et
+// les migrations ci-dessous gèrent les évolutions de CHECK historiques.
 export async function ensureAuthSchema(): Promise<void> {
   if (ensured) return;
+  await ensureBusinessSchema();
   const db = getDb();
 
   await db.exec(`

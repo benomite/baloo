@@ -1,0 +1,367 @@
+import { getDb } from '../db';
+
+let ensured = false;
+
+// Schéma des tables métier (référentiels, annuaire, ecritures,
+// remboursements, etc.) dans leur forme **courante** : on intègre
+// directement les colonnes qui ont été ajoutées par ALTER TABLE au fil
+// des chantiers, et on omet les CHECK qui ont été retirées (cf. ADR-019
+// pour `users.role`, refonte rembs P2-workflows pour `remboursements.
+// status`).
+//
+// Idempotent : tous les CREATE sont en `IF NOT EXISTS`. Sur la BDD
+// prod existante, l'appel est un no-op. Sur une BDD vierge (premier
+// déploiement, environnement de test, futur 2e groupe), c'est ce qui
+// fait exister les tables — l'ancien `compta/src/schema.sql` a été
+// supprimé au chantier 6 sans être ré-introduit côté web.
+//
+// Les tables d'auth (sessions, verification_tokens, signin_attempts,
+// api_tokens) et les tables ajoutées tardivement (remboursement_lignes,
+// signatures) restent gérées par `auth/schema.ts` — pour ne pas
+// dupliquer ; cette fonction est appelée en amont.
+export async function ensureBusinessSchema(): Promise<void> {
+  if (ensured) return;
+  const db = getDb();
+
+  await db.exec(`
+    -- ============ Référentiels =================================
+    CREATE TABLE IF NOT EXISTS categories (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'les_deux' CHECK(type IN ('depense', 'recette', 'les_deux')),
+      comptaweb_nature TEXT,
+      comptaweb_id INTEGER,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS modes_paiement (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      comptaweb_id INTEGER,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS unites (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      comptaweb_id INTEGER,
+      couleur TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS activites (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      comptaweb_id INTEGER,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS cartes (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('cb', 'procurement')),
+      porteur TEXT NOT NULL,
+      comptaweb_id INTEGER,
+      code_externe TEXT,
+      statut TEXT NOT NULL DEFAULT 'active' CHECK(statut IN ('active', 'ancienne')),
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_cartes_group ON cartes(group_id);
+    CREATE INDEX IF NOT EXISTS idx_cartes_comptaweb ON cartes(comptaweb_id);
+    CREATE INDEX IF NOT EXISTS idx_cartes_code ON cartes(code_externe);
+
+    -- ============ Annuaire ====================================
+    CREATE TABLE IF NOT EXISTS groupes (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      nom TEXT NOT NULL,
+      territoire TEXT,
+      adresse TEXT,
+      email_contact TEXT,
+      iban_principal TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS personnes (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL REFERENCES groupes(id),
+      prenom TEXT NOT NULL,
+      nom TEXT,
+      email TEXT,
+      telephone TEXT,
+      role_groupe TEXT,
+      unite_id TEXT REFERENCES unites(id),
+      statut TEXT NOT NULL DEFAULT 'actif' CHECK(statut IN ('actif', 'ancien', 'inactif')),
+      depuis TEXT,
+      jusqu_a TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_personnes_group ON personnes(group_id);
+    CREATE INDEX IF NOT EXISTS idx_personnes_unite ON personnes(unite_id);
+    CREATE INDEX IF NOT EXISTS idx_personnes_role ON personnes(role_groupe);
+
+    -- users : pas de CHECK sur \`role\` (cf. ADR-019, validation en code).
+    -- email_verified inclus directement (était un ALTER post-MVP).
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL REFERENCES groupes(id),
+      person_id TEXT REFERENCES personnes(id),
+      email TEXT NOT NULL,
+      nom_affichage TEXT,
+      role TEXT NOT NULL,
+      scope_unite_id TEXT REFERENCES unites(id),
+      statut TEXT NOT NULL DEFAULT 'actif' CHECK(statut IN ('actif', 'suspendu', 'invite', 'ancien')),
+      email_verified TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      UNIQUE(group_id, email)
+    );
+    CREATE INDEX IF NOT EXISTS idx_users_group ON users(group_id);
+    CREATE INDEX IF NOT EXISTS idx_users_person ON users(person_id);
+
+    -- ============ Métier ======================================
+    -- ecritures : colonnes étendues (justif_attendu, ligne_bancaire_*,
+    -- comptaweb_ecriture_id, carte_id) intégrées en CREATE.
+    CREATE TABLE IF NOT EXISTS ecritures (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      unite_id TEXT REFERENCES unites(id),
+      date_ecriture TEXT NOT NULL,
+      description TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('depense', 'recette')),
+      category_id TEXT REFERENCES categories(id),
+      mode_paiement_id TEXT REFERENCES modes_paiement(id),
+      activite_id TEXT REFERENCES activites(id),
+      carte_id TEXT REFERENCES cartes(id),
+      numero_piece TEXT,
+      status TEXT NOT NULL DEFAULT 'brouillon' CHECK(status IN ('brouillon', 'valide', 'saisie_comptaweb')),
+      justif_attendu INTEGER NOT NULL DEFAULT 1,
+      comptaweb_synced INTEGER NOT NULL DEFAULT 0,
+      ligne_bancaire_id INTEGER,
+      ligne_bancaire_sous_index INTEGER,
+      comptaweb_ecriture_id INTEGER,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_ecritures_group ON ecritures(group_id);
+    CREATE INDEX IF NOT EXISTS idx_ecritures_unite ON ecritures(unite_id);
+    CREATE INDEX IF NOT EXISTS idx_ecritures_date ON ecritures(date_ecriture);
+    CREATE INDEX IF NOT EXISTS idx_ecritures_type ON ecritures(type);
+    CREATE INDEX IF NOT EXISTS idx_ecritures_status ON ecritures(status);
+    CREATE INDEX IF NOT EXISTS idx_ecritures_ligne_bancaire ON ecritures(ligne_bancaire_id, ligne_bancaire_sous_index);
+    CREATE INDEX IF NOT EXISTS idx_ecritures_carte ON ecritures(carte_id);
+
+    -- remboursements : version moderne (P2-workflows 2-bis), pas de
+    -- CHECK sur \`status\`, champs valdesous (prenom/nom/email/rib_*),
+    -- total_cents, motif_refus, edit_token, validate_token,
+    -- submitted_by_user_id.
+    CREATE TABLE IF NOT EXISTS remboursements (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      demandeur TEXT NOT NULL,
+      prenom TEXT,
+      nom TEXT,
+      email TEXT,
+      rib_texte TEXT,
+      rib_file_path TEXT,
+      amount_cents INTEGER NOT NULL DEFAULT 0,
+      total_cents INTEGER NOT NULL DEFAULT 0,
+      date_depense TEXT,
+      nature TEXT,
+      unite_id TEXT REFERENCES unites(id),
+      justificatif_status TEXT NOT NULL DEFAULT 'en_attente',
+      status TEXT NOT NULL DEFAULT 'a_traiter',
+      motif_refus TEXT,
+      date_paiement TEXT,
+      mode_paiement_id TEXT REFERENCES modes_paiement(id),
+      comptaweb_synced INTEGER NOT NULL DEFAULT 0,
+      ecriture_id TEXT REFERENCES ecritures(id),
+      notes TEXT,
+      submitted_by_user_id TEXT REFERENCES users(id),
+      edit_token TEXT,
+      validate_token TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_rbt_group ON remboursements(group_id);
+    CREATE INDEX IF NOT EXISTS idx_rbt_status ON remboursements(status);
+    CREATE INDEX IF NOT EXISTS idx_rbt_demandeur ON remboursements(demandeur);
+    CREATE INDEX IF NOT EXISTS idx_rbt_edit_token ON remboursements(edit_token);
+    CREATE INDEX IF NOT EXISTS idx_rbt_validate_token ON remboursements(validate_token);
+
+    -- abandons_frais : avec submitted_by_user_id intégré.
+    CREATE TABLE IF NOT EXISTS abandons_frais (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      donateur TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      date_depense TEXT NOT NULL,
+      nature TEXT NOT NULL,
+      unite_id TEXT REFERENCES unites(id),
+      annee_fiscale TEXT NOT NULL,
+      cerfa_emis INTEGER NOT NULL DEFAULT 0,
+      notes TEXT,
+      submitted_by_user_id TEXT REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    -- mouvements_caisse : avec unite_id, activite_id intégrés.
+    CREATE TABLE IF NOT EXISTS mouvements_caisse (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      date_mouvement TEXT NOT NULL,
+      description TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      solde_apres_cents INTEGER,
+      unite_id TEXT REFERENCES unites(id),
+      activite_id TEXT REFERENCES activites(id),
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS depots_cheques (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      date_depot TEXT NOT NULL,
+      type_depot TEXT NOT NULL CHECK(type_depot IN ('banque', 'ancv')),
+      total_amount_cents INTEGER NOT NULL,
+      nombre_cheques INTEGER NOT NULL DEFAULT 1,
+      detail_cheques TEXT,
+      confirmation_status TEXT NOT NULL DEFAULT 'en_attente' CHECK(confirmation_status IN ('en_attente', 'confirme')),
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS justificatifs (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      original_filename TEXT NOT NULL,
+      mime_type TEXT,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      uploaded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_just_entity ON justificatifs(entity_type, entity_id);
+
+    -- ============ Mémoire ====================================
+    CREATE TABLE IF NOT EXISTS notes (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL REFERENCES groupes(id),
+      user_id TEXT REFERENCES users(id),
+      topic TEXT NOT NULL,
+      title TEXT,
+      content_md TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_notes_group ON notes(group_id);
+    CREATE INDEX IF NOT EXISTS idx_notes_topic ON notes(group_id, topic);
+
+    CREATE TABLE IF NOT EXISTS todos (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL REFERENCES groupes(id),
+      user_id TEXT REFERENCES users(id),
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'en_cours' CHECK(status IN ('en_cours', 'bientot', 'fait', 'annule', 'recurrent')),
+      due_date TEXT,
+      completed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_todos_group ON todos(group_id);
+    CREATE INDEX IF NOT EXISTS idx_todos_status ON todos(status);
+    CREATE INDEX IF NOT EXISTS idx_todos_due ON todos(due_date);
+
+    -- ============ Comptes & budgets ==========================
+    CREATE TABLE IF NOT EXISTS comptes_bancaires (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL REFERENCES groupes(id),
+      code TEXT NOT NULL,
+      nom TEXT NOT NULL,
+      banque TEXT,
+      iban TEXT,
+      bic TEXT,
+      type_compte TEXT CHECK(type_compte IN ('courant', 'livret', 'caisse', 'autre')),
+      comptaweb_id INTEGER,
+      statut TEXT NOT NULL DEFAULT 'actif' CHECK(statut IN ('actif', 'ferme')),
+      ouvert_le TEXT,
+      ferme_le TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_comptes_group ON comptes_bancaires(group_id);
+
+    CREATE TABLE IF NOT EXISTS budgets (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL REFERENCES groupes(id),
+      saison TEXT NOT NULL,
+      statut TEXT NOT NULL DEFAULT 'projet' CHECK(statut IN ('projet', 'vote', 'cloture')),
+      vote_le TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      UNIQUE(group_id, saison)
+    );
+
+    CREATE TABLE IF NOT EXISTS budget_lignes (
+      id TEXT PRIMARY KEY,
+      budget_id TEXT NOT NULL REFERENCES budgets(id),
+      unite_id TEXT REFERENCES unites(id),
+      category_id TEXT REFERENCES categories(id),
+      libelle TEXT NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('depense', 'recette')),
+      amount_cents INTEGER NOT NULL,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_budget_lignes_budget ON budget_lignes(budget_id);
+    CREATE INDEX IF NOT EXISTS idx_budget_lignes_unite ON budget_lignes(unite_id);
+
+    -- ============ Comptaweb (import / rapprochement) =========
+    CREATE TABLE IF NOT EXISTS comptaweb_imports (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      import_date TEXT NOT NULL,
+      source_file TEXT NOT NULL,
+      row_count INTEGER NOT NULL,
+      total_depenses_cents INTEGER,
+      total_recettes_cents INTEGER,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS comptaweb_lignes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      import_id TEXT NOT NULL REFERENCES comptaweb_imports(id),
+      date_ecriture TEXT,
+      intitule TEXT,
+      depense_cents INTEGER,
+      recette_cents INTEGER,
+      mode_transaction TEXT,
+      type_ligne TEXT,
+      nature TEXT,
+      activite TEXT,
+      branche TEXT,
+      numero_piece TEXT,
+      raw_data TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_cwl_import ON comptaweb_lignes(import_id);
+  `);
+
+  ensured = true;
+}
