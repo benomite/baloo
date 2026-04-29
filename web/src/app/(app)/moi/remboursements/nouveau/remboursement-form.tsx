@@ -144,9 +144,18 @@ export function RemboursementForm({
       <fieldset className="space-y-3 border rounded p-4">
         <legend className="text-sm font-semibold px-2">Justificatifs</legend>
         <p className="text-xs text-muted-foreground">
-          Joins toutes les photos / PDF de tickets, factures et reçus. Tu peux en sélectionner plusieurs d&apos;un coup.
+          Joins toutes les photos / PDF de tickets, factures et reçus. Tu peux en sélectionner plusieurs d&apos;un coup
+          (Cmd/Ctrl + clic) ou rappuyer sur « Choose files » pour ajouter d&apos;autres fichiers.
         </p>
-        <Input id="justifs" name="justifs" type="file" accept="image/*,application/pdf" multiple required />
+        <input
+          id="justifs"
+          name="justifs"
+          type="file"
+          accept="image/*,application/pdf"
+          multiple
+          required
+          className="block text-sm w-full"
+        />
       </fieldset>
 
       <fieldset className="space-y-3 border rounded p-4">

@@ -156,6 +156,11 @@ export async function createMyRemboursement(formData: FormData): Promise<void> {
   // recalculés ensuite par addLigne).
   const fullName = `${prenom} ${nom}`.trim();
   const totalEstime = lignes.reduce((s, l) => s + l.amount_cents, 0);
+  // Normalise les FK potentiellement vides ("" → null) pour ne pas
+  // déclencher de FOREIGN KEY constraint failed.
+  const uniteIdRaw = (formData.get('unite_id') as string | null)?.trim() || null;
+  const uniteId = ctx.scopeUniteId || uniteIdRaw;
+
   let created;
   try {
     created = await createRemboursementService(
@@ -169,7 +174,7 @@ export async function createMyRemboursement(formData: FormData): Promise<void> {
         amount_cents: totalEstime,
         date_depense: lignes[0].date,
         nature: lignes[0].nature,
-        unite_id: ctx.scopeUniteId ?? (formData.get('unite_id') as string | null) ?? null,
+        unite_id: uniteId,
         justificatif_status: 'oui',
         notes: (formData.get('notes') as string | null)?.trim() || null,
         submitted_by_user_id: ctx.userId,
