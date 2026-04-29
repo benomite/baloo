@@ -260,5 +260,33 @@ export async function ensureAuthSchema(): Promise<void> {
     )
   `);
 
+  // Chantier 2-ter (ADR-023) : signatures électroniques simples avec
+  // chaînage interne (mini-audit-trail immuable). Une ligne par
+  // signature individuelle ; un document peut en avoir N (demandeur,
+  // trésorier, RG...). `tsa_response` reste NULL au MVP — champ prêt
+  // pour un timestamping RFC 3161 ultérieur sans migration.
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS signatures (
+      id TEXT PRIMARY KEY,
+      document_type TEXT NOT NULL,
+      document_id TEXT NOT NULL,
+      signer_role TEXT NOT NULL,
+      signer_user_id TEXT REFERENCES users(id),
+      signer_email TEXT NOT NULL,
+      signer_name TEXT,
+      data_hash TEXT NOT NULL,
+      previous_signature_id TEXT REFERENCES signatures(id),
+      chain_hash TEXT NOT NULL,
+      ip TEXT,
+      user_agent TEXT,
+      server_timestamp TEXT NOT NULL,
+      tsa_response TEXT,
+      tsa_timestamp TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_signatures_doc ON signatures(document_type, document_id);
+    CREATE INDEX IF NOT EXISTS idx_signatures_signer ON signatures(signer_user_id);
+  `);
+
   ensured = true;
 }

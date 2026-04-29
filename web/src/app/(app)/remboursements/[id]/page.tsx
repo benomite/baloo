@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { getRemboursement } from '@/lib/queries/remboursements';
 import { listLignes } from '@/lib/services/remboursements';
+import { listSignatures, verifyChain } from '@/lib/services/signatures';
 import { listJustificatifs } from '@/lib/queries/justificatifs';
 import { getCurrentContext } from '@/lib/context';
 import { updateRemboursementStatus } from '@/lib/actions/remboursements';
@@ -44,11 +45,13 @@ export default async function RemboursementDetailPage({
   const r = await getRemboursement(id);
   if (!r) notFound();
 
-  const [lignes, justificatifs, feuilles, ribFiles] = await Promise.all([
+  const [lignes, justificatifs, feuilles, ribFiles, signatures, chain] = await Promise.all([
     listLignes(id),
     listJustificatifs('remboursement', id),
     listJustificatifs('remboursement_feuille', id),
     listJustificatifs('remboursement_rib', id),
+    listSignatures('remboursement', id),
+    verifyChain('remboursement', id),
   ]);
 
   const currentIdx = stepIndex(r.status);
@@ -196,11 +199,52 @@ export default async function RemboursementDetailPage({
             {feuilles.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">PDF non généré (demande créée avant le chantier 2-bis).</p>
             ) : (
-              feuilles.map((f) => (
-                <div key={f.id} className="text-sm mb-2">
-                  📄 <a href={`/api/justificatifs/${f.file_path}`} target="_blank" rel="noreferrer" className="text-blue-600 underline">{f.original_filename}</a>
-                </div>
-              ))
+              <div className="text-sm mb-2">
+                📄 <a href={`/api/justificatifs/${feuilles[0].file_path}`} target="_blank" rel="noreferrer" className="text-blue-600 underline">
+                  {feuilles[0].original_filename}
+                </a>
+                {feuilles.length > 1 && (
+                  <span className="text-xs text-muted-foreground ml-2">
+                    ({feuilles.length} versions, dernière à {feuilles[0].uploaded_at.slice(11, 16)})
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <h2 className="text-lg font-semibold mb-3">
+              Signatures ({signatures.length})
+              {signatures.length > 0 && (
+                <span className={`ml-2 text-xs px-2 py-0.5 rounded ${chain.ok ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                  {chain.ok ? '✓ chaîne intègre' : '⚠ chaîne brisée'}
+                </span>
+              )}
+            </h2>
+            {signatures.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic">Aucune signature.</p>
+            ) : (
+              <ul className="space-y-2 text-sm">
+                {signatures.map((s) => (
+                  <li key={s.id} className="border rounded p-2 bg-card">
+                    <div className="font-medium">
+                      {s.signer_role === 'demandeur' ? '👤 Demandeur' : s.signer_role === 'tresorier' ? '💼 Trésorier' : s.signer_role === 'RG' ? '🛡️ RG' : s.signer_role}
+                    </div>
+                    <div className="text-xs">{s.signer_name ?? s.signer_email}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {s.server_timestamp.replace('T', ' ').replace('Z', ' UTC')}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      IP {s.ip ?? '—'}
+                    </div>
+                    <details className="mt-1 text-[10px] text-muted-foreground">
+                      <summary className="cursor-pointer">hashes</summary>
+                      <div className="font-mono break-all mt-1">data : {s.data_hash}</div>
+                      <div className="font-mono break-all">chain : {s.chain_hash}</div>
+                    </details>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
 

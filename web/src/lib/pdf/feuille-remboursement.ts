@@ -8,19 +8,28 @@
 import PDFDocument from 'pdfkit';
 import type { Remboursement } from '../types';
 import type { RemboursementLigne } from '../services/remboursements';
+import type { Signature } from '../services/signatures';
 import { formatAmount } from '../format';
+
+const ROLE_LABEL: Record<string, string> = {
+  demandeur: 'Demandeur',
+  tresorier: 'Trésorier',
+  RG: 'Responsable de groupe',
+  cotresorier: 'Cotrésorier',
+};
 
 interface FeuilleProps {
   rbt: Remboursement;
   lignes: RemboursementLigne[];
   groupName: string;
   submittedAt: string;
+  signatures?: Signature[];
 }
 
 export async function renderFeuilleRemboursementPdf(
   props: FeuilleProps,
 ): Promise<Buffer> {
-  const { rbt, lignes, groupName, submittedAt } = props;
+  const { rbt, lignes, groupName, submittedAt, signatures = [] } = props;
 
   return await new Promise<Buffer>((resolve, reject) => {
     try {
@@ -107,19 +116,44 @@ export async function renderFeuilleRemboursementPdf(
         if (rbt.rib_file_path) drawKV(doc, 'RIB joint', 'fichier joint à la demande');
       }
 
-      // Certif (en bas)
-      doc.y = Math.max(doc.y + 30, 700);
+      // Certif
+      doc.y = Math.max(doc.y + 20, 650);
       doc.fontSize(9).fillColor('#444').font('Helvetica');
-      doc.rect(40, doc.y, 515, 50).strokeColor('#ddd').lineWidth(0.5).stroke();
       doc.text(
-        `Le demandeur certifie l'exactitude des informations ci-dessus et déclare avoir avancé les frais listés pour le compte du groupe ${groupName}. Cette feuille est générée automatiquement par Baloo à la soumission ; elle vaut signature électronique simple. Les justificatifs de chaque ligne sont conservés et accessibles via l'application.`,
-        50, doc.y + 6,
-        { width: 495, lineGap: 1 },
+        `Le demandeur certifie l'exactitude des informations ci-dessus et déclare avoir avancé les frais listés pour le compte du groupe ${groupName}. Cette feuille est générée automatiquement par Baloo et signée électroniquement par les acteurs ci-dessous. Les justificatifs sont conservés en pièces jointes et accessibles via l'application.`,
+        40, doc.y,
+        { width: 515, lineGap: 1 },
       );
+      doc.moveDown(1);
+
+      // Signatures (audit trail SES + chaînage interne — ADR-023)
+      doc.fontSize(11).font('Helvetica-Bold').fillColor('black').text('Signatures électroniques');
+      doc.moveDown(0.3);
+      if (signatures.length === 0) {
+        doc.fontSize(9).fillColor('#999').font('Helvetica-Oblique')
+          .text('(en attente de la première signature)');
+      } else {
+        doc.fontSize(8).fillColor('black').font('Helvetica');
+        for (const s of signatures) {
+          const role = ROLE_LABEL[s.signer_role] ?? s.signer_role;
+          const name = s.signer_name ?? s.signer_email;
+          const when = s.server_timestamp.replace('T', ' ').replace('Z', ' UTC');
+          const ip = s.ip ?? '—';
+
+          doc.font('Helvetica-Bold').text(`${role} : ${name}`, { continued: false });
+          doc.font('Helvetica').fillColor('#444');
+          doc.text(`   Signé le ${when} · email ${s.signer_email} · IP ${ip}`);
+          doc.fillColor('#888');
+          doc.text(`   data_hash : ${s.data_hash.slice(0, 32)}…${s.data_hash.slice(-8)}`);
+          doc.text(`   chain_hash : ${s.chain_hash.slice(0, 32)}…${s.chain_hash.slice(-8)}`);
+          doc.fillColor('black');
+          doc.moveDown(0.4);
+        }
+      }
 
       // Footer
-      doc.fontSize(8).fillColor('#999').text(
-        `Document généré par Baloo le ${submittedAt} — ${rbt.id}`,
+      doc.fontSize(8).fillColor('#999').font('Helvetica').text(
+        `Document généré par Baloo le ${submittedAt} — ${rbt.id} · audit trail vérifiable côté application`,
         40, 800, { width: 515, align: 'center' },
       );
 

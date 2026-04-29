@@ -878,4 +878,93 @@ Le user a tranché : garder l'impl Baloo (auth, scopes, etc.) **+** rapprocher d
 
 ---
 
+## ADR-023 — Signature électronique simple avec chaînage interne (multi-signatures par document)
+**Date** : 2026-04-29
+**Statut** : accepté
+
+**Contexte** : la feuille de remboursement générée à la soumission ([ADR-022](#adr-022--refonte-du-modèle-remboursement--multi-lignes--5-statuts--feuille-pdf-générée)) doit être signée — pas seulement par le demandeur mais aussi par le trésorier puis le RG aux étapes de validation. Le user a précisé : "plusieurs signatures sont attendues sur la demande : RG (ou autre responsable, trésorier ?) et demandeur".
+
+L'usage cible (remboursements de bénévoles d'asso loi 1901, contrôle URSSAF / fiscal éventuel) ne demande pas de signature qualifiée eIDAS (QES). Une **signature électronique simple (SES)** au sens eIDAS art. 25 suffit, à condition d'avoir un audit trail solide. Pour un cran de plus sans payer un PSCQ, on peut ajouter un timestamping RFC 3161 (TSA externe type FreeTSA) — mais le boilerplate ASN.1 est conséquent.
+
+**Décision** :
+
+1. **Une table `signatures`** dédiée, multi-instances par document :
+   ```sql
+   CREATE TABLE signatures (
+     id TEXT PRIMARY KEY,
+     document_type TEXT NOT NULL,
+     document_id TEXT NOT NULL,
+     signer_role TEXT NOT NULL,   -- 'demandeur' | 'tresorier' | 'RG' | ...
+     signer_user_id TEXT REFERENCES users(id),
+     signer_email TEXT NOT NULL,
+     signer_name TEXT,
+     data_hash TEXT NOT NULL,     -- SHA-256 des données canoniques au moment de la signature
+     previous_signature_id TEXT REFERENCES signatures(id),
+     chain_hash TEXT NOT NULL,    -- SHA-256(prev || data_hash || role || email || timestamp)
+     ip TEXT,
+     user_agent TEXT,
+     server_timestamp TEXT NOT NULL,
+     tsa_response TEXT,           -- NULL au MVP, prêt pour RFC 3161
+     tsa_timestamp TEXT,
+     created_at TEXT NOT NULL
+   );
+   ```
+
+2. **Hash canonique des données métier** (pas du PDF) : on hash `{id, prenom, nom, email, rib_texte, rib_file_path, lignes triées par id}`. Si une ligne ou un champ est modifié après une signature, le hash recalculé ne matche plus celui stocké → falsification détectable. Le statut et les autres champs de workflow (qui changent par construction au fil des validations) sont **exclus** du hash canonique.
+
+3. **Chaînage type mini-blockchain** : `chain_hash` de chaque signature inclut le `chain_hash` de la précédente. Toute insertion / suppression / modification d'une ligne d'audit casse la chaîne suivante. La fonction `verifyChain(documentType, documentId)` recalcule et compare.
+
+4. **3 signatures par demande de remboursement** :
+   - À la soumission → `signer_role='demandeur'`.
+   - À la transition `valide_tresorier` → `signer_role='tresorier'`.
+   - À la transition `valide_rg` → `signer_role='RG'`.
+   Les rôles sont contraints par les gardes de transition existantes (cf. ADR-022) : un user `equipier` ne peut pas signer comme `tresorier`.
+
+5. **Capture du contexte** côté server action : IP (via `x-forwarded-for` ou `x-real-ip`), user agent (header `User-Agent`), timestamp serveur (ISO 8601). Stockés en clair dans la table.
+
+6. **Régénération du PDF feuille à chaque signature** avec un encart "Signatures" mis à jour en dernière page (rôle, nom, email, date, IP, hash data + chain). Le PDF en BDD est écrasé via `attachJustificatif(entity_type='remboursement_feuille')` (les anciennes versions restent en storage et apparaissent en historique). La preuve juridique vit dans la table `signatures`, pas dans le PDF — qui est juste un rendu lisible humain.
+
+7. **Pas de TSA externe au MVP** : le champ `tsa_response` (et `tsa_timestamp`) reste NULL. Le chaînage interne donne déjà une bonne valeur de preuve sans dépendance externe. RFC 3161 (FreeTSA ou autre) pourra être ajouté ultérieurement sans migration BDD ni changement de schéma — c'est le sens du champ "prêt".
+
+**Raisons** :
+
+- **SES suffit** pour l'usage cible : eIDAS art. 25 reconnaît la SES comme preuve recevable (ne peut être refusée au seul motif qu'elle est électronique). C'est ce qu'utilisent la majorité des asso. Au-delà (AES via certificats X.509 ou QES via PSCQ), c'est de l'overengineering pour un remboursement de tickets de métro.
+- **Hash des données plutôt que du PDF** : permet de régénérer le PDF (par exemple à chaque signature pour mettre à jour l'encart) sans invalider les hashes des signatures précédentes. La preuve porte sur les données métier, pas sur leur représentation visuelle.
+- **Chaînage interne plutôt que TSA externe au MVP** : 0 dépendance, 0 € / mois, ~3 h de dev. Le coût/bénéfice de RFC 3161 (FreeTSA = ASN.1 DER manuel ou lib `@peculiar/asn1-tsp`) ne se justifie pas tant qu'on n'a pas un cas concret de contestation de date.
+- **Table dédiée `signatures` plutôt que colonnes sur `remboursements`** : on aura besoin de signer d'autres documents (abandons de frais, recettes, etc.) avec le même mécanisme. La table polyvalente (`document_type` + `document_id`) évite la duplication.
+- **Rôle libre côté schéma** (TEXT, pas CHECK) : cohérent avec ADR-019 (validation côté code, pas en BDD). Permet d'ajouter un rôle `cotresorier` ou autre sans migration.
+
+**Conséquences** :
+
+- Migration BDD idempotente dans `web/src/lib/auth/schema.ts` : `CREATE TABLE IF NOT EXISTS signatures`.
+- Nouveau service `web/src/lib/services/signatures.ts` : `signDocument`, `listSignatures`, `verifyChain`. Indépendant du domaine remboursement (utilisable pour abandons, etc.).
+- Nouveau helper `web/src/lib/services/remboursement-signing.ts` : orchestration "signer + régénérer PDF" en un appel.
+- Nouveau helper `computeRemboursementHash(rbt, lignes)` dans `lib/services/remboursements.ts` (export pur).
+- Server action `createMyRemboursement` : appelle le helper en fin d'exécution avec `signer_role='demandeur'`.
+- Server action `updateRemboursementStatus` : appelle le helper sur les transitions `valide_tresorier` et `valide_rg`.
+- PDF (`lib/pdf/feuille-remboursement.ts`) accepte un paramètre `signatures` et rend l'encart "Signatures électroniques" en dernière page.
+- Page admin `/remboursements/[id]` : section "Signatures" sur la sidebar droite, avec badge "✓ chaîne intègre" / "⚠ chaîne brisée" (résultat de `verifyChain`), liste des signataires + IP + timestamp + hashes (en details collapsible).
+- **Capture IP en local** peut retourner null (pas de `x-forwarded-for` derrière Next dev server). En prod sur Vercel, `x-forwarded-for` contient l'IP réelle.
+- **PDF historique** : à chaque signature, une nouvelle ligne dans `justificatifs` avec `entity_type='remboursement_feuille'`. La page admin affiche la plus récente par défaut + un compteur "(N versions)". Les anciennes versions restent accessibles via l'API mais pas mises en avant. Pas de purge auto au MVP.
+
+**Limites assumées** :
+
+- **Pas de timestamping opposable** au MVP. Si quelqu'un conteste la date de signature, on n'a que le timestamp serveur (qui peut théoriquement être falsifié par l'opérateur). Le chaînage protège contre la modification a posteriori d'une ligne, pas contre la falsification de date à la création.
+- **Pas de signature cryptographique du PDF** lui-même (PKCS#7 / PAdES). Adobe Reader ne reconnaîtra pas les signatures. Cohérent avec une SES pure : la valeur de preuve vit dans l'audit trail BDD.
+- **Hash limité aux données canoniques explicites** : si on ajoute un nouveau champ à `remboursements` plus tard, il faut penser à l'inclure dans `computeRemboursementHash` sinon il ne sera pas couvert par les signatures.
+- **Nettoyage des PDF historiques** non implémenté : N signatures = N PDFs en storage. À surveiller si volume devient un problème.
+
+**Évolutions ultérieures** :
+
+- **Activation TSA RFC 3161** : implémenter `getTsaTimestamp(hash)` qui appelle FreeTSA (ou autre). Stocker la `TimeStampResp` DER-encodée dans `tsa_response` + le timestamp en clair dans `tsa_timestamp`. Pas de migration BDD nécessaire.
+- **Signature PAdES sur le PDF** : utiliser `node-signpdf` + un certificat (auto-généré ou délivré par PSCQ) pour incruster une vraie signature PKCS#7 dans le PDF. Compatible Adobe Reader. Niveau AES.
+- **Étendre aux abandons** : appeler `signDocument({ document_type: 'abandon', ... })` à la création / validation. Service polyvalent.
+
+**Liens** :
+- [ADR-022](#adr-022--refonte-du-modèle-remboursement--multi-lignes--5-statuts--feuille-pdf-générée) — modèle multi-lignes, génération PDF
+- [ADR-019](#adr-019--hiérarchie-de-rôles-applicatifs-v2) — rôles applicatifs et validation côté code
+- [eIDAS art. 25-26](https://eur-lex.europa.eu/eli/reg/2014/910/oj) — Signature électronique simple / avancée
+
+---
+
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*

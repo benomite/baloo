@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { getDb } from '../db';
 import { nextId, currentTimestamp } from '../ids';
 import type { Remboursement } from '../types';
@@ -194,6 +194,37 @@ export async function deleteLigne(ligneId: string): Promise<void> {
   if (!ligne) return;
   await db.prepare('DELETE FROM remboursement_lignes WHERE id = ?').run(ligneId);
   await recalcTotal(ligne.remboursement_id);
+}
+
+// Calcule un hash SHA-256 canonique des données métier d'une demande
+// (signature électronique : si une ligne ou un champ est modifié après
+// signature, le hash recalculé ne matchera plus celui stocké).
+//
+// IMPORTANT : on inclut UNIQUEMENT les données saisies par le demandeur
+// (identité, RIB, lignes), PAS les champs de workflow (status, validations,
+// etc.) qui évoluent par construction au fil des signatures.
+export function computeRemboursementHash(
+  rbt: Remboursement,
+  lignes: RemboursementLigne[],
+): string {
+  const sortedLignes = [...lignes]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((l) => ({
+      date_depense: l.date_depense,
+      amount_cents: l.amount_cents,
+      nature: l.nature,
+      notes: l.notes ?? null,
+    }));
+  const canonical = JSON.stringify({
+    id: rbt.id,
+    prenom: rbt.prenom,
+    nom: rbt.nom,
+    email: rbt.email,
+    rib_texte: rbt.rib_texte,
+    rib_file_path: rbt.rib_file_path,
+    lignes: sortedLignes,
+  });
+  return createHash('sha256').update(canonical).digest('hex');
 }
 
 // Recalcule total_cents et amount_cents (legacy mirror) depuis les lignes.

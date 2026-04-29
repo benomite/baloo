@@ -10,7 +10,6 @@ import {
   getRemboursement,
   updateRemboursement as updateRemboursementService,
   addLigne,
-  listLignes,
 } from '../services/remboursements';
 import { attachJustificatif } from '../services/justificatifs';
 import { parseAmount } from '../format';
@@ -18,7 +17,7 @@ import {
   sendRemboursementCreatedEmail,
   sendRemboursementStatusChangedEmail,
 } from '../email/remboursement';
-import { renderFeuilleRemboursementPdf } from '../pdf/feuille-remboursement';
+import { signAndRefreshRemboursementPdf } from '../services/remboursement-signing';
 
 const ADMIN_ROLES = ['tresorier', 'RG'];
 
@@ -38,6 +37,18 @@ async function listAdminEmails(groupId: string): Promise<string[]> {
     )
     .all<{ email: string }>(groupId);
   return rows.map((r) => r.email);
+}
+
+// Récupère IP + user agent depuis les headers Next.js. Vercel set
+// `x-forwarded-for` ; en local on tombe sur `x-real-ip` ou rien.
+async function captureClientMeta(): Promise<{ ip: string | null; userAgent: string | null }> {
+  const h = await headers();
+  const ip =
+    h.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    h.get('x-real-ip') ||
+    null;
+  const userAgent = h.get('user-agent') || null;
+  return { ip, userAgent };
 }
 
 export async function createRemboursement(formData: FormData) {
@@ -221,33 +232,22 @@ export async function createMyRemboursement(formData: FormData): Promise<void> {
     }
   }
 
-  // Génère la feuille PDF, l'attache (entity_type='remboursement_feuille').
+  // Signature électronique simple "demandeur" + génération du PDF
+  // feuille avec l'encart Signatures à jour (ADR-023).
   try {
-    const groupRow = await getDb()
-      .prepare('SELECT nom FROM groupes WHERE id = ?')
-      .get<{ nom: string }>(ctx.groupId);
-    const finalRbt = await getRemboursement({ groupId: ctx.groupId }, created.id);
-    const finalLignes = await listLignes(created.id);
-    if (finalRbt) {
-      const pdfBuffer = await renderFeuilleRemboursementPdf({
-        rbt: finalRbt,
-        lignes: finalLignes,
-        groupName: groupRow?.nom ?? 'le groupe',
-        submittedAt: new Date().toISOString().slice(0, 10),
-      });
-      await attachJustificatif(
-        { groupId: ctx.groupId },
-        {
-          entity_type: 'remboursement_feuille',
-          entity_id: created.id,
-          filename: `feuille-${created.id}.pdf`,
-          content: pdfBuffer,
-          mime_type: 'application/pdf',
-        },
-      );
-    }
+    const meta = await captureClientMeta();
+    await signAndRefreshRemboursementPdf({
+      groupId: ctx.groupId,
+      rbtId: created.id,
+      signerRole: 'demandeur',
+      signerUserId: ctx.userId,
+      signerEmail: email,
+      signerName: fullName,
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
   } catch (err) {
-    console.error('[remboursements] Génération PDF feuille échouée :', err);
+    console.error('[remboursements] Signature + génération PDF feuille échouée :', err);
   }
 
   // Notif admins.
@@ -318,6 +318,27 @@ export async function updateRemboursementStatus(id: string, status: string, form
       ...(status === 'refuse' && motif ? { motif_refus: motif } : {}),
     },
   );
+
+  // Signature électronique pour les transitions de validation. La
+  // signature embarque l'identité du valideur + un hash des données
+  // courantes ; la chaîne d'audit garantit l'ordre et l'intégrité.
+  if (status === 'valide_tresorier' || status === 'valide_rg') {
+    try {
+      const meta = await captureClientMeta();
+      await signAndRefreshRemboursementPdf({
+        groupId: ctx.groupId,
+        rbtId: id,
+        signerRole: status === 'valide_tresorier' ? 'tresorier' : 'RG',
+        signerUserId: ctx.userId,
+        signerEmail: ctx.email,
+        signerName: ctx.name,
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+    } catch (err) {
+      console.error('[remboursements] Signature validation échouée :', err);
+    }
+  }
 
   // Notif au demandeur si transition pertinente et qu'on connaît son user.
   if (status === 'valide_tresorier' || status === 'valide_rg' || status === 'virement_effectue' || status === 'termine' || status === 'refuse') {
