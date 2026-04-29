@@ -5,6 +5,9 @@ export interface AbandonContext {
   groupId: string;
   // Chantier 5 : si défini, restreint aux abandons rattachés à cette unité.
   scopeUniteId?: string | null;
+  // Chantier 3 P2-workflows : si défini, restreint aux abandons soumis
+  // par ce user (vue "mes dons" côté equipier).
+  submittedByUserId?: string | null;
 }
 
 export interface Abandon {
@@ -18,6 +21,7 @@ export interface Abandon {
   annee_fiscale: string;
   cerfa_emis: number;
   notes: string | null;
+  submitted_by_user_id: string | null;
   created_at: string;
   updated_at: string;
   unite_code?: string | null;
@@ -30,13 +34,14 @@ export interface ListAbandonsOptions {
 }
 
 export async function listAbandons(
-  { groupId, scopeUniteId }: AbandonContext,
+  { groupId, scopeUniteId, submittedByUserId }: AbandonContext,
   options: ListAbandonsOptions = {},
 ): Promise<Abandon[]> {
   const conditions: string[] = ['a.group_id = ?'];
   const values: unknown[] = [groupId];
 
   if (scopeUniteId) { conditions.push('a.unite_id = ?'); values.push(scopeUniteId); }
+  if (submittedByUserId) { conditions.push('a.submitted_by_user_id = ?'); values.push(submittedByUserId); }
   if (options.annee_fiscale) { conditions.push('a.annee_fiscale = ?'); values.push(options.annee_fiscale); }
   if (options.donateur) { conditions.push('a.donateur LIKE ?'); values.push(`%${options.donateur}%`); }
 
@@ -57,6 +62,7 @@ export interface CreateAbandonInput {
   unite_id?: string | null;
   annee_fiscale: string;
   notes?: string | null;
+  submitted_by_user_id?: string | null;
 }
 
 export async function createAbandon(
@@ -68,8 +74,8 @@ export async function createAbandon(
   const now = currentTimestamp();
 
   await db.prepare(
-    `INSERT INTO abandons_frais (id, group_id, donateur, amount_cents, date_depense, nature, unite_id, annee_fiscale, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO abandons_frais (id, group_id, donateur, amount_cents, date_depense, nature, unite_id, annee_fiscale, notes, submitted_by_user_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     groupId,
@@ -80,6 +86,7 @@ export async function createAbandon(
     input.unite_id ?? null,
     input.annee_fiscale,
     input.notes ?? null,
+    input.submitted_by_user_id ?? null,
     now,
     now,
   );

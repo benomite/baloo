@@ -18,10 +18,11 @@ const nav: NavItem[] = [
   { href: '/remboursements', label: 'Remboursements', icon: '💶' },
   { href: '/depot', label: 'Déposer un justif', icon: '📎', roles: ['tresorier', 'RG', 'chef', 'equipier'] },
   { href: '/depots', label: 'Dépôts à traiter', icon: '📨', roles: ['tresorier', 'RG'] },
+  { href: '/abandons', label: 'Abandons de frais', icon: '🎁', roles: ['tresorier', 'RG'] },
   { href: '/caisse', label: 'Caisse', icon: '🪙', roles: ['tresorier', 'RG'] },
   { href: '/import', label: 'Import Comptaweb', icon: '📥', roles: ['tresorier', 'RG'] },
   { href: '/admin/invitations', label: 'Invitations', icon: '✉️', roles: ['tresorier', 'RG'] },
-  { href: '/moi', label: 'Mon espace', icon: '👤', roles: ['parent'] },
+  { href: '/moi', label: 'Mon espace', icon: '👤' },
 ];
 
 interface Props {

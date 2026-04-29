@@ -6,6 +6,9 @@ export interface RemboursementContext {
   groupId: string;
   // Chantier 5 : si défini, restreint aux remboursements de cette unité.
   scopeUniteId?: string | null;
+  // Chantier 2 P2-workflows : si défini, restreint aux remboursements
+  // soumis par ce user (vue "mes demandes" pour equipier / chef).
+  submittedByUserId?: string | null;
 }
 
 export interface RemboursementFilters {
@@ -17,13 +20,17 @@ export interface RemboursementFilters {
 }
 
 export async function listRemboursements(
-  { groupId, scopeUniteId }: RemboursementContext,
+  { groupId, scopeUniteId, submittedByUserId }: RemboursementContext,
   filters: RemboursementFilters = {},
 ): Promise<Remboursement[]> {
   const conditions: string[] = ['r.group_id = ?'];
   const values: unknown[] = [groupId];
 
   if (filters.status) { conditions.push('r.status = ?'); values.push(filters.status); }
+  if (submittedByUserId) {
+    conditions.push('r.submitted_by_user_id = ?');
+    values.push(submittedByUserId);
+  }
   if (scopeUniteId) { conditions.push('r.unite_id = ?'); values.push(scopeUniteId); }
   else if (filters.unite_id) { conditions.push('r.unite_id = ?'); values.push(filters.unite_id); }
   if (filters.demandeur) { conditions.push('r.demandeur LIKE ?'); values.push(`%${filters.demandeur}%`); }
@@ -47,11 +54,12 @@ export async function listRemboursements(
 }
 
 export async function getRemboursement(
-  { groupId, scopeUniteId }: RemboursementContext,
+  { groupId, scopeUniteId, submittedByUserId }: RemboursementContext,
   id: string,
 ): Promise<Remboursement | undefined> {
   const conditions = ['r.id = ?', 'r.group_id = ?'];
   const values: unknown[] = [id, groupId];
+  if (submittedByUserId) { conditions.push('r.submitted_by_user_id = ?'); values.push(submittedByUserId); }
   if (scopeUniteId) { conditions.push('r.unite_id = ?'); values.push(scopeUniteId); }
   return await getDb()
     .prepare(
@@ -73,6 +81,7 @@ export interface CreateRemboursementInput {
   justificatif_status?: 'oui' | 'en_attente' | 'non';
   mode_paiement_id?: string | null;
   notes?: string | null;
+  submitted_by_user_id?: string | null;
 }
 
 export async function createRemboursement(
@@ -84,8 +93,8 @@ export async function createRemboursement(
   const now = currentTimestamp();
 
   await db.prepare(
-    `INSERT INTO remboursements (id, group_id, demandeur, amount_cents, date_depense, nature, unite_id, justificatif_status, mode_paiement_id, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO remboursements (id, group_id, demandeur, amount_cents, date_depense, nature, unite_id, justificatif_status, mode_paiement_id, notes, submitted_by_user_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     groupId,
@@ -97,6 +106,7 @@ export async function createRemboursement(
     input.justificatif_status ?? 'en_attente',
     input.mode_paiement_id ?? null,
     input.notes ?? null,
+    input.submitted_by_user_id ?? null,
     now,
     now,
   );

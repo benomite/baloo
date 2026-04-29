@@ -113,5 +113,39 @@ export async function ensureAuthSchema(): Promise<void> {
   await db.exec("UPDATE users SET role = 'tresorier' WHERE role = 'cotresorier'");
   await db.exec("UPDATE users SET role = 'chef' WHERE role = 'chef_unite'");
 
+  // Chantier 2 P2-workflows : lien remboursement ↔ user demandeur
+  // (pour scoper "ses propres demandes" côté equipier/chef et envoyer
+  // les notifs email).
+  const remboursementCols = await db
+    .prepare("PRAGMA table_info(remboursements)")
+    .all<{ name: string }>();
+  if (!remboursementCols.some((c) => c.name === 'submitted_by_user_id')) {
+    await db.exec(
+      'ALTER TABLE remboursements ADD COLUMN submitted_by_user_id TEXT REFERENCES users(id)',
+    );
+  }
+
+  // Chantier 3 P2-workflows : idem côté abandons.
+  const abandonCols = await db
+    .prepare("PRAGMA table_info(abandons_frais)")
+    .all<{ name: string }>();
+  if (!abandonCols.some((c) => c.name === 'submitted_by_user_id')) {
+    await db.exec(
+      'ALTER TABLE abandons_frais ADD COLUMN submitted_by_user_id TEXT REFERENCES users(id)',
+    );
+  }
+
+  // Chantier 4 P2-workflows : lier les mouvements de caisse à une
+  // unité et / ou une activité (caisse de camp, de WE, etc.).
+  const caisseCols = await db
+    .prepare("PRAGMA table_info(mouvements_caisse)")
+    .all<{ name: string }>();
+  if (!caisseCols.some((c) => c.name === 'unite_id')) {
+    await db.exec('ALTER TABLE mouvements_caisse ADD COLUMN unite_id TEXT REFERENCES unites(id)');
+  }
+  if (!caisseCols.some((c) => c.name === 'activite_id')) {
+    await db.exec('ALTER TABLE mouvements_caisse ADD COLUMN activite_id TEXT REFERENCES activites(id)');
+  }
+
   ensured = true;
 }

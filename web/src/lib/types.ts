@@ -64,6 +64,7 @@ export interface Remboursement {
   comptaweb_synced: number;
   ecriture_id: string | null;
   notes: string | null;
+  submitted_by_user_id: string | null;
   created_at: string;
   updated_at: string;
   unite_code?: string | null;
@@ -75,9 +76,13 @@ export interface MouvementCaisse {
   date_mouvement: string;
   description: string;
   amount_cents: number;
+  unite_id?: string | null;
+  activite_id?: string | null;
   solde_apres_cents: number | null;
   notes: string | null;
   created_at: string;
+  unite_code?: string | null;
+  activite_name?: string | null;
 }
 
 export interface Category {
