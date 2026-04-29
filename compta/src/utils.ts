@@ -1,19 +1,24 @@
 // Helpers purs partagés entre les outils MCP. Volontairement sans dépendance
 // au package `better-sqlite3` ni à `getDb()` — utilisable depuis un client
 // HTTP qui n'a plus besoin d'ouvrir la BDD.
+//
+// IMPORTANT : ce fichier doit rester strictement identique à
+// `web/src/lib/format.ts`. Tant qu'on n'a pas mis en place le
+// monorepo / package partagé, toute modif ici doit être portée à
+// l'identique côté web.
 
 export function formatAmount(cents: number): string {
   const sign = cents < 0 ? '-' : '';
   const abs = Math.abs(cents);
   const euros = Math.floor(abs / 100);
   const cts = String(abs % 100).padStart(2, '0');
-  return `${sign}${euros},${cts} €`;
+  return `${sign}${euros},${cts} €`;
 }
 
 export function parseAmount(text: string): number {
   const cleaned = text.replace(/\s*€\s*/, '').replace(/\s/g, '').trim();
   const negative = cleaned.startsWith('-');
-  const abs = cleaned.replace('-', '').replace('+', '');
+  const abs = cleaned.replace(/^[+-]/, '');
 
   let euros: number, cts: number;
   if (abs.includes(',')) {

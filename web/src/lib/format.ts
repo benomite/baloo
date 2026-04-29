@@ -1,9 +1,17 @@
+// Format / parse de montants en centimes <-> texte FR.
+//
+// IMPORTANT : ce fichier doit rester strictement identique à
+// `compta/src/utils.ts`. Tant qu'on n'a pas mis en place le
+// monorepo / package partagé (cf. TODO dans web/src/lib/comptaweb/
+// env-loader.ts), toute modif ici doit être portée à l'identique
+// dans compta/src/utils.ts.
+
 export function formatAmount(cents: number): string {
   const sign = cents < 0 ? '-' : '';
   const abs = Math.abs(cents);
   const euros = Math.floor(abs / 100);
   const cts = String(abs % 100).padStart(2, '0');
-  return `${sign}${euros},${cts}\u00a0€`;
+  return `${sign}${euros},${cts} €`;
 }
 
 export function parseAmount(text: string): number {
