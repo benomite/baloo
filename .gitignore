@@ -55,6 +55,10 @@ node_modules/
 *.db-wal
 *.db-shm
 
+# Sessions Comptaweb persistées + autres fichiers volatiles côté webapp
+# (cf. `web/src/lib/comptaweb/session-store.ts` qui crée le dossier).
+/web/data/
+
 # Justificatifs (fichiers pièces jointes uploadés, racine seulement —
 # ne pas ignorer la route `web/src/app/api/justificatifs/`)
 /justificatifs/
