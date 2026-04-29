@@ -5,6 +5,7 @@ import { getCurrentContext } from '@/lib/context';
 import { listRemboursements } from '@/lib/services/remboursements';
 import { listAbandons } from '@/lib/services/abandons';
 import { Amount } from '@/components/shared/amount';
+import { Alert } from '@/components/ui/alert';
 
 interface SearchParams {
   error?: string;
@@ -40,20 +41,16 @@ export default async function MoiPage({ searchParams }: { searchParams: Promise<
         Bienvenue {ctx.name ?? ctx.email}.
       </p>
 
-      {params.error && (
-        <p className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-          {params.error}
-        </p>
-      )}
+      {params.error && <Alert variant="error" className="mb-4">{params.error}</Alert>}
       {params.rbt_created && (
-        <p className="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
+        <Alert variant="success" className="mb-4">
           Demande <b>{params.rbt_created}</b> envoyée. Tu recevras un email à chaque étape.
-        </p>
+        </Alert>
       )}
       {params.abandon_created && (
-        <p className="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
+        <Alert variant="success" className="mb-4">
           Abandon <b>{params.abandon_created}</b> déclaré. Le trésorier émettra le reçu fiscal.
-        </p>
+        </Alert>
       )}
 
       <div className="space-y-4">

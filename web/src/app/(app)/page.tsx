@@ -2,9 +2,19 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/layout/page-header';
 import { Amount } from '@/components/shared/amount';
+import { StatCard } from '@/components/shared/stat-card';
 import { getOverview } from '@/lib/queries/overview';
 import { getCurrentContext } from '@/lib/context';
 import { requireNotParent } from '@/lib/auth/access';
+import {
+  AlertTriangle,
+  ArrowDownCircle,
+  ArrowUpCircle,
+  Clock,
+  FileQuestion,
+  Scale,
+  Upload,
+} from 'lucide-react';
 
 export default async function DashboardPage() {
   const ctx = await getCurrentContext();
@@ -16,54 +26,42 @@ export default async function DashboardPage() {
       <PageHeader title="Tableau de bord" />
 
       <div className="grid grid-cols-3 gap-4 mb-8">
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Dépenses</CardTitle></CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              <Amount cents={data.totalDepenses} tone="negative" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Recettes</CardTitle></CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              <Amount cents={data.totalRecettes} tone="positive" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Solde</CardTitle></CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              <Amount cents={data.solde} tone="signed" />
-            </div>
-          </CardContent>
-        </Card>
+        <StatCard
+          label="Dépenses"
+          icon={ArrowDownCircle}
+          value={<Amount cents={data.totalDepenses} tone="negative" />}
+        />
+        <StatCard
+          label="Recettes"
+          icon={ArrowUpCircle}
+          value={<Amount cents={data.totalRecettes} tone="positive" />}
+        />
+        <StatCard
+          label="Solde"
+          icon={Scale}
+          value={<Amount cents={data.solde} tone="signed" />}
+        />
       </div>
 
       <div className="grid grid-cols-3 gap-4 mb-8">
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Remboursements en attente</CardTitle></CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold tabular-nums">{data.remboursementsEnAttente.count}</div>
-            <p className="text-sm text-muted-foreground">{data.remboursementsEnAttente.totalFormatted}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Sans justificatif</CardTitle></CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold tabular-nums">{data.alertes.depensesSansJustificatif}</div>
-            <p className="text-sm text-muted-foreground">dépenses</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Non saisies Comptaweb</CardTitle></CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold tabular-nums">{data.alertes.nonSyncComptaweb}</div>
-            <p className="text-sm text-muted-foreground">écritures validées</p>
-          </CardContent>
-        </Card>
+        <StatCard
+          label="Remb. en attente"
+          icon={Clock}
+          value={data.remboursementsEnAttente.count}
+          sublabel={data.remboursementsEnAttente.totalFormatted}
+        />
+        <StatCard
+          label="Sans justificatif"
+          icon={FileQuestion}
+          value={data.alertes.depensesSansJustificatif}
+          sublabel="dépenses"
+        />
+        <StatCard
+          label="Non saisies Comptaweb"
+          icon={Upload}
+          value={data.alertes.nonSyncComptaweb}
+          sublabel="écritures validées"
+        />
       </div>
 
       <Card className="mb-8">
@@ -93,11 +91,14 @@ export default async function DashboardPage() {
       </Card>
 
       {data.dernierImport ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+          <AlertTriangle size={14} className="text-muted-foreground/70" />
           Dernier import Comptaweb : {data.dernierImport.date} ({data.dernierImport.fichier})
         </p>
       ) : (
-        <p className="text-sm text-muted-foreground">Aucun import Comptaweb. <a href="/import" className="underline">Importer un CSV</a></p>
+        <p className="text-xs text-muted-foreground">
+          Aucun import Comptaweb. <a href="/import" className="underline underline-offset-2 hover:text-foreground">Importer un CSV</a>
+        </p>
       )}
     </div>
   );

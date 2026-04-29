@@ -8,6 +8,8 @@ import { listMouvementsCaisse } from '@/lib/queries/caisse';
 import { listUnites, listActivites } from '@/lib/queries/reference';
 import { createMouvementCaisse } from '@/lib/actions/caisse';
 import { Amount } from '@/components/shared/amount';
+import { StatCard } from '@/components/shared/stat-card';
+import { Coins } from 'lucide-react';
 import { getCurrentContext } from '@/lib/context';
 import { requireAdmin } from '@/lib/auth/access';
 
@@ -24,10 +26,13 @@ export default async function CaissePage() {
     <div>
       <PageHeader title="Caisse" />
 
-      <Card className="mb-6">
-        <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Solde caisse</CardTitle></CardHeader>
-        <CardContent><div className="text-3xl font-bold"><Amount cents={solde} tone="signed" /></div></CardContent>
-      </Card>
+      <div className="mb-6 max-w-xs">
+        <StatCard
+          label="Solde caisse"
+          icon={Coins}
+          value={<Amount cents={solde} tone="signed" />}
+        />
+      </div>
 
       <Card className="mb-6">
         <CardHeader><CardTitle>Nouveau mouvement</CardTitle></CardHeader>

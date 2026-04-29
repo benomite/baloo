@@ -7,6 +7,7 @@ import { getCurrentContext } from '@/lib/context';
 import { requireCanSubmit } from '@/lib/auth/access';
 import { listUnites, listCategories, listCartes } from '@/lib/queries/reference';
 import { createDepot } from '@/lib/actions/depots';
+import { Alert } from '@/components/ui/alert';
 
 interface SearchParams {
   error?: string;
@@ -36,15 +37,11 @@ export default async function DepotPage({ searchParams }: { searchParams: Promis
         l&apos;écriture comptable correspondante.
       </p>
 
-      {params.error && (
-        <p className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-          {params.error}
-        </p>
-      )}
+      {params.error && <Alert variant="error" className="mb-4">{params.error}</Alert>}
       {params.success && (
-        <p className="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
+        <Alert variant="success" className="mb-4">
           Justificatif déposé (réf. <b>{params.success}</b>). Tu peux en déposer un autre ci-dessous.
-        </p>
+        </Alert>
       )}
 
       <form action={createDepot} encType="multipart/form-data" className="space-y-4">

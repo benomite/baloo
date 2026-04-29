@@ -15,6 +15,8 @@ import { uploadJustificatif } from '@/lib/actions/justificatifs';
 import { sendRelance } from '@/lib/actions/relances';
 import { SyncDraftButton } from '@/components/ecritures/sync-draft-button';
 import { Amount } from '@/components/shared/amount';
+import { Alert } from '@/components/ui/alert';
+import { Landmark } from 'lucide-react';
 
 interface SearchParams {
   error?: string;
@@ -51,15 +53,15 @@ export default async function EcritureDetailPage({
       </PageHeader>
 
       {ecriture.ligne_bancaire_id && (
-        <div className="mb-4 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-          🏦 Issue de la ligne bancaire Comptaweb <code>{ecriture.ligne_bancaire_id}</code>
+        <Alert variant="info" icon={Landmark} className="mb-4">
+          Issue de la ligne bancaire Comptaweb <code>{ecriture.ligne_bancaire_id}</code>
           {ecriture.ligne_bancaire_sous_index !== null && (
             <> sous-ligne <code>{ecriture.ligne_bancaire_sous_index}</code> (paiement carte multi-commerçants)</>
           )}
           {ecriture.comptaweb_ecriture_id && (
             <> · Synchronisée vers Comptaweb (id <code>{ecriture.comptaweb_ecriture_id}</code>)</>
           )}
-        </div>
+        </Alert>
       )}
 
       {/* Status actions */}

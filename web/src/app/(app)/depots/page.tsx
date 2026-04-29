@@ -9,6 +9,8 @@ import { listDepots, listCandidateEcritures, type DepotEnriched } from '@/lib/se
 import { rejectDepot, attachDepotToEcriture } from '@/lib/actions/depots';
 import { formatAmount } from '@/lib/format';
 import { Amount } from '@/components/shared/amount';
+import { Field } from '@/components/shared/field';
+import { Alert } from '@/components/ui/alert';
 
 interface SearchParams {
   error?: string;
@@ -46,21 +48,9 @@ export default async function DepotsPage({ searchParams }: { searchParams: Promi
     <div>
       <PageHeader title="Dépôts à traiter" />
 
-      {params.error && (
-        <p className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-          {params.error}
-        </p>
-      )}
-      {params.rejected && (
-        <p className="mb-4 text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded px-3 py-2">
-          Dépôt {params.rejected} rejeté.
-        </p>
-      )}
-      {params.attached && (
-        <p className="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
-          Dépôt {params.attached} rattaché à une écriture.
-        </p>
-      )}
+      {params.error && <Alert variant="error" className="mb-4">{params.error}</Alert>}
+      {params.rejected && <Alert variant="warning" className="mb-4">Dépôt {params.rejected} rejeté.</Alert>}
+      {params.attached && <Alert variant="success" className="mb-4">Dépôt {params.attached} rattaché à une écriture.</Alert>}
 
       {depots.length === 0 ? (
         <p className="text-sm text-muted-foreground">Aucun dépôt en attente. 🎉</p>
@@ -166,11 +156,3 @@ function DepotCard({
   );
 }
 
-function Field({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div>
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-medium">{value}</dd>
-    </div>
-  );
-}

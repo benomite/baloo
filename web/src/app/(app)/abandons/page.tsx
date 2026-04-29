@@ -5,6 +5,7 @@ import { requireAdmin } from '@/lib/auth/access';
 import { listAbandons } from '@/lib/services/abandons';
 import { toggleCerfaEmis } from '@/lib/actions/abandons';
 import { Amount } from '@/components/shared/amount';
+import { Alert } from '@/components/ui/alert';
 
 interface SearchParams {
   error?: string;
@@ -30,11 +31,7 @@ export default async function AbandonsPage({ searchParams }: { searchParams: Pro
     <div>
       <PageHeader title="Abandons de frais" />
 
-      {params.error && (
-        <p className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-          {params.error}
-        </p>
-      )}
+      {params.error && <Alert variant="error" className="mb-4">{params.error}</Alert>}
 
       {abandons.length === 0 ? (
         <p className="text-sm text-muted-foreground">Aucun abandon de frais déclaré.</p>

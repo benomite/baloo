@@ -16,6 +16,7 @@ import { getCurrentContext } from '@/lib/context';
 import { updateRemboursementStatus } from '@/lib/actions/remboursements';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
 import { Amount } from '@/components/shared/amount';
+import { Alert } from '@/components/ui/alert';
 
 interface SearchParams {
   error?: string;
@@ -80,21 +81,14 @@ export default async function RemboursementDetailPage({
         )}
       </PageHeader>
 
-      {sp.error && (
-        <p className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-          {sp.error}
-        </p>
-      )}
+      {sp.error && <Alert variant="error" className="mb-4">{sp.error}</Alert>}
       {sp.edited && (
-        <p className="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
-          Modifications enregistrées. Le PDF feuille a été régénéré et la chaîne de signatures
-          remise à jour.
-        </p>
+        <Alert variant="success" className="mb-4">
+          Modifications enregistrées. Le PDF feuille a été régénéré et la chaîne de signatures remise à jour.
+        </Alert>
       )}
       {sp.patched && (
-        <p className="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
-          Notes et RIB mis à jour.
-        </p>
+        <Alert variant="success" className="mb-4">Notes et RIB mis à jour.</Alert>
       )}
 
       {/* Timeline */}
@@ -113,9 +107,9 @@ export default async function RemboursementDetailPage({
           ))}
         </div>
       ) : (
-        <div className="mb-8 px-3 py-2 rounded bg-red-50 border border-red-200 text-sm text-red-800">
-          🛑 Demande refusée{r.motif_refus ? ` — motif : ${r.motif_refus}` : ''}.
-        </div>
+        <Alert variant="error" className="mb-8">
+          Demande refusée{r.motif_refus ? ` — motif : ${r.motif_refus}` : ''}.
+        </Alert>
       )}
 
       <div className="grid grid-cols-[1fr_300px] gap-8">
