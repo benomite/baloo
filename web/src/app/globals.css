@@ -5,13 +5,44 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* Surfaces / texte / bordures sémantiques (mappage Tailwind v4) */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --color-bg: var(--background);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-sunken: var(--bg-sunken);
+  --color-fg: var(--foreground);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-border-soft: var(--border-soft);
+
+  /* Brand SGDF + variantes */
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-fg: var(--brand-foreground);
+
+  /* Couleurs unités SGDF (rail + pastille uniquement, jamais bg plein) */
+  --color-unit-fa: var(--unit-fa);
+  --color-unit-lj: var(--unit-lj);
+  --color-unit-sg: var(--unit-sg);
+  --color-unit-pc: var(--unit-pc);
+  --color-unit-co: var(--unit-co);
+  --color-unit-im: var(--unit-im);
+  --color-unit-aj: var(--unit-aj);
+  --color-unit-gr: var(--unit-gr);
+
+  /* Fonts */
+  --font-sans: var(--font-geist);
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
-  /* Fraunces : font-display (page titles uniquement) */
+  --font-heading: var(--font-geist);
+  /* Bricolage Grotesque : page titles courts uniquement (cf. PageHeader) */
   --font-display: var(--font-display);
+
+  /* Aliases shadcn — préservés pour compat */
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -27,7 +58,6 @@
   --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
   --color-input: var(--input);
-  --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
@@ -51,29 +81,68 @@
 }
 
 :root {
-  /* Fond légèrement crème (au lieu du blanc pur) — réchauffe l'app
-     sans nuire à la lisibilité des chiffres. Cards restent en blanc
-     pur pour ressortir. */
-  --background: oklch(0.99 0.005 85);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  /* Bleu marine SGDF — plus foncé que le bleu officiel des Scouts-Guides
-     (#0082BE) pour ne pas confondre l'accent global avec la couleur
-     d'unité. ~#003366 institutionnel. */
-  --primary: oklch(0.34 0.10 252);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
+  /* === Surfaces ===
+     Fond crème "papier" (le journal du trésorier), cards en blanc pur
+     qui ressortent légèrement. Sunken pour les sections déprimées
+     (sidebars, états vides, footers). */
+  --background: oklch(0.985 0.005 85);
+  --bg-elevated: oklch(1 0 0);
+  --bg-sunken: oklch(0.965 0.005 85);
+
+  /* === Texte ===
+     Ardoise foncée (pas noir pur) pour des contrastes plus doux que
+     #000 sur crème. Muted pour les libellés secondaires, subtle pour
+     les overlines / placeholders. */
+  --foreground: oklch(0.18 0.02 252);
+  --fg-muted: oklch(0.50 0.01 252);
+  --fg-subtle: oklch(0.65 0.01 252);
+
+  /* === Bordures ===
+     Trois niveaux : soft pour les séparations à peine perceptibles
+     (entre sections), default pour les cards et inputs, strong pour
+     les hovers et états actifs. */
+  --border: oklch(0.93 0.005 85);
+  --border-strong: oklch(0.86 0.008 85);
+  --border-soft: oklch(0.96 0.005 85);
+
+  /* === Brand SGDF ===
+     Bleu marine institutionnel, plus foncé que le bleu officiel des
+     Scouts-Guides (#0082BE) pour ne pas confondre l'accent global avec
+     la couleur d'unité. ~#003366 institutionnel. */
+  --brand: oklch(0.34 0.10 252);
+  --brand-hover: oklch(0.30 0.11 252);
+  --brand-foreground: oklch(0.99 0 0);
+  --brand-50: oklch(0.97 0.018 252);
+  --brand-100: oklch(0.93 0.04 252);
+
+  /* === Couleurs d'unités SGDF (préservées de la BDD) ===
+     Usage strictement sémantique : rail vertical, pastille badge,
+     surface tinted (~6% alpha). Jamais en background plein ni en
+     accent global. */
+  --unit-fa: #E8485F;  /* Farfadets - rose corail */
+  --unit-lj: #F39200;  /* Louveteaux/Jeannettes - orange */
+  --unit-sg: #0082BE;  /* Scouts/Guides - bleu officiel */
+  --unit-pc: #7D1C2F;  /* Pionniers/Caravelles - bordeaux */
+  --unit-co: #00934D;  /* Compagnons - vert */
+  --unit-im: #9B4A97;  /* Impeesas - violet */
+  --unit-aj: #B0B0B0;  /* Ajustements - gris */
+  --unit-gr: #4A4A4A;  /* Groupe - graphite */
+
+  /* === Aliases shadcn préservés (compat) === */
+  --card: var(--bg-elevated);
+  --card-foreground: var(--foreground);
+  --popover: var(--bg-elevated);
+  --popover-foreground: var(--foreground);
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-foreground);
+  --secondary: oklch(0.96 0.005 85);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.96 0.005 85);
+  --muted-foreground: var(--fg-muted);
+  --accent: var(--brand-50);
+  --accent-foreground: var(--brand);
+  --destructive: oklch(0.577 0.21 24);
+  --input: var(--border);
   --ring: oklch(0.55 0.14 252);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
@@ -81,50 +150,58 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: var(--bg-sunken);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: var(--brand-foreground);
+  --sidebar-accent: var(--brand-50);
+  --sidebar-accent-foreground: var(--brand);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  /* Bleu SGDF version dark : plus clair / plus saturé pour la lisibilité
-     sur fond sombre, en gardant la teinte institutionnelle. */
-  --primary: oklch(0.72 0.15 252);
-  --primary-foreground: oklch(0.18 0.05 252);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
+  --background: oklch(0.155 0.01 252);
+  --bg-elevated: oklch(0.22 0.015 252);
+  --bg-sunken: oklch(0.13 0.01 252);
+
+  --foreground: oklch(0.98 0.005 252);
+  --fg-muted: oklch(0.72 0.015 252);
+  --fg-subtle: oklch(0.55 0.015 252);
+
   --border: oklch(1 0 0 / 10%);
+  --border-strong: oklch(1 0 0 / 18%);
+  --border-soft: oklch(1 0 0 / 6%);
+
+  --brand: oklch(0.72 0.15 252);
+  --brand-hover: oklch(0.78 0.16 252);
+  --brand-foreground: oklch(0.18 0.05 252);
+  --brand-50: oklch(0.30 0.08 252);
+  --brand-100: oklch(0.36 0.10 252);
+
+  --card: var(--bg-elevated);
+  --card-foreground: var(--foreground);
+  --popover: var(--bg-elevated);
+  --popover-foreground: var(--foreground);
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-foreground);
+  --secondary: oklch(0.27 0.015 252);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.27 0.015 252);
+  --muted-foreground: var(--fg-muted);
+  --accent: var(--brand-50);
+  --accent-foreground: oklch(0.95 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.65 0.16 252);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar: var(--bg-sunken);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: var(--brand-foreground);
+  --sidebar-accent: var(--brand-50);
+  --sidebar-accent-foreground: oklch(0.95 0 0);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
 }
 
 @layer base {
@@ -132,9 +209,81 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "ss01", "cv11";
   }
   html {
     @apply font-sans;
+  }
+  /* Smooth focus ring */
+  :focus-visible {
+    @apply outline-none;
+  }
+}
+
+@layer components {
+  /* Échelle typographique sémantique. Les classes sont composables
+     avec d'autres utilities (text-fg, text-fg-muted, etc.). */
+  .text-display-xl {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: clamp(2.25rem, 4vw, 2.75rem);
+    line-height: 1.05;
+    letter-spacing: -0.025em;
+  }
+  .text-display {
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: 1.75rem;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+  .text-display-sm {
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: 1.375rem;
+    line-height: 1.15;
+    letter-spacing: -0.015em;
+  }
+  .text-h1-sans {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 1.375rem;
+    line-height: 1.2;
+    letter-spacing: -0.012em;
+  }
+  .text-h2 {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 0.9375rem;
+    line-height: 1.35;
+    letter-spacing: -0.005em;
+  }
+  .text-h3 {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 0.875rem;
+    line-height: 1.4;
+  }
+  .text-overline {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 0.6875rem;
+    line-height: 1.3;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .text-caption {
+    font-family: var(--font-sans);
+    font-weight: 400;
+    font-size: 0.75rem;
+    line-height: 1.4;
+  }
+  .text-mono-data {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
   }
 }

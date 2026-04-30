@@ -21,68 +21,151 @@ interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
-  // Rôles autorisés à voir cet item. Si absent ou vide, visible par tous.
   roles?: string[];
 }
 
-const nav: NavItem[] = [
-  { href: '/', label: 'Tableau de bord', icon: LayoutDashboard },
-  { href: '/ecritures', label: 'Écritures', icon: BookOpen },
-  { href: '/remboursements', label: 'Remboursements', icon: HandCoins },
-  { href: '/depot', label: 'Déposer un justif', icon: Paperclip, roles: ['tresorier', 'RG', 'chef', 'equipier'] },
-  { href: '/depots', label: 'Dépôts à traiter', icon: Inbox, roles: ['tresorier', 'RG'] },
-  { href: '/abandons', label: 'Abandons de frais', icon: Gift, roles: ['tresorier', 'RG'] },
-  { href: '/caisse', label: 'Caisse', icon: Coins, roles: ['tresorier', 'RG'] },
-  { href: '/import', label: 'Import Comptaweb', icon: Download, roles: ['tresorier', 'RG'] },
-  { href: '/admin/invitations', label: 'Invitations', icon: Mail, roles: ['tresorier', 'RG'] },
-  { href: '/moi', label: 'Mon espace', icon: CircleUser },
-];
-
-interface Props {
-  role: string;
+interface NavSection {
+  title: string;
+  items: NavItem[];
 }
 
-export function Sidebar({ role }: Props) {
-  const pathname = usePathname();
+const SECTIONS: NavSection[] = [
+  {
+    title: 'Comptabilité',
+    items: [
+      { href: '/', label: 'Tableau de bord', icon: LayoutDashboard },
+      { href: '/ecritures', label: 'Écritures', icon: BookOpen },
+      { href: '/caisse', label: 'Caisse', icon: Coins, roles: ['tresorier', 'RG'] },
+      { href: '/import', label: 'Import Comptaweb', icon: Download, roles: ['tresorier', 'RG'] },
+    ],
+  },
+  {
+    title: 'Demandes',
+    items: [
+      { href: '/remboursements', label: 'Remboursements', icon: HandCoins },
+      { href: '/abandons', label: 'Abandons de frais', icon: Gift, roles: ['tresorier', 'RG'] },
+    ],
+  },
+  {
+    title: 'Atelier',
+    items: [
+      { href: '/depot', label: 'Déposer un justif', icon: Paperclip, roles: ['tresorier', 'RG', 'chef', 'equipier'] },
+      { href: '/depots', label: 'Dépôts à traiter', icon: Inbox, roles: ['tresorier', 'RG'] },
+    ],
+  },
+  {
+    title: 'Administration',
+    items: [
+      { href: '/admin/invitations', label: 'Invitations', icon: Mail, roles: ['tresorier', 'RG'] },
+    ],
+  },
+];
 
-  const items = nav.filter((item) => !item.roles || item.roles.includes(role));
+interface SidebarProps {
+  role: string;
+  groupName?: string | null;
+}
+
+export function Sidebar({ role, groupName }: SidebarProps) {
+  const pathname = usePathname();
+  const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`));
+  const isMoiActive = pathname === '/moi' || pathname.startsWith('/moi/');
 
   return (
-    <aside className="w-64 border-r bg-muted/20 p-4 flex flex-col gap-0.5">
-      <div className="flex items-center gap-2.5 mb-6 px-2">
-        <div
-          className="h-8 w-8 rounded-full flex items-center justify-center text-base shrink-0"
-          style={{ backgroundColor: 'oklch(0.34 0.10 252 / 0.12)' }}
-          aria-hidden
-        >
-          🐻
-        </div>
-        <div className="flex flex-col leading-tight">
-          <span className="font-semibold tracking-tight text-foreground">Baloo</span>
-          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            Compta SGDF
-          </span>
+    <aside className="w-[260px] shrink-0 border-r border-border bg-bg-sunken/60 flex flex-col">
+      {/* Wordmark : écusson dégradé brand + Baloo + groupe */}
+      <div className="px-5 pt-5 pb-4">
+        <div className="flex items-center gap-2.5">
+          <div
+            className={cn(
+              'relative h-9 w-9 shrink-0 rounded-xl flex items-center justify-center',
+              'bg-gradient-to-br from-brand to-[oklch(0.22_0.08_252)]',
+              'shadow-sm shadow-brand/20 ring-1 ring-inset ring-white/10',
+            )}
+            aria-hidden
+          >
+            <span className="text-[15px] leading-none">🐻</span>
+            <span className="absolute inset-0 rounded-xl bg-gradient-to-tr from-transparent to-white/15 pointer-events-none" />
+          </div>
+          <div className="leading-tight min-w-0">
+            <div className="font-display text-[15px] font-medium tracking-tight text-fg truncate">
+              Baloo
+            </div>
+            <div className="text-[10.5px] font-semibold uppercase tracking-[0.13em] text-fg-muted truncate">
+              {groupName ? `Compta · ${groupName}` : 'Compta SGDF'}
+            </div>
+          </div>
         </div>
       </div>
-      {items.map((item) => {
-        const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
-        const Icon = item.icon;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={cn(
-              'flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm transition-colors',
-              active
-                ? 'bg-secondary text-foreground font-medium'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-            )}
-          >
-            <Icon size={16} className="shrink-0" />
-            {item.label}
-          </Link>
-        );
-      })}
+
+      {/* Sections */}
+      <nav className="flex-1 overflow-y-auto px-2 pb-4 [scrollbar-gutter:stable]">
+        {SECTIONS.map((section) => {
+          const items = section.items.filter((i) => !i.roles || i.roles.includes(role));
+          if (items.length === 0) return null;
+          return (
+            <div key={section.title} className="mt-5 first:mt-1">
+              <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-subtle">
+                {section.title}
+              </div>
+              <ul className="space-y-0.5">
+                {items.map((item) => (
+                  <li key={item.href}>
+                    <NavLink href={item.href} icon={item.icon} active={isActive(item.href)}>
+                      {item.label}
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+      </nav>
+
+      {/* Footer : Mon espace, isolé visuellement */}
+      <div className="border-t border-border-soft p-2">
+        <NavLink href="/moi" icon={CircleUser} active={isMoiActive} variant="subtle">
+          Mon espace
+        </NavLink>
+      </div>
     </aside>
+  );
+}
+
+interface NavLinkProps {
+  href: string;
+  icon: LucideIcon;
+  active: boolean;
+  children: React.ReactNode;
+  variant?: 'default' | 'subtle';
+}
+
+function NavLink({ href, icon: Icon, active, children, variant = 'default' }: NavLinkProps) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        'group flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-[13.5px] font-medium transition-all duration-100',
+        active
+          ? variant === 'default'
+            ? 'bg-brand-50 text-brand shadow-[inset_2px_0_0_var(--brand)]'
+            : 'bg-fg/[0.06] text-fg'
+          : 'text-fg-muted hover:text-fg hover:bg-fg/[0.035]',
+      )}
+    >
+      <Icon
+        size={15}
+        strokeWidth={active ? 2.25 : 1.75}
+        className={cn(
+          'shrink-0',
+          active
+            ? variant === 'default'
+              ? 'text-brand'
+              : 'text-fg'
+            : 'text-fg-subtle group-hover:text-fg-muted',
+        )}
+      />
+      <span className="truncate">{children}</span>
+    </Link>
   );
 }

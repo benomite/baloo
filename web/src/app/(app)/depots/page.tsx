@@ -9,7 +9,7 @@ import { listDepots, listCandidateEcritures, type DepotEnriched } from '@/lib/se
 import { rejectDepot, attachDepotToEcriture } from '@/lib/actions/depots';
 import { formatAmount } from '@/lib/format';
 import { Amount } from '@/components/shared/amount';
-import { Field } from '@/components/shared/field';
+import { DataField } from '@/components/shared/field';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Alert } from '@/components/ui/alert';
 
@@ -86,14 +86,14 @@ function DepotCard({
             <p className="text-sm text-muted-foreground mt-1">{depot.description}</p>
           )}
           <dl className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-            <Field label="Déposé par" value={depot.submitter_name ?? depot.submitter_email} />
-            <Field label="Montant" value={depot.amount_cents !== null ? <Amount cents={depot.amount_cents} /> : '—'} />
-            <Field label="Date" value={formatDate(depot.date_estimee)} />
-            <Field label="Unité" value={depot.unite_code ?? '—'} />
-            <Field label="Catégorie" value={depot.category_name ?? '—'} />
-            <Field label="Carte" value={depot.carte_label ?? '—'} />
-            <Field label="Déposé le" value={depot.created_at.slice(0, 10)} />
-            <Field
+            <DataField label="Déposé par" value={depot.submitter_name ?? depot.submitter_email} />
+            <DataField label="Montant" value={depot.amount_cents !== null ? <Amount cents={depot.amount_cents} /> : '—'} />
+            <DataField label="Date" value={formatDate(depot.date_estimee)} />
+            <DataField label="Unité" value={depot.unite_code ?? '—'} />
+            <DataField label="Catégorie" value={depot.category_name ?? '—'} />
+            <DataField label="Carte" value={depot.carte_label ?? '—'} />
+            <DataField label="Déposé le" value={depot.created_at.slice(0, 10)} />
+            <DataField
               label="Justif"
               value={
                 depot.justif_path ? (

@@ -1,21 +1,20 @@
 import type { Metadata } from 'next';
-import { Fraunces, Geist } from 'next/font/google';
+import { Bricolage_Grotesque, Geist } from 'next/font/google';
 import { Toaster } from '@/components/ui/sonner';
 import './globals.css';
 
 const geist = Geist({ variable: '--font-geist', subsets: ['latin'] });
 
-// Fraunces : serif moderne avec un peu de chaleur (italics natifs).
-// Utilisée uniquement sur les page titles via la classe `font-display`
-// — le body reste en Geist (lisibilité, dense). Donne un contraste
-// "magazine" qui réchauffe sans sacrifier la lisibilité financière.
-const fraunces = Fraunces({
+// Bricolage Grotesque : grotesque française moderne, expressive sans
+// préciosité, axes opsz + wdth qui adaptent la lettre à la taille.
+// Utilisée uniquement comme `font-display` sur des titres COURTS
+// (`<50 chars`, pas en CAPS). Le PageHeader bascule automatiquement
+// sur Geist pour les titres longs (libellés bancaires bruts par ex.)
+// — cf. components/layout/page-header.tsx.
+const bricolage = Bricolage_Grotesque({
   variable: '--font-display',
   subsets: ['latin'],
-  // Pas de `weight` : on prend la version variable et on ajuste axe SOFT
-  // pour adoucir les empattements (style un peu plus chaleureux que la
-  // Fraunces "tranchante" par défaut).
-  axes: ['SOFT', 'opsz'],
+  display: 'swap',
 });
 
 export const metadata: Metadata = {
@@ -25,7 +24,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr" className={`${geist.variable} ${fraunces.variable} h-full`}>
+    <html lang="fr" className={`${geist.variable} ${bricolage.variable} h-full`}>
       <body className="h-full flex antialiased">
         {children}
         <Toaster />
