@@ -49,6 +49,19 @@ export async function updateRemboursementStatus(id: string, status: string, form
     redirect(`/remboursements/${id}?error=` + encodeURIComponent(`Transition impossible depuis le statut « ${rbt.status} ».`));
   }
 
+  // Garde métier : on n'autorise pas `→ termine` tant que l'écriture
+  // comptable du virement n'est pas liée. "Terminé" = tout est bouclé,
+  // y compris la trace en compta. Le trésorier doit utiliser le
+  // sélecteur "Lier à une écriture" sur la page détail rembs avant.
+  if (status === 'termine' && !rbt.ecriture_id) {
+    redirect(
+      `/remboursements/${id}?error=` +
+        encodeURIComponent(
+          'Lie d’abord la demande à l’écriture comptable du virement (sidebar admin), puis marque-la terminée.',
+        ),
+    );
+  }
+
   const today = new Date().toISOString().split('T')[0];
   await updateRemboursementService(
     { groupId: ctx.groupId, scopeUniteId: ctx.scopeUniteId },

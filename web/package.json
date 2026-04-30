@@ -21,7 +21,8 @@
     "migrate:justifs-to-blob": "tsx scripts/migrate-justifs-to-blob.ts",
     "migrate:blobs-to-private": "tsx scripts/migrate-blobs-to-private.ts",
     "import:airtable-rembs": "tsx scripts/import-airtable-rembs.ts",
-    "link:rembs-ecritures": "tsx scripts/link-rembs-to-ecritures.ts"
+    "link:rembs-ecritures": "tsx scripts/link-rembs-to-ecritures.ts",
+    "demote:unlinked-termine": "tsx scripts/demote-unlinked-termine.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",

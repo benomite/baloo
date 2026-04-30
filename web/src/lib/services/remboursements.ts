@@ -35,6 +35,9 @@ export interface RemboursementFilters {
   demandeur?: string;
   search?: string;
   limit?: number;
+  /** `true` : filtre les rembs qui ont eu un virement (`virement_effectue`
+   *  ou `termine`) mais ne sont pas liées à une écriture comptable. */
+  unlinkedOnly?: boolean;
 }
 
 export async function listRemboursements(
@@ -55,6 +58,10 @@ export async function listRemboursements(
   if (filters.search) {
     conditions.push('(r.demandeur LIKE ? OR r.nature LIKE ? OR r.notes LIKE ?)');
     values.push(`%${filters.search}%`, `%${filters.search}%`, `%${filters.search}%`);
+  }
+  if (filters.unlinkedOnly) {
+    conditions.push("r.ecriture_id IS NULL");
+    conditions.push("r.status IN ('virement_effectue', 'termine')");
   }
 
   const where = `WHERE ${conditions.join(' AND ')}`;
