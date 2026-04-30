@@ -64,19 +64,20 @@ export default async function RemboursementDetailPage({
   searchParams: Promise<SearchParams>;
 }) {
   const { id } = await params;
-  const sp = await searchParams;
-  const ctx = await getCurrentContext();
-  const r = await getRemboursement(id);
-  if (!r) notFound();
 
-  const [lignes, justificatifs, feuilles, ribFiles, signatures, chain] = await Promise.all([
-    listLignes(id),
-    listJustificatifs('remboursement', id),
-    listJustificatifs('remboursement_feuille', id),
-    listJustificatifs('remboursement_rib', id),
-    listSignatures('remboursement', id),
-    verifyChain('remboursement', id),
-  ]);
+  const [sp, ctx, r, lignes, justificatifs, feuilles, ribFiles, signatures, chain] =
+    await Promise.all([
+      searchParams,
+      getCurrentContext(),
+      getRemboursement(id),
+      listLignes(id),
+      listJustificatifs('remboursement', id),
+      listJustificatifs('remboursement_feuille', id),
+      listJustificatifs('remboursement_rib', id),
+      listSignatures('remboursement', id),
+      verifyChain('remboursement', id),
+    ]);
+  if (!r) notFound();
 
   const currentIdx = stepIndex(r.status);
   const isAdmin = ctx.role === 'tresorier' || ctx.role === 'RG';

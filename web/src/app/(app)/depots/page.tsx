@@ -29,10 +29,8 @@ function formatDate(date: string | null): string {
 }
 
 export default async function DepotsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const ctx = await getCurrentContext();
+  const [ctx, params] = await Promise.all([getCurrentContext(), searchParams]);
   requireAdmin(ctx.role);
-
-  const params = await searchParams;
   const depots = await listDepots({ groupId: ctx.groupId }, { statut: 'a_traiter' });
 
   // Pour chaque dépôt, on précharge les candidats. N+1 acceptable pour

@@ -19,33 +19,32 @@ export default async function RemboursementsPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const ctx = await getCurrentContext();
+  const [ctx, params] = await Promise.all([getCurrentContext(), searchParams]);
   requireNotParent(ctx.role);
-  const params = await searchParams;
   const isAdmin = ADMIN_ROLES.includes(ctx.role);
   const unlinkedFilter = params.unlinked === '1';
-
-  const remboursements = await listRemboursements({
-    status: params.status || undefined,
-    unite_id: params.unite_id || undefined,
-    search: params.search || undefined,
-    unlinkedOnly: unlinkedFilter,
-  });
 
   // Compteur "à rattacher" affiché sur le tab pour donner la visibilité
   // sans devoir cliquer (utile pour le trésorier qui voit l'app
   // chaque jour). Visible aux admins seulement.
-  const unlinkedCount = isAdmin
-    ? (
-        await getDb()
+  const [remboursements, unlinkedCountRow] = await Promise.all([
+    listRemboursements({
+      status: params.status || undefined,
+      unite_id: params.unite_id || undefined,
+      search: params.search || undefined,
+      unlinkedOnly: unlinkedFilter,
+    }),
+    isAdmin
+      ? getDb()
           .prepare(
             `SELECT COUNT(*) AS n FROM remboursements
              WHERE group_id = ? AND ecriture_id IS NULL
                AND status IN ('virement_effectue', 'termine')`,
           )
           .get<{ n: number }>(ctx.groupId)
-      )?.n ?? 0
-    : 0;
+      : Promise.resolve(null),
+  ]);
+  const unlinkedCount = unlinkedCountRow?.n ?? 0;
 
   return (
     <div>

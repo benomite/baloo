@@ -26,12 +26,17 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     from_bank: params.from_bank === '1',
     limit: 200,
   };
-  const { ecritures, total } = await listEcritures(filters);
-  const categories = await listCategories();
-  const unites = await listUnites();
-  const modesPaiement = await listModesPaiement();
-  const activites = await listActivites();
-  const cartes = await listCartes();
+  // Toutes ces queries sont indépendantes : on les parallélise pour
+  // ne payer que le RTT le plus long (au lieu de la somme).
+  const [{ ecritures, total }, categories, unites, modesPaiement, activites, cartes] =
+    await Promise.all([
+      listEcritures(filters),
+      listCategories(),
+      listUnites(),
+      listModesPaiement(),
+      listActivites(),
+      listCartes(),
+    ]);
 
   const presetQS = (preset: 'all' | 'incomplete' | 'from_bank') => {
     const sp = new URLSearchParams();

@@ -23,9 +23,15 @@ export default async function EditRemboursementPage({
   searchParams: Promise<SearchParams>;
 }) {
   const { id } = await params;
-  const sp = await searchParams;
-  const ctx = await getCurrentContext();
-  const r = await getRemboursement(id);
+
+  const [sp, ctx, r, unites, lignes, justifs] = await Promise.all([
+    searchParams,
+    getCurrentContext(),
+    getRemboursement(id),
+    listUnites(),
+    listLignes(id),
+    listJustificatifs('remboursement', id),
+  ]);
   if (!r) notFound();
 
   const isAdmin = ADMIN_ROLES.includes(ctx.role);
@@ -41,12 +47,6 @@ export default async function EditRemboursementPage({
       `/remboursements/${id}?error=${encodeURIComponent('Cette demande a été validée — l’édition complète est réservée aux admins.')}`,
     );
   }
-
-  const [unites, lignes, justifs] = await Promise.all([
-    listUnites(),
-    listLignes(id),
-    listJustificatifs('remboursement', id),
-  ]);
   const today = new Date().toISOString().split('T')[0];
   const action = updateMyRemboursement.bind(null, id);
 

@@ -39,13 +39,32 @@ export default async function EcritureDetailPage({
   searchParams: Promise<SearchParams>;
 }) {
   const { id } = await params;
-  const ecriture = await getEcriture(id);
-  if (!ecriture) notFound();
 
-  const sp = await searchParams;
-  const ctx = await getCurrentContext();
+  // Tout est indépendant (ou seulement dépendant de l'id que params
+  // a déjà résolu). On lance en parallèle pour ne payer qu'un RTT.
+  const [
+    sp,
+    ctx,
+    ecriture,
+    justifsBundle,
+    categories,
+    unites,
+    modesPaiement,
+    activites,
+    cartes,
+  ] = await Promise.all([
+    searchParams,
+    getCurrentContext(),
+    getEcriture(id),
+    listJustificatifsForEcriture(id),
+    listCategories(),
+    listUnites(),
+    listModesPaiement(),
+    listActivites(),
+    listCartes(),
+  ]);
+  if (!ecriture) notFound();
   const isAdmin = ADMIN_ROLES.includes(ctx.role);
-  const justifsBundle = await listJustificatifsForEcriture(id);
   const totalJustifs =
     justifsBundle.direct.length +
     justifsBundle.viaRemboursement.reduce((sum, r) => sum + r.justifs.length + r.rib.length, 0);
@@ -121,11 +140,11 @@ export default async function EcritureDetailPage({
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(280px,320px)] gap-6 items-start">
         <EcritureForm
           action={updateAction}
-          categories={await listCategories()}
-          unites={await listUnites()}
-          modesPaiement={await listModesPaiement()}
-          activites={await listActivites()}
-          cartes={await listCartes()}
+          categories={categories}
+          unites={unites}
+          modesPaiement={modesPaiement}
+          activites={activites}
+          cartes={cartes}
           ecriture={ecriture}
         />
 
