@@ -64,6 +64,69 @@ export async function listJustificatifs(
     .all<Justificatif>(...values, options.limit ?? 50);
 }
 
+export interface EcritureJustifsBundle {
+  /** Justifs attachés directement à l'écriture (par le trésorier). */
+  direct: Justificatif[];
+  /** Pour chaque demande de remboursement liée à l'écriture, les
+   *  justifs et le RIB déposés côté demande — ils s'affichent côté
+   *  écriture sans qu'on les duplique en BDD. */
+  viaRemboursement: {
+    remboursementId: string;
+    demandeur: string | null;
+    justifs: Justificatif[];
+    rib: Justificatif[];
+  }[];
+}
+
+// Liste les justifs visibles depuis la page détail d'une écriture :
+// ceux qui lui sont attachés directement + ceux des demandes de
+// remboursement qui pointent sur cette écriture (via
+// `remboursements.ecriture_id`). Pas de duplication : la source de
+// vérité reste côté demande, l'écriture est un miroir.
+export async function listJustificatifsForEcriture(
+  { groupId }: JustificatifContext,
+  ecritureId: string,
+): Promise<EcritureJustifsBundle> {
+  const db = getDb();
+
+  const direct = await db
+    .prepare(
+      `SELECT * FROM justificatifs
+       WHERE group_id = ? AND entity_type = 'ecriture' AND entity_id = ?
+       ORDER BY uploaded_at DESC`,
+    )
+    .all<Justificatif>(groupId, ecritureId);
+
+  const linkedRembs = await db
+    .prepare(
+      `SELECT id, demandeur FROM remboursements
+       WHERE group_id = ? AND ecriture_id = ?
+       ORDER BY id`,
+    )
+    .all<{ id: string; demandeur: string | null }>(groupId, ecritureId);
+
+  const viaRemboursement = await Promise.all(
+    linkedRembs.map(async (r) => {
+      const all = await db
+        .prepare(
+          `SELECT * FROM justificatifs
+           WHERE group_id = ? AND entity_id = ?
+             AND entity_type IN ('remboursement', 'remboursement_rib')
+           ORDER BY uploaded_at DESC`,
+        )
+        .all<Justificatif>(groupId, r.id);
+      return {
+        remboursementId: r.id,
+        demandeur: r.demandeur,
+        justifs: all.filter((j) => j.entity_type === 'remboursement'),
+        rib: all.filter((j) => j.entity_type === 'remboursement_rib'),
+      };
+    }),
+  );
+
+  return { direct, viaRemboursement };
+}
+
 export interface AttachJustificatifInput {
   entity_type: string;
   entity_id: string;

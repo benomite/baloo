@@ -41,8 +41,10 @@ export function InstallButton() {
     window.addEventListener('beforeinstallprompt', onBeforeInstall);
     window.addEventListener('appinstalled', onInstalled);
 
-    // Détection : déjà installée (display-mode standalone).
+    // Détection : déjà installée (display-mode standalone). On set
+    // dans l'effet car la valeur dépend du DOM côté client uniquement.
     if (window.matchMedia('(display-mode: standalone)').matches) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setInstalled(true);
     }
 

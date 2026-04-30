@@ -1,5 +1,6 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { Landmark, Mail, Paperclip, Send } from 'lucide-react';
+import { ArrowRight, CreditCard, Landmark, Mail, Paperclip } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { EcritureForm } from '@/components/ecritures/ecriture-form';
 import { EcritureStatusBadge } from '@/components/shared/status-badge';
@@ -8,7 +9,10 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { getCurrentContext } from '@/lib/context';
 import { getEcriture } from '@/lib/queries/ecritures';
-import { listJustificatifs } from '@/lib/queries/justificatifs';
+import {
+  listJustificatifsForEcriture,
+  type EcritureJustifsBundle,
+} from '@/lib/queries/justificatifs';
 import { listCategories, listUnites, listModesPaiement, listActivites, listCartes } from '@/lib/queries/reference';
 import { updateEcriture, updateEcritureStatus } from '@/lib/actions/ecritures';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
@@ -40,9 +44,12 @@ export default async function EcritureDetailPage({
   const sp = await searchParams;
   const ctx = await getCurrentContext();
   const isAdmin = ADMIN_ROLES.includes(ctx.role);
-  const justificatifs = await listJustificatifs('ecriture', id);
+  const justifsBundle = await listJustificatifsForEcriture(id);
+  const totalJustifs =
+    justifsBundle.direct.length +
+    justifsBundle.viaRemboursement.reduce((sum, r) => sum + r.justifs.length + r.rib.length, 0);
   const updateAction = updateEcriture.bind(null, id);
-  const noJustif = justificatifs.length === 0 && ecriture.justif_attendu !== 0;
+  const noJustif = totalJustifs === 0 && ecriture.justif_attendu !== 0;
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -124,7 +131,7 @@ export default async function EcritureDetailPage({
         <aside className="lg:sticky lg:top-6 space-y-4">
           <JustificatifsCard
             entityId={id}
-            justificatifs={justificatifs}
+            bundle={justifsBundle}
             justifAttendu={ecriture.justif_attendu === 1}
             numeroPiece={ecriture.numero_piece}
             type={ecriture.type}
@@ -150,23 +157,27 @@ function cleanDescription(raw: string): string {
 
 function JustificatifsCard({
   entityId,
-  justificatifs,
+  bundle,
   justifAttendu,
   numeroPiece,
   type,
 }: {
   entityId: string;
-  justificatifs: { id: string; file_path: string; original_filename: string }[];
+  bundle: EcritureJustifsBundle;
   justifAttendu: boolean;
   numeroPiece: string | null;
   type: 'depense' | 'recette';
 }) {
+  const totalCount =
+    bundle.direct.length +
+    bundle.viaRemboursement.reduce((sum, r) => sum + r.justifs.length + r.rib.length, 0);
+
   return (
     <Section
-      title={`Justificatifs (${justificatifs.length})`}
+      title={`Justificatifs (${totalCount})`}
       subtitle={!justifAttendu ? 'Non requis pour cette écriture' : undefined}
     >
-      {justificatifs.length === 0 && (
+      {totalCount === 0 && (
         <>
           {!justifAttendu && (
             <Alert variant="info" icon={null}>
@@ -186,23 +197,50 @@ function JustificatifsCard({
         </>
       )}
 
-      {justificatifs.length > 0 && (
+      {bundle.direct.length > 0 && (
         <ul className="space-y-1.5">
-          {justificatifs.map((j) => (
+          {bundle.direct.map((j) => (
             <li key={j.id}>
-              <a
-                href={`/api/justificatifs/${j.file_path}`}
-                target="_blank"
-                rel="noopener"
-                className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-fg hover:bg-brand-50 hover:text-brand transition-colors"
-              >
-                <Paperclip size={13} className="shrink-0 text-fg-subtle" strokeWidth={1.75} />
-                <span className="truncate">{j.original_filename}</span>
-              </a>
+              <JustifLink filePath={j.file_path} filename={j.original_filename} />
             </li>
           ))}
         </ul>
       )}
+
+      {bundle.viaRemboursement.map((rb) => (
+        <div key={rb.remboursementId} className="rounded-md bg-brand-50/40 border border-brand-100 p-2.5 space-y-1.5">
+          <Link
+            href={`/remboursements/${rb.remboursementId}`}
+            className="flex items-center gap-1.5 text-[12px] font-medium text-brand hover:underline underline-offset-2"
+          >
+            <span className="text-overline text-brand/80">Demande liée</span>
+            <span className="font-mono">{rb.remboursementId}</span>
+            {rb.demandeur && <span className="text-fg-muted font-normal">· {rb.demandeur}</span>}
+            <ArrowRight size={11} strokeWidth={2.5} className="ml-auto" />
+          </Link>
+          {rb.justifs.length > 0 && (
+            <ul className="space-y-1">
+              {rb.justifs.map((j) => (
+                <li key={j.id}>
+                  <JustifLink filePath={j.file_path} filename={j.original_filename} />
+                </li>
+              ))}
+            </ul>
+          )}
+          {rb.rib.map((j) => (
+            <a
+              key={j.id}
+              href={`/api/justificatifs/${j.file_path}`}
+              target="_blank"
+              rel="noopener"
+              className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-fg hover:bg-bg-elevated hover:text-brand transition-colors"
+            >
+              <CreditCard size={13} className="shrink-0 text-fg-subtle" strokeWidth={1.75} />
+              <span className="truncate">RIB · {j.original_filename}</span>
+            </a>
+          ))}
+        </div>
+      ))}
 
       <form action={uploadJustificatif} className="pt-2 border-t border-border-soft">
         <input type="hidden" name="entity_type" value="ecriture" />
@@ -221,6 +259,20 @@ function JustificatifsCard({
         </div>
       </form>
     </Section>
+  );
+}
+
+function JustifLink({ filePath, filename }: { filePath: string; filename: string }) {
+  return (
+    <a
+      href={`/api/justificatifs/${filePath}`}
+      target="_blank"
+      rel="noopener"
+      className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-fg hover:bg-brand-50 hover:text-brand transition-colors"
+    >
+      <Paperclip size={13} className="shrink-0 text-fg-subtle" strokeWidth={1.75} />
+      <span className="truncate">{filename}</span>
+    </a>
   );
 }
 
