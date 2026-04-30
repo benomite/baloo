@@ -66,8 +66,11 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
   return (
     <tr
       data-slot="table-row"
+      // Hover plus marqué (`bg-muted/70`) pour donner un retour visuel
+      // net quand on survole une ligne — utile pour repérer la ligne
+      // qu'on s'apprête à cliquer dans des tableaux denses.
       className={cn(
-        "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "border-b transition-colors hover:bg-muted/70 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
         className
       )}
       {...props}

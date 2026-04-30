@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { Landmark } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { EcritureStatusBadge } from '@/components/shared/status-badge';
 import { UniteBadge } from '@/components/shared/unite-badge';
@@ -201,7 +202,8 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                   <TableCell className="whitespace-nowrap text-xs text-muted-foreground" colSpan={2}>
                     <span className="inline-flex items-center gap-1.5">
                       <span className="text-xs">{isCollapsed ? '▶' : '▼'}</span>
-                      <span>🏦 Ligne bancaire <code>#{item.ligneBancaireId}</code></span>
+                      <Landmark size={13} className="text-muted-foreground" />
+                      <span>Ligne bancaire <code>#{item.ligneBancaireId}</code></span>
                       <span className="text-muted-foreground">·</span>
                       <span className="truncate max-w-md font-medium">{item.info.intitule}</span>
                       <span className="text-muted-foreground">·</span>

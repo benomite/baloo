@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/page-header';
+import { TabLink } from '@/components/shared/tab-link';
 import { listEcritures } from '@/lib/queries/ecritures';
 import { listCategories, listUnites, listModesPaiement, listActivites, listCartes } from '@/lib/queries/reference';
 import { EcritureFilters } from '@/components/ecritures/ecriture-filters';
@@ -46,16 +47,19 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
         <Link href="/ecritures/nouveau"><Button>Nouvelle écriture</Button></Link>
       </PageHeader>
 
-      <div className="mb-4 flex flex-wrap gap-2">
-        <Link href={`/ecritures${presetQS('all')}`}>
-          <Button variant={!filters.incomplete && !filters.from_bank ? 'default' : 'outline'} size="sm">Toutes</Button>
-        </Link>
-        <Link href={`/ecritures${presetQS('incomplete')}`}>
-          <Button variant={filters.incomplete ? 'default' : 'outline'} size="sm">À compléter</Button>
-        </Link>
-        <Link href={`/ecritures${presetQS('from_bank')}`}>
-          <Button variant={filters.from_bank ? 'default' : 'outline'} size="sm">Issues de la banque</Button>
-        </Link>
+      {/* Tabs underline (style Linear / Stripe) — plus subtil que des
+          pill-buttons remplis. Le tab actif a un trait coloré sous le
+          texte ; les autres sont muted. */}
+      <div className="mb-4 flex flex-wrap gap-6 border-b">
+        <TabLink href={`/ecritures${presetQS('all')}`} active={!filters.incomplete && !filters.from_bank}>
+          Toutes
+        </TabLink>
+        <TabLink href={`/ecritures${presetQS('incomplete')}`} active={!!filters.incomplete}>
+          À compléter
+        </TabLink>
+        <TabLink href={`/ecritures${presetQS('from_bank')}`} active={!!filters.from_bank}>
+          Issues de la banque
+        </TabLink>
       </div>
 
       <EcritureFilters categories={categories} unites={unites} cartes={cartes} current={params} />
