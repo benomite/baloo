@@ -70,15 +70,29 @@ function normalize(s: string): string {
     .trim();
 }
 
+// Mots-outils sans valeur sémantique pour le matching de libellé.
+const STOPWORDS = new Set([
+  'de', 'du', 'des', 'le', 'la', 'les', 'un', 'une', 'au', 'aux',
+  'et', 'ou', 'pour', 'dans', 'sur', 'par', 'en', 'avec', 'sans',
+  'remboursement', 'rembours', 'rbst', 'remb', 'frais', 'note',
+]);
+
+function significantWords(s: string): string[] {
+  return normalize(s)
+    .split(' ')
+    .filter((w) => w.length > 3 && !STOPWORDS.has(w));
+}
+
 function scoreCandidate(rembs: RembsRow, c: EcritureCandidate): ScoredCandidate {
   const reasons: string[] = [];
   let score = 0;
 
-  // Match nom (haute valeur — un libellé bancaire de virement contient
-  // souvent "VIR M. DUPONT JEAN" ou similaire).
   const desc = normalize(c.description);
   const nom = rembs.nom ? normalize(rembs.nom) : '';
   const prenom = rembs.prenom ? normalize(rembs.prenom) : '';
+
+  // Match nom / prénom — un libellé de virement contient souvent
+  // "VIR M. DUPONT JEAN" ou "Remboursement Dupont".
   if (nom && nom.length > 2 && desc.includes(nom)) {
     score += 60;
     reasons.push(`nom "${rembs.nom}"`);
@@ -86,6 +100,27 @@ function scoreCandidate(rembs: RembsRow, c: EcritureCandidate): ScoredCandidate 
   if (prenom && prenom.length > 2 && desc.includes(prenom)) {
     score += 25;
     reasons.push(`prénom "${rembs.prenom}"`);
+  }
+
+  // Marqueur "remboursement" : indication forte que l'écriture est
+  // bien un virement de remb (pas une autre dépense au même montant).
+  if (/\b(rembours|rbst|remb|note de frais)/i.test(desc)) {
+    score += 30;
+    reasons.push('marqueur remb');
+  }
+
+  // Mots significatifs du libellé Airtable (nature) qui apparaissent
+  // dans la description. Au-delà de 1 mot commun, on bonus.
+  if (rembs.nature) {
+    const natureWords = significantWords(rembs.nature);
+    const matched = natureWords.filter((w) => desc.includes(w));
+    if (matched.length >= 2) {
+      score += 40;
+      reasons.push(`nature "${matched.slice(0, 2).join(', ')}"`);
+    } else if (matched.length === 1) {
+      score += 20;
+      reasons.push(`nature "${matched[0]}"`);
+    }
   }
 
   // Proximité date.
