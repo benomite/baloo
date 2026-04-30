@@ -15,6 +15,7 @@ import {
   Paperclip,
   type LucideIcon,
 } from 'lucide-react';
+import { InstallButton } from '@/components/pwa/install-button';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -122,8 +123,11 @@ export function Sidebar({ role, groupName }: SidebarProps) {
         })}
       </nav>
 
-      {/* Footer : Mon espace, isolé visuellement */}
-      <div className="border-t border-border-soft p-2">
+      {/* Footer : install PWA si proposable + Mon espace */}
+      <div className="border-t border-border-soft p-2 space-y-2">
+        <div className="px-1">
+          <InstallButton />
+        </div>
         <NavLink href="/moi" icon={CircleUser} active={isMoiActive} variant="subtle">
           Mon espace
         </NavLink>

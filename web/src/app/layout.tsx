@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Bricolage_Grotesque, Geist } from 'next/font/google';
 import { Toaster } from '@/components/ui/sonner';
+import { ServiceWorkerRegister } from '@/components/pwa/sw-register';
 import './globals.css';
 
 const geist = Geist({ variable: '--font-geist', subsets: ['latin'] });
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="h-full flex antialiased">
         {children}
         <Toaster />
+        <ServiceWorkerRegister />
       </body>
     </html>
   );
