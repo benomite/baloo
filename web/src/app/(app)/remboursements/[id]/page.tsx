@@ -1,24 +1,38 @@
 import { notFound } from 'next/navigation';
+import Link from 'next/link';
+import {
+  Briefcase,
+  CheckCircle2,
+  CreditCard,
+  FileText,
+  Paperclip,
+  Shield,
+  ShieldAlert,
+  User,
+  XCircle,
+} from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { RemboursementStatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { PendingButton } from '@/components/shared/pending-button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Link from 'next/link';
+import { Textarea } from '@/components/ui/textarea';
+import { Alert } from '@/components/ui/alert';
+import { Amount } from '@/components/shared/amount';
+import { Field } from '@/components/shared/field';
+import { Section } from '@/components/shared/section';
+import { EcritureLinkCard } from '@/components/rembs/ecriture-link-card';
 import { getRemboursement } from '@/lib/queries/remboursements';
 import { listLignes } from '@/lib/services/remboursements';
 import { listSignatures, verifyChain } from '@/lib/services/signatures';
 import { listJustificatifs } from '@/lib/queries/justificatifs';
-import { patchNotesAndRib } from '@/lib/actions/remboursements';
-import { Textarea } from '@/components/ui/textarea';
-import { getCurrentContext } from '@/lib/context';
-import { updateRemboursementStatus } from '@/lib/actions/remboursements';
+import {
+  patchNotesAndRib,
+  updateRemboursementStatus,
+} from '@/lib/actions/remboursements';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
-import { Amount } from '@/components/shared/amount';
-import { Alert } from '@/components/ui/alert';
-import { EcritureLinkCard } from '@/components/rembs/ecriture-link-card';
+import { getCurrentContext } from '@/lib/context';
+import { cn } from '@/lib/utils';
 
 interface SearchParams {
   error?: string;
@@ -71,278 +85,510 @@ export default async function RemboursementDetailPage({
 
   const isOwner = !!r.submitted_by_user_id && r.submitted_by_user_id === ctx.userId;
   const canEditFull = (isOwner && r.status === 'a_traiter') || isAdmin;
+  const canPatchNotes =
+    (isOwner || isAdmin) && r.status !== 'a_traiter' && r.status !== 'refuse';
+  const canRefuse = isAdmin && !['termine', 'refuse'].includes(r.status);
+  const totalCents = r.total_cents || r.amount_cents;
   const patchAction = patchNotesAndRib.bind(null, id);
 
-  return (
-    <div>
-      <PageHeader title={`${r.id} — ${r.demandeur}`}>
-        <RemboursementStatusBadge status={r.status} />
-        <span className="text-lg font-bold"><Amount cents={r.total_cents || r.amount_cents} /></span>
-        {canEditFull && (
-          <Link href={`/remboursements/${id}/edit`}>
-            <Button variant="outline" size="sm">Modifier</Button>
-          </Link>
-        )}
-      </PageHeader>
+  const fullName = [r.prenom, r.nom].filter(Boolean).join(' ') || r.demandeur;
 
-      {sp.error && <Alert variant="error" className="mb-4">{sp.error}</Alert>}
+  return (
+    <div className="max-w-6xl mx-auto">
+      <PageHeader
+        eyebrow={{ label: 'Remboursements', href: '/remboursements' }}
+        title={r.id}
+        subtitle={fullName}
+        meta={
+          <>
+            <RemboursementStatusBadge status={r.status} />
+            <Amount
+              cents={totalCents}
+              tone="negative"
+              className="text-[22px] font-semibold tracking-tight"
+            />
+          </>
+        }
+        actions={
+          canEditFull ? (
+            <Link href={`/remboursements/${id}/edit`}>
+              <Button variant="outline" size="sm">
+                Modifier
+              </Button>
+            </Link>
+          ) : null
+        }
+      />
+
+      {sp.error && (
+        <Alert variant="error" className="mb-4">
+          {sp.error}
+        </Alert>
+      )}
       {sp.edited && (
         <Alert variant="success" className="mb-4">
-          Modifications enregistrées. Le PDF feuille a été régénéré et la chaîne de signatures remise à jour.
+          Modifications enregistrées. Le PDF feuille a été régénéré et la chaîne de signatures
+          remise à jour.
         </Alert>
       )}
       {sp.patched && (
-        <Alert variant="success" className="mb-4">Notes et RIB mis à jour.</Alert>
+        <Alert variant="success" className="mb-4">
+          Notes et RIB mis à jour.
+        </Alert>
       )}
       {sp.linked && (
         <Alert variant="success" className="mb-4">
-          Demande liée à l&apos;écriture <code className="font-mono">{sp.linked}</code>. Les
+          Demande liée à l&apos;écriture{' '}
+          <code className="font-mono text-[12.5px] font-medium">{sp.linked}</code>. Les
           justificatifs sont visibles depuis la fiche écriture.
         </Alert>
       )}
       {sp.unlinked && (
-        <Alert variant="info" className="mb-4">Lien avec l&apos;écriture supprimé.</Alert>
+        <Alert variant="info" className="mb-4">
+          Lien avec l&apos;écriture supprimé.
+        </Alert>
       )}
 
-      {/* Timeline */}
       {r.status !== 'refuse' ? (
-        <div className="flex items-center gap-2 mb-8 text-xs">
-          {STEPS.map((s, i) => (
-            <div key={s.key} className="flex items-center gap-2">
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white font-bold ${i <= currentIdx ? 'bg-blue-600' : 'bg-gray-300'}`}>
-                {i + 1}
-              </div>
-              <span className={i <= currentIdx ? 'font-medium' : 'text-muted-foreground'}>{s.label}</span>
-              {i < STEPS.length - 1 && (
-                <span className={`w-6 h-0.5 ${i < currentIdx ? 'bg-blue-600' : 'bg-gray-300'}`} />
-              )}
-            </div>
-          ))}
-        </div>
+        <StatusTimeline currentIdx={currentIdx} />
       ) : (
-        <Alert variant="error" className="mb-8">
+        <Alert variant="error" icon={XCircle} className="mb-6">
           Demande refusée{r.motif_refus ? ` — motif : ${r.motif_refus}` : ''}.
         </Alert>
       )}
 
-      <div className="grid grid-cols-[1fr_300px] gap-8">
-        <div>
-          <Card className="mb-6">
-            <CardHeader><CardTitle>Demandeur</CardTitle></CardHeader>
-            <CardContent className="space-y-1 text-sm">
-              <div><strong>Nom :</strong> {[r.prenom, r.nom].filter(Boolean).join(' ') || r.demandeur}</div>
-              {r.email && <div><strong>Email :</strong> {r.email}</div>}
-              <div><strong>Unité :</strong> {r.unite_code ?? '—'}</div>
-              {r.notes && <div><strong>Notes :</strong> {r.notes}</div>}
-            </CardContent>
-          </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(280px,320px)] gap-6 items-start">
+        <div className="space-y-6">
+          <Section title="Demandeur">
+            <dl className="grid grid-cols-1 sm:grid-cols-[110px_1fr] gap-x-4 gap-y-2 text-[13px]">
+              <dt className="text-fg-muted">Nom</dt>
+              <dd className="text-fg">{fullName}</dd>
+              {r.email && (
+                <>
+                  <dt className="text-fg-muted">Email</dt>
+                  <dd className="text-fg break-all">{r.email}</dd>
+                </>
+              )}
+              <dt className="text-fg-muted">Unité</dt>
+              <dd className="text-fg">{r.unite_code ?? '—'}</dd>
+              {r.notes && (
+                <>
+                  <dt className="text-fg-muted">Notes</dt>
+                  <dd className="text-fg whitespace-pre-line">{r.notes}</dd>
+                </>
+              )}
+            </dl>
+          </Section>
 
-          <Card className="mb-6">
-            <CardHeader><CardTitle>Détail des dépenses ({lignes.length})</CardTitle></CardHeader>
-            <CardContent className="text-sm">
-              <table className="w-full">
+          <Section
+            title={`Détail des dépenses (${lignes.length})`}
+            action={
+              <div className="text-right">
+                <div className="text-overline text-fg-subtle">Total</div>
+                <div className="text-display-sm tabular-nums text-fg">
+                  <Amount cents={totalCents} tone="negative" />
+                </div>
+              </div>
+            }
+          >
+            <div className="overflow-x-auto -mx-2">
+              <table className="w-full text-[13px]">
                 <thead>
-                  <tr className="border-b text-left text-xs text-muted-foreground">
-                    <th className="py-1 pr-4">Date</th>
-                    <th className="py-1 pr-4">Nature</th>
-                    <th className="py-1 pr-4 text-right">Montant</th>
+                  <tr className="border-b border-border-soft text-[11px] uppercase tracking-wide text-fg-subtle">
+                    <th className="py-2 px-2 text-left font-medium">Date</th>
+                    <th className="py-2 px-2 text-left font-medium">Nature</th>
+                    <th className="py-2 px-2 text-right font-medium">Montant</th>
                   </tr>
                 </thead>
                 <tbody>
                   {lignes.map((l) => (
-                    <tr key={l.id} className="border-b">
-                      <td className="py-1 pr-4">{l.date_depense}</td>
-                      <td className="py-1 pr-4">{l.nature}</td>
-                      <td className="py-1 pr-4 text-right font-medium"><Amount cents={l.amount_cents} /></td>
+                    <tr
+                      key={l.id}
+                      className="border-b border-border-soft last:border-b-0"
+                    >
+                      <td className="py-2 px-2 text-fg tabular-nums">{l.date_depense}</td>
+                      <td className="py-2 px-2 text-fg">{l.nature}</td>
+                      <td className="py-2 px-2 text-right font-medium">
+                        <Amount cents={l.amount_cents} tone="negative" />
+                      </td>
                     </tr>
                   ))}
-                  <tr>
-                    <td className="py-2 pr-4"></td>
-                    <td className="py-2 pr-4 font-semibold">Total</td>
-                    <td className="py-2 pr-4 text-right font-bold">
-                      <Amount cents={r.total_cents || r.amount_cents} />
-                    </td>
-                  </tr>
                 </tbody>
               </table>
-            </CardContent>
-          </Card>
+            </div>
+          </Section>
 
-          <Card className="mb-6">
-            <CardHeader><CardTitle>Coordonnées bancaires</CardTitle></CardHeader>
-            <CardContent className="text-sm space-y-1">
-              {r.rib_texte ? (
-                <div className="font-mono whitespace-pre-line">{r.rib_texte}</div>
-              ) : ribFiles.length === 0 ? (
-                <div className="text-muted-foreground italic">Aucune coordonnée bancaire fournie.</div>
-              ) : null}
-              {ribFiles.map((j) => (
-                <div key={j.id} className="text-sm">
-                  📄 <a href={`/api/justificatifs/${j.file_path}`} target="_blank" rel="noreferrer" className="text-blue-600 underline">RIB joint</a>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+          <Section
+            title="Coordonnées bancaires"
+            subtitle="Pour le virement."
+          >
+            {r.rib_texte ? (
+              <div className="rounded-md border border-border-soft bg-bg-sunken/40 px-3 py-2.5 font-mono text-[12.5px] text-fg whitespace-pre-line">
+                {r.rib_texte}
+              </div>
+            ) : ribFiles.length === 0 ? (
+              <p className="text-[12.5px] text-fg-muted italic">
+                Aucune coordonnée bancaire fournie.
+              </p>
+            ) : null}
+            {ribFiles.map((j) => (
+              <a
+                key={j.id}
+                href={`/api/justificatifs/${j.file_path}`}
+                target="_blank"
+                rel="noopener"
+                className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-fg hover:bg-brand-50 hover:text-brand transition-colors"
+              >
+                <CreditCard size={13} className="shrink-0 text-fg-subtle" strokeWidth={1.75} />
+                <span className="truncate">RIB · {j.original_filename}</span>
+              </a>
+            ))}
+          </Section>
 
-          {/* Édition limitée post-validation : notes + RIB texte (cf. ADR-022).
-              Visible pour le demandeur et les admins une fois la demande validée. */}
-          {(isOwner || isAdmin) && r.status !== 'a_traiter' && r.status !== 'refuse' && (
-            <details className="mb-6 border rounded p-3">
-              <summary className="cursor-pointer text-sm font-medium">
-                Modifier notes / RIB
-                <span className="ml-2 text-xs text-muted-foreground font-normal">
-                  (édition limitée — la demande est déjà validée)
-                </span>
-              </summary>
-              <form action={patchAction} className="mt-3 space-y-3">
-                <div>
-                  <Label htmlFor="rib_texte" className="text-xs">IBAN / BIC (texte)</Label>
+          {canPatchNotes && (
+            <Section
+              title="Modifier notes / RIB"
+              subtitle="Édition limitée — la demande est déjà validée."
+            >
+              <form action={patchAction} className="space-y-3">
+                <Field label="IBAN / BIC (texte)" htmlFor="rib_texte_patch">
                   <Textarea
-                    id="rib_texte"
+                    id="rib_texte_patch"
                     name="rib_texte"
                     rows={2}
                     defaultValue={r.rib_texte ?? ''}
                     placeholder="FR76 ... · BIC ... · Banque ..."
                   />
-                </div>
-                <div>
-                  <Label htmlFor="notes" className="text-xs">Notes</Label>
+                </Field>
+                <Field label="Notes" htmlFor="notes_patch">
                   <Textarea
-                    id="notes"
+                    id="notes_patch"
                     name="notes"
                     rows={2}
                     defaultValue={r.notes ?? ''}
                     placeholder="Précisions libres"
                   />
+                </Field>
+                <div className="flex justify-end">
+                  <PendingButton variant="outline" size="sm">
+                    Enregistrer
+                  </PendingButton>
                 </div>
-                <PendingButton size="sm" variant="outline">Enregistrer</PendingButton>
               </form>
-            </details>
+            </Section>
           )}
 
           {isAdmin && (
-            <>
-              <h3 className="font-semibold mb-3">Actions</h3>
-              <div className="flex gap-2 flex-wrap mb-4">
-                {r.status === 'a_traiter' && isTresorier && (
-                  <form action={updateRemboursementStatus.bind(null, id, 'valide_tresorier')}>
-                    <PendingButton size="sm" pendingLabel="Validation…">Valider (Trésorier)</PendingButton>
-                  </form>
-                )}
-                {r.status === 'valide_tresorier' && isRG && (
-                  <form action={updateRemboursementStatus.bind(null, id, 'valide_rg')}>
-                    <PendingButton size="sm" pendingLabel="Validation…">Valider (RG)</PendingButton>
-                  </form>
-                )}
-                {r.status === 'valide_rg' && (
-                  <form action={updateRemboursementStatus.bind(null, id, 'virement_effectue')}>
-                    <PendingButton size="sm">Virement effectué</PendingButton>
-                  </form>
-                )}
-                {r.status === 'virement_effectue' && (
-                  <form action={updateRemboursementStatus.bind(null, id, 'termine')}>
-                    <PendingButton size="sm">Marquer terminé</PendingButton>
-                  </form>
-                )}
-              </div>
-
-              {/* Refus possible à toute étape sauf termine/refuse */}
-              {!['termine', 'refuse'].includes(r.status) && (
-                <details className="border rounded p-3 max-w-md">
-                  <summary className="cursor-pointer text-sm font-medium text-red-600">Refuser la demande</summary>
-                  <form action={updateRemboursementStatus.bind(null, id, 'refuse')} className="mt-3 space-y-2">
-                    <Label htmlFor="motif" className="text-xs">Motif de refus</Label>
-                    <Input id="motif" name="motif" required placeholder="Ex. justif manquant, hors scope" />
-                    <PendingButton variant="destructive" size="sm">Refuser</PendingButton>
-                  </form>
-                </details>
-              )}
-            </>
+            <AdminActions
+              id={id}
+              status={r.status}
+              isTresorier={isTresorier}
+              isRG={isRG}
+              canRefuse={canRefuse}
+            />
           )}
         </div>
 
-        <div className="space-y-6">
+        <aside className="lg:sticky lg:top-6 space-y-4">
           {isAdmin && (
             <EcritureLinkCard
               rembsId={r.id}
               groupId={ctx.groupId}
               ecritureId={r.ecriture_id}
-              amountCents={r.total_cents || r.amount_cents}
+              amountCents={totalCents}
             />
           )}
 
-          <div>
-            <h2 className="text-lg font-semibold mb-3">Feuille de remboursement</h2>
+          <Section
+            title="Feuille de remboursement"
+            subtitle={
+              feuilles.length > 1
+                ? `${feuilles.length} versions — dernière à ${feuilles[0].uploaded_at.slice(11, 16)}`
+                : undefined
+            }
+          >
             {feuilles.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">PDF non généré (demande créée avant le chantier 2-bis).</p>
+              <p className="text-[12.5px] text-fg-muted italic">
+                PDF non généré (demande créée avant le chantier 2-bis).
+              </p>
             ) : (
-              <div className="text-sm mb-2">
-                📄 <a href={`/api/justificatifs/${feuilles[0].file_path}`} target="_blank" rel="noreferrer" className="text-blue-600 underline">
-                  {feuilles[0].original_filename}
-                </a>
-                {feuilles.length > 1 && (
-                  <span className="text-xs text-muted-foreground ml-2">
-                    ({feuilles.length} versions, dernière à {feuilles[0].uploaded_at.slice(11, 16)})
-                  </span>
-                )}
-              </div>
+              <a
+                href={`/api/justificatifs/${feuilles[0].file_path}`}
+                target="_blank"
+                rel="noopener"
+                className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-fg hover:bg-brand-50 hover:text-brand transition-colors"
+              >
+                <FileText size={13} className="shrink-0 text-fg-subtle" strokeWidth={1.75} />
+                <span className="truncate">{feuilles[0].original_filename}</span>
+              </a>
             )}
-          </div>
+          </Section>
 
-          <div>
-            <h2 className="text-lg font-semibold mb-3">
-              Signatures ({signatures.length})
-              {signatures.length > 0 && (
-                <span className={`ml-2 text-xs px-2 py-0.5 rounded ${chain.ok ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                  {chain.ok ? '✓ chaîne intègre' : '⚠ chaîne brisée'}
-                </span>
-              )}
-            </h2>
-            {signatures.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">Aucune signature.</p>
+          <SignaturesCard signatures={signatures} chainOk={chain.ok} />
+
+          <Section title={`Justificatifs (${justificatifs.length})`}>
+            {justificatifs.length === 0 ? (
+              <p className="text-[12.5px] text-fg-muted italic">Aucun justificatif.</p>
             ) : (
-              <ul className="space-y-2 text-sm">
-                {signatures.map((s) => (
-                  <li key={s.id} className="border rounded p-2 bg-card">
-                    <div className="font-medium">
-                      {s.signer_role === 'demandeur' ? '👤 Demandeur' : s.signer_role === 'tresorier' ? '💼 Trésorier' : s.signer_role === 'RG' ? '🛡️ RG' : s.signer_role}
-                    </div>
-                    <div className="text-xs">{s.signer_name ?? s.signer_email}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {s.server_timestamp.replace('T', ' ').replace('Z', ' UTC')}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      IP {s.ip ?? '—'}
-                    </div>
-                    <details className="mt-1 text-[10px] text-muted-foreground">
-                      <summary className="cursor-pointer">hashes</summary>
-                      <div className="font-mono break-all mt-1">data : {s.data_hash}</div>
-                      <div className="font-mono break-all">chain : {s.chain_hash}</div>
-                    </details>
+              <ul className="space-y-1">
+                {justificatifs.map((j) => (
+                  <li key={j.id}>
+                    <a
+                      href={`/api/justificatifs/${j.file_path}`}
+                      target="_blank"
+                      rel="noopener"
+                      className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-fg hover:bg-brand-50 hover:text-brand transition-colors"
+                    >
+                      <Paperclip
+                        size={13}
+                        className="shrink-0 text-fg-subtle"
+                        strokeWidth={1.75}
+                      />
+                      <span className="truncate">{j.original_filename}</span>
+                    </a>
                   </li>
                 ))}
               </ul>
             )}
-          </div>
 
-          <div>
-            <h2 className="text-lg font-semibold mb-3">Justificatifs ({justificatifs.length})</h2>
-            {justificatifs.map(j => (
-              <div key={j.id} className="flex items-center gap-2 mb-2 text-sm">
-                <span>📎</span>
-                <a href={`/api/justificatifs/${j.file_path}`} target="_blank" rel="noreferrer" className="hover:underline">{j.original_filename}</a>
-              </div>
-            ))}
-
-            <form action={uploadJustificatif} className="mt-4">
+            <form action={uploadJustificatif} className="pt-2 border-t border-border-soft">
               <input type="hidden" name="entity_type" value="remboursement" />
               <input type="hidden" name="entity_id" value={id} />
-              <input type="file" name="file" className="text-sm mb-2 block" />
-              <PendingButton variant="outline" size="sm">Ajouter</PendingButton>
+              <Field label="Ajouter un fichier">
+                <input
+                  type="file"
+                  name="file"
+                  className="block w-full text-[13px] file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-brand-50 file:text-brand file:font-medium file:text-[13px] file:cursor-pointer hover:file:bg-brand-100 file:transition-colors"
+                />
+              </Field>
+              <div className="flex justify-end mt-3">
+                <PendingButton variant="outline" size="sm">
+                  Ajouter
+                </PendingButton>
+              </div>
             </form>
-          </div>
-        </div>
+          </Section>
+        </aside>
       </div>
     </div>
+  );
+}
+
+function StatusTimeline({ currentIdx }: { currentIdx: number }) {
+  return (
+    <div className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-2 text-[12.5px]">
+      {STEPS.map((s, i) => {
+        const isActive = i <= currentIdx;
+        const isCurrent = i === currentIdx;
+        return (
+          <div key={s.key} className="flex items-center gap-2">
+            <div
+              className={cn(
+                'flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-mono text-[11px] font-semibold transition-colors',
+                isActive ? 'bg-brand text-bg-elevated' : 'bg-bg-sunken text-fg-subtle',
+                isCurrent && 'ring-2 ring-brand/25 ring-offset-2 ring-offset-bg',
+              )}
+            >
+              {i + 1}
+            </div>
+            <span className={cn(isActive ? 'font-medium text-fg' : 'text-fg-muted')}>
+              {s.label}
+            </span>
+            {i < STEPS.length - 1 && (
+              <span
+                className={cn(
+                  'h-px w-5 sm:w-6',
+                  i < currentIdx ? 'bg-brand' : 'bg-border-soft',
+                )}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AdminActions({
+  id,
+  status,
+  isTresorier,
+  isRG,
+  canRefuse,
+}: {
+  id: string;
+  status: string;
+  isTresorier: boolean;
+  isRG: boolean;
+  canRefuse: boolean;
+}) {
+  const hasNextAction =
+    (status === 'a_traiter' && isTresorier) ||
+    (status === 'valide_tresorier' && isRG) ||
+    status === 'valide_rg' ||
+    status === 'virement_effectue';
+
+  if (!hasNextAction && !canRefuse) return null;
+
+  return (
+    <Section title="Actions" subtitle="Faire avancer la demande dans le workflow.">
+      {hasNextAction && (
+        <div className="flex flex-wrap gap-2">
+          {status === 'a_traiter' && isTresorier && (
+            <form action={updateRemboursementStatus.bind(null, id, 'valide_tresorier')}>
+              <PendingButton size="sm" pendingLabel="Validation…">
+                Valider (Trésorier)
+              </PendingButton>
+            </form>
+          )}
+          {status === 'valide_tresorier' && isRG && (
+            <form action={updateRemboursementStatus.bind(null, id, 'valide_rg')}>
+              <PendingButton size="sm" pendingLabel="Validation…">
+                Valider (RG)
+              </PendingButton>
+            </form>
+          )}
+          {status === 'valide_rg' && (
+            <form action={updateRemboursementStatus.bind(null, id, 'virement_effectue')}>
+              <PendingButton size="sm">Virement effectué</PendingButton>
+            </form>
+          )}
+          {status === 'virement_effectue' && (
+            <form action={updateRemboursementStatus.bind(null, id, 'termine')}>
+              <PendingButton size="sm">Marquer terminé</PendingButton>
+            </form>
+          )}
+        </div>
+      )}
+
+      {canRefuse && (
+        <details className="rounded-md border border-border-soft bg-bg-sunken/40 px-3 py-2.5 group">
+          <summary className="cursor-pointer text-[13px] font-medium text-destructive list-none flex items-center gap-1.5">
+            <XCircle size={13} strokeWidth={2} />
+            Refuser la demande
+          </summary>
+          <form
+            action={updateRemboursementStatus.bind(null, id, 'refuse')}
+            className="mt-3 space-y-2"
+          >
+            <Field label="Motif de refus" htmlFor="motif" required>
+              <Input
+                id="motif"
+                name="motif"
+                required
+                placeholder="Ex. justif manquant, hors scope"
+              />
+            </Field>
+            <div className="flex justify-end">
+              <PendingButton variant="destructive" size="sm">
+                Refuser
+              </PendingButton>
+            </div>
+          </form>
+        </details>
+      )}
+    </Section>
+  );
+}
+
+interface SignatureRow {
+  id: number | string;
+  signer_role: string;
+  signer_name: string | null;
+  signer_email: string;
+  server_timestamp: string;
+  ip: string | null;
+  data_hash: string;
+  chain_hash: string;
+}
+
+function SignaturesCard({
+  signatures,
+  chainOk,
+}: {
+  signatures: SignatureRow[];
+  chainOk: boolean;
+}) {
+  return (
+    <Section
+      title={`Signatures (${signatures.length})`}
+      subtitle={
+        signatures.length > 0
+          ? chainOk
+            ? 'Chaîne intègre.'
+            : 'Chaîne brisée — vérifier les hashes.'
+          : undefined
+      }
+      action={
+        signatures.length > 0 ? (
+          <span
+            className={cn(
+              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border',
+              chainOk
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200'
+                : 'border-red-200 bg-red-50 text-red-900 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200',
+            )}
+          >
+            {chainOk ? (
+              <CheckCircle2 size={11} strokeWidth={2.25} />
+            ) : (
+              <ShieldAlert size={11} strokeWidth={2.25} />
+            )}
+            {chainOk ? 'OK' : 'KO'}
+          </span>
+        ) : undefined
+      }
+    >
+      {signatures.length === 0 ? (
+        <p className="text-[12.5px] text-fg-muted italic">Aucune signature.</p>
+      ) : (
+        <ul className="space-y-2">
+          {signatures.map((s) => (
+            <SignatureRowItem key={s.id} sig={s} />
+          ))}
+        </ul>
+      )}
+    </Section>
+  );
+}
+
+function SignatureRowItem({ sig }: { sig: SignatureRow }) {
+  const Icon =
+    sig.signer_role === 'demandeur'
+      ? User
+      : sig.signer_role === 'tresorier'
+        ? Briefcase
+        : sig.signer_role === 'RG'
+          ? Shield
+          : User;
+  const roleLabel =
+    sig.signer_role === 'demandeur'
+      ? 'Demandeur'
+      : sig.signer_role === 'tresorier'
+        ? 'Trésorier'
+        : sig.signer_role === 'RG'
+          ? 'RG'
+          : sig.signer_role;
+  return (
+    <li className="rounded-md border border-border-soft bg-bg-sunken/30 px-2.5 py-2">
+      <div className="flex items-center gap-2">
+        <Icon size={13} className="shrink-0 text-brand" strokeWidth={1.75} />
+        <span className="text-[13px] font-medium text-fg">{roleLabel}</span>
+      </div>
+      <div className="mt-0.5 pl-[21px] text-[12px] text-fg-muted">
+        {sig.signer_name ?? sig.signer_email}
+      </div>
+      <div className="pl-[21px] text-[11px] text-fg-subtle tabular-nums">
+        {sig.server_timestamp.replace('T', ' ').replace('Z', ' UTC')}
+        {sig.ip && ` · IP ${sig.ip}`}
+      </div>
+      <details className="mt-1 pl-[21px] text-[10px] text-fg-subtle">
+        <summary className="cursor-pointer hover:text-fg-muted transition-colors">
+          hashes
+        </summary>
+        <div className="font-mono break-all mt-1">data : {sig.data_hash}</div>
+        <div className="font-mono break-all">chain : {sig.chain_hash}</div>
+      </details>
+    </li>
   );
 }
