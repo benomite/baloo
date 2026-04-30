@@ -49,7 +49,21 @@ export function Sidebar({ role }: Props) {
 
   return (
     <aside className="w-64 border-r bg-muted/20 p-4 flex flex-col gap-0.5">
-      <div className="font-semibold text-sm tracking-tight mb-6 px-3">Baloo Compta</div>
+      <div className="flex items-center gap-2.5 mb-6 px-2">
+        <div
+          className="h-8 w-8 rounded-full flex items-center justify-center text-base shrink-0"
+          style={{ backgroundColor: 'oklch(0.34 0.10 252 / 0.12)' }}
+          aria-hidden
+        >
+          🐻
+        </div>
+        <div className="flex flex-col leading-tight">
+          <span className="font-semibold tracking-tight text-foreground">Baloo</span>
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Compta SGDF
+          </span>
+        </div>
+      </div>
       {items.map((item) => {
         const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
         const Icon = item.icon;

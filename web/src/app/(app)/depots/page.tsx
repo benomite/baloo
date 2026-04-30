@@ -10,6 +10,7 @@ import { rejectDepot, attachDepotToEcriture } from '@/lib/actions/depots';
 import { formatAmount } from '@/lib/format';
 import { Amount } from '@/components/shared/amount';
 import { Field } from '@/components/shared/field';
+import { EmptyState } from '@/components/shared/empty-state';
 import { Alert } from '@/components/ui/alert';
 
 interface SearchParams {
@@ -53,7 +54,11 @@ export default async function DepotsPage({ searchParams }: { searchParams: Promi
       {params.attached && <Alert variant="success" className="mb-4">Dépôt {params.attached} rattaché à une écriture.</Alert>}
 
       {depots.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Aucun dépôt en attente. 🎉</p>
+        <EmptyState
+          emoji="🐻"
+          title="Boîte vide, ours satisfait"
+          description="Tous les justificatifs déposés ont été traités. Profite-en pour respirer."
+        />
       ) : (
         <ul className="space-y-4">
           {depots.map((d, idx) => (

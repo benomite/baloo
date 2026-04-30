@@ -6,6 +6,7 @@ import { listAbandons } from '@/lib/services/abandons';
 import { toggleCerfaEmis } from '@/lib/actions/abandons';
 import { Amount } from '@/components/shared/amount';
 import { Alert } from '@/components/ui/alert';
+import { EmptyState } from '@/components/shared/empty-state';
 
 interface SearchParams {
   error?: string;
@@ -34,7 +35,11 @@ export default async function AbandonsPage({ searchParams }: { searchParams: Pro
       {params.error && <Alert variant="error" className="mb-4">{params.error}</Alert>}
 
       {abandons.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Aucun abandon de frais déclaré.</p>
+        <EmptyState
+          emoji="🎁"
+          title="Aucun abandon de frais"
+          description="Quand un bénévole renonce à se faire rembourser des frais avancés pour le groupe, ça se déclare ici. Reçu fiscal CERFA généré pour qu'il puisse défiscaliser."
+        />
       ) : (
         years.map((year) => {
           const items = byYear.get(year)!;

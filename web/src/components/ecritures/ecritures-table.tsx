@@ -231,8 +231,12 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
             const rowBg = isSelected
               ? 'bg-primary/5'
               : item.inGroup ? 'bg-slate-50/70 dark:bg-slate-900/30' : '';
-            const railShadow = item.inGroup
-              ? { boxShadow: 'inset 3px 0 0 0 rgb(148 163 184 / 0.55)' }
+            // Rail vertical 3px à gauche : couleur de l'unité
+            // (lecture par unité instantanée au scroll). Fallback gris
+            // pour les sous-lignes bancaires sans unité, sinon rien.
+            const railColor = e.unite_couleur || (item.inGroup ? 'rgb(148 163 184 / 0.55)' : null);
+            const railShadow = railColor
+              ? { boxShadow: `inset 3px 0 0 0 ${railColor}` }
               : undefined;
             return (
               <TableRow key={item.key} className={rowBg}>

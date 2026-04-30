@@ -78,7 +78,17 @@ export default async function DashboardPage() {
             </TableHeader>
             <TableBody>
               {data.parUnite.map(u => (
-                <TableRow key={u.code}>
+                <TableRow
+                  key={u.code}
+                  // Rail vertical 3px de la couleur de l'unité à gauche +
+                  // teinte de fond ultra-douce (~6% alpha) pour donner un
+                  // visuel "par unité" au coup d'œil sans nuire à la
+                  // lisibilité.
+                  style={u.couleur ? {
+                    boxShadow: `inset 3px 0 0 0 ${u.couleur}`,
+                    backgroundColor: `${u.couleur}0F`,
+                  } : undefined}
+                >
                   <TableCell className="font-medium">{u.code} — {u.name}</TableCell>
                   <TableCell className="text-right"><Amount cents={u.depenses} tone="negative" /></TableCell>
                   <TableCell className="text-right"><Amount cents={u.recettes} tone="positive" /></TableCell>

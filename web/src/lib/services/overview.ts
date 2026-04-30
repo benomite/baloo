@@ -12,7 +12,7 @@ export interface OverviewData {
   totalDepensesFormatted: string;
   totalRecettesFormatted: string;
   soldeFormatted: string;
-  parUnite: { code: string; name: string; depenses: number; recettes: number; solde: number }[];
+  parUnite: { code: string; name: string; couleur: string | null; depenses: number; recettes: number; solde: number }[];
   remboursementsEnAttente: { count: number; total: number; totalFormatted: string };
   alertes: { depensesSansJustificatif: number; nonSyncComptaweb: number };
   dernierImport: { date: string; fichier: string } | null;
@@ -30,13 +30,13 @@ export async function getOverview({ groupId }: OverviewContext): Promise<Overvie
   ).get<{ total: number }>(groupId);
 
   const parUnite = await db.prepare(`
-    SELECT u.code, u.name,
+    SELECT u.code, u.name, u.couleur,
       COALESCE(SUM(CASE WHEN e.type = 'depense' THEN e.amount_cents ELSE 0 END), 0) as depenses,
       COALESCE(SUM(CASE WHEN e.type = 'recette' THEN e.amount_cents ELSE 0 END), 0) as recettes
     FROM unites u LEFT JOIN ecritures e ON e.unite_id = u.id AND e.group_id = ?
     WHERE u.group_id = ?
     GROUP BY u.id ORDER BY u.code
-  `).all<{ code: string; name: string; depenses: number; recettes: number }>(groupId, groupId);
+  `).all<{ code: string; name: string; couleur: string | null; depenses: number; recettes: number }>(groupId, groupId);
 
   const rbt = await db.prepare(
     "SELECT COUNT(*) as count, COALESCE(SUM(amount_cents), 0) as total FROM remboursements WHERE group_id = ? AND status IN ('demande', 'valide')"

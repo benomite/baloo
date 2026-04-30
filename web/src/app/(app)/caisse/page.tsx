@@ -10,6 +10,7 @@ import { createMouvementCaisse } from '@/lib/actions/caisse';
 import { Amount } from '@/components/shared/amount';
 import { StatCard } from '@/components/shared/stat-card';
 import { Coins } from 'lucide-react';
+import { EmptyState } from '@/components/shared/empty-state';
 import { getCurrentContext } from '@/lib/context';
 import { requireAdmin } from '@/lib/auth/access';
 
@@ -84,33 +85,38 @@ export default async function CaissePage() {
         </CardContent>
       </Card>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Date</TableHead>
-            <TableHead>Description</TableHead>
-            <TableHead>Unité</TableHead>
-            <TableHead>Activité</TableHead>
-            <TableHead className="text-right">Montant</TableHead>
-            <TableHead className="text-right">Solde après</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {mouvements.map(m => (
-            <TableRow key={m.id}>
-              <TableCell>{m.date_mouvement}</TableCell>
-              <TableCell>{m.description}</TableCell>
-              <TableCell>{m.unite_code ?? '—'}</TableCell>
-              <TableCell>{m.activite_name ?? '—'}</TableCell>
-              <TableCell className="text-right font-medium"><Amount cents={m.amount_cents} tone="signed" /></TableCell>
-              <TableCell className="text-right">{m.solde_apres_cents != null ? <Amount cents={m.solde_apres_cents} tone="muted" /> : '—'}</TableCell>
+      {mouvements.length === 0 ? (
+        <EmptyState
+          emoji="🪙"
+          title="Caisse encore vierge"
+          description="Pas encore de mouvement enregistré. Ajoute le premier ci-dessus quand une recette ou une dépense en espèces passe par la caisse du groupe."
+        />
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Date</TableHead>
+              <TableHead>Description</TableHead>
+              <TableHead>Unité</TableHead>
+              <TableHead>Activité</TableHead>
+              <TableHead className="text-right">Montant</TableHead>
+              <TableHead className="text-right">Solde après</TableHead>
             </TableRow>
-          ))}
-          {mouvements.length === 0 && (
-            <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Aucun mouvement</TableCell></TableRow>
-          )}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {mouvements.map(m => (
+              <TableRow key={m.id}>
+                <TableCell>{m.date_mouvement}</TableCell>
+                <TableCell>{m.description}</TableCell>
+                <TableCell>{m.unite_code ?? '—'}</TableCell>
+                <TableCell>{m.activite_name ?? '—'}</TableCell>
+                <TableCell className="text-right font-medium"><Amount cents={m.amount_cents} tone="signed" /></TableCell>
+                <TableCell className="text-right">{m.solde_apres_cents != null ? <Amount cents={m.solde_apres_cents} tone="muted" /> : '—'}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
     </div>
   );
 }
