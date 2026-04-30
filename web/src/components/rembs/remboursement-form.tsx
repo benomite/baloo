@@ -108,7 +108,7 @@ export function RemboursementForm({
 
       {identityMode === 'editable' && (
         <Section title="Bénéficiaire" subtitle="À qui le virement va.">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Prénom" htmlFor="prenom" required>
               <Input id="prenom" name="prenom" defaultValue={defaultIdentity.prenom} required />
             </Field>
@@ -152,7 +152,7 @@ export function RemboursementForm({
           {lignes.map((l, i) => (
             <div
               key={l.key}
-              className="grid grid-cols-[120px_1fr_120px_auto] gap-3 items-end"
+              className="grid grid-cols-[100px_1fr_110px_auto] sm:grid-cols-[120px_1fr_120px_auto] gap-2 sm:gap-3 items-end"
             >
               <Field label={i === 0 ? 'Date' : ''} htmlFor={`ligne_${i}_date`} required={i === 0}>
                 <Input

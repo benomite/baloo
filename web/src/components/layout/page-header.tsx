@@ -43,8 +43,8 @@ export function PageHeader({
   const actionContent = actions ?? children;
 
   return (
-    <header className="border-b border-border-soft pb-6 mb-8">
-      <div className="flex items-start justify-between gap-8">
+    <header className="border-b border-border-soft pb-5 sm:pb-6 mb-6 sm:mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 sm:gap-8">
         <div className="min-w-0 flex-1">
           {eyebrow && (
             <Link
@@ -59,8 +59,8 @@ export function PageHeader({
             className={cn(
               'text-fg tracking-tight',
               useSans
-                ? 'text-[22px] font-semibold leading-[1.2] break-words'
-                : 'font-display text-[28px] font-medium leading-[1.08]',
+                ? 'text-[20px] sm:text-[22px] font-semibold leading-[1.2] break-words'
+                : 'font-display text-[24px] sm:text-[28px] font-medium leading-[1.08]',
             )}
           >
             {title}
@@ -71,10 +71,12 @@ export function PageHeader({
             </p>
           )}
         </div>
-        {meta && <div className="shrink-0 flex items-center gap-3 pt-1">{meta}</div>}
+        {meta && (
+          <div className="shrink-0 flex items-center gap-3 sm:pt-1 flex-wrap">{meta}</div>
+        )}
       </div>
       {actionContent && (
-        <div className="mt-5 flex flex-wrap items-center gap-2">{actionContent}</div>
+        <div className="mt-4 sm:mt-5 flex flex-wrap items-center gap-2">{actionContent}</div>
       )}
     </header>
   );

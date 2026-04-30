@@ -110,7 +110,7 @@ export default async function EcritureDetailPage({
         </Alert>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(280px,320px)] gap-6 items-start">
         <EcritureForm
           action={updateAction}
           categories={await listCategories()}

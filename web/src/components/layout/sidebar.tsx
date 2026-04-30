@@ -72,7 +72,7 @@ export function Sidebar({ role, groupName }: SidebarProps) {
   const isMoiActive = pathname === '/moi' || pathname.startsWith('/moi/');
 
   return (
-    <aside className="w-[260px] shrink-0 border-r border-border bg-bg-sunken/60 flex flex-col">
+    <div className="w-[260px] shrink-0 flex flex-col h-full">
       {/* Wordmark : écusson dégradé brand + Baloo + groupe */}
       <div className="px-5 pt-5 pb-4">
         <div className="flex items-center gap-2.5">
@@ -128,7 +128,7 @@ export function Sidebar({ role, groupName }: SidebarProps) {
           Mon espace
         </NavLink>
       </div>
-    </aside>
+    </div>
   );
 }
 

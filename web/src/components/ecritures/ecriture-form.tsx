@@ -42,7 +42,7 @@ export function EcritureForm({
       )}
 
       <Section title="Identité" subtitle="Quoi, quand, combien.">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Date" htmlFor="date_ecriture" required>
             <Input
               type="date"
@@ -74,7 +74,7 @@ export function EcritureForm({
             disabled={locked}
           />
         </Field>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Montant" htmlFor="montant" required hint="format 42,50">
             <Input
               id="montant"
@@ -102,7 +102,7 @@ export function EcritureForm({
         title="Imputation"
         subtitle="Où va cette écriture dans la comptabilité du groupe."
       >
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Unité" htmlFor="unite_id">
             <NativeSelect
               id="unite_id"

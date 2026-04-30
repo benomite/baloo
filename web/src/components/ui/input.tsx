@@ -9,7 +9,10 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
       type={type}
       data-slot="input"
       className={cn(
-        "h-10 w-full min-w-0 rounded-lg border border-border bg-bg-elevated px-3 py-1.5 text-[13.5px] transition-colors outline-none",
+        // Sur mobile : font-size 16px pour empêcher iOS de zoomer au
+        // focus. Sur desktop (sm+) : on revient à 13.5px qui matche le
+        // body.
+        "h-10 w-full min-w-0 rounded-lg border border-border bg-bg-elevated px-3 py-1.5 text-base sm:text-[13.5px] transition-colors outline-none",
         "file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground",
         "placeholder:text-fg-subtle",
         "hover:border-border-strong",

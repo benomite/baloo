@@ -17,7 +17,7 @@ export function NativeSelect({
       <select
         {...props}
         className={cn(
-          'h-10 w-full appearance-none rounded-lg border border-border bg-bg-elevated px-3 pr-9 text-[13.5px] outline-none transition-colors',
+          'h-10 w-full appearance-none rounded-lg border border-border bg-bg-elevated px-3 pr-9 text-base sm:text-[13.5px] outline-none transition-colors',
           'hover:border-border-strong',
           'focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20',
           'disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60',

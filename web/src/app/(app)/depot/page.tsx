@@ -78,7 +78,7 @@ export default async function DepotPage({ searchParams }: { searchParams: Promis
           title="Informations comptables"
           subtitle="Tout est optionnel — aide à pré-rapprocher l'écriture, sinon le trésorier complétera."
         >
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Montant TTC" htmlFor="amount" hint="optionnel">
               <Input
                 id="amount"
@@ -97,7 +97,7 @@ export default async function DepotPage({ searchParams }: { searchParams: Promis
               />
             </Field>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Catégorie" htmlFor="category_id">
               <NativeSelect id="category_id" name="category_id">
                 <option value="">— Aucune —</option>

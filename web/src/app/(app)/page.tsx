@@ -25,7 +25,7 @@ export default async function DashboardPage() {
     <div>
       <PageHeader title="Tableau de bord" />
 
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <StatCard
           label="Dépenses"
           icon={ArrowDownCircle}
@@ -43,7 +43,7 @@ export default async function DashboardPage() {
         />
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <StatCard
           label="Remb. en attente"
           icon={Clock}

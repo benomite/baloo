@@ -52,7 +52,7 @@ export default async function MyNouveauAbandonPage({
               placeholder="Ex. tickets de métro, achat goûter, matériel"
             />
           </Field>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Montant TTC" htmlFor="montant" required hint="format 42,50">
               <Input
                 id="montant"
