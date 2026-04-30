@@ -16,3 +16,5 @@ export {
 export { updateMyRemboursement, patchNotesAndRib } from './update';
 
 export { updateRemboursementStatus } from './status';
+
+export { linkRemboursementToEcriture, unlinkRemboursementFromEcriture } from './link';

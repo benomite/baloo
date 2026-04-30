@@ -17,11 +17,14 @@ import { updateRemboursementStatus } from '@/lib/actions/remboursements';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
 import { Amount } from '@/components/shared/amount';
 import { Alert } from '@/components/ui/alert';
+import { EcritureLinkCard } from '@/components/rembs/ecriture-link-card';
 
 interface SearchParams {
   error?: string;
   edited?: string;
   patched?: string;
+  linked?: string;
+  unlinked?: string;
 }
 
 const STEPS = [
@@ -89,6 +92,15 @@ export default async function RemboursementDetailPage({
       )}
       {sp.patched && (
         <Alert variant="success" className="mb-4">Notes et RIB mis à jour.</Alert>
+      )}
+      {sp.linked && (
+        <Alert variant="success" className="mb-4">
+          Demande liée à l&apos;écriture <code className="font-mono">{sp.linked}</code>. Les
+          justificatifs sont visibles depuis la fiche écriture.
+        </Alert>
+      )}
+      {sp.unlinked && (
+        <Alert variant="info" className="mb-4">Lien avec l&apos;écriture supprimé.</Alert>
       )}
 
       {/* Timeline */}
@@ -249,6 +261,15 @@ export default async function RemboursementDetailPage({
         </div>
 
         <div className="space-y-6">
+          {isAdmin && (
+            <EcritureLinkCard
+              rembsId={r.id}
+              groupId={ctx.groupId}
+              ecritureId={r.ecriture_id}
+              amountCents={r.total_cents || r.amount_cents}
+            />
+          )}
+
           <div>
             <h2 className="text-lg font-semibold mb-3">Feuille de remboursement</h2>
             {feuilles.length === 0 ? (
