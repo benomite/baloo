@@ -2,8 +2,15 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// Sur Vercel le filesystem du déploiement (`/var/task/...`) est en
+// lecture seule : seul `/tmp` est writable. Le cache de session
+// Comptaweb est donc éphémère (perdu à chaque cold start), mais le
+// cookie a un TTL de 8h et reste réutilisé tant que la lambda est
+// chaude. En dev on garde `web/data/` versionné dans .gitignore.
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = resolve(__dirname, '..', '..', '..', 'data');
+const DATA_DIR = process.env.VERCEL
+  ? '/tmp'
+  : resolve(__dirname, '..', '..', '..', 'data');
 const SESSION_FILE = resolve(DATA_DIR, 'comptaweb-session.json');
 
 // TTL par défaut du cookie persisté côté client : 8h. Passé ce délai on re-joue
