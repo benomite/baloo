@@ -25,6 +25,10 @@ inbox/
 *.csv
 *.ods
 !doc/**/*.pdf
+# Modèles SGDF servis statiquement par l'app web (formulaires vides,
+# notices) — pas de données perso, OK à versionner.
+!web/public/docs/*.pdf
+!web/public/docs/*.xlsx
 
 # Données perso / financières extraites
 *.rib

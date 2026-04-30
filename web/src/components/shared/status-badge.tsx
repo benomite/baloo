@@ -86,3 +86,15 @@ export function RemboursementStatusBadge({ status }: { status: string }) {
   const entry = REMBOURSEMENT_STATUS_MAP[status] ?? { tone: 'neutral' as const, label: status };
   return <StatusPill tone={entry.tone} label={entry.label} />;
 }
+
+const ABANDON_STATUS_MAP: Record<string, { tone: StatusTone; label: string }> = {
+  a_traiter: { tone: 'pending', label: 'À traiter' },
+  valide: { tone: 'progress', label: 'Validé' },
+  envoye_national: { tone: 'success', label: 'Envoyé au national' },
+  refuse: { tone: 'danger', label: 'Refusé' },
+};
+
+export function AbandonStatusBadge({ status }: { status: string }) {
+  const entry = ABANDON_STATUS_MAP[status] ?? { tone: 'neutral' as const, label: status };
+  return <StatusPill tone={entry.tone} label={entry.label} />;
+}

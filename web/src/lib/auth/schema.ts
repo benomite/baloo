@@ -321,5 +321,40 @@ export async function ensureAuthSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_signatures_signer ON signatures(signer_user_id);
   `);
 
+  // Chantier "abandons workflow" : ajout d'un workflow de validation
+  // sur les abandons (a_traiter → valide → envoye_national, refuse).
+  // Le flag `cerfa_emis` reste séparé (il dépend du retour async du
+  // national). Champs prenom / nom / email ajoutés pour le CERFA
+  // (l'ancien `donateur` reste rempli pour rétrocompat).
+  const abandonCols2 = await db
+    .prepare("PRAGMA table_info(abandons_frais)")
+    .all<{ name: string }>();
+  const hasAbandonCol = (n: string) => abandonCols2.some((c) => c.name === n);
+  if (!hasAbandonCol('status')) {
+    await db.exec(
+      "ALTER TABLE abandons_frais ADD COLUMN status TEXT NOT NULL DEFAULT 'a_traiter'",
+    );
+  }
+  if (!hasAbandonCol('motif_refus')) {
+    await db.exec('ALTER TABLE abandons_frais ADD COLUMN motif_refus TEXT');
+  }
+  if (!hasAbandonCol('sent_to_national_at')) {
+    await db.exec('ALTER TABLE abandons_frais ADD COLUMN sent_to_national_at TEXT');
+  }
+  if (!hasAbandonCol('cerfa_emis_at')) {
+    await db.exec('ALTER TABLE abandons_frais ADD COLUMN cerfa_emis_at TEXT');
+  }
+  if (!hasAbandonCol('prenom')) {
+    await db.exec('ALTER TABLE abandons_frais ADD COLUMN prenom TEXT');
+  }
+  if (!hasAbandonCol('nom')) {
+    await db.exec('ALTER TABLE abandons_frais ADD COLUMN nom TEXT');
+  }
+  if (!hasAbandonCol('email')) {
+    await db.exec('ALTER TABLE abandons_frais ADD COLUMN email TEXT');
+  }
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_abandons_status ON abandons_frais(status)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_abandons_annee ON abandons_frais(annee_fiscale)');
+
   ensured = true;
 }

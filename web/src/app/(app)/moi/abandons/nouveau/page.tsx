@@ -1,13 +1,14 @@
 import { redirect } from 'next/navigation';
+import { Download, FileText, Info } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Alert } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
 import { PendingButton } from '@/components/shared/pending-button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Field } from '@/components/shared/field';
 import { Section } from '@/components/shared/section';
 import { NativeSelect } from '@/components/ui/native-select';
+import { FileMultiUploader } from '@/components/ui/file-multi-uploader';
 import { getCurrentContext } from '@/lib/context';
 import { listUnites } from '@/lib/queries/reference';
 import { createMyAbandon } from '@/lib/actions/abandons';
@@ -42,6 +43,33 @@ export default async function MyNouveauAbandonPage({
           {params.error}
         </Alert>
       )}
+
+      <Alert variant="info" icon={Info} className="mb-6">
+        <div className="space-y-2">
+          <p className="font-medium">Avant de remplir, télécharge le formulaire SGDF :</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+            <a
+              href="/docs/formulaire_abandon.xlsx"
+              className="inline-flex items-center gap-1.5 text-[13px] font-medium text-brand hover:underline underline-offset-2"
+            >
+              <Download size={13} strokeWidth={2} />
+              Formulaire à compléter (xlsx)
+            </a>
+            <a
+              href="/docs/fiche_abandon.pdf"
+              target="_blank"
+              rel="noopener"
+              className="inline-flex items-center gap-1.5 text-[13px] font-medium text-brand hover:underline underline-offset-2"
+            >
+              <FileText size={13} strokeWidth={2} />
+              Notice explicative SGDF
+            </a>
+          </div>
+          <p className="text-[12.5px] leading-relaxed">
+            Remplis-le, signe-le, puis dépose-le ici (xlsx ou PDF scanné) avec tes justificatifs.
+          </p>
+        </div>
+      </Alert>
 
       <form action={createMyAbandon} encType="multipart/form-data" className="space-y-6">
         <Section title="La dépense" subtitle="Quoi, combien, quand.">
@@ -88,17 +116,32 @@ export default async function MyNouveauAbandonPage({
           )}
         </Section>
 
-        <Section title="Justificatif" subtitle="Photo ou PDF de la pièce.">
-          <Field label="Fichier" htmlFor="file" required>
+        <Section
+          title="Feuille d'abandon signée"
+          subtitle="Le formulaire SGDF rempli et signé (xlsx ou PDF). Document officiel envoyé au national pour émettre ton CERFA."
+        >
+          <Field label="Fichier" htmlFor="feuille" required>
             <Input
-              id="file"
-              name="file"
+              id="feuille"
+              name="feuille"
               type="file"
-              accept="image/*,application/pdf"
+              accept="application/pdf,image/*,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
               required
               className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-brand-50 file:text-brand file:font-medium file:text-[13px] file:cursor-pointer hover:file:bg-brand-100 file:transition-colors"
             />
           </Field>
+        </Section>
+
+        <Section
+          title="Justificatifs"
+          subtitle="Les tickets, factures ou reçus correspondants. Carte grise pour les frais kilométriques."
+        >
+          <FileMultiUploader
+            name="justifs"
+            required
+            accept="image/*,application/pdf"
+            helpText="Tu peux glisser-déposer plusieurs fichiers d'un coup."
+          />
         </Section>
 
         <Section title="Notes" subtitle="Pour mémoire — optionnel.">
@@ -114,4 +157,3 @@ export default async function MyNouveauAbandonPage({
     </div>
   );
 }
-

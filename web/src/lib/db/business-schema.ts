@@ -199,22 +199,35 @@ export async function ensureBusinessSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_rbt_edit_token ON remboursements(edit_token);
     CREATE INDEX IF NOT EXISTS idx_rbt_validate_token ON remboursements(validate_token);
 
-    -- abandons_frais : avec submitted_by_user_id intégré.
+    -- abandons_frais : avec submitted_by_user_id, status (workflow
+    -- a_traiter / valide / envoye_national + refuse), motif_refus,
+    -- prenom + nom + email pour identifier le donateur. Le champ
+    -- donateur reste rempli pour rétrocompat.
     CREATE TABLE IF NOT EXISTS abandons_frais (
       id TEXT PRIMARY KEY,
       group_id TEXT NOT NULL,
       donateur TEXT NOT NULL,
+      prenom TEXT,
+      nom TEXT,
+      email TEXT,
       amount_cents INTEGER NOT NULL,
       date_depense TEXT NOT NULL,
       nature TEXT NOT NULL,
       unite_id TEXT REFERENCES unites(id),
       annee_fiscale TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'a_traiter',
+      motif_refus TEXT,
+      sent_to_national_at TEXT,
       cerfa_emis INTEGER NOT NULL DEFAULT 0,
+      cerfa_emis_at TEXT,
       notes TEXT,
       submitted_by_user_id TEXT REFERENCES users(id),
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
       updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
+    CREATE INDEX IF NOT EXISTS idx_abandons_group ON abandons_frais(group_id);
+    CREATE INDEX IF NOT EXISTS idx_abandons_status ON abandons_frais(status);
+    CREATE INDEX IF NOT EXISTS idx_abandons_annee ON abandons_frais(annee_fiscale);
 
     -- mouvements_caisse : avec unite_id, activite_id intégrés.
     CREATE TABLE IF NOT EXISTS mouvements_caisse (
