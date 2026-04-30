@@ -331,9 +331,16 @@ export async function ensureAuthSchema(): Promise<void> {
     .all<{ name: string }>();
   const hasAbandonCol = (n: string) => abandonCols2.some((c) => c.name === n);
   if (!hasAbandonCol('status')) {
-    await db.exec(
-      "ALTER TABLE abandons_frais ADD COLUMN status TEXT NOT NULL DEFAULT 'a_traiter'",
-    );
+    // Turso / libsql remote refuse `ADD COLUMN ... NOT NULL DEFAULT`
+    // (l'erreur fait planter ensureSchema en boucle et casse l'auth).
+    // On ajoute la colonne nullable ; le NOT NULL existe au CREATE
+    // TABLE pour les BDDs vierges, et l'applicatif (createAbandon /
+    // transitionAbandonStatus) garantit qu'on n'écrit jamais de NULL.
+    await db.exec("ALTER TABLE abandons_frais ADD COLUMN status TEXT DEFAULT 'a_traiter'");
+    // Backfill pour les lignes pré-existantes qui n'ont pas reçu le
+    // DEFAULT (selon la version de libsql, le DEFAULT n'est pas
+    // toujours appliqué aux lignes existantes via ALTER).
+    await db.exec("UPDATE abandons_frais SET status = 'a_traiter' WHERE status IS NULL");
   }
   if (!hasAbandonCol('motif_refus')) {
     await db.exec('ALTER TABLE abandons_frais ADD COLUMN motif_refus TEXT');

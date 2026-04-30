@@ -226,8 +226,11 @@ export async function ensureBusinessSchema(): Promise<void> {
       updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
     CREATE INDEX IF NOT EXISTS idx_abandons_group ON abandons_frais(group_id);
-    CREATE INDEX IF NOT EXISTS idx_abandons_status ON abandons_frais(status);
     CREATE INDEX IF NOT EXISTS idx_abandons_annee ON abandons_frais(annee_fiscale);
+    -- idx_abandons_status est créé dans auth/schema.ts APRÈS l ALTER
+    -- TABLE qui ajoute la colonne status aux BDDs existantes : sinon
+    -- ce CREATE INDEX plante sur les BDDs pré-migration (CREATE TABLE
+    -- IF NOT EXISTS étant un no-op, la colonne n est pas encore là).
 
     -- mouvements_caisse : avec unite_id, activite_id intégrés.
     CREATE TABLE IF NOT EXISTS mouvements_caisse (
