@@ -212,6 +212,117 @@ export async function createMyAbandon(formData: FormData): Promise<void> {
   redirect('/moi?abandon_created=' + encodeURIComponent(created.id));
 }
 
+// Saisie d'un abandon "pour autrui" par un admin (trésorier / RG).
+// Cas d'usage : rattrapage d'historique (demandes déjà signées sur
+// papier, pas encore en BDD), ou aide aux donateurs qui ne peuvent
+// pas se connecter eux-mêmes. Distinct de `createMyAbandon` qui lit
+// l'identité depuis la session du user connecté.
+export async function createAbandonForOther(formData: FormData): Promise<void> {
+  const ctx = await getCurrentContext();
+  if (!ADMIN_ROLES.includes(ctx.role)) {
+    redirect('/abandons?error=' + encodeURIComponent('Action réservée aux trésoriers / RG.'));
+  }
+
+  const feuille = pickFile(formData, 'feuille');
+  const justifs = pickFiles(formData, 'justifs');
+
+  const prenom = ((formData.get('prenom') as string | null)?.trim()) ?? '';
+  const nom = ((formData.get('nom') as string | null)?.trim()) ?? '';
+  const email = ((formData.get('email') as string | null)?.trim()) ?? '';
+  const nature = ((formData.get('nature') as string | null)?.trim()) ?? '';
+  const dateDepense = (formData.get('date_depense') as string | null) ?? '';
+  const amountRaw = (formData.get('montant') as string | null)?.trim() ?? '';
+
+  if (!prenom || !nom) {
+    redirect(
+      '/abandons/nouveau?error=' + encodeURIComponent('Prénom et nom du donateur requis.'),
+    );
+  }
+  if (!nature) {
+    redirect(
+      '/abandons/nouveau?error=' + encodeURIComponent('Nature de la dépense requise.'),
+    );
+  }
+  if (!dateDepense) {
+    redirect('/abandons/nouveau?error=' + encodeURIComponent('Date requise.'));
+  }
+  let amount_cents: number;
+  try {
+    amount_cents = parseAmount(amountRaw);
+  } catch {
+    redirect(
+      '/abandons/nouveau?error=' +
+        encodeURIComponent(`Montant invalide : "${amountRaw}".`),
+    );
+  }
+
+  // Validation des fichiers (taille / mime). La feuille et les justifs
+  // sont optionnels en mode admin (rattrapage : on a parfois juste la
+  // photo de la fiche signée, parfois rien — on saisit pour ne pas
+  // perdre l'info, on attache après).
+  try {
+    if (feuille) {
+      validateJustifAttachment({
+        filename: feuille.name,
+        size: feuille.size,
+        mime_type: feuille.type || null,
+      });
+    }
+    for (const j of justifs) {
+      validateJustifAttachment({ filename: j.name, size: j.size, mime_type: j.type || null });
+    }
+  } catch (err) {
+    if (err instanceof JustificatifValidationError) {
+      redirect('/abandons/nouveau?error=' + encodeURIComponent(err.message));
+    }
+    throw err;
+  }
+
+  const anneeFiscale = dateDepense.slice(0, 4);
+  const fullName = `${prenom} ${nom}`;
+
+  let created;
+  try {
+    created = await createAbandonService(
+      { groupId: ctx.groupId },
+      {
+        donateur: fullName,
+        prenom,
+        nom,
+        email: email || null,
+        amount_cents,
+        date_depense: dateDepense,
+        nature,
+        unite_id: (formData.get('unite_id') as string | null) || null,
+        annee_fiscale: anneeFiscale,
+        notes: (formData.get('notes') as string | null)?.trim() || null,
+        // Pas de submitted_by_user_id : ce n'est pas le donateur qui
+        // a soumis, c'est l'admin qui a saisi pour lui.
+        submitted_by_user_id: null,
+      },
+    );
+  } catch (err) {
+    redirect(
+      '/abandons/nouveau?error=' +
+        encodeURIComponent(err instanceof Error ? err.message : String(err)),
+    );
+  }
+
+  try {
+    if (feuille) {
+      await attachFile(ctx.groupId, 'abandon_feuille', created.id, feuille);
+    }
+    for (const j of justifs) {
+      await attachFile(ctx.groupId, 'abandon', created.id, j);
+    }
+  } catch (err) {
+    console.error('[abandons] Attache fichiers échouée :', err);
+  }
+
+  revalidatePath('/abandons');
+  redirect(`/abandons/${created.id}?updated=1`);
+}
+
 async function transitionAbandon(
   id: string,
   newStatus: AbandonStatus,

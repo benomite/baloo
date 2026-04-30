@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { CheckCircle2, Circle } from 'lucide-react';
+import { CheckCircle2, Circle, Plus } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -9,6 +9,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { PageHeader } from '@/components/layout/page-header';
+import { Button } from '@/components/ui/button';
 import { AbandonStatusBadge } from '@/components/shared/status-badge';
 import { Amount } from '@/components/shared/amount';
 import { Alert } from '@/components/ui/alert';
@@ -80,6 +81,14 @@ export default async function AbandonsPage({
       <PageHeader
         title="Abandons de frais"
         subtitle="Dons aux dépenses du groupe ouvrant droit à reçu fiscal CERFA."
+        actions={
+          <Link href="/abandons/nouveau">
+            <Button size="sm">
+              <Plus size={14} strokeWidth={2.25} className="mr-1" />
+              Nouvelle demande
+            </Button>
+          </Link>
+        }
       />
 
       {params.error && (
