@@ -8,6 +8,7 @@ import { Alert } from '@/components/ui/alert';
 import { Field } from '@/components/shared/field';
 import { Section } from '@/components/shared/section';
 import { NativeSelect } from '@/components/ui/native-select';
+import { PendingButton } from '@/components/shared/pending-button';
 import type { Category, Unite, ModePaiement, Activite, Carte, Ecriture } from '@/lib/types';
 
 export function EcritureForm({
@@ -209,9 +210,9 @@ export function EcritureForm({
       </Section>
 
       <div className="flex justify-end pt-2">
-        <Button type="submit" size="lg">
+        <PendingButton size="lg" pendingLabel="Enregistrement…">
           {ecriture ? 'Enregistrer les changements' : 'Créer l\'écriture'}
-        </Button>
+        </PendingButton>
       </div>
     </form>
   );

@@ -9,6 +9,7 @@ import { FileMultiUploader } from '@/components/ui/file-multi-uploader';
 import { Field } from '@/components/shared/field';
 import { Section } from '@/components/shared/section';
 import { NativeSelect } from '@/components/ui/native-select';
+import { PendingButton } from '@/components/shared/pending-button';
 
 interface UniteOption {
   id: string;
@@ -300,9 +301,9 @@ export function RemboursementForm({
       </div>
 
       <div className="flex justify-end pt-2">
-        <Button type="submit" size="lg">
+        <PendingButton size="lg" pendingLabel="Envoi…">
           {submitLabel}
-        </Button>
+        </PendingButton>
       </div>
     </form>
   );

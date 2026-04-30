@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { EcritureForm } from '@/components/ecritures/ecriture-form';
 import { EcritureStatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
+import { PendingButton } from '@/components/shared/pending-button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { getCurrentContext } from '@/lib/context';
@@ -72,18 +73,18 @@ export default async function EcritureDetailPage({
             {ecriture.status === 'brouillon' && (
               <>
                 <form action={updateEcritureStatus.bind(null, id, 'valide')}>
-                  <Button type="submit" variant="outline" size="sm">
+                  <PendingButton variant="outline" size="sm">
                     Valider
-                  </Button>
+                  </PendingButton>
                 </form>
                 <SyncDraftButton ecritureId={id} />
               </>
             )}
             {ecriture.status === 'valide' && (
               <form action={updateEcritureStatus.bind(null, id, 'saisie_comptaweb')}>
-                <Button type="submit" variant="outline" size="sm">
+                <PendingButton variant="outline" size="sm">
                   Marquer saisie Comptaweb
-                </Button>
+                </PendingButton>
               </form>
             )}
           </div>
@@ -253,9 +254,9 @@ function JustificatifsCard({
           />
         </Field>
         <div className="flex justify-end mt-3">
-          <Button type="submit" variant="outline" size="sm">
+          <PendingButton variant="outline" size="sm">
             Ajouter
-          </Button>
+          </PendingButton>
         </div>
       </form>
     </Section>
@@ -317,10 +318,10 @@ function RelanceCard({
           />
         </Field>
         <div className="flex justify-end">
-          <Button type="submit" size="sm">
+          <PendingButton size="sm" pendingLabel="Envoi…">
             <Mail size={14} strokeWidth={2} className="mr-1.5" />
             Envoyer la relance
-          </Button>
+          </PendingButton>
         </div>
       </form>
     </Section>

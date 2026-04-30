@@ -11,6 +11,7 @@ import { formatAmount } from '@/lib/format';
 import { Amount } from '@/components/shared/amount';
 import { DataField } from '@/components/shared/field';
 import { EmptyState } from '@/components/shared/empty-state';
+import { PendingButton } from '@/components/shared/pending-button';
 import { Alert } from '@/components/ui/alert';
 
 interface SearchParams {
@@ -135,7 +136,7 @@ function DepotCard({
                 </option>
               ))}
             </select>
-            <Button type="submit" size="sm">Rattacher</Button>
+            <PendingButton size="sm">Rattacher</PendingButton>
             <p className="text-xs text-muted-foreground">
               Tolérance ±10 % sur le montant et ±15 jours sur la date.
             </p>
@@ -153,7 +154,7 @@ function DepotCard({
               required
               placeholder="Ex. justif illisible, hors scope, doublon"
             />
-            <Button type="submit" variant="destructive" size="sm">Rejeter</Button>
+            <PendingButton variant="destructive" size="sm">Rejeter</PendingButton>
           </form>
         </details>
       </div>

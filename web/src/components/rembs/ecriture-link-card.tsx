@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { ArrowRight, Receipt, Unlink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
+import { PendingButton } from '@/components/shared/pending-button';
 import { Field } from '@/components/shared/field';
 import { Section } from '@/components/shared/section';
 import { Alert } from '@/components/ui/alert';
@@ -70,9 +71,9 @@ export async function EcritureLinkCard({
             </NativeSelect>
           </Field>
           <div className="flex justify-end">
-            <Button type="submit" size="sm">
+            <PendingButton size="sm" pendingLabel="Liaison…">
               Lier à cette écriture
-            </Button>
+            </PendingButton>
           </div>
         </form>
       )}
@@ -109,10 +110,10 @@ async function LinkedView({
         />
       </Link>
       <form action={unlinkRemboursementFromEcriture.bind(null, rembsId)} className="pt-1">
-        <Button type="submit" variant="ghost" size="sm" className="text-fg-muted hover:text-destructive">
+        <PendingButton variant="ghost" size="sm" className="text-fg-muted hover:text-destructive">
           <Unlink size={13} strokeWidth={2} className="mr-1.5" />
           Délier
-        </Button>
+        </PendingButton>
       </form>
     </Section>
   );

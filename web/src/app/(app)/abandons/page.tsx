@@ -7,6 +7,7 @@ import { toggleCerfaEmis } from '@/lib/actions/abandons';
 import { Amount } from '@/components/shared/amount';
 import { Alert } from '@/components/ui/alert';
 import { EmptyState } from '@/components/shared/empty-state';
+import { PendingButton } from '@/components/shared/pending-button';
 
 interface SearchParams {
   error?: string;
@@ -75,9 +76,9 @@ export default async function AbandonsPage({ searchParams }: { searchParams: Pro
                           <input type="hidden" name="id" value={a.id} />
                           <input type="hidden" name="cerfa_emis" value={a.cerfa_emis ? '0' : '1'} />
                           {a.cerfa_emis ? (
-                            <Button type="submit" variant="outline" size="sm">✓ Émis (annuler)</Button>
+                            <PendingButton variant="outline" size="sm">✓ Émis (annuler)</PendingButton>
                           ) : (
-                            <Button type="submit" size="sm">Marquer émis</Button>
+                            <PendingButton size="sm">Marquer émis</PendingButton>
                           )}
                         </form>
                       </td>

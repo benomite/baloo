@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Amount } from '@/components/shared/amount';
 import { StatCard } from '@/components/shared/stat-card';
 import { EmptyState } from '@/components/shared/empty-state';
+import { PendingButton } from '@/components/shared/pending-button';
 import { Field } from '@/components/shared/field';
 import { Section } from '@/components/shared/section';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -101,10 +102,10 @@ export default async function CaissePage() {
             </Field>
           </div>
           <div className="flex justify-end">
-            <Button type="submit">
+            <PendingButton>
               <Plus size={14} strokeWidth={2} className="mr-1.5" />
               Ajouter
-            </Button>
+            </PendingButton>
           </div>
         </form>
       </Section>

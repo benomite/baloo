@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { PendingButton } from '@/components/shared/pending-button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Field } from '@/components/shared/field';
@@ -105,9 +106,9 @@ export default async function MyNouveauAbandonPage({
         </Section>
 
         <div className="flex justify-end pt-2">
-          <Button type="submit" size="lg">
+          <PendingButton size="lg" pendingLabel="Envoi en cours…">
             Déclarer l&apos;abandon
-          </Button>
+          </PendingButton>
         </div>
       </form>
     </div>

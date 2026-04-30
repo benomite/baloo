@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
 import { RemboursementStatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
+import { PendingButton } from '@/components/shared/pending-button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -214,7 +215,7 @@ export default async function RemboursementDetailPage({
                     placeholder="Précisions libres"
                   />
                 </div>
-                <Button type="submit" size="sm" variant="outline">Enregistrer</Button>
+                <PendingButton size="sm" variant="outline">Enregistrer</PendingButton>
               </form>
             </details>
           )}
@@ -225,22 +226,22 @@ export default async function RemboursementDetailPage({
               <div className="flex gap-2 flex-wrap mb-4">
                 {r.status === 'a_traiter' && isTresorier && (
                   <form action={updateRemboursementStatus.bind(null, id, 'valide_tresorier')}>
-                    <Button type="submit" size="sm">Valider (Trésorier)</Button>
+                    <PendingButton size="sm" pendingLabel="Validation…">Valider (Trésorier)</PendingButton>
                   </form>
                 )}
                 {r.status === 'valide_tresorier' && isRG && (
                   <form action={updateRemboursementStatus.bind(null, id, 'valide_rg')}>
-                    <Button type="submit" size="sm">Valider (RG)</Button>
+                    <PendingButton size="sm" pendingLabel="Validation…">Valider (RG)</PendingButton>
                   </form>
                 )}
                 {r.status === 'valide_rg' && (
                   <form action={updateRemboursementStatus.bind(null, id, 'virement_effectue')}>
-                    <Button type="submit" size="sm">Virement effectué</Button>
+                    <PendingButton size="sm">Virement effectué</PendingButton>
                   </form>
                 )}
                 {r.status === 'virement_effectue' && (
                   <form action={updateRemboursementStatus.bind(null, id, 'termine')}>
-                    <Button type="submit" size="sm">Marquer terminé</Button>
+                    <PendingButton size="sm">Marquer terminé</PendingButton>
                   </form>
                 )}
               </div>
@@ -252,7 +253,7 @@ export default async function RemboursementDetailPage({
                   <form action={updateRemboursementStatus.bind(null, id, 'refuse')} className="mt-3 space-y-2">
                     <Label htmlFor="motif" className="text-xs">Motif de refus</Label>
                     <Input id="motif" name="motif" required placeholder="Ex. justif manquant, hors scope" />
-                    <Button type="submit" variant="destructive" size="sm">Refuser</Button>
+                    <PendingButton variant="destructive" size="sm">Refuser</PendingButton>
                   </form>
                 </details>
               )}
@@ -337,7 +338,7 @@ export default async function RemboursementDetailPage({
               <input type="hidden" name="entity_type" value="remboursement" />
               <input type="hidden" name="entity_id" value={id} />
               <input type="file" name="file" className="text-sm mb-2 block" />
-              <Button type="submit" variant="outline" size="sm">Ajouter</Button>
+              <PendingButton variant="outline" size="sm">Ajouter</PendingButton>
             </form>
           </div>
         </div>

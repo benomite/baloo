@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PendingButton } from '@/components/shared/pending-button';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Field } from '@/components/shared/field';
@@ -72,10 +73,10 @@ export function InvitationForm({ action, unites, roles }: Props) {
         </Field>
       )}
       <div className="flex justify-end pt-1">
-        <Button type="submit">
+        <PendingButton pendingLabel="Envoi…">
           <Send size={14} strokeWidth={2} className="mr-1.5" />
           Envoyer l&apos;invitation
-        </Button>
+        </PendingButton>
       </div>
     </form>
   );
