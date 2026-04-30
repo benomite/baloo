@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Bricolage_Grotesque, Geist } from 'next/font/google';
 import { Toaster } from '@/components/ui/sonner';
 import './globals.css';
@@ -18,8 +18,28 @@ const bricolage = Bricolage_Grotesque({
 });
 
 export const metadata: Metadata = {
-  title: 'Baloo Compta',
-  description: 'Outil de comptabilité pour groupe SGDF',
+  title: {
+    default: 'Baloo · Compta SGDF',
+    template: '%s · Baloo',
+  },
+  description: 'Comptabilité du groupe SGDF.',
+  applicationName: 'Baloo',
+  appleWebApp: {
+    capable: true,
+    title: 'Baloo',
+    statusBarStyle: 'default',
+  },
+  formatDetection: {
+    telephone: false,
+  },
+};
+
+export const viewport: Viewport = {
+  // Pas de `maximumScale: 1` : on laisse l'utilisateur zoomer
+  // (accessibilité + utile pour relire un montant en mobile).
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: '#1a3a6c',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

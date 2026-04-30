@@ -56,18 +56,26 @@ export function MobileNav({ children, brand }: MobileNavProps) {
 
   return (
     <>
-      {/* Top-bar mobile (sticky) — visible <lg uniquement. */}
-      <header className="lg:hidden sticky top-0 z-30 flex h-12 items-center gap-3 border-b border-border bg-bg/95 backdrop-blur px-4">
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          aria-label="Ouvrir le menu"
-          className="-ml-1.5 p-1.5 rounded-md text-fg-muted hover:text-fg hover:bg-fg/[0.05] transition-colors"
-        >
-          <Menu size={18} strokeWidth={2} />
-        </button>
-        <div className="text-[14px] font-semibold tracking-tight text-fg">
-          {brand ?? 'Baloo'}
+      {/* Top-bar mobile (sticky) — visible <lg uniquement.
+          `padding-top: env(safe-area-inset-top)` : en mode standalone
+          iOS (PWA installée), le notch / statusbar passe sous notre
+          contrôle. On respecte le safe-area pour ne pas être mangé. */}
+      <header
+        className="lg:hidden sticky top-0 z-30 border-b border-border bg-bg/95 backdrop-blur"
+        style={{ paddingTop: 'env(safe-area-inset-top)' }}
+      >
+        <div className="flex h-12 items-center gap-3 px-4">
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            aria-label="Ouvrir le menu"
+            className="-ml-1.5 p-1.5 rounded-md text-fg-muted hover:text-fg hover:bg-fg/[0.05] transition-colors"
+          >
+            <Menu size={18} strokeWidth={2} />
+          </button>
+          <div className="text-[14px] font-semibold tracking-tight text-fg">
+            {brand ?? 'Baloo'}
+          </div>
         </div>
       </header>
 
