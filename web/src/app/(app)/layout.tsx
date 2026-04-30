@@ -13,16 +13,20 @@ export default async function AuthenticatedLayout({ children }: { children: Reac
   const ctx = await getCurrentContext();
 
   return (
-    <div className="flex flex-1 min-w-0">
+    // `flex-col` sur mobile : top-bar mobile (de MobileNav) au-dessus,
+    // main en dessous. `lg:flex-row` sur desktop : sidebar à gauche,
+    // main à droite.
+    <div className="flex flex-col lg:flex-row flex-1 min-w-0">
+      {/* Top-bar mobile + drawer (<lg). Sur lg+ ses éléments sont
+          tous `lg:hidden` donc consomment 0 espace. */}
+      <MobileNav>
+        <Sidebar role={ctx.role} />
+      </MobileNav>
+
       {/* Sidebar fixe desktop (lg+) */}
       <aside className="hidden lg:flex lg:flex-col lg:w-[260px] lg:shrink-0 border-r border-border bg-bg-sunken/60">
         <Sidebar role={ctx.role} />
       </aside>
-
-      {/* Drawer mobile (<lg) */}
-      <MobileNav>
-        <Sidebar role={ctx.role} />
-      </MobileNav>
 
       {/* Contenu principal */}
       <main className="flex-1 overflow-auto px-4 py-5 lg:px-8 lg:py-7 min-w-0">{children}</main>
