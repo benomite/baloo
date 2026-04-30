@@ -1,4 +1,6 @@
+import Link from 'next/link';
 import { PageHeader } from '@/components/layout/page-header';
+import { Alert } from '@/components/ui/alert';
 import { getCurrentContext } from '@/lib/context';
 import { requireNotParent } from '@/lib/auth/access';
 import { listUnites } from '@/lib/queries/reference';
@@ -29,19 +31,26 @@ export default async function NouveauRemboursementForeignPage({
   const today = new Date().toISOString().split('T')[0];
 
   return (
-    <div className="max-w-3xl">
-      <PageHeader title="Saisir une demande pour un bénévole" />
-
-      <p className="text-sm text-muted-foreground mb-6">
-        Cette page sert à enregistrer une demande de remboursement reçue à l&apos;oral / sur
-        papier pour quelqu&apos;un d&apos;autre. Pour faire ta propre demande,
-        passe par <a href="/moi/remboursements/nouveau" className="text-primary underline">Mon espace</a>.
-      </p>
+    <div className="max-w-3xl mx-auto">
+      <PageHeader
+        eyebrow={{ label: 'Remboursements', href: '/remboursements' }}
+        title="Saisir pour quelqu'un d'autre"
+        subtitle={
+          <>
+            Cette page sert à enregistrer une demande reçue à l&apos;oral / sur papier / par mail
+            pour un autre bénévole. Pour faire ta propre demande, passe par{' '}
+            <Link href="/moi/remboursements/nouveau" className="text-brand underline-offset-2 hover:underline">
+              Mon espace
+            </Link>
+            .
+          </>
+        }
+      />
 
       {params.error && (
-        <p className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+        <Alert variant="error" className="mb-6">
           {params.error}
-        </p>
+        </Alert>
       )}
 
       <RemboursementForm

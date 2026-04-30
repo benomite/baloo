@@ -1,4 +1,7 @@
 import { PageHeader } from '@/components/layout/page-header';
+import { Alert } from '@/components/ui/alert';
+import { Section } from '@/components/shared/section';
+import { EmptyState } from '@/components/shared/empty-state';
 import { getCurrentContext } from '@/lib/context';
 import { requireAdmin } from '@/lib/auth/access';
 import { listUnites } from '@/lib/queries/reference';
@@ -14,13 +17,21 @@ interface SearchParams {
 
 const ROLE_OPTIONS = [
   { value: 'equipier', label: 'Équipier' },
-  { value: 'chef', label: 'Chef d\'unité' },
+  { value: 'chef', label: "Chef d'unité" },
   { value: 'parent', label: 'Parent' },
   { value: 'tresorier', label: 'Trésorier' },
   { value: 'RG', label: 'Responsable de groupe' },
 ];
 
-export default async function AdminInvitationsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+const ROLE_LABELS: Record<string, string> = Object.fromEntries(
+  ROLE_OPTIONS.map((r) => [r.value, r.label]),
+);
+
+export default async function AdminInvitationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
   const ctx = await getCurrentContext();
   requireAdmin(ctx.role);
 
@@ -31,49 +42,59 @@ export default async function AdminInvitationsPage({ searchParams }: { searchPar
   ]);
 
   return (
-    <div>
-      <PageHeader title="Invitations" />
+    <div className="max-w-5xl mx-auto">
+      <PageHeader
+        title="Invitations"
+        subtitle="Inviter un bénévole, un parent ou un autre trésorier à utiliser Baloo."
+      />
 
-      <div className="grid gap-8 md:grid-cols-2">
-        <section>
-          <h2 className="font-semibold mb-3">Inviter un nouveau membre</h2>
+      {params.error && <Alert variant="error" className="mb-6">{params.error}</Alert>}
+      {params.success && (
+        <Alert variant="success" className="mb-6">
+          Invitation créée pour <b>{params.success}</b>
+          {params.status === 'sent'
+            ? ' — email envoyé.'
+            : " — user créé mais l'envoi du mail a échoué (cf. logs)."}
+        </Alert>
+      )}
 
-          {params.error && (
-            <p className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-              {params.error}
-            </p>
-          )}
-          {params.success && (
-            <p className="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
-              Invitation créée pour <b>{params.success}</b>
-              {params.status === 'sent' ? ' — email envoyé.' : ' — user créé mais l\'envoi du mail a échoué (cf. logs).'}
-            </p>
-          )}
-
+      <div className="grid gap-6 md:grid-cols-2 items-start">
+        <Section title="Nouvelle invitation" subtitle="Le destinataire reçoit un magic link.">
           <InvitationForm action={createInvitation} unites={unites} roles={ROLE_OPTIONS} />
-        </section>
+        </Section>
 
-        <section>
-          <h2 className="font-semibold mb-3">En attente de connexion ({pending.length})</h2>
+        <Section
+          title={`En attente de connexion (${pending.length})`}
+          subtitle="Invitations créées qui n'ont pas encore généré de session."
+        >
           {pending.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Personne n&apos;est en attente.</p>
+            <EmptyState
+              emoji="✉️"
+              title="Personne en attente"
+              description="Toutes les invitations créées ont été utilisées au moins une fois."
+            />
           ) : (
-            <ul className="divide-y border rounded">
+            <ul className="divide-y divide-border-soft -mx-6">
               {pending.map((inv) => (
-                <li key={inv.id} className="px-3 py-2 text-sm flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">{inv.nom_affichage ?? inv.email}</div>
-                    <div className="text-xs text-muted-foreground">{inv.email}</div>
+                <li key={inv.id} className="px-6 py-3 flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-[13.5px] font-medium text-fg truncate">
+                      {inv.nom_affichage ?? inv.email}
+                    </div>
+                    <div className="text-[12px] text-fg-muted truncate">{inv.email}</div>
                   </div>
-                  <div className="text-xs text-right">
-                    <div>{inv.role}{inv.unite_code ? ` · ${inv.unite_code}` : ''}</div>
-                    <div className="text-muted-foreground">invité le {inv.created_at.slice(0, 10)}</div>
+                  <div className="text-right text-[12px] shrink-0">
+                    <div className="font-medium text-fg">
+                      {ROLE_LABELS[inv.role] ?? inv.role}
+                      {inv.unite_code ? ` · ${inv.unite_code}` : ''}
+                    </div>
+                    <div className="text-fg-muted">invité le {inv.created_at.slice(0, 10)}</div>
                   </div>
                 </li>
               ))}
             </ul>
           )}
-        </section>
+        </Section>
       </div>
     </div>
   );

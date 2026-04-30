@@ -1,74 +1,103 @@
-import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader } from '@/components/layout/page-header';
+import { Section } from '@/components/shared/section';
+import { EmptyState } from '@/components/shared/empty-state';
+import { Amount } from '@/components/shared/amount';
 import { SyncReferentielsButton } from '@/components/config/sync-referentiels-button';
 import { getDb } from '@/lib/db';
-import { formatAmount } from '@/lib/format';
 import { getCurrentContext } from '@/lib/context';
 import { requireAdmin } from '@/lib/auth/access';
 
 export default async function ImportPage() {
   const ctx = await getCurrentContext();
   requireAdmin(ctx.role);
-  const imports = await getDb().prepare(
-    'SELECT * FROM comptaweb_imports ORDER BY import_date DESC'
-  ).all<{ id: string; import_date: string; source_file: string; row_count: number; total_depenses_cents: number; total_recettes_cents: number }>();
+  const imports = await getDb()
+    .prepare('SELECT * FROM comptaweb_imports ORDER BY import_date DESC')
+    .all<{
+      id: string;
+      import_date: string;
+      source_file: string;
+      row_count: number;
+      total_depenses_cents: number;
+      total_recettes_cents: number;
+    }>();
 
   return (
-    <div>
-      <PageHeader title="Import Comptaweb" />
+    <div className="max-w-6xl mx-auto">
+      <PageHeader
+        title="Import Comptaweb"
+        subtitle="Synchroniser les référentiels et importer les écritures depuis Comptaweb (Sirom)."
+      />
 
-      <Card className="mb-8">
-        <CardHeader><CardTitle>Synchroniser les configurations</CardTitle></CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground mb-4">
-            Récupère depuis Comptaweb les branches/projets, natures, activités et modes de paiement, et
-            les ajoute ou remappe en local. Additif uniquement — rien n&apos;est supprimé. À lancer après
-            toute modification côté Comptaweb (ex. nouvelle branche « Groupe », nouveau projet de camp).
+      <div className="grid gap-6 md:grid-cols-2 mb-8 items-start">
+        <Section
+          title="Synchroniser les référentiels"
+          subtitle="Branches / projets / natures / activités / modes de paiement."
+        >
+          <p className="text-[13px] text-fg-muted leading-relaxed">
+            Récupère depuis Comptaweb les configurations et les ajoute ou remappe en local. Additif
+            uniquement — rien n&apos;est supprimé. À relancer après toute modification côté
+            Comptaweb (ex. nouvelle branche « Groupe », nouveau projet de camp).
           </p>
-          <SyncReferentielsButton />
-        </CardContent>
-      </Card>
+          <div className="flex justify-end pt-2">
+            <SyncReferentielsButton />
+          </div>
+        </Section>
 
-      <Card className="mb-8">
-        <CardHeader><CardTitle>Importer un fichier CSV</CardTitle></CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground mb-4">
-            Exporte le fichier &quot;Gestion courante — Recettes/Dépenses&quot; depuis Comptaweb au format CSV,
-            puis dépose-le dans le dossier <code>inbox/</code> et utilise le MCP <code>import_comptaweb_csv</code> via Claude Code.
+        <Section title="Importer un fichier CSV" subtitle="Export Recettes / Dépenses Comptaweb.">
+          <p className="text-[13px] text-fg-muted leading-relaxed">
+            Exporte le fichier <em>« Gestion courante — Recettes/Dépenses »</em> depuis Comptaweb
+            au format CSV, puis dépose-le dans le dossier{' '}
+            <code className="font-mono text-[12.5px] bg-bg-sunken px-1.5 py-0.5 rounded">
+              inbox/
+            </code>{' '}
+            et utilise le MCP{' '}
+            <code className="font-mono text-[12.5px] bg-bg-sunken px-1.5 py-0.5 rounded">
+              import_comptaweb_csv
+            </code>{' '}
+            via Claude Code.
           </p>
-          <p className="text-sm text-muted-foreground">
-            L&apos;import par upload direct dans cette interface arrive bientôt.
+          <p className="text-[12px] text-fg-subtle italic">
+            L&apos;import par upload direct dans l&apos;interface arrive bientôt.
           </p>
-        </CardContent>
-      </Card>
+        </Section>
+      </div>
 
-      <h2 className="text-lg font-semibold mb-4">Imports précédents</h2>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Date</TableHead>
-            <TableHead>Fichier</TableHead>
-            <TableHead className="text-right">Lignes</TableHead>
-            <TableHead className="text-right">Dépenses</TableHead>
-            <TableHead className="text-right">Recettes</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {imports.map(i => (
-            <TableRow key={i.id}>
-              <TableCell>{i.import_date}</TableCell>
-              <TableCell>{i.source_file}</TableCell>
-              <TableCell className="text-right">{i.row_count}</TableCell>
-              <TableCell className="text-right text-red-600">{formatAmount(i.total_depenses_cents)}</TableCell>
-              <TableCell className="text-right text-green-600">{formatAmount(i.total_recettes_cents)}</TableCell>
+      <h2 className="text-h2 mb-4">Historique des imports</h2>
+      {imports.length === 0 ? (
+        <EmptyState
+          emoji="📥"
+          title="Aucun import pour le moment"
+          description="Quand tu lanceras un import via le MCP, il apparaîtra ici avec son bilan."
+        />
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Date</TableHead>
+              <TableHead>Fichier</TableHead>
+              <TableHead className="text-right">Lignes</TableHead>
+              <TableHead className="text-right">Dépenses</TableHead>
+              <TableHead className="text-right">Recettes</TableHead>
             </TableRow>
-          ))}
-          {imports.length === 0 && (
-            <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Aucun import</TableCell></TableRow>
-          )}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {imports.map((i) => (
+              <TableRow key={i.id}>
+                <TableCell>{i.import_date}</TableCell>
+                <TableCell>{i.source_file}</TableCell>
+                <TableCell className="text-right">{i.row_count}</TableCell>
+                <TableCell className="text-right">
+                  <Amount cents={i.total_depenses_cents} tone="negative" />
+                </TableCell>
+                <TableCell className="text-right">
+                  <Amount cents={i.total_recettes_cents} tone="positive" />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
     </div>
   );
 }

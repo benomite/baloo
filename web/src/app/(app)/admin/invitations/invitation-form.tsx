@@ -1,9 +1,11 @@
 'use client';
 
 import { useState } from 'react';
+import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Field } from '@/components/shared/field';
 
 interface UniteOption {
   id: string;
@@ -28,47 +30,53 @@ export function InvitationForm({ action, unites, roles }: Props) {
 
   return (
     <form action={action} className="space-y-4">
-      <div>
-        <Label htmlFor="email">Email</Label>
-        <Input id="email" name="email" type="email" required placeholder="prenom.nom@example.fr" />
-      </div>
-      <div>
-        <Label htmlFor="nom_affichage">Nom affiché (optionnel)</Label>
+      <Field label="Email" htmlFor="email" required>
+        <Input
+          id="email"
+          name="email"
+          type="email"
+          required
+          placeholder="prenom.nom@example.fr"
+        />
+      </Field>
+      <Field label="Nom affiché" htmlFor="nom_affichage" hint="optionnel">
         <Input id="nom_affichage" name="nom_affichage" placeholder="Prénom Nom" />
-      </div>
-      <div>
-        <Label htmlFor="role">Rôle</Label>
-        <select
+      </Field>
+      <Field label="Rôle" htmlFor="role" required>
+        <NativeSelect
           id="role"
           name="role"
           required
-          className="w-full border rounded px-3 py-2 bg-background"
           value={role}
           onChange={(e) => setRole(e.target.value)}
         >
           {roles.map((r) => (
-            <option key={r.value} value={r.value}>{r.label}</option>
+            <option key={r.value} value={r.value}>
+              {r.label}
+            </option>
           ))}
-        </select>
-      </div>
+        </NativeSelect>
+      </Field>
       {needsUnit && (
-        <div>
-          <Label htmlFor="scope_unite_id">Unité</Label>
-          <select
-            id="scope_unite_id"
-            name="scope_unite_id"
-            required
-            className="w-full border rounded px-3 py-2 bg-background"
-            defaultValue=""
-          >
-            <option value="" disabled>— Choisir une unité —</option>
+        <Field label="Unité" htmlFor="scope_unite_id" required hint="le chef d'unité ne voit que son unité">
+          <NativeSelect id="scope_unite_id" name="scope_unite_id" required defaultValue="">
+            <option value="" disabled>
+              — Choisir une unité —
+            </option>
             {unites.map((u) => (
-              <option key={u.id} value={u.id}>{u.code} — {u.name}</option>
+              <option key={u.id} value={u.id}>
+                {u.code} — {u.name}
+              </option>
             ))}
-          </select>
-        </div>
+          </NativeSelect>
+        </Field>
       )}
-      <Button type="submit">Envoyer l&apos;invitation</Button>
+      <div className="flex justify-end pt-1">
+        <Button type="submit">
+          <Send size={14} strokeWidth={2} className="mr-1.5" />
+          Envoyer l&apos;invitation
+        </Button>
+      </div>
     </form>
   );
 }

@@ -1,13 +1,15 @@
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Field } from '@/components/shared/field';
+import { Section } from '@/components/shared/section';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Alert } from '@/components/ui/alert';
 import { getCurrentContext } from '@/lib/context';
 import { requireCanSubmit } from '@/lib/auth/access';
 import { listUnites, listCategories, listCartes } from '@/lib/queries/reference';
 import { createDepot } from '@/lib/actions/depots';
-import { Alert } from '@/components/ui/alert';
 
 interface SearchParams {
   error?: string;
@@ -29,82 +31,111 @@ export default async function DepotPage({ searchParams }: { searchParams: Promis
   const defaultUnite = ctx.scopeUniteId ?? '';
 
   return (
-    <div className="max-w-2xl">
-      <PageHeader title="Déposer un justificatif" />
+    <div className="max-w-3xl mx-auto">
+      <PageHeader
+        title="Déposer un justificatif"
+        subtitle="Photo ou PDF d'un ticket / facture. Le trésorier rapprochera ensuite le justif avec l'écriture comptable correspondante."
+      />
 
-      <p className="text-sm text-muted-foreground mb-6">
-        Photo ou PDF d&apos;un ticket / facture. Le trésorier rapprochera ensuite le justif avec
-        l&apos;écriture comptable correspondante.
-      </p>
-
-      {params.error && <Alert variant="error" className="mb-4">{params.error}</Alert>}
+      {params.error && <Alert variant="error" className="mb-6">{params.error}</Alert>}
       {params.success && (
-        <Alert variant="success" className="mb-4">
+        <Alert variant="success" className="mb-6">
           Justificatif déposé (réf. <b>{params.success}</b>). Tu peux en déposer un autre ci-dessous.
         </Alert>
       )}
 
-      <form action={createDepot} encType="multipart/form-data" className="space-y-4">
-        <div>
-          <Label htmlFor="file">Photo ou PDF du justificatif *</Label>
-          <Input id="file" name="file" type="file" accept="image/*,application/pdf" required />
-        </div>
+      <form action={createDepot} encType="multipart/form-data" className="space-y-6">
+        <Section title="Le justificatif" subtitle="Photo, PDF ou scan.">
+          <Field label="Fichier" htmlFor="file" required>
+            <Input
+              id="file"
+              name="file"
+              type="file"
+              accept="image/*,application/pdf"
+              required
+              className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-brand-50 file:text-brand file:font-medium file:text-[13px] file:cursor-pointer hover:file:bg-brand-100 file:transition-colors"
+            />
+          </Field>
+          <Field label="Titre" htmlFor="titre" required hint="ce qui aidera le trésorier à le retrouver">
+            <Input
+              id="titre"
+              name="titre"
+              required
+              placeholder="Ex. Tickets métro week-end éclais"
+            />
+          </Field>
+          <Field label="Description" htmlFor="description" hint="optionnel">
+            <Textarea
+              id="description"
+              name="description"
+              rows={2}
+              placeholder="Détails utiles pour le trésorier"
+            />
+          </Field>
+        </Section>
 
-        <div>
-          <Label htmlFor="titre">Titre *</Label>
-          <Input id="titre" name="titre" required placeholder="Ex. Tickets métro week-end éclais" />
-        </div>
-
-        <div>
-          <Label htmlFor="description">Description (optionnel)</Label>
-          <Textarea id="description" name="description" rows={2} placeholder="Détails utiles pour le trésorier" />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label htmlFor="amount">Montant TTC (optionnel)</Label>
-            <Input id="amount" name="amount" placeholder="42,50" inputMode="decimal" />
+        <Section
+          title="Informations comptables"
+          subtitle="Tout est optionnel — aide à pré-rapprocher l'écriture, sinon le trésorier complétera."
+        >
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Montant TTC" htmlFor="amount" hint="optionnel">
+              <Input
+                id="amount"
+                name="amount"
+                placeholder="42,50"
+                inputMode="decimal"
+                className="tabular-nums"
+              />
+            </Field>
+            <Field label="Date de la dépense" htmlFor="date_estimee" hint="optionnel">
+              <Input
+                id="date_estimee"
+                name="date_estimee"
+                type="date"
+                defaultValue={today}
+              />
+            </Field>
           </div>
-          <div>
-            <Label htmlFor="date_estimee">Date (optionnel)</Label>
-            <Input id="date_estimee" name="date_estimee" type="date" defaultValue={today} />
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Catégorie" htmlFor="category_id">
+              <NativeSelect id="category_id" name="category_id">
+                <option value="">— Aucune —</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field label="Unité" htmlFor="unite_id">
+              <NativeSelect id="unite_id" name="unite_id" defaultValue={defaultUnite}>
+                <option value="">— Aucune —</option>
+                {unites.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.code} — {u.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
           </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label htmlFor="category_id">Catégorie (optionnel)</Label>
-            <select id="category_id" name="category_id" className="w-full border rounded px-3 py-2 bg-background">
-              <option value="">— Aucune —</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+          <Field label="Carte utilisée" htmlFor="carte_id" hint="si paiement par CB ou procurement">
+            <NativeSelect id="carte_id" name="carte_id">
+              <option value="">— Aucune / Espèces / Virement —</option>
+              {cartes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.type === 'cb' ? 'CB' : 'Procurement'} · {c.porteur}
+                </option>
               ))}
-            </select>
-          </div>
-          <div>
-            <Label htmlFor="unite_id">Unité (optionnel)</Label>
-            <select id="unite_id" name="unite_id" defaultValue={defaultUnite} className="w-full border rounded px-3 py-2 bg-background">
-              <option value="">— Aucune —</option>
-              {unites.map((u) => (
-                <option key={u.id} value={u.id}>{u.code} — {u.name}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+            </NativeSelect>
+          </Field>
+        </Section>
 
-        <div>
-          <Label htmlFor="carte_id">Carte utilisée (si paiement carte)</Label>
-          <select id="carte_id" name="carte_id" className="w-full border rounded px-3 py-2 bg-background">
-            <option value="">— Aucune / Espèces / Virement —</option>
-            {cartes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.type === 'cb' ? 'CB' : 'Procurement'} · {c.porteur}
-              </option>
-            ))}
-          </select>
+        <div className="flex justify-end pt-2">
+          <Button type="submit" size="lg">
+            Déposer le justificatif
+          </Button>
         </div>
-
-        <Button type="submit">Déposer le justificatif</Button>
       </form>
     </div>
   );

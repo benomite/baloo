@@ -5,8 +5,12 @@ import { listCategories, listUnites, listModesPaiement, listActivites, listCarte
 
 export default async function NouvelleEcriturePage() {
   return (
-    <div>
-      <PageHeader title="Nouvelle écriture" />
+    <div className="max-w-3xl mx-auto">
+      <PageHeader
+        eyebrow={{ label: 'Écritures', href: '/ecritures' }}
+        title="Nouvelle écriture"
+        subtitle="Créer une écriture comptable manuelle (sans passer par l'import bancaire)."
+      />
       <EcritureForm
         action={createEcriture}
         categories={await listCategories()}

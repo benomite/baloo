@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Alert } from '@/components/ui/alert';
 import { Field } from '@/components/shared/field';
 import { Section } from '@/components/shared/section';
+import { NativeSelect } from '@/components/ui/native-select';
 import type { Category, Unite, ModePaiement, Activite, Carte, Ecriture } from '@/lib/types';
 
 export function EcritureForm({
@@ -216,31 +217,3 @@ export function EcritureForm({
   );
 }
 
-// `<NativeSelect>` : <select> HTML stylé — pour les form-actions où on
-// veut que le name remonte dans FormData sans avoir à mapper le custom
-// Select (qui passerait par un input hidden). Style aligné sur le
-// design system.
-function NativeSelect({ className, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return (
-    <div className="relative">
-      <select
-        {...props}
-        className={
-          'h-10 w-full appearance-none rounded-lg border border-border bg-bg-elevated px-3 pr-9 text-[13.5px] outline-none transition-colors ' +
-          'hover:border-border-strong ' +
-          'focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 ' +
-          'disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60 ' +
-          (className ?? '')
-        }
-      />
-      <svg
-        aria-hidden
-        viewBox="0 0 20 20"
-        fill="none"
-        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-fg-subtle"
-      >
-        <path d="m6 8 4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </div>
-  );
-}

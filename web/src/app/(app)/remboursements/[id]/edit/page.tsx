@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
+import { Alert } from '@/components/ui/alert';
 import { getCurrentContext } from '@/lib/context';
 import { listUnites } from '@/lib/queries/reference';
 import { getRemboursement } from '@/lib/queries/remboursements';
@@ -31,10 +32,14 @@ export default async function EditRemboursementPage({
   const isOwner = !!r.submitted_by_user_id && r.submitted_by_user_id === ctx.userId;
 
   if (!isAdmin && !isOwner) {
-    redirect(`/remboursements/${id}?error=${encodeURIComponent('Tu n’as pas le droit de modifier cette demande.')}`);
+    redirect(
+      `/remboursements/${id}?error=${encodeURIComponent('Tu n’as pas le droit de modifier cette demande.')}`,
+    );
   }
   if (r.status !== 'a_traiter' && !isAdmin) {
-    redirect(`/remboursements/${id}?error=${encodeURIComponent('Cette demande a été validée — l’édition complète est réservée aux admins.')}`);
+    redirect(
+      `/remboursements/${id}?error=${encodeURIComponent('Cette demande a été validée — l’édition complète est réservée aux admins.')}`,
+    );
   }
 
   const [unites, lignes, justifs] = await Promise.all([
@@ -45,20 +50,31 @@ export default async function EditRemboursementPage({
   const today = new Date().toISOString().split('T')[0];
   const action = updateMyRemboursement.bind(null, id);
 
-  return (
-    <div className="max-w-3xl">
-      <PageHeader title={`Modifier la demande ${r.id}`} />
+  const editAdminWarning = r.status !== 'a_traiter' && isAdmin;
 
-      <p className="text-sm text-muted-foreground mb-6">
-        {r.status === 'a_traiter'
-          ? 'Tu peux modifier tous les champs tant que la demande n’a pas été validée par le trésorier. Le PDF feuille sera régénéré et la signature électronique remise à jour.'
-          : 'Édition admin : la demande a déjà été validée. Modifier les champs métier invalidera la chaîne de signatures (badge « chaîne brisée » côté trésorier).'}
-      </p>
+  return (
+    <div className="max-w-3xl mx-auto">
+      <PageHeader
+        eyebrow={{ label: 'Remboursements', href: `/remboursements/${id}` }}
+        title={`Modifier ${r.id}`}
+        subtitle={
+          r.status === 'a_traiter'
+            ? 'Tu peux modifier tous les champs tant que la demande n’a pas été validée par le trésorier. Le PDF feuille sera régénéré et la signature électronique remise à jour.'
+            : "Édition admin : la demande a déjà été validée. Modifier les champs métier invalidera la chaîne de signatures (badge « chaîne brisée » côté trésorier)."
+        }
+      />
+
+      {editAdminWarning && (
+        <Alert variant="warning" className="mb-6">
+          La demande a déjà été validée. Toute modification invalidera la signature électronique de
+          la feuille — un badge « chaîne brisée » apparaîtra côté trésorier.
+        </Alert>
+      )}
 
       {sp.error && (
-        <p className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+        <Alert variant="error" className="mb-6">
           {sp.error}
-        </p>
+        </Alert>
       )}
 
       <RemboursementForm

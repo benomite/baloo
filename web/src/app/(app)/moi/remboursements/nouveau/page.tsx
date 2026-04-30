@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
+import { Alert } from '@/components/ui/alert';
 import { getCurrentContext } from '@/lib/context';
 import { listUnites } from '@/lib/queries/reference';
 import { createMyRemboursement } from '@/lib/actions/remboursements';
@@ -32,19 +33,17 @@ export default async function MyNouveauRemboursementPage({
   const { prenom, nom } = splitName(ctx.name);
 
   return (
-    <div className="max-w-3xl">
-      <PageHeader title="Demander un remboursement" />
-
-      <p className="text-sm text-muted-foreground mb-6">
-        Tu as avancé des frais pour le groupe ? Ajoute autant de lignes que de tickets,
-        joins les justificatifs et tes coordonnées bancaires. Une feuille de remboursement
-        PDF sera générée automatiquement et archivée avec ta demande.
-      </p>
+    <div className="max-w-3xl mx-auto">
+      <PageHeader
+        eyebrow={{ label: 'Mon espace', href: '/moi' }}
+        title="Demander un remboursement"
+        subtitle="Tu as avancé des frais pour le groupe ? Ajoute autant de lignes que de tickets, joins les justificatifs et tes coordonnées bancaires. Une feuille de remboursement PDF sera générée automatiquement."
+      />
 
       {params.error && (
-        <p className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+        <Alert variant="error" className="mb-6">
           {params.error}
-        </p>
+        </Alert>
       )}
 
       <RemboursementForm

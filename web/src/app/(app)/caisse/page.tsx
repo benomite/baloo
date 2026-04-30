@@ -1,16 +1,17 @@
+import { Coins, Plus } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/layout/page-header';
+import { Amount } from '@/components/shared/amount';
+import { StatCard } from '@/components/shared/stat-card';
+import { EmptyState } from '@/components/shared/empty-state';
+import { Field } from '@/components/shared/field';
+import { Section } from '@/components/shared/section';
+import { NativeSelect } from '@/components/ui/native-select';
 import { listMouvementsCaisse } from '@/lib/queries/caisse';
 import { listUnites, listActivites } from '@/lib/queries/reference';
 import { createMouvementCaisse } from '@/lib/actions/caisse';
-import { Amount } from '@/components/shared/amount';
-import { StatCard } from '@/components/shared/stat-card';
-import { Coins } from 'lucide-react';
-import { EmptyState } from '@/components/shared/empty-state';
 import { getCurrentContext } from '@/lib/context';
 import { requireAdmin } from '@/lib/auth/access';
 
@@ -23,67 +24,90 @@ export default async function CaissePage() {
     listActivites(),
   ]);
 
+  const today = new Date().toISOString().split('T')[0];
+
   return (
-    <div>
-      <PageHeader title="Caisse" />
+    <div className="max-w-6xl mx-auto">
+      <PageHeader
+        title="Caisse"
+        subtitle="Mouvements en espèces du groupe (quêtes, achats au comptant, etc.)."
+      />
 
       <div className="mb-6 max-w-xs">
-        <StatCard
-          label="Solde caisse"
-          icon={Coins}
-          value={<Amount cents={solde} tone="signed" />}
-        />
+        <StatCard label="Solde caisse" icon={Coins} value={<Amount cents={solde} tone="signed" />} />
       </div>
 
-      <Card className="mb-6">
-        <CardHeader><CardTitle>Nouveau mouvement</CardTitle></CardHeader>
-        <CardContent>
-          <form action={createMouvementCaisse} className="space-y-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <Label htmlFor="sens">Sens</Label>
-                <select id="sens" name="sens" defaultValue="sortie" className="w-full border rounded px-3 py-2 bg-background">
-                  <option value="entree">↗ Entrée (recette)</option>
-                  <option value="sortie">↘ Sortie (dépense)</option>
-                </select>
-              </div>
-              <div>
-                <Label htmlFor="montant">Montant</Label>
-                <Input id="montant" name="montant" required placeholder="15,00" inputMode="decimal" />
-              </div>
-              <div>
-                <Label htmlFor="date_mouvement">Date</Label>
-                <Input type="date" id="date_mouvement" name="date_mouvement" required defaultValue={new Date().toISOString().split('T')[0]} />
-              </div>
-              <div>
-                <Label htmlFor="unite_id">Unité (optionnel)</Label>
-                <select id="unite_id" name="unite_id" className="w-full border rounded px-3 py-2 bg-background">
-                  <option value="">— Groupe —</option>
-                  {unites.map((u) => (
-                    <option key={u.id} value={u.id}>{u.code}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-4">
-              <div>
-                <Label htmlFor="description">Description</Label>
-                <Input id="description" name="description" required placeholder="Ex. quête camp été" />
-              </div>
-              <div>
-                <Label htmlFor="activite_id">Activité (optionnel)</Label>
-                <select id="activite_id" name="activite_id" className="w-full border rounded px-3 py-2 bg-background">
-                  <option value="">— Aucune —</option>
-                  {activites.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <Button type="submit">Ajouter</Button>
-          </form>
-        </CardContent>
-      </Card>
+      <Section
+        title="Nouveau mouvement"
+        subtitle="Une entrée (recette) ou une sortie (dépense) en espèces."
+        className="mb-6"
+      >
+        <form action={createMouvementCaisse} className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Field label="Sens" htmlFor="sens" required>
+              <NativeSelect id="sens" name="sens" defaultValue="sortie">
+                <option value="entree">↗ Entrée (recette)</option>
+                <option value="sortie">↘ Sortie (dépense)</option>
+              </NativeSelect>
+            </Field>
+            <Field label="Montant" htmlFor="montant" required hint="format 15,00">
+              <Input
+                id="montant"
+                name="montant"
+                required
+                placeholder="15,00"
+                inputMode="decimal"
+                className="tabular-nums"
+              />
+            </Field>
+            <Field label="Date" htmlFor="date_mouvement" required>
+              <Input
+                type="date"
+                id="date_mouvement"
+                name="date_mouvement"
+                required
+                defaultValue={today}
+              />
+            </Field>
+            <Field label="Unité" htmlFor="unite_id" hint="optionnel">
+              <NativeSelect id="unite_id" name="unite_id">
+                <option value="">— Groupe —</option>
+                {unites.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.code}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-4">
+            <Field label="Description" htmlFor="description" required>
+              <Input
+                id="description"
+                name="description"
+                required
+                placeholder="Ex. quête camp été"
+              />
+            </Field>
+            <Field label="Activité" htmlFor="activite_id" hint="optionnel">
+              <NativeSelect id="activite_id" name="activite_id">
+                <option value="">— Aucune —</option>
+                {activites.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+          </div>
+          <div className="flex justify-end">
+            <Button type="submit">
+              <Plus size={14} strokeWidth={2} className="mr-1.5" />
+              Ajouter
+            </Button>
+          </div>
+        </form>
+      </Section>
 
       {mouvements.length === 0 ? (
         <EmptyState
@@ -104,14 +128,22 @@ export default async function CaissePage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {mouvements.map(m => (
+            {mouvements.map((m) => (
               <TableRow key={m.id}>
                 <TableCell>{m.date_mouvement}</TableCell>
                 <TableCell>{m.description}</TableCell>
                 <TableCell>{m.unite_code ?? '—'}</TableCell>
                 <TableCell>{m.activite_name ?? '—'}</TableCell>
-                <TableCell className="text-right font-medium"><Amount cents={m.amount_cents} tone="signed" /></TableCell>
-                <TableCell className="text-right">{m.solde_apres_cents != null ? <Amount cents={m.solde_apres_cents} tone="muted" /> : '—'}</TableCell>
+                <TableCell className="text-right font-medium">
+                  <Amount cents={m.amount_cents} tone="signed" />
+                </TableCell>
+                <TableCell className="text-right">
+                  {m.solde_apres_cents != null ? (
+                    <Amount cents={m.solde_apres_cents} tone="muted" />
+                  ) : (
+                    '—'
+                  )}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
