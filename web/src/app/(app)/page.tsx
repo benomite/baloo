@@ -31,6 +31,7 @@ import {
 } from '@/lib/status-descriptions';
 import { dismissWelcomeBanner } from '@/lib/actions/onboarding';
 import { isWelcomeBannerDismissed } from '@/lib/onboarding-cookie';
+import { logError } from '@/lib/log';
 import { cn } from '@/lib/utils';
 
 const ROLE_LABEL: Record<string, string> = {
@@ -102,15 +103,27 @@ function firstName(fullName: string | null | undefined, email: string): string {
   return email.split('@')[0];
 }
 
+// Wrappe une promise pour persister l'erreur en BDD via logError
+// (visible dans /admin/errors) avant de la re-throw. Le mod précis
+// permet d'identifier exactement quel await plante.
+async function trace<T>(mod: string, p: Promise<T>): Promise<T> {
+  try {
+    return await p;
+  } catch (err) {
+    logError(`home/${mod}`, 'await failed', err);
+    throw err;
+  }
+}
+
 export default async function HomePage({
   searchParams,
 }: {
   searchParams: Promise<SearchParams>;
 }) {
   const [ctx, sp, welcomeDismissed] = await Promise.all([
-    getCurrentContext(),
-    searchParams,
-    isWelcomeBannerDismissed(),
+    trace('ctx', getCurrentContext()),
+    trace('searchParams', searchParams),
+    trace('welcomeDismissed', isWelcomeBannerDismissed()),
   ]);
 
   const isAdmin = ADMIN_ROLES.includes(ctx.role);
@@ -118,18 +131,24 @@ export default async function HomePage({
 
   const [myRbts, myAbandons, adminCounts] = await Promise.all([
     canSubmit
-      ? listRemboursements(
-          { groupId: ctx.groupId, submittedByUserId: ctx.userId },
-          { limit: 5 },
+      ? trace(
+          'myRbts',
+          listRemboursements(
+            { groupId: ctx.groupId, submittedByUserId: ctx.userId },
+            { limit: 5 },
+          ),
         )
       : Promise.resolve([]),
     canSubmit
-      ? listAbandons(
-          { groupId: ctx.groupId, submittedByUserId: ctx.userId },
-          { limit: 5 },
+      ? trace(
+          'myAbandons',
+          listAbandons(
+            { groupId: ctx.groupId, submittedByUserId: ctx.userId },
+            { limit: 5 },
+          ),
         )
       : Promise.resolve([]),
-    isAdmin ? getAdminCounts(ctx.groupId) : Promise.resolve(null),
+    isAdmin ? trace('adminCounts', getAdminCounts(ctx.groupId)) : Promise.resolve(null),
   ]);
 
   const hello = `Bonjour ${firstName(ctx.name, ctx.email)}`;
