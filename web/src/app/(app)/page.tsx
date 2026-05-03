@@ -25,6 +25,7 @@ import { getCurrentContext } from '@/lib/context';
 import { getDb } from '@/lib/db';
 import { listRemboursements } from '@/lib/services/remboursements';
 import { listAbandons } from '@/lib/services/abandons';
+import { ensureDepotsSchema } from '@/lib/services/depots';
 import {
   describeAbandonStatus,
   describeRembsStatus,
@@ -51,6 +52,12 @@ interface SearchParams {
 const ADMIN_ROLES = ['tresorier', 'RG'];
 const SUBMIT_ROLES = ['tresorier', 'RG', 'chef', 'equipier'];
 
+// La home lit les cookies (auth + welcome banner) → ne peut pas être
+// rendue statiquement. Sans ça, Next tente la prérendu au build et
+// plante avec "Dynamic server usage: Route / couldn't be rendered
+// statically because it used `headers`".
+export const dynamic = 'force-dynamic';
+
 interface AdminCounts {
   rembsAValider: number;
   abandonsAValider: number;
@@ -59,6 +66,10 @@ interface AdminCounts {
 }
 
 async function getAdminCounts(groupId: string): Promise<AdminCounts> {
+  // Le service depots crée sa table en lazy-init (ensureDepotsSchema).
+  // On le déclenche ici aussi puisque cette fonction tape la table en
+  // direct sans passer par les helpers du service.
+  await ensureDepotsSchema();
   const db = getDb();
   const [rembs, abandons, depots, unlinked] = await Promise.all([
     db

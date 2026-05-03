@@ -14,7 +14,7 @@ import { attachJustificatif } from './justificatifs';
 
 let schemaEnsured = false;
 
-async function ensureDepotsSchema(): Promise<void> {
+export async function ensureDepotsSchema(): Promise<void> {
   if (schemaEnsured) return;
   const db = getDb();
   await db.exec(`
