@@ -153,7 +153,7 @@ export default async function AbandonsPage({
             description={
               isAdmin
                 ? "Quand un bénévole renonce à se faire rembourser des frais avancés pour le groupe, ça se déclare ici. Reçu fiscal CERFA généré pour qu'il puisse défiscaliser."
-                : 'Si tu as avancé des frais et que tu veux faire un don plutôt que te faire rembourser, déclare-le ici — tu recevras un reçu fiscal CERFA pour défiscaliser 66 % du montant.'
+                : "Si tu as avancé des frais et que tu veux faire un don plutôt que te faire rembourser, déclare-le ici — tu recevras un reçu fiscal CERFA qui ouvre droit à une réduction d'impôt sur le revenu (art 200 CGI)."
             }
             action={
               <Link href="/moi/abandons/nouveau">

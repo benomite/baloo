@@ -99,8 +99,10 @@ export default async function AidePage() {
                 <em>Envoyé au national</em> (donateurs@sgdf.fr).
               </Step>
               <Step icon={Receipt} title="Tu reçois ton CERFA par mail">
-                Le national t&apos;envoie le reçu fiscal par mail dans les semaines qui suivent.
-                Il te permet de déduire 66 % du montant de tes impôts.
+                Le service donateurs t&apos;envoie le reçu fiscal par mail{' '}
+                <strong>sous 3 mois</strong>. Il ouvre droit à une réduction d&apos;impôt
+                sur le revenu (art 200 CGI). À envoyer{' '}
+                <strong>avant le 15 avril N+1</strong> pour les dépenses de l&apos;année N.
               </Step>
             </Steps>
           </Section>
@@ -167,27 +169,42 @@ function RembsVsAbandonsSection({ canSubmit }: { canSubmit: boolean }) {
           </div>
           <p className="text-[12.5px] text-fg-muted leading-relaxed">
             Tu renonces au remboursement, l&apos;argent reste pour le groupe → tu reçois un
-            reçu fiscal CERFA pour défiscaliser.
+            reçu fiscal CERFA qui ouvre droit à une réduction d&apos;impôt sur le revenu
+            (art 200 CGI).
           </p>
           <ul className="text-[12px] text-fg space-y-1 list-disc pl-4">
             <li>Tu ne récupères pas l&apos;argent.</li>
             <li>
-              Tu déduis <strong>66 %</strong> du montant sur tes impôts l&apos;année
-              suivante.
+              Réduction d&apos;impôt sur le revenu — le taux dépend de ta situation fiscale,
+              renseigne-toi sur impots.gouv.fr.
             </li>
             <li>
-              Concrètement, sur 100 € abandonnés, l&apos;État te «&nbsp;rembourse&nbsp;» 66 €
-              via réduction d&apos;impôts.
+              Le reçu CERFA est émis par le national (donateurs@sgdf.fr), sous 3 mois après
+              réception du formulaire signé.
+            </li>
+            <li>
+              <strong>Date limite</strong> : déclaration à envoyer avant le{' '}
+              <strong>15 avril N+1</strong> pour les dépenses de l&apos;année N (sinon le
+              reçu est émis pour la déclaration N+2).
             </li>
           </ul>
         </div>
       </div>
       {canSubmit && (
-        <p className="text-[12.5px] text-fg-muted leading-relaxed">
-          <strong className="text-fg">Règle de pouce :</strong> si tu paies des impôts sur le
-          revenu, l&apos;abandon est généralement plus avantageux qu&apos;un remboursement.
-          Si tu n&apos;en paies pas, prends le remboursement.
-        </p>
+        <div className="space-y-2 text-[12.5px] text-fg-muted leading-relaxed">
+          <p>
+            <strong className="text-fg">Frais éligibles à un abandon</strong> : seulement
+            ceux engagés strictement pour la réalisation de l&apos;objet social de
+            l&apos;association. Pas de contrepartie possible (les frais d&apos;inscription à
+            une formation par exemple sont exclus). Factures internet et alcool refusées.
+          </p>
+          <p>
+            <strong className="text-fg">Frais kilométriques</strong> : 0,354 €/km depuis
+            septembre 2025. La copie de la carte grise du véhicule est obligatoire (la
+            carte grise doit être au nom d&apos;un membre de ton foyer fiscal — pas une
+            personne morale).
+          </p>
+        </div>
       )}
     </Section>
   );

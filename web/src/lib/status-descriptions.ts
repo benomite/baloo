@@ -62,10 +62,10 @@ export function describeAbandonStatus(
     case 'envoye_national':
       return cerfaEmis
         ? {
-            text: 'CERFA reçu — tu peux le déduire à 66 % de tes impôts.',
+            text: 'CERFA reçu — réduction d’impôt sur le revenu (art 200 CGI).',
           }
         : {
-            text: 'Envoyé au national — le CERFA arrivera par mail dans quelques semaines.',
+            text: 'Envoyé au national — le CERFA arrivera par mail sous 3 mois (délai SGDF).',
           };
     case 'refuse':
       return {
