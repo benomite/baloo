@@ -19,7 +19,7 @@ export function LoginForm({ action, errorMessage }: { action: (formData: FormDat
       ) : (
         <p className="text-xs text-muted-foreground">
           Ton email doit déjà être enregistré côté trésorier — sinon demande qu&apos;on
-          t&apos;invite. L&apos;envoi de l&apos;email peut prendre 10-20 secondes.
+          t&apos;invite.
         </p>
       )}
     </form>

@@ -65,7 +65,7 @@ export function describeAbandonStatus(
             text: 'CERFA reçu — réduction d’impôt sur le revenu (art 200 CGI).',
           }
         : {
-            text: 'Envoyé au national — le CERFA arrivera par mail sous 3 mois (délai SGDF).',
+            text: 'Envoyé au national — le CERFA arrivera par mail.',
           };
     case 'refuse':
       return {

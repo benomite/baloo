@@ -99,9 +99,8 @@ export default async function AidePage() {
                 <em>Envoyé au national</em> (donateurs@sgdf.fr).
               </Step>
               <Step icon={Receipt} title="Tu reçois ton CERFA par mail">
-                Le service donateurs t&apos;envoie le reçu fiscal par mail{' '}
-                <strong>sous 3 mois</strong>. Il ouvre droit à une réduction d&apos;impôt
-                sur le revenu (art 200 CGI). À envoyer{' '}
+                Le service donateurs t&apos;envoie le reçu fiscal par mail. Il ouvre droit à
+                une réduction d&apos;impôt sur le revenu (art 200 CGI). À envoyer{' '}
                 <strong>avant le 15 avril N+1</strong> pour les dépenses de l&apos;année N.
               </Step>
             </Steps>
@@ -131,7 +130,7 @@ export default async function AidePage() {
               Tu es bloqué ?
             </span>{' '}
             en bas de chaque page ouvre un mail pré-rempli vers le trésorier de ton groupe. Pas
-            de support à faire à part répondre. Réponse sous 48h en moyenne.
+            de support à faire à part répondre.
           </p>
         </Section>
       </div>
@@ -159,7 +158,7 @@ function RembsVsAbandonsSection({ canSubmit }: { canSubmit: boolean }) {
           <ul className="text-[12px] text-fg space-y-1 list-disc pl-4">
             <li>Tu reçois 100 % du montant sur ton compte.</li>
             <li>Pas de réduction d&apos;impôts.</li>
-            <li>Délai habituel : 1 à 3 semaines selon la validation.</li>
+            <li>Le virement part une fois le double-validation (Trésorier + RG) faite.</li>
           </ul>
         </div>
         <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4 space-y-2 dark:border-amber-900/40 dark:bg-amber-950/20">
@@ -179,8 +178,8 @@ function RembsVsAbandonsSection({ canSubmit }: { canSubmit: boolean }) {
               renseigne-toi sur impots.gouv.fr.
             </li>
             <li>
-              Le reçu CERFA est émis par le national (donateurs@sgdf.fr), sous 3 mois après
-              réception du formulaire signé.
+              Le reçu CERFA est émis par le national (donateurs@sgdf.fr) après réception du
+              formulaire signé.
             </li>
             <li>
               <strong>Date limite</strong> : déclaration à envoyer avant le{' '}

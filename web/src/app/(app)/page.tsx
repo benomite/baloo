@@ -267,7 +267,7 @@ function QuickActions() {
         className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] text-fg-muted hover:text-brand hover:underline underline-offset-2 transition-colors"
       >
         <CircleHelp size={13} strokeWidth={1.75} />
-        Hésite entre remboursement et abandon ? Compare en 30 secondes.
+        Hésite entre remboursement et abandon ? Voir la comparaison.
       </Link>
     </div>
   );
