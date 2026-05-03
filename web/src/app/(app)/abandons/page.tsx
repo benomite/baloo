@@ -17,9 +17,11 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { TabLink } from '@/components/shared/tab-link';
 import { PendingButton } from '@/components/shared/pending-button';
 import { getCurrentContext } from '@/lib/context';
-import { requireAdmin } from '@/lib/auth/access';
+import { requireNotParent } from '@/lib/auth/access';
 import { listAbandons, type AbandonStatus } from '@/lib/services/abandons';
 import { toggleCerfaEmis } from '@/lib/actions/abandons';
+
+const ADMIN_ROLES = ['tresorier', 'RG'];
 
 interface SearchParams {
   status?: string;
@@ -48,17 +50,23 @@ export default async function AbandonsPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const ctx = await getCurrentContext();
-  requireAdmin(ctx.role);
+  const [ctx, params] = await Promise.all([getCurrentContext(), searchParams]);
+  requireNotParent(ctx.role);
+  const isAdmin = ADMIN_ROLES.includes(ctx.role);
 
-  const params = await searchParams;
   const activeFilter: AbandonStatus | 'all' = isAbandonStatus(params.status)
     ? params.status
     : 'all';
 
-  // On charge tout pour pouvoir afficher les counters par status sur
-  // les tabs sans seconde requête.
-  const all = await listAbandons({ groupId: ctx.groupId }, { limit: 500 });
+  // Scope auto pour les non-admins : un equipier / chef ne voit que ses
+  // propres abandons (sa "vue perso"). Admin voit tout le groupe.
+  const all = await listAbandons(
+    {
+      groupId: ctx.groupId,
+      submittedByUserId: isAdmin ? null : ctx.userId,
+    },
+    { limit: 500 },
+  );
   const counters = {
     all: all.length,
     a_traiter: all.filter((a) => a.status === 'a_traiter').length,
@@ -79,15 +87,28 @@ export default async function AbandonsPage({
   return (
     <div>
       <PageHeader
-        title="Abandons de frais"
-        subtitle="Dons aux dépenses du groupe ouvrant droit à reçu fiscal CERFA."
+        title={isAdmin ? 'Abandons de frais' : 'Mes abandons de frais'}
+        subtitle={
+          isAdmin
+            ? 'Dons aux dépenses du groupe ouvrant droit à reçu fiscal CERFA.'
+            : 'Tes dons au groupe et leur statut côté CERFA.'
+        }
         actions={
-          <Link href="/abandons/nouveau">
-            <Button size="sm">
-              <Plus size={14} strokeWidth={2.25} className="mr-1" />
-              Nouvelle demande
-            </Button>
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/moi/abandons/nouveau">
+              <Button size="sm">
+                <Plus size={14} strokeWidth={2.25} className="mr-1" />
+                Nouvel abandon
+              </Button>
+            </Link>
+            {isAdmin && (
+              <Link href="/abandons/nouveau">
+                <Button size="sm" variant="outline">
+                  Saisir pour autrui
+                </Button>
+              </Link>
+            )}
+          </div>
         }
       />
 
@@ -128,11 +149,15 @@ export default async function AbandonsPage({
         activeFilter === 'all' ? (
           <EmptyState
             emoji="🎁"
-            title="Aucun abandon de frais"
-            description="Quand un bénévole renonce à se faire rembourser des frais avancés pour le groupe, ça se déclare ici. Reçu fiscal CERFA généré pour qu'il puisse défiscaliser."
+            title={isAdmin ? 'Aucun abandon de frais' : "Tu n'as pas encore d'abandon"}
+            description={
+              isAdmin
+                ? "Quand un bénévole renonce à se faire rembourser des frais avancés pour le groupe, ça se déclare ici. Reçu fiscal CERFA généré pour qu'il puisse défiscaliser."
+                : 'Si tu as avancé des frais et que tu veux faire un don plutôt que te faire rembourser, déclare-le ici — tu recevras un reçu fiscal CERFA pour défiscaliser 66 % du montant.'
+            }
             action={
-              <Link href="/abandons/nouveau">
-                <Button size="sm">Saisir un abandon</Button>
+              <Link href="/moi/abandons/nouveau">
+                <Button size="sm">Déclarer un abandon</Button>
               </Link>
             }
           />
@@ -212,33 +237,45 @@ export default async function AbandonsPage({
                         <AbandonStatusBadge status={a.status} />
                       </TableCell>
                       <TableCell>
-                        <form action={toggleCerfaEmis} className="inline">
-                          <input type="hidden" name="id" value={a.id} />
-                          <input
-                            type="hidden"
-                            name="cerfa_emis"
-                            value={a.cerfa_emis ? '0' : '1'}
-                          />
-                          {a.cerfa_emis ? (
-                            <PendingButton
-                              variant="ghost"
-                              size="sm"
-                              className="text-emerald-700 dark:text-emerald-400"
-                            >
-                              <CheckCircle2
-                                size={13}
-                                strokeWidth={2.25}
-                                className="mr-1"
-                              />
-                              Émis
-                            </PendingButton>
-                          ) : (
-                            <PendingButton variant="ghost" size="sm" className="text-fg-muted">
-                              <Circle size={13} strokeWidth={2} className="mr-1" />
-                              Marquer
-                            </PendingButton>
-                          )}
-                        </form>
+                        {isAdmin ? (
+                          <form action={toggleCerfaEmis} className="inline">
+                            <input type="hidden" name="id" value={a.id} />
+                            <input
+                              type="hidden"
+                              name="cerfa_emis"
+                              value={a.cerfa_emis ? '0' : '1'}
+                            />
+                            {a.cerfa_emis ? (
+                              <PendingButton
+                                variant="ghost"
+                                size="sm"
+                                className="text-emerald-700 dark:text-emerald-400"
+                              >
+                                <CheckCircle2
+                                  size={13}
+                                  strokeWidth={2.25}
+                                  className="mr-1"
+                                />
+                                Émis
+                              </PendingButton>
+                            ) : (
+                              <PendingButton variant="ghost" size="sm" className="text-fg-muted">
+                                <Circle size={13} strokeWidth={2} className="mr-1" />
+                                Marquer
+                              </PendingButton>
+                            )}
+                          </form>
+                        ) : a.cerfa_emis ? (
+                          <span className="inline-flex items-center gap-1 text-[12px] font-medium text-emerald-700 dark:text-emerald-400">
+                            <CheckCircle2 size={12} strokeWidth={2.25} />
+                            Émis
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[12px] text-fg-subtle">
+                            <Circle size={12} strokeWidth={2} />
+                            Pas encore
+                          </span>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}

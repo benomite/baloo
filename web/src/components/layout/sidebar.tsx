@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation';
 import {
   BookOpen,
   CircleHelp,
-  CircleUser,
   Coins,
   Download,
   Gift,
@@ -78,7 +77,6 @@ interface SidebarProps {
 export function Sidebar({ role, groupName }: SidebarProps) {
   const pathname = usePathname();
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`));
-  const isMoiActive = pathname === '/moi' || pathname.startsWith('/moi/');
 
   return (
     <div className="w-[260px] shrink-0 flex flex-col h-full">
@@ -138,14 +136,11 @@ export function Sidebar({ role, groupName }: SidebarProps) {
         })}
       </nav>
 
-      {/* Footer : install PWA si proposable + Mon espace + Aide */}
+      {/* Footer : install PWA si proposable + Aide */}
       <div className="border-t border-border-soft p-2 space-y-2">
         <div className="px-1">
           <InstallButton />
         </div>
-        <NavLink href="/moi" icon={CircleUser} active={isMoiActive} variant="subtle">
-          Mon espace
-        </NavLink>
         <NavLink href="/aide" icon={CircleHelp} active={pathname === '/aide'} variant="subtle">
           Aide & guide
         </NavLink>

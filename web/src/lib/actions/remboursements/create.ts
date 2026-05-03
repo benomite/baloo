@@ -230,11 +230,11 @@ async function createRemboursementFromForm(
 }
 
 // Self-service côté demandeur (depuis /moi/remboursements/nouveau).
-// La demande sera dans son espace personnel.
+// La demande sera visible sur la home (Mes demandes).
 export async function createMyRemboursement(formData: FormData): Promise<void> {
   const ctx = await getCurrentContext();
   if (ctx.role === 'parent') {
-    redirect('/moi?error=' + encodeURIComponent('Action non autorisée pour ton rôle.'));
+    redirect('/?error=' + encodeURIComponent('Action non autorisée pour ton rôle.'));
   }
 
   const result = await createRemboursementFromForm(
@@ -246,9 +246,9 @@ export async function createMyRemboursement(formData: FormData): Promise<void> {
     },
   );
 
-  revalidatePath('/moi');
+  revalidatePath('/');
   revalidatePath('/remboursements');
-  redirect('/moi?rbt_created=' + encodeURIComponent(result.rbtId));
+  redirect('/?rbt_created=' + encodeURIComponent(result.rbtId));
 }
 
 // Saisie pour autrui par un admin (depuis /remboursements/nouveau).

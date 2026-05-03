@@ -59,7 +59,7 @@ export default async function MyNouveauAbandonPage({
   return (
     <div className="max-w-3xl mx-auto">
       <PageHeader
-        eyebrow={{ label: 'Mon espace', href: '/moi' }}
+        eyebrow={{ label: 'Accueil', href: '/' }}
         title="Abandon de frais"
         subtitle="Tu as avancé des frais pour le groupe et tu en fais don plutôt que d'être remboursé. Tu recevras un reçu fiscal CERFA qui te permet de déduire 66 % du montant de tes impôts."
       />

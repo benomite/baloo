@@ -80,7 +80,7 @@ async function attachFile(
 export async function createMyAbandon(formData: FormData): Promise<void> {
   const ctx = await getCurrentContext();
   if (ctx.role === 'parent') {
-    redirect('/moi?error=' + encodeURIComponent('Action non autorisée pour ton rôle.'));
+    redirect('/?error=' + encodeURIComponent('Action non autorisée pour ton rôle.'));
   }
 
   // La feuille d'abandon signée (xlsx complété ou PDF scanné) est
@@ -207,9 +207,9 @@ export async function createMyAbandon(formData: FormData): Promise<void> {
     }
   }
 
-  revalidatePath('/moi');
+  revalidatePath('/');
   revalidatePath('/abandons');
-  redirect('/moi?abandon_created=' + encodeURIComponent(created.id));
+  redirect('/?abandon_created=' + encodeURIComponent(created.id));
 }
 
 // Saisie d'un abandon "pour autrui" par un admin (trésorier / RG).

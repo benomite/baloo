@@ -216,7 +216,7 @@ function WelcomeBanner({
             Tu es {roleLabel} dans ton groupe SGDF.{' '}
             {canSubmit
               ? 'Tu peux déposer un justif, demander un remboursement ou déclarer un abandon — utilise les raccourcis ci-dessous.'
-              : 'Tu peux suivre tes paiements et tes reçus fiscaux depuis Mon espace.'}{' '}
+              : 'Tu peux suivre tes paiements et tes reçus fiscaux directement depuis cette page.'}{' '}
             Pour comprendre comment tout marche,{' '}
             <Link
               href="/aide"
@@ -358,13 +358,22 @@ function MyDemandsSection({
       subtitle={hasAny ? 'Les 5 dernières — clique pour voir le détail.' : undefined}
       action={
         hasAny ? (
-          <Link
-            href="/moi"
-            className="inline-flex items-center gap-1 text-[12.5px] font-medium text-brand hover:underline underline-offset-2"
-          >
-            Tout voir
-            <ArrowRight size={12} strokeWidth={2} />
-          </Link>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[12.5px]">
+            <Link
+              href="/remboursements"
+              className="inline-flex items-center gap-1 font-medium text-brand hover:underline underline-offset-2"
+            >
+              Tous mes rembs
+              <ArrowRight size={12} strokeWidth={2} />
+            </Link>
+            <Link
+              href="/abandons"
+              className="inline-flex items-center gap-1 font-medium text-brand hover:underline underline-offset-2"
+            >
+              Tous mes abandons
+              <ArrowRight size={12} strokeWidth={2} />
+            </Link>
+          </div>
         ) : undefined
       }
       bodyClassName="px-0 pb-0"

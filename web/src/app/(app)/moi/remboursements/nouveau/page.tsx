@@ -56,7 +56,7 @@ export default async function MyNouveauRemboursementPage({
   return (
     <div className="max-w-3xl mx-auto">
       <PageHeader
-        eyebrow={{ label: 'Mon espace', href: '/moi' }}
+        eyebrow={{ label: 'Accueil', href: '/' }}
         title="Demander un remboursement"
         subtitle="Tu as avancé des frais pour le groupe ? Ajoute autant de lignes que de tickets, joins les justificatifs et tes coordonnées bancaires. Une feuille de remboursement PDF sera générée automatiquement."
       />

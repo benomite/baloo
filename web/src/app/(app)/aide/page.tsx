@@ -72,7 +72,7 @@ export default async function AidePage() {
               </Step>
               <Step icon={Mail} title="Tu reçois un mail à chaque étape">
                 Validation Trésorier → Validation RG → Virement effectué → Terminé. Tu peux
-                suivre l&apos;état de ta demande sur <CodeLink href="/moi">Mon espace</CodeLink>.
+                suivre l&apos;état de ta demande depuis la <CodeLink href="/">page d&apos;accueil</CodeLink>.
               </Step>
             </Steps>
           </Section>
