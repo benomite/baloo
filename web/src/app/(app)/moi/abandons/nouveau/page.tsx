@@ -10,8 +10,31 @@ import { Section } from '@/components/shared/section';
 import { NativeSelect } from '@/components/ui/native-select';
 import { FileMultiUploader } from '@/components/ui/file-multi-uploader';
 import { getCurrentContext } from '@/lib/context';
+import { getDb } from '@/lib/db';
 import { listUnites } from '@/lib/queries/reference';
 import { createMyAbandon } from '@/lib/actions/abandons';
+
+// Récupère les 5 dernières natures distinctes des demandes (rembs +
+// abandons) du user, pour suggérer via un datalist HTML5. Évite de
+// retaper "tickets de métro camp", etc.
+async function getNatureSuggestions(
+  userId: string,
+  groupId: string,
+): Promise<string[]> {
+  const rows = await getDb()
+    .prepare(
+      `SELECT DISTINCT nature FROM (
+         SELECT nature, created_at FROM abandons_frais
+         WHERE group_id = ? AND submitted_by_user_id = ? AND nature IS NOT NULL AND nature != ''
+         UNION ALL
+         SELECT nature, created_at FROM remboursements
+         WHERE group_id = ? AND submitted_by_user_id = ? AND nature IS NOT NULL AND nature != ''
+       )
+       ORDER BY created_at DESC LIMIT 5`,
+    )
+    .all<{ nature: string }>(groupId, userId, groupId, userId);
+  return rows.map((r) => r.nature);
+}
 
 interface SearchParams {
   error?: string;
@@ -25,8 +48,11 @@ export default async function MyNouveauAbandonPage({
   const ctx = await getCurrentContext();
   if (ctx.role === 'parent') redirect('/moi');
 
-  const params = await searchParams;
-  const unites = await listUnites();
+  const [params, unites, natureSuggestions] = await Promise.all([
+    searchParams,
+    listUnites(),
+    getNatureSuggestions(ctx.userId, ctx.groupId),
+  ]);
   const today = new Date().toISOString().split('T')[0];
   const defaultUnite = ctx.scopeUniteId ?? '';
 
@@ -79,7 +105,15 @@ export default async function MyNouveauAbandonPage({
               name="nature"
               required
               placeholder="Ex. tickets de métro, achat goûter, matériel"
+              list="nature-suggestions"
             />
+            {natureSuggestions.length > 0 && (
+              <datalist id="nature-suggestions">
+                {natureSuggestions.map((n) => (
+                  <option key={n} value={n} />
+                ))}
+              </datalist>
+            )}
           </Field>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Montant TTC" htmlFor="montant" required hint="format 42,50">

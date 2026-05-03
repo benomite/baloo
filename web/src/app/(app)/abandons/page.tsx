@@ -130,12 +130,24 @@ export default async function AbandonsPage({
             emoji="🎁"
             title="Aucun abandon de frais"
             description="Quand un bénévole renonce à se faire rembourser des frais avancés pour le groupe, ça se déclare ici. Reçu fiscal CERFA généré pour qu'il puisse défiscaliser."
+            action={
+              <Link href="/abandons/nouveau">
+                <Button size="sm">Saisir un abandon</Button>
+              </Link>
+            }
           />
         ) : (
           <EmptyState
             emoji="✓"
             title="Rien dans cette catégorie"
-            description="Aucun abandon dans le statut sélectionné."
+            description="Aucun abandon dans le statut sélectionné. Bascule vers « Tous » pour voir l'historique complet."
+            action={
+              <Link href="/abandons">
+                <Button size="sm" variant="outline">
+                  Voir tous les abandons
+                </Button>
+              </Link>
+            }
           />
         )
       ) : (

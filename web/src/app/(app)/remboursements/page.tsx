@@ -83,7 +83,12 @@ export default async function RemboursementsPage({
           <EmptyState
             emoji="📭"
             title="Pas de remboursement à traiter"
-            description="Personne n'a déposé de demande pour le moment. Tu peux en saisir une pour autrui via « Nouvelle demande »."
+            description="Personne n'a déposé de demande pour le moment. Tu peux en saisir une pour autrui."
+            action={
+              <Link href="/moi/remboursements/nouveau">
+                <Button size="sm">Nouvelle demande</Button>
+              </Link>
+            }
           />
         )
       ) : (

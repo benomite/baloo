@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   BookOpen,
+  CircleHelp,
   CircleUser,
   Coins,
   Download,
@@ -137,13 +138,16 @@ export function Sidebar({ role, groupName }: SidebarProps) {
         })}
       </nav>
 
-      {/* Footer : install PWA si proposable + Mon espace */}
+      {/* Footer : install PWA si proposable + Mon espace + Aide */}
       <div className="border-t border-border-soft p-2 space-y-2">
         <div className="px-1">
           <InstallButton />
         </div>
         <NavLink href="/moi" icon={CircleUser} active={isMoiActive} variant="subtle">
           Mon espace
+        </NavLink>
+        <NavLink href="/aide" icon={CircleHelp} active={pathname === '/aide'} variant="subtle">
+          Aide & guide
         </NavLink>
       </div>
     </div>

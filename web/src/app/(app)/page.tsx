@@ -1,12 +1,15 @@
 import Link from 'next/link';
 import {
   ArrowRight,
+  CircleHelp,
   Gift,
   HandCoins,
   Inbox,
   Paperclip,
+  Sparkles,
   TrendingUp,
   Unlink,
+  X,
   type LucideIcon,
 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
@@ -17,11 +20,28 @@ import {
   RemboursementStatusBadge,
 } from '@/components/shared/status-badge';
 import { Alert } from '@/components/ui/alert';
+import { PendingButton } from '@/components/shared/pending-button';
 import { getCurrentContext } from '@/lib/context';
 import { getDb } from '@/lib/db';
 import { listRemboursements } from '@/lib/services/remboursements';
 import { listAbandons } from '@/lib/services/abandons';
+import {
+  describeAbandonStatus,
+  describeRembsStatus,
+} from '@/lib/status-descriptions';
+import {
+  dismissWelcomeBanner,
+  isWelcomeBannerDismissed,
+} from '@/lib/actions/onboarding';
 import { cn } from '@/lib/utils';
+
+const ROLE_LABEL: Record<string, string> = {
+  tresorier: 'trésorier',
+  RG: 'responsable de groupe',
+  chef: "chef d'unité",
+  equipier: 'équipier',
+  parent: 'parent',
+};
 
 interface SearchParams {
   error?: string;
@@ -89,7 +109,11 @@ export default async function HomePage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const [ctx, sp] = await Promise.all([getCurrentContext(), searchParams]);
+  const [ctx, sp, welcomeDismissed] = await Promise.all([
+    getCurrentContext(),
+    searchParams,
+    isWelcomeBannerDismissed(),
+  ]);
 
   const isAdmin = ADMIN_ROLES.includes(ctx.role);
   const canSubmit = SUBMIT_ROLES.includes(ctx.role);
@@ -138,6 +162,10 @@ export default async function HomePage({
         </Alert>
       )}
 
+      {!welcomeDismissed && (
+        <WelcomeBanner roleLabel={ROLE_LABEL[ctx.role] ?? ctx.role} canSubmit={canSubmit} />
+      )}
+
       <div className="space-y-8">
         {canSubmit && <QuickActions />}
 
@@ -148,6 +176,57 @@ export default async function HomePage({
         {isAdmin && adminCounts && <AdminTodoSection counts={adminCounts} />}
 
         {isAdmin && <SyntheseLink />}
+      </div>
+    </div>
+  );
+}
+
+function WelcomeBanner({
+  roleLabel,
+  canSubmit,
+}: {
+  roleLabel: string;
+  canSubmit: boolean;
+}) {
+  return (
+    <div className="mb-6 relative rounded-xl border border-brand-100 bg-brand-50/40 px-4 py-3 sm:px-5 sm:py-4">
+      <form
+        action={dismissWelcomeBanner}
+        className="absolute top-2 right-2"
+      >
+        <PendingButton
+          variant="ghost"
+          size="icon-sm"
+          pendingLabel=""
+          className="text-fg-subtle hover:text-fg"
+          aria-label="Masquer le message de bienvenue"
+        >
+          <X size={13} strokeWidth={2} />
+        </PendingButton>
+      </form>
+      <div className="flex items-start gap-3 pr-8">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand text-bg-elevated">
+          <Sparkles size={16} strokeWidth={1.75} />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-[14px] font-semibold text-fg leading-tight">
+            Bienvenue sur Baloo
+          </h2>
+          <p className="mt-1 text-[12.5px] text-fg-muted leading-relaxed">
+            Tu es {roleLabel} dans ton groupe SGDF.{' '}
+            {canSubmit
+              ? 'Tu peux déposer un justif, demander un remboursement ou déclarer un abandon — utilise les raccourcis ci-dessous.'
+              : 'Tu peux suivre tes paiements et tes reçus fiscaux depuis Mon espace.'}{' '}
+            Pour comprendre comment tout marche,{' '}
+            <Link
+              href="/aide"
+              className="font-medium text-brand hover:underline underline-offset-2"
+            >
+              consulte la page d&apos;aide
+            </Link>
+            .
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -183,6 +262,13 @@ function QuickActions() {
           <ActionCard key={a.href} {...a} />
         ))}
       </div>
+      <Link
+        href="/aide#rembs-vs-abandon"
+        className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] text-fg-muted hover:text-brand hover:underline underline-offset-2 transition-colors"
+      >
+        <CircleHelp size={13} strokeWidth={1.75} />
+        Hésite entre remboursement et abandon ? Compare en 30 secondes.
+      </Link>
     </div>
   );
 }
@@ -292,49 +378,63 @@ function MyDemandsSection({
         </div>
       ) : (
         <ul className="divide-y divide-border-soft">
-          {merged.map((d) => (
-            <li key={`${d.kind}-${d.id}`}>
-              <Link
-                href={d.href}
-                className="flex items-center gap-3 px-6 py-3 hover:bg-brand-50/40 transition-colors"
-              >
-                <span
-                  className={cn(
-                    'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg',
-                    d.kind === 'rembs'
-                      ? 'bg-brand-50 text-brand'
-                      : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-200',
-                  )}
+          {merged.map((d) => {
+            const desc =
+              d.kind === 'rembs'
+                ? describeRembsStatus(d.status)
+                : describeAbandonStatus(d.status, d.cerfaEmis ?? false);
+            return (
+              <li key={`${d.kind}-${d.id}`}>
+                <Link
+                  href={d.href}
+                  className="flex items-start gap-3 px-6 py-3 hover:bg-brand-50/40 transition-colors"
                 >
-                  {d.kind === 'rembs' ? (
-                    <HandCoins size={14} strokeWidth={1.75} />
-                  ) : (
-                    <Gift size={14} strokeWidth={1.75} />
-                  )}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13.5px] font-medium text-fg truncate">{d.title}</div>
-                  <div className="text-[12px] text-fg-muted">
-                    <code className="font-mono text-[11.5px]">{d.id}</code>
-                    <span className="mx-1.5 text-fg-subtle">·</span>
-                    <span className="tabular-nums">{d.date}</span>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="font-medium tabular-nums text-fg">
-                    <Amount cents={d.amountCents} />
-                  </div>
-                  <div className="mt-0.5">
-                    {d.kind === 'rembs' ? (
-                      <RemboursementStatusBadge status={d.status} />
-                    ) : (
-                      <AbandonStatusBadge status={d.status} />
+                  <span
+                    className={cn(
+                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg mt-0.5',
+                      d.kind === 'rembs'
+                        ? 'bg-brand-50 text-brand'
+                        : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-200',
                     )}
+                  >
+                    {d.kind === 'rembs' ? (
+                      <HandCoins size={14} strokeWidth={1.75} />
+                    ) : (
+                      <Gift size={14} strokeWidth={1.75} />
+                    )}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13.5px] font-medium text-fg truncate">{d.title}</div>
+                    <div className="text-[12px] text-fg-muted">
+                      <code className="font-mono text-[11.5px]">{d.id}</code>
+                      <span className="mx-1.5 text-fg-subtle">·</span>
+                      <span className="tabular-nums">{d.date}</span>
+                    </div>
+                    <p className="mt-1 text-[12px] text-fg-muted leading-snug">
+                      {desc.text}
+                      {desc.actionRequired && (
+                        <span className="ml-1.5 font-medium text-destructive">
+                          {desc.actionRequired}
+                        </span>
+                      )}
+                    </p>
                   </div>
-                </div>
-              </Link>
-            </li>
-          ))}
+                  <div className="text-right shrink-0">
+                    <div className="font-medium tabular-nums text-fg">
+                      <Amount cents={d.amountCents} />
+                    </div>
+                    <div className="mt-0.5">
+                      {d.kind === 'rembs' ? (
+                        <RemboursementStatusBadge status={d.status} />
+                      ) : (
+                        <AbandonStatusBadge status={d.status} />
+                      )}
+                    </div>
+                  </div>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
     </Section>

@@ -20,6 +20,10 @@ import {
 import { getCurrentContext } from '@/lib/context';
 import { listRemboursements } from '@/lib/services/remboursements';
 import { listAbandons } from '@/lib/services/abandons';
+import {
+  describeAbandonStatus,
+  describeRembsStatus,
+} from '@/lib/status-descriptions';
 
 interface SearchParams {
   error?: string;
@@ -139,49 +143,60 @@ function RemboursementsSection({
         </p>
       ) : (
         <ul className="divide-y divide-border-soft">
-          {rbts.map((r) => (
-            <li key={r.id}>
-              <Link
-                href={`/remboursements/${r.id}`}
-                className="flex items-center gap-3 px-6 py-3 hover:bg-brand-50/40 transition-colors"
-              >
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand">
-                  <HandCoins size={14} strokeWidth={1.75} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13.5px] font-medium text-fg truncate">
-                    {r.nature ?? '(sans nature)'}
+          {rbts.map((r) => {
+            const desc = describeRembsStatus(r.status);
+            return (
+              <li key={r.id}>
+                <Link
+                  href={`/remboursements/${r.id}`}
+                  className="flex items-start gap-3 px-6 py-3 hover:bg-brand-50/40 transition-colors"
+                >
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand mt-0.5">
+                    <HandCoins size={14} strokeWidth={1.75} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13.5px] font-medium text-fg truncate">
+                      {r.nature ?? '(sans nature)'}
+                    </div>
+                    <div className="text-[12px] text-fg-muted">
+                      <code className="font-mono text-[11.5px]">{r.id}</code>
+                      <span className="mx-1.5 text-fg-subtle">·</span>
+                      <span className="tabular-nums">
+                        {r.date_depense ?? r.created_at.slice(0, 10)}
+                      </span>
+                      {r.date_paiement && (
+                        <>
+                          <span className="mx-1.5 text-fg-subtle">·</span>
+                          <span className="tabular-nums">payé le {r.date_paiement}</span>
+                        </>
+                      )}
+                    </div>
+                    <p className="mt-1 text-[12px] text-fg-muted leading-snug">
+                      {desc.text}
+                      {desc.actionRequired && (
+                        <span className="ml-1.5 font-medium text-destructive">
+                          {desc.actionRequired}
+                        </span>
+                      )}
+                    </p>
                   </div>
-                  <div className="text-[12px] text-fg-muted">
-                    <code className="font-mono text-[11.5px]">{r.id}</code>
-                    <span className="mx-1.5 text-fg-subtle">·</span>
-                    <span className="tabular-nums">
-                      {r.date_depense ?? r.created_at.slice(0, 10)}
-                    </span>
-                    {r.date_paiement && (
-                      <>
-                        <span className="mx-1.5 text-fg-subtle">·</span>
-                        <span className="tabular-nums">payé le {r.date_paiement}</span>
-                      </>
-                    )}
+                  <div className="text-right shrink-0">
+                    <div className="font-medium tabular-nums text-fg">
+                      <Amount cents={r.total_cents || r.amount_cents} />
+                    </div>
+                    <div className="mt-0.5">
+                      <RemboursementStatusBadge status={r.status} />
+                    </div>
                   </div>
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="font-medium tabular-nums text-fg">
-                    <Amount cents={r.total_cents || r.amount_cents} />
-                  </div>
-                  <div className="mt-0.5">
-                    <RemboursementStatusBadge status={r.status} />
-                  </div>
-                </div>
-                <ArrowRight
-                  size={14}
-                  strokeWidth={2}
-                  className="ml-1 shrink-0 text-fg-subtle"
-                />
-              </Link>
-            </li>
-          ))}
+                  <ArrowRight
+                    size={14}
+                    strokeWidth={2}
+                    className="ml-1 shrink-0 text-fg-subtle mt-1"
+                  />
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
     </Section>
@@ -220,58 +235,69 @@ function AbandonsSection({
         </p>
       ) : (
         <ul className="divide-y divide-border-soft">
-          {abandons.map((a) => (
-            <li key={a.id}>
-              <Link
-                href={`/abandons/${a.id}`}
-                className="flex items-center gap-3 px-6 py-3 hover:bg-brand-50/40 transition-colors"
-              >
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
-                  <Gift size={14} strokeWidth={1.75} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13.5px] font-medium text-fg truncate">
-                    {a.nature}
+          {abandons.map((a) => {
+            const desc = describeAbandonStatus(a.status, a.cerfa_emis === 1);
+            return (
+              <li key={a.id}>
+                <Link
+                  href={`/abandons/${a.id}`}
+                  className="flex items-start gap-3 px-6 py-3 hover:bg-brand-50/40 transition-colors"
+                >
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-200 mt-0.5">
+                    <Gift size={14} strokeWidth={1.75} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13.5px] font-medium text-fg truncate">
+                      {a.nature}
+                    </div>
+                    <div className="text-[12px] text-fg-muted">
+                      <code className="font-mono text-[11.5px]">{a.id}</code>
+                      <span className="mx-1.5 text-fg-subtle">·</span>
+                      <span className="tabular-nums">{a.date_depense}</span>
+                      <span className="mx-1.5 text-fg-subtle">·</span>
+                      <span>année fiscale {a.annee_fiscale}</span>
+                    </div>
+                    <p className="mt-1 text-[12px] text-fg-muted leading-snug">
+                      {desc.text}
+                      {desc.actionRequired && (
+                        <span className="ml-1.5 font-medium text-destructive">
+                          {desc.actionRequired}
+                        </span>
+                      )}
+                    </p>
                   </div>
-                  <div className="text-[12px] text-fg-muted">
-                    <code className="font-mono text-[11.5px]">{a.id}</code>
-                    <span className="mx-1.5 text-fg-subtle">·</span>
-                    <span className="tabular-nums">{a.date_depense}</span>
-                    <span className="mx-1.5 text-fg-subtle">·</span>
-                    <span>année fiscale {a.annee_fiscale}</span>
+                  <div className="text-right shrink-0">
+                    <div className="font-medium tabular-nums text-fg">
+                      <Amount cents={a.amount_cents} />
+                    </div>
+                    <div className="mt-0.5 flex items-center justify-end gap-1.5">
+                      <AbandonStatusBadge status={a.status} />
+                      {a.cerfa_emis === 1 ? (
+                        <span
+                          title="CERFA émis"
+                          className="inline-flex items-center text-emerald-600 dark:text-emerald-400"
+                        >
+                          <CheckCircle2 size={13} strokeWidth={2.25} />
+                        </span>
+                      ) : (
+                        <span
+                          title="CERFA non émis"
+                          className="inline-flex items-center text-fg-subtle"
+                        >
+                          <Circle size={13} strokeWidth={2} />
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="font-medium tabular-nums text-fg">
-                    <Amount cents={a.amount_cents} />
-                  </div>
-                  <div className="mt-0.5 flex items-center justify-end gap-1.5">
-                    <AbandonStatusBadge status={a.status} />
-                    {a.cerfa_emis === 1 ? (
-                      <span
-                        title="CERFA émis"
-                        className="inline-flex items-center text-emerald-600 dark:text-emerald-400"
-                      >
-                        <CheckCircle2 size={13} strokeWidth={2.25} />
-                      </span>
-                    ) : (
-                      <span
-                        title="CERFA non émis"
-                        className="inline-flex items-center text-fg-subtle"
-                      >
-                        <Circle size={13} strokeWidth={2} />
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <ArrowRight
-                  size={14}
-                  strokeWidth={2}
-                  className="ml-1 shrink-0 text-fg-subtle"
-                />
-              </Link>
-            </li>
-          ))}
+                  <ArrowRight
+                    size={14}
+                    strokeWidth={2}
+                    className="ml-1 shrink-0 text-fg-subtle mt-1"
+                  />
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
     </Section>

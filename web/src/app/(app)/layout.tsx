@@ -1,5 +1,6 @@
 import { Sidebar } from '@/components/layout/sidebar';
 import { MobileNav } from '@/components/layout/mobile-nav';
+import { HelpFooter } from '@/components/layout/help-footer';
 import { getCurrentContext } from '@/lib/context';
 
 // Layout des pages authentifiées (chantier 4 ADR-016 + chantier 5).
@@ -29,7 +30,12 @@ export default async function AuthenticatedLayout({ children }: { children: Reac
       </aside>
 
       {/* Contenu principal */}
-      <main className="flex-1 overflow-auto px-4 py-5 lg:px-8 lg:py-7 min-w-0">{children}</main>
+      <main className="flex-1 overflow-auto px-4 py-5 lg:px-8 lg:py-7 min-w-0">
+        {children}
+        <div className="max-w-6xl mx-auto">
+          <HelpFooter groupId={ctx.groupId} selfEmail={ctx.email} />
+        </div>
+      </main>
     </div>
   );
 }

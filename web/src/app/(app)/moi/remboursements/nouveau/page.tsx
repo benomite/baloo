@@ -2,9 +2,27 @@ import { redirect } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
 import { Alert } from '@/components/ui/alert';
 import { getCurrentContext } from '@/lib/context';
+import { getDb } from '@/lib/db';
 import { listUnites } from '@/lib/queries/reference';
 import { createMyRemboursement } from '@/lib/actions/remboursements';
 import { RemboursementForm } from '@/components/rembs/remboursement-form';
+
+// Récupère le RIB texte de la dernière demande non vide d'un user. Utile
+// pour pré-remplir le form lors de la 2e+ demande — le user n'a pas à
+// resaisir son IBAN à chaque fois.
+async function getLastRibForUser(
+  userId: string,
+  groupId: string,
+): Promise<string | null> {
+  const row = await getDb()
+    .prepare(
+      `SELECT rib_texte FROM remboursements
+       WHERE group_id = ? AND submitted_by_user_id = ? AND rib_texte IS NOT NULL AND rib_texte != ''
+       ORDER BY created_at DESC LIMIT 1`,
+    )
+    .get<{ rib_texte: string }>(groupId, userId);
+  return row?.rib_texte ?? null;
+}
 
 interface SearchParams {
   error?: string;
@@ -27,8 +45,11 @@ export default async function MyNouveauRemboursementPage({
   const ctx = await getCurrentContext();
   if (ctx.role === 'parent') redirect('/moi');
 
-  const params = await searchParams;
-  const unites = await listUnites();
+  const [params, unites, lastRib] = await Promise.all([
+    searchParams,
+    listUnites(),
+    getLastRibForUser(ctx.userId, ctx.groupId),
+  ]);
   const today = new Date().toISOString().split('T')[0];
   const { prenom, nom } = splitName(ctx.name);
 
@@ -53,6 +74,7 @@ export default async function MyNouveauRemboursementPage({
         identityMode="locked"
         defaultIdentity={{ prenom, nom, email: ctx.email }}
         scopeUniteId={ctx.scopeUniteId}
+        initialRibTexte={lastRib}
       />
     </div>
   );
