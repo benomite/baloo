@@ -29,10 +29,8 @@ import {
   describeAbandonStatus,
   describeRembsStatus,
 } from '@/lib/status-descriptions';
-import {
-  dismissWelcomeBanner,
-  isWelcomeBannerDismissed,
-} from '@/lib/actions/onboarding';
+import { dismissWelcomeBanner } from '@/lib/actions/onboarding';
+import { isWelcomeBannerDismissed } from '@/lib/onboarding-cookie';
 import { cn } from '@/lib/utils';
 
 const ROLE_LABEL: Record<string, string> = {

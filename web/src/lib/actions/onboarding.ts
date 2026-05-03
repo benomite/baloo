@@ -2,9 +2,14 @@
 
 import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
+import { WELCOME_COOKIE } from '../onboarding-cookie';
 
-const WELCOME_COOKIE = 'baloo_welcome_dismissed';
-
+// Server action : appelée par le bouton X du WelcomeBanner pour
+// masquer le bandeau définitivement (cookie 1 an). Le helper de
+// LECTURE du cookie vit dans `lib/onboarding-cookie.ts` (sans
+// `'use server'`) — sinon Next 16 traite chaque export comme une
+// server action serialisable et la lecture depuis un server component
+// plante en prod.
 export async function dismissWelcomeBanner(): Promise<void> {
   const c = await cookies();
   c.set({
@@ -16,9 +21,4 @@ export async function dismissWelcomeBanner(): Promise<void> {
     httpOnly: false,
   });
   revalidatePath('/');
-}
-
-export async function isWelcomeBannerDismissed(): Promise<boolean> {
-  const c = await cookies();
-  return c.get(WELCOME_COOKIE)?.value === '1';
 }
