@@ -9,11 +9,12 @@ import {
   Download,
   Gift,
   HandCoins,
+  Home,
   Inbox,
-  LayoutDashboard,
   Mail,
   Paperclip,
   ShieldAlert,
+  TrendingUp,
   type LucideIcon,
 } from 'lucide-react';
 import { InstallButton } from '@/components/pwa/install-button';
@@ -35,7 +36,8 @@ const SECTIONS: NavSection[] = [
   {
     title: 'Comptabilité',
     items: [
-      { href: '/', label: 'Tableau de bord', icon: LayoutDashboard },
+      { href: '/', label: 'Accueil', icon: Home },
+      { href: '/synthese', label: 'Synthèse', icon: TrendingUp, roles: ['tresorier', 'RG', 'chef'] },
       { href: '/ecritures', label: 'Écritures', icon: BookOpen },
       { href: '/caisse', label: 'Caisse', icon: Coins, roles: ['tresorier', 'RG'] },
       { href: '/import', label: 'Import Comptaweb', icon: Download, roles: ['tresorier', 'RG'] },
