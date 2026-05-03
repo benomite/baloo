@@ -34,9 +34,12 @@ interface NavSection {
 
 const SECTIONS: NavSection[] = [
   {
+    title: '',
+    items: [{ href: '/', label: 'Accueil', icon: Home }],
+  },
+  {
     title: 'Comptabilité',
     items: [
-      { href: '/', label: 'Accueil', icon: Home },
       { href: '/synthese', label: 'Synthèse', icon: TrendingUp, roles: ['tresorier', 'RG', 'chef'] },
       { href: '/ecritures', label: 'Écritures', icon: BookOpen },
       { href: '/caisse', label: 'Caisse', icon: Coins, roles: ['tresorier', 'RG'] },
@@ -105,14 +108,21 @@ export function Sidebar({ role, groupName }: SidebarProps) {
 
       {/* Sections */}
       <nav className="flex-1 overflow-y-auto px-2 pb-4 [scrollbar-gutter:stable]">
-        {SECTIONS.map((section) => {
+        {SECTIONS.map((section, idx) => {
           const items = section.items.filter((i) => !i.roles || i.roles.includes(role));
           if (items.length === 0) return null;
+          // Section sans titre (Accueil) : pas de label muted ni d'espace.
+          const hasTitle = section.title.length > 0;
           return (
-            <div key={section.title} className="mt-5 first:mt-1">
-              <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-subtle">
-                {section.title}
-              </div>
+            <div
+              key={section.title || `section-${idx}`}
+              className={cn(hasTitle ? 'mt-5 first:mt-1' : 'mt-1')}
+            >
+              {hasTitle && (
+                <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-subtle">
+                  {section.title}
+                </div>
+              )}
               <ul className="space-y-0.5">
                 {items.map((item) => (
                   <li key={item.href}>

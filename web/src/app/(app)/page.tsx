@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import {
   ArrowRight,
-  BookOpen,
   Gift,
   HandCoins,
   Inbox,
@@ -140,7 +139,7 @@ export default async function HomePage({
       )}
 
       <div className="space-y-8">
-        {canSubmit && <QuickActions isAdmin={isAdmin} />}
+        {canSubmit && <QuickActions />}
 
         {canSubmit && (
           <MyDemandsSection rbts={myRbts} abandons={myAbandons} hasAny={hasMyDemands} />
@@ -154,8 +153,14 @@ export default async function HomePage({
   );
 }
 
-function QuickActions({ isAdmin }: { isAdmin: boolean }) {
+function QuickActions() {
   const actions: { href: string; label: string; description: string; icon: LucideIcon }[] = [
+    {
+      href: '/depot',
+      label: 'Déposer un justif',
+      description: "Une photo, un PDF — le trésorier rapproche après.",
+      icon: Paperclip,
+    },
     {
       href: '/moi/remboursements/nouveau',
       label: 'Demander un remboursement',
@@ -168,21 +173,7 @@ function QuickActions({ isAdmin }: { isAdmin: boolean }) {
       description: 'Renoncer au remboursement → reçu fiscal CERFA pour défiscaliser.',
       icon: Gift,
     },
-    {
-      href: '/depot',
-      label: 'Déposer un justif',
-      description: "Une photo, un PDF — le trésorier rapproche après.",
-      icon: Paperclip,
-    },
   ];
-  if (isAdmin) {
-    actions.push({
-      href: '/ecritures/nouveau',
-      label: 'Saisir une écriture',
-      description: 'Pour le trésorier — nouvelle écriture comptable.',
-      icon: BookOpen,
-    });
-  }
 
   return (
     <div>
