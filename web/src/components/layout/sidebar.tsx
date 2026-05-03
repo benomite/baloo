@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   Mail,
   Paperclip,
+  ShieldAlert,
   type LucideIcon,
 } from 'lucide-react';
 import { InstallButton } from '@/components/pwa/install-button';
@@ -58,6 +59,7 @@ const SECTIONS: NavSection[] = [
     title: 'Administration',
     items: [
       { href: '/admin/invitations', label: 'Invitations', icon: Mail, roles: ['tresorier', 'RG'] },
+      { href: '/admin/errors', label: 'Journal d\'erreurs', icon: ShieldAlert, roles: ['tresorier', 'RG'] },
     ],
   },
 ];

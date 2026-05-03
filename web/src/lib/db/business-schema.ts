@@ -259,6 +259,26 @@ export async function ensureBusinessSchema(): Promise<void> {
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
+    -- Journal d'erreurs applicatives. Alimenté par logError() en
+    -- fire-and-forget : si la BDD plante, l'erreur est juste loguée
+    -- en console (pas de récursion). Page admin /admin/errors pour
+    -- consulter sans avoir à passer par les logs Vercel.
+    CREATE TABLE IF NOT EXISTS error_log (
+      id TEXT PRIMARY KEY,
+      mod TEXT NOT NULL,
+      message TEXT NOT NULL,
+      error_name TEXT,
+      stack TEXT,
+      data_json TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      resolved_at TEXT,
+      resolved_by TEXT REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_error_log_created ON error_log(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_error_log_unresolved ON error_log(resolved_at)
+      WHERE resolved_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_error_log_mod ON error_log(mod);
+
     CREATE TABLE IF NOT EXISTS justificatifs (
       id TEXT PRIMARY KEY,
       group_id TEXT NOT NULL,
