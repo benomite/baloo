@@ -213,7 +213,7 @@ export async function resendInvitation(
 
 // Supprime un user pending (faute de frappe sur l'email, invitation
 // périmée, etc.). Refuse si le user s'est déjà connecté — dans ce cas
-// l'admin doit passer par une désactivation explicite (statut='inactif')
+// l'admin doit passer par une désactivation explicite (statut='ancien')
 // pour préserver les références FK.
 export async function deletePendingInvitation(
   { groupId }: { groupId: string },
@@ -232,7 +232,7 @@ export async function deletePendingInvitation(
   await db.prepare('DELETE FROM users WHERE id = ? AND group_id = ?').run(userId, groupId);
 }
 
-// Liste les users désactivés du groupe (statut='inactif'). Utile pour
+// Liste les users désactivés du groupe (statut='ancien'). Utile pour
 // les rouvrir en cas d'erreur ou de retour d'un membre.
 export async function listInactiveUsers(
   { groupId }: { groupId: string },
@@ -244,7 +244,7 @@ export async function listInactiveUsers(
               u.created_at, u.email_verified
        FROM users u
        LEFT JOIN unites un ON un.id = u.scope_unite_id
-       WHERE u.group_id = ? AND u.statut = 'inactif'
+       WHERE u.group_id = ? AND u.statut = 'ancien'
        ORDER BY u.updated_at DESC`,
     )
     .all<ListInvitationsItem>(groupId);
@@ -326,7 +326,7 @@ export async function setUserRole(
     .run(role, scope_unite_id ?? null, userId, groupId);
 }
 
-// Désactive un user (statut='inactif'). Conserve les FK (signatures,
+// Désactive un user (statut='ancien'). Conserve les FK (signatures,
 // remboursements soumis, etc.) — moins destructif qu'un DELETE. Refuse
 // la désactivation du dernier trésorier actif et l'auto-désactivation.
 export async function deactivateUser(
@@ -357,7 +357,7 @@ export async function deactivateUser(
   await db
     .prepare(
       `UPDATE users
-       SET statut = 'inactif', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+       SET statut = 'ancien', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
        WHERE id = ? AND group_id = ?`,
     )
     .run(userId, groupId);
@@ -373,7 +373,7 @@ export async function reactivateUser(
     .prepare(
       `UPDATE users
        SET statut = 'actif', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-       WHERE id = ? AND group_id = ? AND statut = 'inactif'`,
+       WHERE id = ? AND group_id = ? AND statut = 'ancien'`,
     )
     .run(userId, groupId);
 }
