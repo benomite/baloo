@@ -117,38 +117,46 @@ export default async function CaissePage() {
           description="Pas encore de mouvement enregistré. Ajoute le premier ci-dessus quand une recette ou une dépense en espèces passe par la caisse du groupe."
         />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Unité</TableHead>
-              <TableHead>Activité</TableHead>
-              <TableHead className="text-right">Montant</TableHead>
-              <TableHead className="text-right">Solde après</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {mouvements.map((m) => (
-              <TableRow key={m.id}>
-                <TableCell>{m.date_mouvement}</TableCell>
-                <TableCell>{m.description}</TableCell>
-                <TableCell>{m.unite_code ?? '—'}</TableCell>
-                <TableCell>{m.activite_name ?? '—'}</TableCell>
-                <TableCell className="text-right font-medium">
-                  <Amount cents={m.amount_cents} tone="signed" />
-                </TableCell>
-                <TableCell className="text-right">
-                  {m.solde_apres_cents != null ? (
-                    <Amount cents={m.solde_apres_cents} tone="muted" />
-                  ) : (
-                    '—'
-                  )}
-                </TableCell>
+        <Section
+          title={`Historique (${mouvements.length})`}
+          subtitle="Du plus récent au plus ancien."
+          bodyClassName="px-0 pb-0"
+        >
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Unité</TableHead>
+                <TableHead>Activité</TableHead>
+                <TableHead className="text-right">Montant</TableHead>
+                <TableHead className="text-right">Solde après</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {mouvements.map((m) => (
+                <TableRow key={m.id}>
+                  <TableCell className="tabular-nums whitespace-nowrap">
+                    {m.date_mouvement}
+                  </TableCell>
+                  <TableCell>{m.description}</TableCell>
+                  <TableCell>{m.unite_code ?? '—'}</TableCell>
+                  <TableCell>{m.activite_name ?? '—'}</TableCell>
+                  <TableCell className="text-right font-medium tabular-nums">
+                    <Amount cents={m.amount_cents} tone="signed" />
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {m.solde_apres_cents != null ? (
+                      <Amount cents={m.solde_apres_cents} tone="muted" />
+                    ) : (
+                      '—'
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Section>
       )}
     </div>
   );
