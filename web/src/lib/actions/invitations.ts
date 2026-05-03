@@ -6,10 +6,24 @@ import { revalidatePath } from 'next/cache';
 import { getCurrentContext } from '../context';
 import {
   createInvitation as createInvitationService,
+  deletePendingInvitation as deletePendingInvitationService,
+  resendInvitation as resendInvitationService,
   type InvitationRole,
 } from '../services/invitations';
+import { logError } from '../log';
 
 const VALID_ROLES: readonly InvitationRole[] = ['tresorier', 'RG', 'chef', 'equipier', 'parent'];
+
+async function requireAdmin() {
+  const ctx = await getCurrentContext();
+  if (ctx.role !== 'tresorier' && ctx.role !== 'RG') {
+    redirect(
+      '/admin/invitations?error=' +
+        encodeURIComponent('Accès réservé aux trésoriers / RG.'),
+    );
+  }
+  return ctx;
+}
 
 async function deriveAppUrl(): Promise<string> {
   const explicit = process.env.AUTH_URL || process.env.NEXTAUTH_URL;
@@ -21,11 +35,7 @@ async function deriveAppUrl(): Promise<string> {
 }
 
 export async function createInvitation(formData: FormData): Promise<void> {
-  const { groupId, userId, role } = await getCurrentContext();
-
-  if (role !== 'tresorier' && role !== 'RG') {
-    redirect('/admin/invitations?error=' + encodeURIComponent('Accès réservé aux trésoriers / RG.'));
-  }
+  const { groupId, userId } = await requireAdmin();
 
   const email = (formData.get('email') as string | null)?.trim() ?? '';
   const requestedRole = formData.get('role') as string | null;
@@ -59,4 +69,33 @@ export async function createInvitation(formData: FormData): Promise<void> {
   revalidatePath('/admin/invitations');
   const flag = result.email_sent ? 'sent' : 'created';
   redirect(`/admin/invitations?success=${encodeURIComponent(email)}&status=${flag}`);
+}
+
+export async function resendInvitation(userId: string): Promise<void> {
+  const { groupId } = await requireAdmin();
+  try {
+    await resendInvitationService(
+      { groupId },
+      { userId, app_url: await deriveAppUrl() },
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logError('invitations', 'Renvoi du mail échoué', err, { userId });
+    redirect('/admin/invitations?error=' + encodeURIComponent(message));
+  }
+  revalidatePath('/admin/invitations');
+  redirect('/admin/invitations?resent=' + encodeURIComponent(userId));
+}
+
+export async function deleteInvitation(userId: string): Promise<void> {
+  const { groupId } = await requireAdmin();
+  try {
+    await deletePendingInvitationService({ groupId }, { userId });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logError('invitations', 'Suppression échouée', err, { userId });
+    redirect('/admin/invitations?error=' + encodeURIComponent(message));
+  }
+  revalidatePath('/admin/invitations');
+  redirect('/admin/invitations?deleted=' + encodeURIComponent(userId));
 }
