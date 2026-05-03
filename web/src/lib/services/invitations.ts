@@ -231,3 +231,149 @@ export async function deletePendingInvitation(
   }
   await db.prepare('DELETE FROM users WHERE id = ? AND group_id = ?').run(userId, groupId);
 }
+
+// Liste les users désactivés du groupe (statut='inactif'). Utile pour
+// les rouvrir en cas d'erreur ou de retour d'un membre.
+export async function listInactiveUsers(
+  { groupId }: { groupId: string },
+): Promise<ListInvitationsItem[]> {
+  return await getDb()
+    .prepare(
+      `SELECT u.id, u.email, u.nom_affichage, u.role, u.scope_unite_id,
+              un.code AS unite_code, un.name AS unite_name,
+              u.created_at, u.email_verified
+       FROM users u
+       LEFT JOIN unites un ON un.id = u.scope_unite_id
+       WHERE u.group_id = ? AND u.statut = 'inactif'
+       ORDER BY u.updated_at DESC`,
+    )
+    .all<ListInvitationsItem>(groupId);
+}
+
+// Modifie le rôle d'un user existant. Vérifie la cohérence rôle ↔ scope
+// (le rôle 'chef' nécessite une unité, les autres non). Refuse de
+// rétrograder le dernier trésorier actif du groupe (sinon plus personne
+// pour gérer la compta).
+export async function setUserRole(
+  { groupId, currentUserId }: { groupId: string; currentUserId: string },
+  { userId, role, scope_unite_id }: {
+    userId: string;
+    role: InvitationRole;
+    scope_unite_id?: string | null;
+  },
+): Promise<void> {
+  const db = getDb();
+
+  if (!VALID_ROLES.includes(role)) {
+    throw new Error(`Rôle invalide : ${role}`);
+  }
+
+  const needsScope = role === 'chef';
+  if (needsScope && !scope_unite_id) {
+    throw new Error("Le rôle 'chef' nécessite une unité.");
+  }
+  if (!needsScope && scope_unite_id) {
+    // On nettoie le scope automatiquement plutôt que d'erreur — l'admin
+    // a juste laissé l'ancien scope en changeant de rôle.
+    scope_unite_id = null;
+  }
+
+  const target = await db
+    .prepare(
+      `SELECT id, role, statut FROM users WHERE id = ? AND group_id = ? LIMIT 1`,
+    )
+    .get<{ id: string; role: string; statut: string }>(userId, groupId);
+  if (!target) throw new Error('User introuvable dans ce groupe.');
+
+  // Garde-fou : on ne rétrograde pas le dernier trésorier actif. Sinon
+  // plus personne ne peut administrer.
+  if (target.role === 'tresorier' && role !== 'tresorier') {
+    const otherTresoriers = await db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM users
+         WHERE group_id = ? AND statut = 'actif' AND role = 'tresorier' AND id != ?`,
+      )
+      .get<{ n: number }>(groupId, userId);
+    if ((otherTresoriers?.n ?? 0) === 0) {
+      throw new Error(
+        "Impossible de rétrograder le dernier trésorier actif. Promeus d'abord quelqu'un d'autre.",
+      );
+    }
+  }
+
+  // Garde-fou bis : un admin ne peut pas se rétrograder lui-même
+  // (sinon il perd ses droits dans la même requête et finit en
+  // demi-cassé). Doit demander à un autre admin.
+  if (userId === currentUserId && (role === 'chef' || role === 'equipier' || role === 'parent')) {
+    throw new Error(
+      'Tu ne peux pas te rétrograder toi-même — demande à un autre admin de le faire.',
+    );
+  }
+
+  if (scope_unite_id) {
+    const unite = await db
+      .prepare('SELECT id FROM unites WHERE id = ? AND group_id = ? LIMIT 1')
+      .get<{ id: string }>(scope_unite_id, groupId);
+    if (!unite) throw new Error(`Unité ${scope_unite_id} introuvable dans ce groupe.`);
+  }
+
+  await db
+    .prepare(
+      `UPDATE users
+       SET role = ?, scope_unite_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+       WHERE id = ? AND group_id = ?`,
+    )
+    .run(role, scope_unite_id ?? null, userId, groupId);
+}
+
+// Désactive un user (statut='inactif'). Conserve les FK (signatures,
+// remboursements soumis, etc.) — moins destructif qu'un DELETE. Refuse
+// la désactivation du dernier trésorier actif et l'auto-désactivation.
+export async function deactivateUser(
+  { groupId, currentUserId }: { groupId: string; currentUserId: string },
+  { userId }: { userId: string },
+): Promise<void> {
+  const db = getDb();
+  if (userId === currentUserId) {
+    throw new Error('Tu ne peux pas te désactiver toi-même.');
+  }
+  const target = await db
+    .prepare('SELECT role FROM users WHERE id = ? AND group_id = ? AND statut = ? LIMIT 1')
+    .get<{ role: string }>(userId, groupId, 'actif');
+  if (!target) throw new Error('User introuvable ou déjà désactivé.');
+
+  if (target.role === 'tresorier') {
+    const otherTresoriers = await db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM users
+         WHERE group_id = ? AND statut = 'actif' AND role = 'tresorier' AND id != ?`,
+      )
+      .get<{ n: number }>(groupId, userId);
+    if ((otherTresoriers?.n ?? 0) === 0) {
+      throw new Error('Impossible de désactiver le dernier trésorier actif.');
+    }
+  }
+
+  await db
+    .prepare(
+      `UPDATE users
+       SET statut = 'inactif', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+       WHERE id = ? AND group_id = ?`,
+    )
+    .run(userId, groupId);
+}
+
+// Réactive un user désactivé (statut='actif').
+export async function reactivateUser(
+  { groupId }: { groupId: string },
+  { userId }: { userId: string },
+): Promise<void> {
+  const db = getDb();
+  await db
+    .prepare(
+      `UPDATE users
+       SET statut = 'actif', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+       WHERE id = ? AND group_id = ? AND statut = 'inactif'`,
+    )
+    .run(userId, groupId);
+}

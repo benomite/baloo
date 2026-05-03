@@ -6,8 +6,11 @@ import { revalidatePath } from 'next/cache';
 import { getCurrentContext } from '../context';
 import {
   createInvitation as createInvitationService,
+  deactivateUser as deactivateUserService,
   deletePendingInvitation as deletePendingInvitationService,
+  reactivateUser as reactivateUserService,
   resendInvitation as resendInvitationService,
+  setUserRole as setUserRoleService,
   type InvitationRole,
 } from '../services/invitations';
 import { logError } from '../log';
@@ -98,4 +101,57 @@ export async function deleteInvitation(userId: string): Promise<void> {
   }
   revalidatePath('/admin/invitations');
   redirect('/admin/invitations?deleted=' + encodeURIComponent(userId));
+}
+
+export async function changeUserRole(userId: string, formData: FormData): Promise<void> {
+  const { groupId, userId: currentUserId } = await requireAdmin();
+  const role = formData.get('role') as string | null;
+  const scopeUniteId = (formData.get('scope_unite_id') as string | null) || null;
+
+  if (!role || !VALID_ROLES.includes(role as InvitationRole)) {
+    redirect('/admin/invitations?error=' + encodeURIComponent('Rôle invalide.'));
+  }
+
+  try {
+    await setUserRoleService(
+      { groupId, currentUserId },
+      {
+        userId,
+        role: role as InvitationRole,
+        scope_unite_id: scopeUniteId,
+      },
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logError('invitations', 'Changement de rôle échoué', err, { userId, role });
+    redirect('/admin/invitations?error=' + encodeURIComponent(message));
+  }
+  revalidatePath('/admin/invitations');
+  redirect('/admin/invitations?role_changed=' + encodeURIComponent(userId));
+}
+
+export async function deactivateUser(userId: string): Promise<void> {
+  const { groupId, userId: currentUserId } = await requireAdmin();
+  try {
+    await deactivateUserService({ groupId, currentUserId }, { userId });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logError('invitations', 'Désactivation échouée', err, { userId });
+    redirect('/admin/invitations?error=' + encodeURIComponent(message));
+  }
+  revalidatePath('/admin/invitations');
+  redirect('/admin/invitations?deactivated=' + encodeURIComponent(userId));
+}
+
+export async function reactivateUser(userId: string): Promise<void> {
+  const { groupId } = await requireAdmin();
+  try {
+    await reactivateUserService({ groupId }, { userId });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logError('invitations', 'Réactivation échouée', err, { userId });
+    redirect('/admin/invitations?error=' + encodeURIComponent(message));
+  }
+  revalidatePath('/admin/invitations');
+  redirect('/admin/invitations?reactivated=' + encodeURIComponent(userId));
 }

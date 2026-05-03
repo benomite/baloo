@@ -63,7 +63,7 @@ const SECTIONS: NavSection[] = [
   {
     title: 'Administration',
     items: [
-      { href: '/admin/invitations', label: 'Invitations', icon: Mail, roles: ['tresorier', 'RG'] },
+      { href: '/admin/invitations', label: 'Membres', icon: Mail, roles: ['tresorier', 'RG'] },
       { href: '/admin/errors', label: 'Journal d\'erreurs', icon: ShieldAlert, roles: ['tresorier', 'RG'] },
     ],
   },
