@@ -30,6 +30,7 @@ inbox/
 !web/public/docs/*.pdf
 !web/public/docs/*.xlsx
 
+
 # Données perso / financières extraites
 *.rib
 mon-groupe/exports/
