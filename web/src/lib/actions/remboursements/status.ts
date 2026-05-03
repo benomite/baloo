@@ -10,21 +10,12 @@ import {
 } from '../../services/remboursements';
 import { sendRemboursementStatusChangedEmail } from '../../email/remboursement';
 import { signAndRefreshRemboursementPdf } from '../../services/remboursement-signing';
+import {
+  REMBOURSEMENTS_TRANSITIONS as TRANSITIONS,
+} from '../../services/remboursements-transitions';
 import { logError } from '../../log';
 import type { RemboursementStatus } from '../../types';
 import { captureClientMeta, deriveAppUrl } from './_helpers';
-
-// Garde de transitions : qui peut faire quoi sur la timeline 5 statuts.
-const TRANSITIONS: Record<string, { from: string[]; allowedRoles: string[] }> = {
-  valide_tresorier: { from: ['a_traiter'], allowedRoles: ['tresorier'] },
-  valide_rg: { from: ['valide_tresorier'], allowedRoles: ['RG'] },
-  virement_effectue: { from: ['valide_rg'], allowedRoles: ['tresorier', 'RG'] },
-  termine: { from: ['virement_effectue'], allowedRoles: ['tresorier', 'RG'] },
-  refuse: {
-    from: ['a_traiter', 'valide_tresorier', 'valide_rg', 'virement_effectue'],
-    allowedRoles: ['tresorier', 'RG'],
-  },
-};
 
 // Note signature : `formData` en dernier argument permet de l'utiliser
 // comme `<form action={updateRemboursementStatus.bind(null, id, status)}>`,
