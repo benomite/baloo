@@ -270,9 +270,28 @@ export async function importComptawebCsv(
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    // Idempotence : on purge TOUTES les écritures saisie_comptaweb avant ré-import.
-    // Les ajustements manuels (status=brouillon ou valide) ne sont pas touchés.
-    const deleteAllSynced = txDb.prepare(`DELETE FROM ecritures WHERE status = 'saisie_comptaweb'`);
+    // Idempotence : on purge TOUTES les écritures saisie_comptaweb avant
+    // ré-import. Les ajustements manuels (status=brouillon ou valide) ne
+    // sont pas touchés. AVANT le DELETE, il faut SET NULL les FK qui
+    // pointent vers ces écritures (sinon Turso/libSQL plante avec FOREIGN
+    // KEY constraint failed) :
+    //   - remboursements.ecriture_id (un remb peut être rattaché à
+    //     l'écriture qui matérialise son virement)
+    //   - depots_justificatifs.ecriture_id (un dépôt rattaché à une
+    //     écriture issue du CSV)
+    // Conséquence assumée : ces liens sont perdus au re-import. Le user
+    // peut les recréer manuellement après si besoin.
+    const unlinkRembs = txDb.prepare(
+      `UPDATE remboursements SET ecriture_id = NULL
+       WHERE ecriture_id IN (SELECT id FROM ecritures WHERE group_id = ? AND status = 'saisie_comptaweb')`,
+    );
+    const unlinkDepots = txDb.prepare(
+      `UPDATE depots_justificatifs SET ecriture_id = NULL
+       WHERE ecriture_id IN (SELECT id FROM ecritures WHERE group_id = ? AND status = 'saisie_comptaweb')`,
+    );
+    const deleteAllSynced = txDb.prepare(
+      `DELETE FROM ecritures WHERE group_id = ? AND status = 'saisie_comptaweb'`,
+    );
 
     const insertEcriture = txDb.prepare(`
       INSERT INTO ecritures (id, group_id, unite_id, date_ecriture, description, amount_cents, type, category_id, mode_paiement_id, activite_id, numero_piece, status, comptaweb_synced, notes, created_at, updated_at)
@@ -314,7 +333,9 @@ export async function importComptawebCsv(
       );
     }
 
-    await deleteAllSynced.run();
+    await unlinkRembs.run(groupId);
+    await unlinkDepots.run(groupId);
+    await deleteAllSynced.run(groupId);
 
     const groups = groupRows(rows);
 
