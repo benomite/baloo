@@ -146,6 +146,18 @@ Règles non négociables :
 - Pas de nom + adresse + date de naissance de mineur au même endroit sans nécessité.
 - Ne pas proposer de push sur un remote sans accord explicite.
 
+## Préservation des données — JAMAIS de DELETE
+
+**Règle absolue** : aucun `DELETE` sur les tables qui contiennent des données utilisateur (`ecritures`, `justificatifs`, `notes`, `depots_justificatifs`, `remboursements`, `abandons_frais`, `mouvements_caisse`, `personnes`, etc.). Toujours **UPSERT** :
+
+- Pour l'idempotence d'un import / sync : matcher l'enregistrement existant par une clé stable (numero_piece, ou tuple `date+montant+intitule`), puis UPDATE les **champs vides uniquement** via `COALESCE(champ_actuel, ?)`. Ne JAMAIS écraser une valeur saisie ou modifiée par l'utilisateur.
+- INSERT seulement si pas trouvé.
+- Ne JAMAIS `SET NULL` une FK pour contourner une contrainte (`remboursements.ecriture_id`, `depots_justificatifs.ecriture_id`, etc.). Si une FK bloque, c'est qu'il faut changer l'approche, pas casser le lien.
+
+**Pourquoi** : l'utilisateur enrichit en continu chaque écriture (notes, justifs uploadés, liens vers dépôts/remb, modifications d'imputation). Toute donnée perdue = saisie à refaire, contexte effacé. Coût utilisateur très élevé. Cas concret 2026-05-04 : le re-import CSV faisait `DELETE WHERE status='saisie_comptaweb' + INSERT` — aurait fait perdre tous les justifs uploadés et cassé les liens dépôts/rembs. Refonte en UPSERT.
+
+**Exception** : seules les tables de pur cache audit (`comptaweb_lignes` = trace brute du CSV importé, ré-écrasable) peuvent être DELETE+INSERT. À évaluer au cas par cas, jamais par défaut.
+
 ## Mode dev
 
 Si l'utilisateur demande explicitement de **faire évoluer Baloo lui-même** (modifier la doc, ajouter/modifier un skill, créer un ADR, refactorer la structure, changer les conventions), passe en **mode dev** : lis [`doc/DEVELOPING.md`](doc/DEVELOPING.md) et suis ses règles.
