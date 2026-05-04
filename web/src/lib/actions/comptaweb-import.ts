@@ -9,6 +9,11 @@ import {
   deleteCsvDuplicates as deleteCsvDuplicatesService,
   type DedupReport,
 } from '../services/dedup-ecritures';
+import {
+  findInternalTransfers as findTransfertsService,
+  deleteInternalTransfers as deleteTransfertsService,
+  type CleanupReport,
+} from '../services/cleanup-transferts';
 import { logError } from '../log';
 
 const ADMIN_ROLES = ['tresorier', 'RG'];
@@ -119,6 +124,45 @@ export async function deleteEcritureDuplicates(
     return { ok: true, ...result };
   } catch (err) {
     logError('dedup-ecritures', 'Suppression doublons échouée', err);
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// Détecte les transferts internes faussement importés en recettes/dépenses
+// (cf. doc cleanup-transferts.ts). Dry-run par défaut.
+export async function detectInternalTransfers(): Promise<CleanupReport & { ok: boolean; error?: string }> {
+  try {
+    const ctx = await getCurrentContext();
+    if (!ADMIN_ROLES.includes(ctx.role)) {
+      return { ok: false, error: 'Action réservée aux trésoriers / RG.', candidates: [], totalDeletable: 0, totalKeptDespite: 0, totalAmount: 0 };
+    }
+    const report = await findTransfertsService({ groupId: ctx.groupId });
+    return { ok: true, ...report };
+  } catch (err) {
+    logError('cleanup-transferts', 'Détection transferts échouée', err);
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+      candidates: [], totalDeletable: 0, totalKeptDespite: 0, totalAmount: 0,
+    };
+  }
+}
+
+export async function deleteInternalTransfers(
+  ids: string[],
+): Promise<{ ok: boolean; deleted?: number; skipped?: number; error?: string }> {
+  try {
+    const ctx = await getCurrentContext();
+    if (!ADMIN_ROLES.includes(ctx.role)) {
+      return { ok: false, error: 'Action réservée aux trésoriers / RG.' };
+    }
+    const result = await deleteTransfertsService({ groupId: ctx.groupId }, ids);
+    revalidatePath('/import');
+    revalidatePath('/ecritures');
+    revalidatePath('/synthese');
+    return { ok: true, ...result };
+  } catch (err) {
+    logError('cleanup-transferts', 'Suppression transferts échouée', err);
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }

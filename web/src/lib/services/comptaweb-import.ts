@@ -287,16 +287,25 @@ export async function importComptawebCsv(
     // vers dépôts/remb sont préservés. Les écritures saisie_comptaweb
     // qui ne correspondent à aucune ligne du nouveau CSV ne sont PAS
     // touchées (le CSV n'est pas la vérité absolue, c'est un complément).
-    // Matching en cascade pour rattraper les écritures pré-existantes
-    // qui peuvent avoir des champs partiellement remplis (ancien import
-    // sans description, ou avec piece différente). Préférence du plus
-    // précis vers le plus tolérant.
+    // Matching en cascade : le plus précis vers le plus tolérant.
+    // Inclut category_id pour distinguer 2 ventilations de même montant
+    // sur une même ligne parent (ex: regroupement national avec FSI 420€
+    // ET Territoire 420€ — sans category_id, le UPSERT loose les confond).
     const findExact = txDb.prepare(
       `SELECT id FROM ecritures
        WHERE group_id = ? AND status = 'saisie_comptaweb'
          AND date_ecriture = ? AND amount_cents = ? AND type = ?
          AND COALESCE(numero_piece, '') = COALESCE(?, '')
          AND COALESCE(description, '') = COALESCE(?, '')
+         AND COALESCE(category_id, '') = COALESCE(?, '')
+       LIMIT 1`,
+    );
+    const findByPieceCat = txDb.prepare(
+      `SELECT id FROM ecritures
+       WHERE group_id = ? AND status = 'saisie_comptaweb'
+         AND date_ecriture = ? AND amount_cents = ? AND type = ?
+         AND COALESCE(numero_piece, '') = COALESCE(?, '')
+         AND COALESCE(category_id, '') = COALESCE(?, '')
        LIMIT 1`,
     );
     const findByPiece = txDb.prepare(
@@ -341,7 +350,10 @@ export async function importComptawebCsv(
     }) {
       const existing =
         (await findExact.get<{ id: string }>(
-          groupId, args.date, args.amount, args.type, args.piece, args.description,
+          groupId, args.date, args.amount, args.type, args.piece, args.description, args.categoryId,
+        )) ||
+        (await findByPieceCat.get<{ id: string }>(
+          groupId, args.date, args.amount, args.type, args.piece, args.categoryId,
         )) ||
         (await findByPiece.get<{ id: string }>(
           groupId, args.date, args.amount, args.type, args.piece,
