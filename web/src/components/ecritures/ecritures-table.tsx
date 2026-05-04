@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Landmark } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { EcritureStatusBadge } from '@/components/shared/status-badge';
@@ -50,6 +50,7 @@ type Item =
   | { kind: 'row'; key: string; ecriture: Ecriture; index: number; inGroup: boolean };
 
 export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes }: Props) {
+  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   // Préserve les filtres courants (?type=, ?incomplete=…) en ajoutant
@@ -59,6 +60,19 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
     sp.set('detail', id);
     return `${pathname}?${sp.toString()}`;
   };
+  // Clic sur la ligne entière → ouvre le drawer. Cmd/Ctrl+clic =
+  // nouvel onglet (page complète) pour l'usage rare où on veut
+  // travailler sur 2 écritures côte à côte.
+  const onRowClick = (id: string) => (ev: React.MouseEvent) => {
+    if (ev.metaKey || ev.ctrlKey || ev.button === 1) {
+      window.open(`/ecritures/${id}`, '_blank');
+      return;
+    }
+    router.push(detailHref(id), { scroll: false });
+  };
+  // Empêche le clic sur les zones interactives de déclencher l'ouverture
+  // du drawer (checkbox, selects inline).
+  const stop = (ev: React.MouseEvent | React.PointerEvent) => ev.stopPropagation();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [anchorIndex, setAnchorIndex] = useState<number | null>(null);
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
@@ -251,8 +265,12 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
               ? { boxShadow: `inset 3px 0 0 0 ${railColor}` }
               : undefined;
             return (
-              <TableRow key={item.key} className={rowBg}>
-                <TableCell style={railShadow}>
+              <TableRow
+                key={item.key}
+                className={`${rowBg} cursor-pointer hover:bg-muted/30 transition-colors`}
+                onClick={onRowClick(e.id)}
+              >
+                <TableCell style={railShadow} onClick={stop}>
                   <input
                     type="checkbox"
                     aria-label={`Sélectionner ${e.id}`}
@@ -269,6 +287,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     className="hover:underline block truncate"
                     title={`${e.description} — clic pour ouvrir le panneau d'édition`}
                     scroll={false}
+                    onClick={stop}
                   >
                     {e.description}
                   </Link>
@@ -276,7 +295,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                 <TableCell className="text-right font-medium">
                   <Amount cents={e.amount_cents} tone={e.type === 'depense' ? 'negative' : 'positive'} />
                 </TableCell>
-                <TableCell>
+                <TableCell onClick={stop}>
                   <InlineSelect
                     value={e.unite_id}
                     disabled={!editable}
@@ -286,7 +305,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     onSave={(v) => updateEcritureField(e.id, 'unite_id', v)}
                   />
                 </TableCell>
-                <TableCell className="text-sm">
+                <TableCell className="text-sm" onClick={stop}>
                   <InlineSelect
                     value={e.category_id}
                     disabled={!editable}
