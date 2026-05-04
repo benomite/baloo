@@ -42,6 +42,8 @@ export interface ImportCsvResult {
   fichier?: string;
   lignes_csv?: number;
   ecritures_creees?: number;
+  ecritures_mises_a_jour?: number;
+  ecritures_inserees?: number;
   transferts_internes?: number;
   transferts_internes_montant?: string;
   sans_unite?: number;
@@ -256,6 +258,8 @@ export async function importComptawebCsv(
   let totalDepensesCents = 0;
   let totalRecettesCents = 0;
   let ecrCreees = 0;
+  let ecrUpdated = 0;
+  let ecrInserted = 0;
   let ecrSansUnite = 0;
   let ecrSansCategorie = 0;
   let ecrSansMode = 0;
@@ -270,33 +274,94 @@ export async function importComptawebCsv(
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    // Idempotence : on purge TOUTES les écritures saisie_comptaweb avant
-    // ré-import. Les ajustements manuels (status=brouillon ou valide) ne
-    // sont pas touchés. AVANT le DELETE, il faut SET NULL les FK qui
-    // pointent vers ces écritures (sinon Turso/libSQL plante avec FOREIGN
-    // KEY constraint failed) :
-    //   - remboursements.ecriture_id (un remb peut être rattaché à
-    //     l'écriture qui matérialise son virement)
-    //   - depots_justificatifs.ecriture_id (un dépôt rattaché à une
-    //     écriture issue du CSV)
-    // Conséquence assumée : ces liens sont perdus au re-import. Le user
-    // peut les recréer manuellement après si besoin.
-    const unlinkRembs = txDb.prepare(
-      `UPDATE remboursements SET ecriture_id = NULL
-       WHERE ecriture_id IN (SELECT id FROM ecritures WHERE group_id = ? AND status = 'saisie_comptaweb')`,
+    // === UPSERT au lieu de DELETE+INSERT (cf. CLAUDE.md règle
+    // "Préservation des données — JAMAIS de DELETE") ===
+    //
+    // Stratégie : pour chaque ligne du CSV, on cherche une écriture
+    // existante par clé stable (group_id + numero_piece + date + montant
+    // + type). Si trouvée, on UPDATE les champs vides via COALESCE pour
+    // ne JAMAIS écraser les valeurs saisies à la main par le trésorier.
+    // Sinon, INSERT.
+    //
+    // Conséquence : tous les justifs uploadés, notes manuelles, liens
+    // vers dépôts/remb sont préservés. Les écritures saisie_comptaweb
+    // qui ne correspondent à aucune ligne du nouveau CSV ne sont PAS
+    // touchées (le CSV n'est pas la vérité absolue, c'est un complément).
+    const findExisting = txDb.prepare(
+      `SELECT id FROM ecritures
+       WHERE group_id = ?
+         AND status = 'saisie_comptaweb'
+         AND date_ecriture = ?
+         AND amount_cents = ?
+         AND type = ?
+         AND COALESCE(numero_piece, '') = COALESCE(?, '')
+       LIMIT 1`,
     );
-    const unlinkDepots = txDb.prepare(
-      `UPDATE depots_justificatifs SET ecriture_id = NULL
-       WHERE ecriture_id IN (SELECT id FROM ecritures WHERE group_id = ? AND status = 'saisie_comptaweb')`,
+    const updateExisting = txDb.prepare(
+      `UPDATE ecritures SET
+         unite_id         = COALESCE(unite_id,         ?),
+         category_id      = COALESCE(category_id,      ?),
+         mode_paiement_id = COALESCE(mode_paiement_id, ?),
+         activite_id      = COALESCE(activite_id,      ?),
+         description      = CASE WHEN description = '' OR description IS NULL THEN ? ELSE description END,
+         updated_at       = ?
+       WHERE id = ?`,
     );
-    const deleteAllSynced = txDb.prepare(
-      `DELETE FROM ecritures WHERE group_id = ? AND status = 'saisie_comptaweb'`,
-    );
-
     const insertEcriture = txDb.prepare(`
       INSERT INTO ecritures (id, group_id, unite_id, date_ecriture, description, amount_cents, type, category_id, mode_paiement_id, activite_id, numero_piece, status, comptaweb_synced, notes, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'saisie_comptaweb', 1, ?, ?, ?)
     `);
+
+    async function upsertEcriture(args: {
+      date: string;
+      description: string;
+      amount: number;
+      type: 'depense' | 'recette';
+      uniteId: string | null;
+      categoryId: string | null;
+      modeId: string | null;
+      activiteId: string | null;
+      piece: string | null;
+      notes: string;
+    }) {
+      const existing = await findExisting.get<{ id: string }>(
+        groupId,
+        args.date,
+        args.amount,
+        args.type,
+        args.piece,
+      );
+      if (existing) {
+        await updateExisting.run(
+          args.uniteId,
+          args.categoryId,
+          args.modeId,
+          args.activiteId,
+          args.description,
+          now,
+          existing.id,
+        );
+        ecrUpdated++;
+      } else {
+        await insertEcriture.run(
+          nextEcrId(),
+          groupId,
+          args.uniteId,
+          args.date,
+          args.description,
+          args.amount,
+          args.type,
+          args.categoryId,
+          args.modeId,
+          args.activiteId,
+          args.piece,
+          args.notes,
+          now,
+          now,
+        );
+        ecrInserted++;
+      }
+    }
 
     await txDb.prepare(`
       INSERT INTO comptaweb_imports (id, group_id, import_date, source_file, row_count, total_depenses_cents, total_recettes_cents, notes, created_at)
@@ -333,10 +398,6 @@ export async function importComptawebCsv(
       );
     }
 
-    await unlinkRembs.run(groupId);
-    await unlinkDepots.run(groupId);
-    await deleteAllSynced.run(groupId);
-
     const groups = groupRows(rows);
 
     for (const [, g] of groups) {
@@ -371,11 +432,18 @@ export async function importComptawebCsv(
         const categoryId = findCategoryId(nature);
         const activiteId = findActiviteId(activite);
 
-        await insertEcriture.run(
-          nextEcrId(), groupId, uniteId, date, intitule, ecrAmount, ecrType,
-          categoryId, modeId, activiteId, piece,
-          notesBase, now, now,
-        );
+        await upsertEcriture({
+          date,
+          description: intitule,
+          amount: ecrAmount,
+          type: ecrType,
+          uniteId,
+          categoryId,
+          modeId,
+          activiteId,
+          piece,
+          notes: notesBase,
+        });
         ecrCreees++;
         if (!uniteId) ecrSansUnite++;
         if (!categoryId) ecrSansCategorie++;
@@ -408,11 +476,18 @@ export async function importComptawebCsv(
 
           const type: 'depense' | 'recette' = depV > 0 ? 'depense' : 'recette';
           const amt = depV || recV;
-          await insertEcriture.run(
-            nextEcrId(), groupId, uniteId, date, intitule, amt, type,
-            categoryId, modeId, activiteId, piece,
-            notesBase + suffix, now, now,
-          );
+          await upsertEcriture({
+            date,
+            description: intitule,
+            amount: amt,
+            type,
+            uniteId,
+            categoryId,
+            modeId,
+            activiteId,
+            piece,
+            notes: notesBase + suffix,
+          });
           ecrCreees++;
           if (!uniteId) ecrSansUnite++;
           if (!categoryId) ecrSansCategorie++;
@@ -437,6 +512,8 @@ export async function importComptawebCsv(
     fichier: sourceFile,
     lignes_csv: rows.length,
     ecritures_creees: ecrCreees,
+    ecritures_mises_a_jour: ecrUpdated,
+    ecritures_inserees: ecrInserted,
     transferts_internes: transfertsInternes,
     transferts_internes_montant: formatAmount(transfertsInternesCents),
     sans_unite: ecrSansUnite,
