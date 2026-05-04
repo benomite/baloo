@@ -4,7 +4,9 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Amount } from '@/components/shared/amount';
 import { Section } from '@/components/shared/section';
 import { StatCard } from '@/components/shared/stat-card';
+import { TabLink } from '@/components/shared/tab-link';
 import { getOverview } from '@/lib/queries/overview';
+import { currentExercice } from '@/lib/services/overview';
 import { getCurrentContext } from '@/lib/context';
 import { requireNotParent } from '@/lib/auth/access';
 import {
@@ -17,10 +19,42 @@ import {
   Upload,
 } from 'lucide-react';
 
-export default async function SynthesePage() {
+interface SearchParams {
+  exercice?: string; // ex: '2025-2026' = Sept 2025 → Août 2026 ; ou 'tous'
+}
+
+// Génère la liste des 3 derniers exercices SGDF + le courant.
+function exerciceOptions(): { value: string; label: string }[] {
+  const cur = currentExercice();
+  const curStart = parseInt(cur.split('-')[0], 10);
+  const opts: { value: string; label: string }[] = [];
+  for (let i = 0; i < 4; i++) {
+    const y = curStart - i;
+    opts.push({
+      value: `${y}-${y + 1}`,
+      label: `Sept ${y} → Août ${y + 1}`,
+    });
+  }
+  return opts;
+}
+
+export default async function SynthesePage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
   const ctx = await getCurrentContext();
   requireNotParent(ctx.role);
-  const data = await getOverview();
+  const sp = await searchParams;
+  // Par défaut : exercice courant (= comparable au compte de résultat
+  // Comptaweb). Le user peut basculer sur "Tous" pour voir l'agrégat
+  // historique total.
+  const cur = currentExercice();
+  const exerciceParam = sp.exercice ?? cur;
+  const exerciceFilter = exerciceParam === 'tous' ? null : exerciceParam;
+  const data = await getOverview({ exercice: exerciceFilter });
+
+  const options = exerciceOptions();
 
   return (
     <div>
@@ -28,6 +62,25 @@ export default async function SynthesePage() {
         title="Synthèse"
         subtitle="Vue agrégée de la trésorerie du groupe — KPIs et répartition par unité."
       />
+
+      {/* Sélecteur d'exercice : pivote l'agrégation. Onglet "Tous"
+          pour comparer historique total ; un par exercice SGDF récent
+          pour comparer au compte de résultat Comptaweb (qui filtre
+          aussi par exercice). */}
+      <div className="mb-4 flex flex-wrap gap-6 border-b">
+        {options.map((o) => (
+          <TabLink
+            key={o.value}
+            href={`/synthese?exercice=${o.value}`}
+            active={exerciceParam === o.value}
+          >
+            {o.label}
+          </TabLink>
+        ))}
+        <TabLink href="/synthese?exercice=tous" active={exerciceParam === 'tous'}>
+          Tous
+        </TabLink>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <StatCard
@@ -87,10 +140,6 @@ export default async function SynthesePage() {
             {data.parUnite.map((u) => (
               <TableRow
                 key={u.code}
-                // Rail vertical 3px de la couleur de l'unité à gauche +
-                // teinte de fond ultra-douce (~6% alpha) pour donner un
-                // visuel "par unité" au coup d'œil sans nuire à la
-                // lisibilité.
                 style={
                   u.couleur
                     ? {
