@@ -357,6 +357,11 @@ export async function importComptawebCsv(
       piece: string | null;
       notes: string;
     }) {
+      // findByCat n'est tenté QUE si on a une category_id : sinon
+      // 2 ventilations sans catégorie (cas FSI vs ancienne Territoire
+      // pré-fix encoding) seraient fusionnées par erreur. On préfère
+      // générer un doublon (rattrapable via dedup) plutôt que perdre
+      // une ventilation entière.
       const existing =
         (await findExact.get<{ id: string }>(
           groupId, args.date, args.amount, args.type, args.piece, args.description, args.categoryId,
@@ -364,9 +369,11 @@ export async function importComptawebCsv(
         (await findByPieceCat.get<{ id: string }>(
           groupId, args.date, args.amount, args.type, args.piece, args.categoryId,
         )) ||
-        (await findByCat.get<{ id: string }>(
-          groupId, args.date, args.amount, args.type, args.categoryId,
-        ));
+        (args.categoryId
+          ? await findByCat.get<{ id: string }>(
+              groupId, args.date, args.amount, args.type, args.categoryId,
+            )
+          : null);
       if (existing) {
         await updateExisting.run(
           args.uniteId,
