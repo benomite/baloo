@@ -967,4 +967,123 @@ L'usage cible (remboursements de bénévoles d'asso loi 1901, contrôle URSSAF /
 
 ---
 
+## ADR-024 — Workflow abandons étendu (a_traiter → valide → envoye_national + flag CERFA séparé)
+
+**Contexte** : la P2 livrait un workflow abandons minimaliste (création + flag `cerfa_emis` toggle admin). Insuffisant en pratique : le trésorier doit suivre **avant** l'envoi au national (avoir signé la feuille, l'avoir envoyée à `donateurs@sgdf.fr`), puis **après** (CERFA reçu en retour, parfois plusieurs semaines plus tard). Sans étapes intermédiaires, la to-do se perdait.
+
+**Décision** : workflow à 3 étapes + statut terminal :
+
+```
+a_traiter → valide → envoye_national
+       ↓        ↓
+       refuse   refuse
+```
+
+Le flag `cerfa_emis` (booléen + `cerfa_emis_at`) reste **séparé** du status. Le retour CERFA est asynchrone et peut tomber après la fin du workflow logique. Une fois `envoye_national`, le statut est figé et seul `cerfa_emis` évolue.
+
+**Champs ajoutés à `abandons_frais`** (migration idempotente dans `auth/schema.ts`) :
+- `status TEXT DEFAULT 'a_traiter'` (sans NOT NULL pour libsql, cf. AGENTS.md ; backfill explicite)
+- `motif_refus TEXT`
+- `sent_to_national_at TEXT`, `cerfa_emis_at TEXT`
+- `prenom`, `nom`, `email` (le champ legacy `donateur` reste rempli pour rétrocompat)
+
+**UI** :
+- Page liste `/abandons` ouverte aux non-admins avec scope auto (un equipier voit ses propres abandons, admin voit tout le groupe).
+- Page détail `/abandons/[id]` (nouvelle) : timeline status + sidebar feuille/justifs + bloc actions admin (validation, envoi national avec mailto pré-rempli, toggle CERFA, refus avec motif).
+- Page admin `/abandons/nouveau` : saisie pour autrui (rattrapage d'historique, aide aux donateurs qui ne se connectent pas eux-mêmes). `submitted_by_user_id` reste NULL.
+- Helper `buildNationalMailto()` qui génère un mailto: pré-rempli pour `donateurs@sgdf.fr` (sujet + corps avec infos du don). PJ à attacher manuellement par l'admin (limite du protocole mailto:).
+
+**Garde de transitions** : module pur `isAllowedAbandonTransition(from, to)` testable sans BDD. Self-transitions interdites, statuts terminaux verrouillés.
+
+**Modèles SGDF** servis statiquement depuis `web/public/docs/` :
+- `formulaire_abandon.xlsx` (formulaire à compléter)
+- `fiche_abandon.pdf` (notice explicative SGDF)
+- Lien dans le form `/moi/abandons/nouveau`.
+
+**Liens** :
+- [ADR-022](#adr-022--refonte-du-modèle-remboursement--multi-lignes--5-statuts--feuille-pdf-générée) — pattern workflow + transitions sur rembs.
+- Doc SGDF : `web/public/docs/fiche_abandon.pdf`.
+
+---
+
+## ADR-025 — Journal d'erreurs interne plutôt que tier externe (Sentry-like)
+
+**Contexte** : un crash en prod sans log accessible = aveuglement total. Vercel CLI `vercel logs` est quasi inutilisable (ne stream que les nouveaux logs, jamais l'historique). L'épisode du `CREATE INDEX idx_abandons_status` qui cassait l'auth en boucle n'a été identifié que via le user qui l'a vu en local — sans ça, on aurait eu zéro feedback de la prod.
+
+**Décision** : table `error_log` en BDD + helper `logError(mod, message, err, data)` qui persiste en fire-and-forget + page admin `/admin/errors`. **Pas de tier externe** (Sentry, Logtail, Datadog) au MVP.
+
+**Justifications** :
+- Coût marginal 0 € (vs 26 $/mois Sentry team).
+- Pas de fuite de données vers un tier (pas de DPA à signer).
+- Implémentation : ~45 min vs intégration tier (env vars, source maps upload, dépendance npm, ADR séparé).
+- Suffisant pour un usage à 1-5 users actifs (volume d'erreurs faible). Si on bascule en multi-groupes (P3) avec 50+ users actifs, on pourra rebasculer sur un tier.
+
+**Implémentation** :
+- Table `error_log(id, mod, message, error_name, stack, data_json, created_at, resolved_at, resolved_by)` dans `business-schema.ts`.
+- `lib/log.ts` : `logError()` émet en console + persiste en BDD via `persistError()` en fire-and-forget. Si la BDD plante, console.error direct sans récursion.
+- `lib/services/errors.ts` : `listErrors`, `markErrorResolved`, `markErrorGroupResolved`.
+- Page `/admin/errors` (admin only) avec tabs Non résolues / Toutes + counter, stack et data en details (pas affichés par défaut), bouton "Marquer résolue" / "Ré-ouvrir".
+
+**Pattern de debug** : pour identifier quel `await` plante dans une page, wrapper avec :
+
+```ts
+async function trace<T>(mod: string, p: Promise<T>): Promise<T> {
+  try { return await p; } catch (err) {
+    logError(`page-name/${mod}`, 'await failed', err);
+    throw err;
+  }
+}
+```
+
+Puis `await trace('myFn', maFonction())`. L'erreur apparaît dans `/admin/errors` avec le mod précis. À retirer après debug.
+
+**Limites assumées** : pas d'alerting (mail / webhook). Le user doit aller consulter `/admin/errors` activement. Si le besoin émerge, ajouter un envoi Resend conditionnel (ex. > 5 erreurs identiques en 1h).
+
+---
+
+## ADR-026 — Home unifiée centrée utilisateur (suppression de `/moi`)
+
+**Contexte** : la home `/` affichait jusqu'au commit `9ab65ac` le tableau de bord du trésorier (KPIs trésorerie + tableau par unité). Inutile pour les autres rôles (parent, equipier, chef) qui voyaient des chiffres comptables sans contexte d'action. La page `/moi` portait une vue archive des demandes du user, mais avec la home refondue les deux devenaient redondants.
+
+**Décision** :
+
+1. **Home unifiée pour tous les rôles** : bandeau hello + actions rapides (3-4 cards CTA selon le rôle) + Mes demandes (5 dernières, rembs + abandons mélangés) + (admin only) bloc "À traiter pour le groupe" avec compteurs cliquables + lien vers la nouvelle `/synthese`.
+
+2. **Tableau de bord trésorier déménagé** vers `/synthese` (KPIs + tableau par unité tels quels). Lien dans la sidebar pour les rôles qui en ont besoin (`tresorier`, `RG`, `chef`).
+
+3. **`/moi` supprimé** (redondant) — la page devient un simple redirect vers `/` qui préserve les query params (flash messages `?rbt_created`, `?abandon_created`, `?error`). Garde l'URL pour ne pas casser les liens existants (notifications email, server actions). Sidebar : "Mon espace" retiré.
+
+4. **`/abandons` ouvert aux non-admins** avec scope auto (`submittedByUserId = userId` pour non-admin). Cohérent avec le comportement déjà en place sur `/remboursements`.
+
+**Conséquences** :
+- Une seule porte d'entrée → moins de friction pour l'onboarding d'un nouveau user.
+- Les liens "Tout voir" sur la home pointent vers `/remboursements` et `/abandons` (qui scope auto pour non-admin).
+- Le bandeau "Bienvenue sur Baloo" apparaît la première fois (cookie `baloo_welcome_dismissed` 1 an, server action `dismissWelcomeBanner`).
+
+**Si plus tard on a besoin de "préférences perso"** (RIB par défaut explicite, opt-in/out notifs), créer `/parametres` plutôt que ressusciter `/moi`. Distinction claire : la home = "ce qui se passe maintenant", `/parametres` = "comment je veux que Baloo se comporte pour moi".
+
+---
+
+## ADR-027 — Pas d'engagements de délai user-facing
+
+**Contexte** : la page `/aide` et plusieurs sous-titres affirmaient "Réponse sous 48h en moyenne" / "le CERFA arrivera sous 3 mois" / "L'envoi du mail prend 10-20 secondes" / etc. Le user a explicitement refusé : aucune de ces phrases n'est tenable comme engagement (le trésorier est bénévole, le national peut prendre plus, l'envoi mail dépend de Resend / SMTP).
+
+**Décision** : **aucun délai chiffré** dans les copies user-facing. Reformuler en termes descriptifs :
+
+| ❌ Avant | ✅ Après |
+|---|---|
+| "Réponse sous 48h en moyenne" | (rien) |
+| "Délai habituel 1-3 semaines" | "Le virement part une fois la double-validation faite" |
+| "CERFA reçu sous 3 mois" | "Le CERFA arrivera par mail" |
+| "L'envoi du mail prend 10-20 secondes" | (rien) |
+| "Compare en 30 secondes" | "Voir la comparaison" |
+
+**Exception** : les **deadlines réglementaires SGDF** (ex. "envoyer la déclaration d'abandon avant le 15 avril N+1 pour les dépenses de l'année N") sont conservées — c'est une contrainte légale documentée par SGDF, pas un engagement Baloo.
+
+**Cas connexe — affirmations fiscales** : ne pas affirmer "réduction d'impôt 66%" pour un CERFA d'abandon. C'est dépendant de la situation fiscale (plafond art 200 CGI à 20% du revenu imposable, contributions complémentaires…). La doc SGDF officielle (`web/public/docs/fiche_abandon.pdf`) dit juste "réduction d'impôt sur le revenu (art 200 CGI)". Cette formulation est juste, suffisante, et n'engage pas Baloo sur un chiffre potentiellement faux.
+
+**Liens** : commit `49fe17a` (ratissage des copies), commit `1253841` (correction CERFA 66%).
+
+---
+
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*

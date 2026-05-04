@@ -54,7 +54,9 @@ Le pivot conceptuel : la webapp porte la BDD, l'API et les règles métier. Le M
 
 **Plans d'exécution P2** :
 - [`p2-pivot-webapp.md`](p2-pivot-webapp.md) — pivot archi (webapp = source de vérité, MCP en client HTTP). 7 chantiers livrés, app en prod sur baloo.benomite.com.
-- [`p2-workflows-internes.md`](p2-workflows-internes.md) — 4 workflows internes self-service (dépôt justif, remb, abandon, caisse) qui complètent la P2 jusqu'au critère de succès "≥2 chefs actifs + ≥1 parent". Chantier 0 (rôles V2 + invitations) et chantier 1 (dépôt justif + relance) livrés.
+- [`p2-workflows-internes.md`](p2-workflows-internes.md) — 4 workflows internes self-service (dépôt justif, remb, abandon, caisse) qui complètent la P2 jusqu'au critère de succès "≥2 chefs actifs + ≥1 parent". **Tous les chantiers livrés** (2026-05-04). Refonte UX, gestion membres, comptable enrichi, visibilité prod, tests étendus. Cf. ADR-024 à ADR-027.
+
+**Statut au 2026-05-04** : **P2 techniquement bouclée** ✅. L'app supporte le scope cible (5 rôles, 4 workflows, signatures électroniques, génération PDF, notifs email, mobile + PWA, page d'aide, journal d'erreurs interne, export CSV, rapprochement bancaire DSP2 visible, etc.). Reste l'**activation terrain** (≥2 chefs actifs + 1 parent) qui n'est pas un chantier dev — il faut inviter les vrais users et observer ce qui coince.
 
 **Stack** : Next.js (déjà en place dans `web/`) + API + Postgres (ou équivalent) + déploiement (VPS/Vercel/Fly.io). MCP `baloo-compta` réécrit comme client HTTP TypeScript.
 

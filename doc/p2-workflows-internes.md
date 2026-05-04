@@ -6,7 +6,21 @@ Ce document est un plan d'exécution, pas un ADR. Les décisions structurelles p
 
 ---
 
-## État d'avancement (2026-04-29)
+## État d'avancement (2026-05-04)
+
+**P2 techniquement bouclée** ✅. Critère d'adoption (≥2 chefs actifs + 1 parent qui consulte) en attente — dépend de l'activation terrain, pas du dev.
+
+Ajouts post-2026-04-29 (synthèse) :
+- **Workflow abandons étendu** : 3 statuts + flag CERFA séparé. Cf. ADR-024.
+- **Saisie admin pour autrui** sur `/abandons/nouveau` (rattrapage d'historique).
+- **Refonte UI / UX** : DS v5 sur toutes les pages, mobile + PWA, home unifiée centrée utilisateur (cf. ADR-026), suppression `/moi`, page `/aide` avec FAQ par rôle, footer "Tu es bloqué ?" mailto trésorier, status humanisé sur les listes, persistance RIB entre demandes, datalist nature, empty states actionnables.
+- **Gestion des membres** complète sur `/admin/invitations` : promotion / rétrogradation de rôle, désactivation (`statut='ancien'` cf. AGENTS.md), réactivation, liste membres actifs, renvoi mail invitation, suppression invitation pending. Garde-fous : on ne rétrograde / désactive pas le dernier trésorier actif, un user ne peut pas se rétrograder lui-même.
+- **Mail d'invitation HTML** soigné avec actions ciblées par rôle.
+- **Comptable / Comptaweb** : filtres écritures DS v5, **export CSV** des écritures (route `/api/ecritures/export`, format français + BOM UTF-8 pour Excel), **upload CSV** depuis `/import` (avant uniquement via MCP), **page `/comptaweb/rapprochement`** (lecture seule de la dette de pointage DSP2 incluant les sous-lignes des cartes procurement multi-commerçants).
+- **Visibilité prod** : table `error_log` + page `/admin/errors` (cf. ADR-025). Pas de tier externe.
+- **Tests vitest étendus** : 12 → 61. Couvre transitions rembs/abandons, hash signatures, status descriptions.
+- **Optimisation perf** : parallélisation des queries indépendantes (Promise.all) sur les pages chargées (gain ~500-800ms par page sur Turso à distance).
+- **Pages explicitement écartées du chantier** : pas de wizard 1re demande, pas de tooltips contextuels, pas de mail d'onboarding séquencé J+3/J+7. Décision : voir si la friction terrain se manifeste avant d'investir.
 
 | Chantier | Statut | Notes |
 |---|---|---|
@@ -17,6 +31,7 @@ Ce document est un plan d'exécution, pas un ADR. Les décisions structurelles p
 | 2-bis Refonte rembs (multi-lignes + 5 statuts + PDF) | ✅ fait | ADR-022 acté après audit du draft `~/Perso/valdesous` qui a un workflow plus complet. Refonte : table `remboursement_lignes` (1 demande = N lignes), nouveaux champs `prenom/nom/email/rib_texte/rib_file_path/total_cents/motif_refus/edit_token/validate_token`, 5 statuts timeline (`a_traiter → valide_tresorier → valide_rg → virement_effectue → termine` + `refuse`), DROP CHECK `status` historique. Génération PDF "feuille de remboursement" à la soumission via `pdfkit` (`@react-pdf/renderer` testé d'abord mais incompatible types React 19), attaché en `entity_type='remboursement_feuille'`. Form `/moi/remboursements/nouveau` refait en client component multi-lignes. Page admin `/remboursements/[id]` refaite avec timeline + actions par rôle. Double validateur effectif (Trésorier puis RG). |
 | 2-ter Signatures électroniques (SES + chaînage) | ✅ fait | ADR-023. Table `signatures` (multi-instances par document, `document_type/document_id/signer_role`). Hash canonique des données métier (pas du PDF) + chaînage `chain_hash` qui inclut la signature précédente → mini-blockchain interne. Capture IP + user agent + timestamp serveur. 3 signatures par demande (`demandeur` à la soumission, `tresorier` à `valide_tresorier`, `RG` à `valide_rg`). PDF feuille régénéré à chaque signature avec encart "Signatures électroniques". Helper `verifyChain` + badge "✓ chaîne intègre / ⚠ chaîne brisée" sur la page admin. Champ `tsa_response` prêt mais non rempli (RFC 3161 reporté). |
 | 3 Demande d'abandon de frais | ✅ fait | Choix retenu : **forms séparés** rembs vs abandons (pas unifié). Migration `submitted_by_user_id` ajoutée à `abandons_frais`. Server action `createMyAbandon` (justif file requis, année fiscale auto-déduite de la date). Page `/moi/abandons/nouveau` (form simplifié). Page admin `/abandons` minimaliste créée (la page n'existait pas avant) : tableau groupé par année fiscale + bouton "marquer CERFA émis". Section "Mes dons" sur `/moi`. Notif email aux admins à la création via `lib/email/abandon.ts`. |
+| 3-bis Workflow abandons étendu | ✅ fait (ADR-024) | Statuts `a_traiter / valide / envoye_national / refuse` + flag `cerfa_emis` séparé. Page détail `/abandons/[id]` avec timeline + actions admin (validation, mailto pré-rempli pour donateurs@sgdf.fr, toggle CERFA, refus avec motif). Saisie pour autrui sur `/abandons/nouveau` (admin only). Liste `/abandons` ouverte aux non-admins avec scope auto. Modèles SGDF (formulaire xlsx + notice PDF) servis statiquement depuis `web/public/docs/`. |
 | 4 Gestion de la caisse | ✅ fait | La page `/caisse` existait, fonctionnait. Compléments : migration `unite_id` + `activite_id` sur `mouvements_caisse`, form refait avec radio "↗ Entrée / ↘ Sortie" (plus besoin de saisir ±) + selects unité / activité, colonnes ajoutées au tableau. Pas d'ouverture aux chefs au MVP (reste admin-only). Pas de filtre par scope unité dans l'UI ; le service le supporte (`scopeUniteId`) si on veut câbler plus tard. |
 
 ---

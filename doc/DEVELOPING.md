@@ -17,9 +17,10 @@ Sans déclencheur explicite, **ne pas modifier** les fichiers de `doc/`, `sgdf-c
 
 1. **La doc est la source de vérité de la conception.** Avant tout changement structurel, lire les fichiers pertinents de `doc/` (en particulier `architecture.md`, `roadmap.md`, `decisions.md`).
 2. **Toute décision structurelle nouvelle = un nouvel ADR** dans `doc/decisions.md`. Format : titre, date, statut, contexte, décision, conséquences. Incrémenter le numéro ADR-00X.
-3. **Ne jamais "améliorer" sans raison** : la vision et la roadmap sont volontairement minimalistes. Pas de features spéculatives, pas de refactor cosmétique.
-4. **Respecter la séparation générique / spécifique** (ADR-003 puis [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git)). En cas de doute sur où placer une info : si elle est partageable avec un autre groupe SGDF → `sgdf-core/` (markdown, en git) ; si elle dépend d'un user ou d'un groupe spécifique → BDD (`data/baloo.db`, gitignored). Aucune donnée nominative ou financière dans le repo.
-5. **Git discipline** : commits atomiques, messages en français au présent de l'indicatif. Voir la section "Git" plus bas.
+3. **Avant de coder dans `web/`, lire [`web/AGENTS.md`](../web/AGENTS.md)**. Liste les **pièges techniques** rencontrés en prod (`'use server'` files, `force-dynamic`, libsql remote, lazy-init schemas, CHECK SQL `users.statut`, etc.) et les **patterns** mis en place (journal d'erreurs interne, modules purs pour transitions, etc.). À consulter quand tu touches : migration BDD, page server component, server action, déploiement Vercel.
+4. **Ne jamais "améliorer" sans raison** : la vision et la roadmap sont volontairement minimalistes. Pas de features spéculatives, pas de refactor cosmétique.
+5. **Respecter la séparation générique / spécifique** (ADR-003 puis [ADR-013](decisions.md#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git)). En cas de doute sur où placer une info : si elle est partageable avec un autre groupe SGDF → `sgdf-core/` (markdown, en git) ; si elle dépend d'un user ou d'un groupe spécifique → BDD (`data/baloo.db`, gitignored). Aucune donnée nominative ou financière dans le repo.
+6. **Git discipline** : commits atomiques, messages en français au présent de l'indicatif. Voir la section "Git" plus bas.
 
 ## Ajouter ou modifier un skill
 
