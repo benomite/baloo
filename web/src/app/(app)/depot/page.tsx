@@ -12,6 +12,7 @@ import { requireCanSubmit } from '@/lib/auth/access';
 import { listUnites, listCategories, listCartes, getTopCategoryIds } from '@/lib/queries/reference';
 import { createDepot } from '@/lib/actions/depots';
 import { CategoryPicker } from '@/components/shared/category-picker';
+import { JustifCapture } from '@/components/shared/justif-capture';
 
 interface SearchParams {
   error?: string;
@@ -50,14 +51,7 @@ export default async function DepotPage({ searchParams }: { searchParams: Promis
       <form action={createDepot} encType="multipart/form-data" className="space-y-6">
         <Section title="Le justificatif" subtitle="Photo, PDF ou scan.">
           <Field label="Fichier" htmlFor="file" required>
-            <Input
-              id="file"
-              name="file"
-              type="file"
-              accept="image/*,application/pdf"
-              required
-              className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-brand-50 file:text-brand file:font-medium file:text-[13px] file:cursor-pointer hover:file:bg-brand-100 file:transition-colors"
-            />
+            <JustifCapture id="file" name="file" required />
           </Field>
           <Field label="Titre" htmlFor="titre" required hint="ce qui aidera le trésorier à le retrouver">
             <Input
