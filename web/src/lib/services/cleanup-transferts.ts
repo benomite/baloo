@@ -25,6 +25,7 @@ export interface TransfertCandidate {
   amount_cents: number;
   type: 'depense' | 'recette';
   category_name: string | null;
+  numero_piece: string | null;
   has_links: boolean;
 }
 
@@ -35,14 +36,26 @@ export interface CleanupReport {
   totalAmount: number;
 }
 
-const PATTERNS = [
-  /d[eé�]p[oô�]t\s+(monnaie|billet|esp[eé�]ces|cheques?)/i,
-  /d[eé�]pot\s+(monnaie|billet|esp[eé�]ces|cheques?)/i,
-];
-
-function isTransfert(description: string): boolean {
+// Détection tolérante à l'encoding cassé pré-fix (les descriptions
+// contiennent des caractères corrompus là où les accents se trouvaient).
+// Stratégies cumulables :
+//  - numero_piece commence par "DEP-" (toujours un dépôt côté Comptaweb)
+//  - description contient un préfixe "dépot/dépôt/depot" (avec
+//    caractères non-alpha tolérés à la place des accents) ET un mot-clé
+//    espèces/monnaie/billet/chèque
+function isTransfert(description: string, numero_piece: string | null): boolean {
+  if (numero_piece && /^DEP-/i.test(numero_piece)) return true;
   if (!description) return false;
-  return PATTERNS.some((p) => p.test(description));
+  const d = description.toLowerCase();
+  // Préfixe dépôt : d + (caract optionnel non-alpha = é/ê/è/�) + p +
+  // (idem) + t. Match "dépot", "dépôt", "depot", "d�pot", "d?pot", etc.
+  const hasPrefix = /d[^a-z]{0,3}p[^a-z]{0,3}t/.test(d);
+  // Mots-clés espèces/monnaie/billet/chèque, tolérants aux accents.
+  const hasMoney =
+    /\b(monnaie|billet|cheques?)\b/.test(d) ||
+    /esp[^a-z]{0,3}ces?/.test(d) ||
+    /ch[^a-z]{0,3}ques?/.test(d);
+  return hasPrefix && hasMoney;
 }
 
 export async function findInternalTransfers(
@@ -52,7 +65,7 @@ export async function findInternalTransfers(
   const rows = await db
     .prepare(
       `SELECT e.id, e.date_ecriture, e.description, e.amount_cents, e.type,
-              c.name as category_name
+              e.numero_piece, c.name as category_name
        FROM ecritures e
        LEFT JOIN categories c ON c.id = e.category_id
        WHERE e.group_id = ? AND e.status = 'saisie_comptaweb'`,
@@ -63,12 +76,13 @@ export async function findInternalTransfers(
       description: string;
       amount_cents: number;
       type: 'depense' | 'recette';
+      numero_piece: string | null;
       category_name: string | null;
     }>(groupId);
 
   const candidates: TransfertCandidate[] = [];
   for (const r of rows) {
-    if (!isTransfert(r.description)) continue;
+    if (!isTransfert(r.description, r.numero_piece)) continue;
     // Vérifie absence de liens externes
     const justifs = await db
       .prepare(
