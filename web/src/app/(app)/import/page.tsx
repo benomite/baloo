@@ -1,4 +1,11 @@
-import { Upload } from 'lucide-react';
+import {
+  CreditCard,
+  FolderTree,
+  HandCoins,
+  Layers,
+  Tags,
+  Upload,
+} from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -20,6 +27,11 @@ import { getDb } from '@/lib/db';
 import { getCurrentContext } from '@/lib/context';
 import { requireAdmin } from '@/lib/auth/access';
 import { uploadComptawebCsv } from '@/lib/actions/comptaweb-import';
+import {
+  getReferentielsCounts,
+  type ReferentielCount,
+} from '@/lib/services/reference';
+import { cn } from '@/lib/utils';
 
 interface SearchParams {
   error?: string;
@@ -33,18 +45,21 @@ export default async function ImportPage({
 }) {
   const [ctx, params] = await Promise.all([getCurrentContext(), searchParams]);
   requireAdmin(ctx.role);
-  const imports = await getDb()
-    .prepare(
-      'SELECT * FROM comptaweb_imports ORDER BY import_date DESC LIMIT 50',
-    )
-    .all<{
-      id: string;
-      import_date: string;
-      source_file: string;
-      row_count: number;
-      total_depenses_cents: number;
-      total_recettes_cents: number;
-    }>();
+  const [imports, refCounts] = await Promise.all([
+    getDb()
+      .prepare(
+        'SELECT * FROM comptaweb_imports ORDER BY import_date DESC LIMIT 50',
+      )
+      .all<{
+        id: string;
+        import_date: string;
+        source_file: string;
+        row_count: number;
+        total_depenses_cents: number;
+        total_recettes_cents: number;
+      }>(),
+    getReferentielsCounts({ groupId: ctx.groupId }),
+  ]);
 
   // Le flash "imported" encode "ecritures_creees|fichier".
   let importedFlash: { count: number; fichier: string } | null = null;
@@ -75,6 +90,49 @@ export default async function ImportPage({
           <code className="font-mono text-[12.5px]">{importedFlash.fichier}</code>.
         </Alert>
       )}
+
+      <Section
+        title="Configurations en place"
+        subtitle="Référentiels actuellement chargés. Si un compte est à zéro, lance la synchronisation ci-dessous."
+        className="mb-6"
+      >
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+          <RefCount
+            label="Catégories"
+            icon={<Tags size={14} strokeWidth={2} />}
+            count={refCounts.categories}
+            scope="national"
+          />
+          <RefCount
+            label="Modes paiement"
+            icon={<HandCoins size={14} strokeWidth={2} />}
+            count={refCounts.modes_paiement}
+            scope="national"
+          />
+          <RefCount
+            label="Unités"
+            icon={<FolderTree size={14} strokeWidth={2} />}
+            count={refCounts.unites}
+            scope="groupe"
+          />
+          <RefCount
+            label="Activités"
+            icon={<Layers size={14} strokeWidth={2} />}
+            count={refCounts.activites}
+            scope="groupe"
+          />
+          <RefCount
+            label="Cartes"
+            icon={<CreditCard size={14} strokeWidth={2} />}
+            count={refCounts.cartes}
+            scope="groupe"
+          />
+        </div>
+        <p className="text-[11.5px] text-fg-subtle mt-3">
+          <strong>Mappées</strong> = liées à une entrée Comptaweb (synchronisation faite).
+          Le reste est local pur (créé côté Baloo, sans correspondance Comptaweb).
+        </p>
+      </Section>
 
       <div className="grid gap-6 md:grid-cols-2 mb-8 items-start">
         <Section
@@ -166,6 +224,84 @@ export default async function ImportPage({
           </Table>
         )}
       </Section>
+    </div>
+  );
+}
+
+function RefCount({
+  label,
+  icon,
+  count,
+  scope,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  count: ReferentielCount;
+  scope: 'national' | 'groupe';
+}) {
+  const empty = count.total === 0;
+  const partial = !empty && count.mapped < count.total;
+  const fullyMapped = !empty && count.mapped === count.total;
+
+  return (
+    <div
+      className={cn(
+        'rounded-lg border px-3 py-2.5 transition-colors',
+        empty
+          ? 'border-amber-200 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-950/20'
+          : 'border-border-soft bg-bg-elevated',
+      )}
+    >
+      <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-fg-subtle font-medium">
+        <span className="inline-flex items-center gap-1.5">
+          {icon}
+          {label}
+        </span>
+        <span
+          className={cn(
+            'rounded-full px-1.5 py-0 text-[9.5px] font-semibold',
+            scope === 'national'
+              ? 'bg-bg-sunken text-fg-muted'
+              : 'bg-brand/10 text-brand',
+          )}
+          title={scope === 'national' ? 'Référentiel national SGDF' : 'Spécifique au groupe'}
+        >
+          {scope === 'national' ? 'SGDF' : 'groupe'}
+        </span>
+      </div>
+      <div className="mt-1.5 flex items-baseline gap-2">
+        <span
+          className={cn(
+            'tabular-nums font-semibold text-[20px] leading-none',
+            empty ? 'text-amber-700 dark:text-amber-300' : 'text-fg',
+          )}
+        >
+          {count.total}
+        </span>
+        {!empty && (
+          <span className="text-[11px] text-fg-muted tabular-nums">
+            dont{' '}
+            <span
+              className={cn(
+                'font-medium',
+                fullyMapped ? 'text-emerald-700 dark:text-emerald-300' : 'text-fg',
+              )}
+            >
+              {count.mapped} mappée{count.mapped > 1 ? 's' : ''}
+            </span>
+          </span>
+        )}
+      </div>
+      {empty && (
+        <p className="text-[10.5px] text-amber-700 dark:text-amber-400 mt-1">
+          aucune entrée — synchronise
+        </p>
+      )}
+      {partial && (
+        <p className="text-[10.5px] text-fg-subtle mt-1">
+          {count.total - count.mapped} local{count.total - count.mapped > 1 ? 'es' : 'e'} sans mapping
+        </p>
+      )}
     </div>
   );
 }
