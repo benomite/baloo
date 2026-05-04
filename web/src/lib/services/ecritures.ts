@@ -84,7 +84,38 @@ export async function listEcritures(
     values.push(`${filters.month}%`);
   }
   if (filters.status) { conditions.push('e.status = ?'); values.push(filters.status); }
-  if (filters.search) { conditions.push('(e.description LIKE ? OR e.notes LIKE ?)'); values.push(`%${filters.search}%`, `%${filters.search}%`); }
+  if (filters.search) {
+    // Recherche full-text sur tous les champs lisibles : description,
+    // notes, numéro de pièce, id, libellés joints (unité, catégorie,
+    // mode, activité, carte) et montant. Pour le montant, on tente de
+    // parser le filter comme un nombre (euros → cents) et on match
+    // exact ; sinon on tombe en LIKE sur le cents brut (ex. "30" matche
+    // 30 cents OU 30 euros).
+    const q = `%${filters.search}%`;
+    const conds: string[] = [
+      'e.description LIKE ?',
+      'e.notes LIKE ?',
+      'e.numero_piece LIKE ?',
+      'e.id LIKE ?',
+      'u.name LIKE ?',
+      'u.code LIKE ?',
+      'c.name LIKE ?',
+      'm.name LIKE ?',
+      'a.name LIKE ?',
+      'ca.porteur LIKE ?',
+      "CAST(e.amount_cents AS TEXT) LIKE ?",
+    ];
+    const vals: unknown[] = [q, q, q, q, q, q, q, q, q, q, q];
+    // Montant parsé exact (ex. "30,00" -> 3000 cents)
+    const cleaned = filters.search.replace(/[€\s]/g, '').replace(',', '.');
+    const parsed = parseFloat(cleaned);
+    if (!isNaN(parsed) && cleaned !== '') {
+      conds.push('e.amount_cents = ?');
+      vals.push(Math.round(parsed * 100));
+    }
+    conditions.push(`(${conds.join(' OR ')})`);
+    values.push(...vals);
+  }
   if (filters.from_bank) { conditions.push('e.ligne_bancaire_id IS NOT NULL'); }
   if (filters.incomplete) {
     // Deux cas éligibles :

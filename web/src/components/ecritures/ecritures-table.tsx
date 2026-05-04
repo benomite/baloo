@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Landmark } from 'lucide-react';
+import { CheckCircle2, Circle, Clock, Landmark, Paperclip, MinusCircle } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { EcritureStatusBadge } from '@/components/shared/status-badge';
 import { UniteBadge } from '@/components/shared/unite-badge';
@@ -329,21 +329,64 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                   )}
                 </TableCell>
                 <TableCell className="text-center whitespace-nowrap">
-                  <span className="inline-flex items-center gap-1">
-                    <span title={e.ligne_bancaire_id ? `Ligne bancaire ${e.ligne_bancaire_id}${e.ligne_bancaire_sous_index !== null ? ` sous-ligne ${e.ligne_bancaire_sous_index}` : ''}` : 'Saisie manuelle'} className={e.ligne_bancaire_id ? '' : 'text-muted-foreground'}>
-                      {e.ligne_bancaire_id ? '🏦' : '·'}
-                    </span>
-                    <span title={e.comptaweb_synced ? 'Synchronisée Comptaweb' : 'Non synchronisée'} className={e.comptaweb_synced ? 'text-green-600' : 'text-muted-foreground'}>
-                      {e.comptaweb_synced ? '✓' : '·'}
-                    </span>
-                    {e.has_justificatif ? (
-                      <span title="Justificatif rattaché">📎</span>
-                    ) : e.justif_attendu === 0 ? (
-                      <span title="Justificatif non attendu" className="text-muted-foreground">🚫</span>
-                    ) : e.numero_piece ? (
-                      <span title={`En attente — code Comptaweb ${e.numero_piece}`} className="text-amber-600">⌛</span>
+                  <span className="inline-flex items-center gap-2">
+                    {/* Comptaweb sync */}
+                    {e.comptaweb_synced ? (
+                      <CheckCircle2
+                        size={14}
+                        strokeWidth={2}
+                        className="text-emerald-600"
+                        aria-label="Synchronisée Comptaweb"
+                      >
+                        <title>Synchronisée Comptaweb</title>
+                      </CheckCircle2>
                     ) : (
-                      <span title="Justificatif manquant" className="text-muted-foreground">·</span>
+                      <Circle
+                        size={14}
+                        strokeWidth={1.75}
+                        className="text-fg-subtle/40"
+                        aria-label="Non synchronisée"
+                      >
+                        <title>Non synchronisée Comptaweb</title>
+                      </Circle>
+                    )}
+                    {/* Justificatif */}
+                    {e.has_justificatif ? (
+                      <Paperclip
+                        size={14}
+                        strokeWidth={2}
+                        className="text-emerald-600"
+                        aria-label="Justificatif rattaché"
+                      >
+                        <title>Justificatif rattaché</title>
+                      </Paperclip>
+                    ) : e.justif_attendu === 0 ? (
+                      <MinusCircle
+                        size={14}
+                        strokeWidth={1.75}
+                        className="text-fg-subtle/40"
+                        aria-label="Justif non attendu"
+                      >
+                        <title>Justif non attendu (prélèvement / flux territoire)</title>
+                      </MinusCircle>
+                    ) : e.numero_piece ? (
+                      <Clock
+                        size={14}
+                        strokeWidth={2}
+                        className="text-amber-600"
+                        aria-label="En attente"
+                      >
+                        <title>{`En attente — code Comptaweb ${e.numero_piece}`}</title>
+                      </Clock>
+                    ) : (
+                      <Paperclip
+                        size={14}
+                        strokeWidth={1.75}
+                        className="text-fg-subtle/40"
+                        aria-label="Justif manquant"
+                      >
+                        <title>Justif manquant</title>
+                      </Paperclip>
                     )}
                   </span>
                 </TableCell>

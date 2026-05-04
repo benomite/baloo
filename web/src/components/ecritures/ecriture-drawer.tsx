@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { ExternalLink, Landmark } from 'lucide-react';
+import { AlertTriangle, ExternalLink, Landmark } from 'lucide-react';
 import { Drawer } from '@/components/ui/drawer';
 import { EcritureForm } from '@/components/ecritures/ecriture-form';
 import { JustificatifsCard } from '@/components/ecritures/justificatifs-card';
@@ -12,6 +12,7 @@ import { Amount } from '@/components/shared/amount';
 import { PendingButton } from '@/components/shared/pending-button';
 import { Alert } from '@/components/ui/alert';
 import { updateEcriture, updateEcritureStatus } from '@/lib/actions/ecritures';
+import { computeMissingFields } from '@/lib/services/ecritures';
 import { type EcritureJustifsBundle } from '@/lib/queries/justificatifs';
 import { type DepotEnriched } from '@/lib/services/depots';
 import type {
@@ -23,13 +24,16 @@ import type {
   Carte,
 } from '@/lib/types';
 
-// Drawer d'édition rapide d'une écriture. Composition refined utility,
-// hiérarchie verticale claire :
-//   1. header sticky (id + status + montant + close)
-//   2. badge "ligne bancaire" si applicable
-//   3. justificatifs (en haut, info clé pour décider)
-//   4. barre d'actions de status (Valider / Sync / Repasser brouillon)
-//   5. formulaire d'édition (Identité + Imputation + Notes)
+// Drawer d'édition rapide. Priorité info repensée pour le process
+// trésorier (compléter une écriture le plus vite possible) :
+//   1. Header : id + status + montant (lecture en 1 coup d'œil)
+//   2. Eyebrow : description, date, lien page complète
+//   3. Origine bancaire (si applicable)
+//   4. Bandeau "À COMPLÉTER" si missing fields — info actionnable
+//   5. Form d'édition complet (le travail principal)
+//   6. Justificatifs (souvent à compléter aussi)
+//   7. Cycle de vie (Valider, Sync, Repasser brouillon) — en bas, après
+//      la décision de sauver
 
 export function EcritureDrawer({
   ecriture,
@@ -65,6 +69,16 @@ export function EcritureDrawer({
 
   const updateAction = updateEcriture.bind(null, ecriture.id);
   const cleanDescription = (raw: string) => raw.replace(/\s+/g, ' ').trim();
+  const totalJustifs =
+    justifsBundle.direct.length +
+    justifsBundle.viaRemboursement.reduce(
+      (sum, r) => sum + r.justifs.length + r.rib.length,
+      0,
+    );
+  const missing = computeMissingFields({
+    ...ecriture,
+    has_justificatif: totalJustifs > 0,
+  });
 
   return (
     <Drawer
@@ -89,8 +103,8 @@ export function EcritureDrawer({
         </div>
       }
     >
-      {/* Eyebrow : description tronquée + lien deep */}
-      <div className="-mt-1 mb-4 pb-3 border-b border-border-soft">
+      {/* Eyebrow : description + date + lien deep */}
+      <div className="-mt-1 mb-3 pb-3 border-b border-border-soft">
         <h2 className="text-[15px] font-semibold text-fg leading-snug truncate">
           {cleanDescription(ecriture.description)}
         </h2>
@@ -110,7 +124,7 @@ export function EcritureDrawer({
 
       {/* Origine bancaire */}
       {ecriture.ligne_bancaire_id && (
-        <Alert variant="info" icon={Landmark} className="mb-4 text-[12.5px]">
+        <Alert variant="info" icon={Landmark} className="mb-3 text-[12.5px]">
           Issue de la ligne bancaire{' '}
           <code className="font-mono text-[11.5px] font-medium">
             #{ecriture.ligne_bancaire_id}
@@ -135,9 +149,40 @@ export function EcritureDrawer({
         </Alert>
       )}
 
-      {/* JUSTIFS — affiché en premier car c'est l'info qui conditionne
-          souvent la décision (compléter, valider, sync) */}
-      <div className="mb-4">
+      {/* À COMPLÉTER — bandeau actionnable si missing fields */}
+      {missing.length > 0 && (
+        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-950/20 px-3 py-2.5">
+          <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold text-amber-900 dark:text-amber-300 mb-1.5">
+            <AlertTriangle size={12} strokeWidth={2.25} />
+            À compléter ({missing.length})
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {missing.map((m) => (
+              <span
+                key={m}
+                className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200 px-2 py-0.5 text-[11.5px] font-medium"
+              >
+                {m}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* FORMULAIRE D'ÉDITION (priorité : c'est le travail principal) */}
+      <EcritureForm
+        action={updateAction}
+        categories={categories}
+        topCategoryIds={topCategoryIds}
+        unites={unites}
+        modesPaiement={modesPaiement}
+        activites={activites}
+        cartes={cartes}
+        ecriture={ecriture}
+      />
+
+      {/* JUSTIFICATIFS — après le form (souvent à enrichir) */}
+      <div className="mt-5">
         <JustificatifsCard
           entityId={ecriture.id}
           bundle={justifsBundle}
@@ -150,49 +195,39 @@ export function EcritureDrawer({
         />
       </div>
 
-      {/* ACTIONS DE STATUS — barre dédiée, accents brand pour le primaire */}
-      <div className="mb-5 flex flex-wrap items-center gap-2 px-3 py-2.5 rounded-lg border border-border-soft bg-bg-sunken/40">
-        <span className="text-[10.5px] uppercase tracking-wide font-medium text-fg-subtle mr-1">
+      {/* CYCLE DE VIE — en bas, après le travail. Sépaation visuelle nette. */}
+      <div className="mt-6 pt-4 border-t border-border-soft">
+        <div className="flex items-center gap-1.5 text-[10.5px] uppercase tracking-wide font-medium text-fg-subtle mb-2">
           Cycle de vie
-        </span>
-        {ecriture.status === 'brouillon' && (
-          <form action={updateEcritureStatus.bind(null, ecriture.id, 'valide')}>
-            <PendingButton variant="outline" size="sm">
-              Valider
-            </PendingButton>
-          </form>
-        )}
-        {ecriture.status === 'valide' && !ecriture.comptaweb_ecriture_id && (
-          <form action={updateEcritureStatus.bind(null, ecriture.id, 'saisie_comptaweb')}>
-            <PendingButton variant="outline" size="sm">
-              Marquer saisie CW
-            </PendingButton>
-          </form>
-        )}
-        {!ecriture.comptaweb_ecriture_id && <SyncDraftButton ecritureId={ecriture.id} />}
-        {ecriture.status !== 'brouillon' && !ecriture.comptaweb_ecriture_id && (
-          <form
-            action={updateEcritureStatus.bind(null, ecriture.id, 'brouillon')}
-            className="ml-auto"
-          >
-            <PendingButton variant="ghost" size="sm">
-              Repasser brouillon
-            </PendingButton>
-          </form>
-        )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {ecriture.status === 'brouillon' && (
+            <form action={updateEcritureStatus.bind(null, ecriture.id, 'valide')}>
+              <PendingButton variant="outline" size="sm">
+                Valider
+              </PendingButton>
+            </form>
+          )}
+          {ecriture.status === 'valide' && !ecriture.comptaweb_ecriture_id && (
+            <form action={updateEcritureStatus.bind(null, ecriture.id, 'saisie_comptaweb')}>
+              <PendingButton variant="outline" size="sm">
+                Marquer saisie CW
+              </PendingButton>
+            </form>
+          )}
+          {!ecriture.comptaweb_ecriture_id && <SyncDraftButton ecritureId={ecriture.id} />}
+          {ecriture.status !== 'brouillon' && !ecriture.comptaweb_ecriture_id && (
+            <form
+              action={updateEcritureStatus.bind(null, ecriture.id, 'brouillon')}
+              className="ml-auto"
+            >
+              <PendingButton variant="ghost" size="sm">
+                Repasser brouillon
+              </PendingButton>
+            </form>
+          )}
+        </div>
       </div>
-
-      {/* FORMULAIRE D'ÉDITION */}
-      <EcritureForm
-        action={updateAction}
-        categories={categories}
-        topCategoryIds={topCategoryIds}
-        unites={unites}
-        modesPaiement={modesPaiement}
-        activites={activites}
-        cartes={cartes}
-        ecriture={ecriture}
-      />
     </Drawer>
   );
 }
