@@ -163,6 +163,7 @@ interface DraftRow {
   status: string;
   justif_attendu: number;
   carte_id: string | null;
+  comptaweb_ecriture_id: number | null;
 }
 
 interface CarteRow {
@@ -200,7 +201,8 @@ export async function syncDraftToComptaweb(
     const db = getDb();
     const ecr = await db.prepare(
       `SELECT id, group_id, date_ecriture, description, amount_cents, type,
-              unite_id, category_id, activite_id, mode_paiement_id, numero_piece, status, justif_attendu, carte_id
+              unite_id, category_id, activite_id, mode_paiement_id, numero_piece, status, justif_attendu, carte_id,
+              comptaweb_ecriture_id
        FROM ecritures WHERE id = ? AND group_id = ?`,
     ).get<DraftRow>(ecritureId, groupId);
     if (!ecr) return { ok: false, message: `Écriture ${ecritureId} introuvable.`, dryRun: opts.dryRun !== false };
@@ -213,7 +215,14 @@ export async function syncDraftToComptaweb(
     const hasJust = (justRow?.n ?? 0) > 0;
 
     const missing: string[] = [];
-    if (ecr.status !== 'brouillon') missing.push(`status '${ecr.status}' (seul 'brouillon' est synchronisable)`);
+    // L'écriture est sync-bloquée seulement si elle est DÉJÀ dans Comptaweb
+    // (comptaweb_ecriture_id renseigné). Le status seul (brouillon/valide/
+    // saisie_comptaweb) ne suffit pas : un user a pu marquer "saisie
+    // Comptaweb" manuellement par erreur sans avoir réellement créé la
+    // ligne côté CW. On veut quand même lui permettre de la sync ensuite.
+    if (ecr.comptaweb_ecriture_id !== null) {
+      missing.push(`déjà créée dans Comptaweb (id ${ecr.comptaweb_ecriture_id})`);
+    }
     if (!ecr.category_id) missing.push('nature');
     else if (natureCw === null) missing.push('mapping nature');
     if (!ecr.activite_id) missing.push('activité');

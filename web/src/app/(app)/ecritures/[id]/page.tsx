@@ -101,19 +101,30 @@ export default async function EcritureDetailPage({
         actions={
           <div className="flex flex-wrap items-center gap-2">
             {ecriture.status === 'brouillon' && (
-              <>
-                <form action={updateEcritureStatus.bind(null, id, 'valide')}>
-                  <PendingButton variant="outline" size="sm">
-                    Valider
-                  </PendingButton>
-                </form>
-                <SyncDraftButton ecritureId={id} />
-              </>
+              <form action={updateEcritureStatus.bind(null, id, 'valide')}>
+                <PendingButton variant="outline" size="sm">
+                  Valider
+                </PendingButton>
+              </form>
             )}
-            {ecriture.status === 'valide' && (
+            {ecriture.status === 'valide' && !ecriture.comptaweb_ecriture_id && (
               <form action={updateEcritureStatus.bind(null, id, 'saisie_comptaweb')}>
                 <PendingButton variant="outline" size="sm">
-                  Marquer saisie Comptaweb
+                  Marquer saisie Comptaweb (sans sync)
+                </PendingButton>
+              </form>
+            )}
+            {/* Sync Comptaweb : tant que l'écriture n'a pas d'ID CW, on
+                propose la sync, peu importe son status (brouillon, valide,
+                saisie_comptaweb par erreur). */}
+            {!ecriture.comptaweb_ecriture_id && <SyncDraftButton ecritureId={id} />}
+            {/* Repasser en brouillon : pratique pour réparer un statut
+                avancé à tort. Verrouillé si l'écriture est vraiment
+                dans Comptaweb. */}
+            {ecriture.status !== 'brouillon' && !ecriture.comptaweb_ecriture_id && (
+              <form action={updateEcritureStatus.bind(null, id, 'brouillon')}>
+                <PendingButton variant="ghost" size="sm">
+                  Repasser en brouillon
                 </PendingButton>
               </form>
             )}
