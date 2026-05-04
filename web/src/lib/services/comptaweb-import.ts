@@ -184,11 +184,12 @@ export async function importComptawebCsv(
   const [categories, activites, unites] = await Promise.all([
     db.prepare(`SELECT id, name FROM categories`).all<{ id: string; name: string }>(),
     db.prepare(`SELECT id, name FROM activites WHERE group_id = ?`).all<{ id: string; name: string }>(groupId),
-    db.prepare(`SELECT id, code FROM unites WHERE group_id = ?`).all<{ id: string; code: string }>(groupId),
+    db.prepare(`SELECT id, code, name FROM unites WHERE group_id = ?`).all<{ id: string; code: string; name: string }>(groupId),
   ]);
   const categoriesByName = new Map(categories.map((c) => [normalize(c.name), c.id]));
   const activitesByName = new Map(activites.map((a) => [normalize(a.name), a.id]));
   const unitesByCode = new Map(unites.map((u) => [u.code, u.id]));
+  const unitesByName = new Map(unites.map((u) => [normalize(u.name), u.id]));
 
   function findCategoryId(name: string): string | null {
     const n = normalize(name);
@@ -216,8 +217,28 @@ export async function importComptawebCsv(
   }
 
   function findUniteId(piece: string | null, branche: string): string | null {
+    // 1. Match direct par name normalisé : la branche/projet du CSV
+    //    (colonne "Branche/Pôle") porte le même libellé que ce que la
+    //    sync Comptaweb a stocké dans unites.name. Couvre tous les cas
+    //    incluant "Groupe", "AJUSTEMENTS", labels avec slash, etc.
+    if (branche) {
+      const n = normalize(branche);
+      if (unitesByName.has(n)) return unitesByName.get(n)!;
+      // Tolérance : tiret <-> slash <-> espace
+      const variants = [
+        n.replace(/[-/]/g, ' '),
+        n.replace(/\s+/g, ''),
+        n.replace(/-/g, '/'),
+        n.replace(/\//g, '-'),
+      ];
+      for (const v of variants) {
+        if (unitesByName.has(v)) return unitesByName.get(v)!;
+      }
+    }
+    // 2. Fallback : code court extrait du numéro de pièce (ex. LJ-2026-001).
     const fromPiece = piece ? uniteCodeFromPiece(piece) : null;
     if (fromPiece && unitesByCode.has(fromPiece)) return unitesByCode.get(fromPiece)!;
+    // 3. Fallback legacy : mapping hardcodé branche → code court.
     const brCode = BRANCHE_TO_CODE[branche];
     if (brCode && unitesByCode.has(brCode)) return unitesByCode.get(brCode)!;
     return null;

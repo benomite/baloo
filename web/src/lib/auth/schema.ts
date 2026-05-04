@@ -428,5 +428,53 @@ export async function ensureAuthSchema(): Promise<void> {
       .run(spec.code, spec.couleur, u.id);
   }
 
+  // Backfill : rétro-mapping des écritures importées CSV sans unite_id.
+  // Le mapping initial (BRANCHE_TO_CODE hardcodé sur 7 labels) ne couvrait
+  // pas "Groupe", "AJUSTEMENTS" et les variantes de label. Maintenant
+  // qu'on matche par unites.name normalisé, on peut rétro-fixer en
+  // extrayant la branche depuis les notes : `Import Comptaweb XXX — Branche`.
+  // Idempotent : ne touche que les rows avec unite_id IS NULL.
+  const orphanEcritures = await db
+    .prepare(
+      `SELECT id, group_id, notes
+       FROM ecritures
+       WHERE unite_id IS NULL
+         AND status = 'saisie_comptaweb'
+         AND notes LIKE 'Import Comptaweb %—%'`,
+    )
+    .all<{ id: string; group_id: string; notes: string | null }>();
+  if (orphanEcritures.length > 0) {
+    // Cache unite name → id par groupe pour éviter N requêtes.
+    const unitesAll = await db
+      .prepare('SELECT id, group_id, name FROM unites')
+      .all<{ id: string; group_id: string; name: string }>();
+    const norm = (s: string) =>
+      s.toLowerCase().trim().replace(/\s+/g, ' ');
+    const unitesByGroupAndName = new Map<string, string>();
+    for (const u of unitesAll) {
+      unitesByGroupAndName.set(`${u.group_id}|${norm(u.name)}`, u.id);
+    }
+    for (const ecr of orphanEcritures) {
+      const m = ecr.notes?.match(/—\s*(.+)$/);
+      if (!m) continue;
+      const branche = m[1].trim();
+      const candidates = [
+        norm(branche),
+        norm(branche).replace(/[-/]/g, ' '),
+        norm(branche).replace(/-/g, '/'),
+        norm(branche).replace(/\//g, '-'),
+      ];
+      let uniteId: string | undefined;
+      for (const c of candidates) {
+        uniteId = unitesByGroupAndName.get(`${ecr.group_id}|${c}`);
+        if (uniteId) break;
+      }
+      if (!uniteId) continue;
+      await db
+        .prepare('UPDATE ecritures SET unite_id = ? WHERE id = ?')
+        .run(uniteId, ecr.id);
+    }
+  }
+
   ensured = true;
 }
