@@ -259,6 +259,31 @@ export async function ensureBusinessSchema(): Promise<void> {
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
+    -- depots_justificatifs : workflow chantier 1 (un user dépose un
+    -- justif libre, le tresorier le rapproche d'une écriture).
+    -- Statut sans CHECK SQL (workflow validé côté code, cf. ADR-019/022).
+    -- Présence ici (et pas seulement en lazy-init dans services/depots.ts)
+    -- pour que nextId('DEP') puisse interroger la table dès le boot.
+    CREATE TABLE IF NOT EXISTS depots_justificatifs (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL REFERENCES groupes(id),
+      submitted_by_user_id TEXT NOT NULL REFERENCES users(id),
+      titre TEXT NOT NULL,
+      description TEXT,
+      category_id TEXT REFERENCES categories(id),
+      unite_id TEXT REFERENCES unites(id),
+      amount_cents INTEGER,
+      date_estimee TEXT,
+      carte_id TEXT REFERENCES cartes(id),
+      statut TEXT NOT NULL DEFAULT 'a_traiter',
+      ecriture_id TEXT REFERENCES ecritures(id),
+      motif_rejet TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_depots_group_statut ON depots_justificatifs(group_id, statut);
+    CREATE INDEX IF NOT EXISTS idx_depots_submitter ON depots_justificatifs(submitted_by_user_id);
+
     -- Journal d'erreurs applicatives. Alimenté par logError() en
     -- fire-and-forget : si la BDD plante, l'erreur est juste loguée
     -- en console (pas de récursion). Page admin /admin/errors pour

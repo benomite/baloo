@@ -3,7 +3,7 @@ import { getDb } from './db';
 export async function nextId(prefix: string, year?: number): Promise<string> {
   const y = year ?? new Date().getFullYear();
   const pattern = `${prefix}-${y}-%`;
-  const tables = ['ecritures', 'remboursements', 'abandons_frais', 'mouvements_caisse', 'depots_cheques', 'justificatifs', 'comptaweb_imports'];
+  const tables = ['ecritures', 'remboursements', 'abandons_frais', 'mouvements_caisse', 'depots_cheques', 'depots_justificatifs', 'justificatifs', 'comptaweb_imports'];
   const union = tables.map(t => `SELECT id FROM ${t} WHERE id LIKE ?`).join(' UNION ALL ');
 
   const row = await getDb()
