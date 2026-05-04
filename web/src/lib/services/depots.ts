@@ -263,9 +263,10 @@ export async function attachDepotToEcriture(
   return (await db.prepare('SELECT * FROM depots_justificatifs WHERE id = ?').get<Depot>(depotId))!;
 }
 
-// Liste les écritures candidates pour un rattachement : brouillons /
-// confirmées sans justif, optionnellement filtrés par fenêtre de date et
-// montant pour aider le matching côté UI.
+// Liste les écritures candidates pour un rattachement. Une écriture qui a
+// déjà un justif reste candidate (on peut vouloir y attacher la facture
+// complète en plus d'un ticket par exemple) — l'UI affiche un compteur
+// pour informer.
 export interface CandidateEcriture {
   id: string;
   date_ecriture: string;
@@ -273,6 +274,7 @@ export interface CandidateEcriture {
   amount_cents: number;
   type: 'depense' | 'recette';
   unite_code: string | null;
+  existing_justifs_count: number;
 }
 
 export async function listCandidateEcritures(
@@ -280,10 +282,7 @@ export async function listCandidateEcritures(
   opts: { amount_cents?: number | null; date_estimee?: string | null } = {},
 ): Promise<CandidateEcriture[]> {
   await ensureDepotsSchema();
-  const conditions: string[] = [
-    'e.group_id = ?',
-    `NOT EXISTS (SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id)`,
-  ];
+  const conditions: string[] = ['e.group_id = ?'];
   const values: unknown[] = [groupId];
 
   // Tolérance de matching : ±10% sur le montant, ±15j sur la date si fournis.
@@ -300,7 +299,9 @@ export async function listCandidateEcritures(
   return await getDb()
     .prepare(
       `SELECT e.id, e.date_ecriture, e.description, e.amount_cents, e.type,
-              un.code AS unite_code
+              un.code AS unite_code,
+              (SELECT COUNT(*) FROM justificatifs j
+                WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id) AS existing_justifs_count
        FROM ecritures e
        LEFT JOIN unites un ON un.id = e.unite_id
        WHERE ${conditions.join(' AND ')}
@@ -309,4 +310,33 @@ export async function listCandidateEcritures(
        LIMIT 30`,
     )
     .all<CandidateEcriture>(...values, opts.date_estimee ?? null);
+}
+
+// Recherche élargie : toutes les écritures du groupe, sans filtre de
+// montant/date, pour le cas où l'heuristique stricte ne propose rien
+// d'utilisable. Limité à 200 lignes triées par date desc.
+export async function listAllAttachableEcritures(
+  { groupId }: { groupId: string },
+  opts: { excludeIds?: string[] } = {},
+): Promise<CandidateEcriture[]> {
+  await ensureDepotsSchema();
+  const conditions: string[] = ['e.group_id = ?'];
+  const values: unknown[] = [groupId];
+  if (opts.excludeIds && opts.excludeIds.length > 0) {
+    conditions.push(`e.id NOT IN (${opts.excludeIds.map(() => '?').join(',')})`);
+    values.push(...opts.excludeIds);
+  }
+  return await getDb()
+    .prepare(
+      `SELECT e.id, e.date_ecriture, e.description, e.amount_cents, e.type,
+              un.code AS unite_code,
+              (SELECT COUNT(*) FROM justificatifs j
+                WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id) AS existing_justifs_count
+       FROM ecritures e
+       LEFT JOIN unites un ON un.id = e.unite_id
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY e.date_ecriture DESC
+       LIMIT 200`,
+    )
+    .all<CandidateEcriture>(...values);
 }

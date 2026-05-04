@@ -17,7 +17,11 @@ import {
 import { listCategories, listUnites, listModesPaiement, listActivites, listCartes } from '@/lib/queries/reference';
 import { updateEcriture, updateEcritureStatus } from '@/lib/actions/ecritures';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
+import { attachDepotFromEcriture } from '@/lib/actions/depots';
+import { listDepots, type DepotEnriched } from '@/lib/services/depots';
 import { sendRelance } from '@/lib/actions/relances';
+import { NativeSelect } from '@/components/ui/native-select';
+import { formatAmount } from '@/lib/format';
 import { SyncDraftButton } from '@/components/ecritures/sync-draft-button';
 import { Amount } from '@/components/shared/amount';
 import { Alert } from '@/components/ui/alert';
@@ -63,6 +67,11 @@ export default async function EcritureDetailPage({
     listActivites(),
     listCartes(),
   ]);
+  // Dépend de ctx donc en 2e temps. Volume attendu très faible.
+  const pendingDepots = await listDepots(
+    { groupId: ctx.groupId },
+    { statut: 'a_traiter' },
+  );
   if (!ecriture) notFound();
   const isAdmin = ADMIN_ROLES.includes(ctx.role);
   const totalJustifs =
@@ -155,6 +164,9 @@ export default async function EcritureDetailPage({
             justifAttendu={ecriture.justif_attendu === 1}
             numeroPiece={ecriture.numero_piece}
             type={ecriture.type}
+            pendingDepots={pendingDepots}
+            ecritureAmountCents={ecriture.amount_cents}
+            ecritureDate={ecriture.date_ecriture}
           />
           {noJustif && isAdmin && (
             <RelanceCard
@@ -181,13 +193,42 @@ function JustificatifsCard({
   justifAttendu,
   numeroPiece,
   type,
+  pendingDepots,
+  ecritureAmountCents,
+  ecritureDate,
 }: {
   entityId: string;
   bundle: EcritureJustifsBundle;
   justifAttendu: boolean;
   numeroPiece: string | null;
   type: 'depense' | 'recette';
+  pendingDepots: DepotEnriched[];
+  ecritureAmountCents: number;
+  ecritureDate: string;
 }) {
+  // Classement suggestions / autres : même règle que côté /depots,
+  // mais inversée (matching d'un dépôt avec l'écriture courante).
+  const tolMontant = Math.max(100, Math.round(Math.abs(ecritureAmountCents) * 0.1));
+  const ecritureDay = new Date(ecritureDate + 'T00:00:00Z').getTime();
+  const matches = (d: DepotEnriched) => {
+    if (d.amount_cents !== null && Math.abs(d.amount_cents - Math.abs(ecritureAmountCents)) > tolMontant) {
+      return false;
+    }
+    if (d.date_estimee) {
+      const dDay = new Date(d.date_estimee + 'T00:00:00Z').getTime();
+      if (Math.abs(dDay - ecritureDay) > 15 * 86_400_000) return false;
+    }
+    return true;
+  };
+  const suggestions = pendingDepots.filter(matches);
+  const suggestionIds = new Set(suggestions.map((d) => d.id));
+  const otherDepots = pendingDepots.filter((d) => !suggestionIds.has(d.id));
+  const depotLabel = (d: DepotEnriched) => {
+    const titre = d.titre.length > 40 ? d.titre.slice(0, 40) + '…' : d.titre;
+    const montant = d.amount_cents !== null ? formatAmount(d.amount_cents) : '—';
+    const date = d.date_estimee ?? '?';
+    return `${date} · ${montant} · ${titre}`;
+  };
   const totalCount =
     bundle.direct.length +
     bundle.viaRemboursement.reduce((sum, r) => sum + r.justifs.length + r.rib.length, 0);
@@ -278,6 +319,54 @@ function JustificatifsCard({
           </PendingButton>
         </div>
       </form>
+
+      {pendingDepots.length > 0 && (
+        <form action={attachDepotFromEcriture} className="pt-2 border-t border-border-soft">
+          <input type="hidden" name="ecriture_id" value={entityId} />
+          <Field label="Rattacher un dépôt en attente" htmlFor={`depot-${entityId}`}>
+            <NativeSelect
+              id={`depot-${entityId}`}
+              name="depot_id"
+              required
+              defaultValue=""
+            >
+              <option value="" disabled>
+                — Choisir un dépôt —
+              </option>
+              <optgroup
+                label={
+                  suggestions.length > 0
+                    ? `Suggestions (${suggestions.length})`
+                    : 'Suggestions (aucune)'
+                }
+              >
+                {suggestions.length === 0 && (
+                  <option disabled>(rien ne matche dans la tolérance)</option>
+                )}
+                {suggestions.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {depotLabel(d)}
+                  </option>
+                ))}
+              </optgroup>
+              {otherDepots.length > 0 && (
+                <optgroup label={`Autres dépôts à traiter (${otherDepots.length})`}>
+                  {otherDepots.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {depotLabel(d)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </NativeSelect>
+          </Field>
+          <div className="flex justify-end mt-3">
+            <PendingButton variant="outline" size="sm">
+              Rattacher
+            </PendingButton>
+          </div>
+        </form>
+      )}
     </Section>
   );
 }

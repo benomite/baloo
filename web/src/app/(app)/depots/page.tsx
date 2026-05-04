@@ -11,7 +11,12 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { PendingButton } from '@/components/shared/pending-button';
 import { getCurrentContext } from '@/lib/context';
 import { requireAdmin } from '@/lib/auth/access';
-import { listDepots, listCandidateEcritures, type DepotEnriched } from '@/lib/services/depots';
+import {
+  listDepots,
+  listCandidateEcritures,
+  listAllAttachableEcritures,
+  type DepotEnriched,
+} from '@/lib/services/depots';
 import { rejectDepot, attachDepotToEcriture } from '@/lib/actions/depots';
 import { formatAmount } from '@/lib/format';
 
@@ -33,8 +38,8 @@ export default async function DepotsPage({
   requireAdmin(ctx.role);
   const depots = await listDepots({ groupId: ctx.groupId }, { statut: 'a_traiter' });
 
-  // Pour chaque dépôt, on précharge les candidats. N+1 acceptable pour
-  // le volume attendu (rarement > 30 dépôts en attente).
+  // Pour chaque dépôt, on précharge les candidats matching (heuristique
+  // ±10% / ±15j). N+1 acceptable pour le volume attendu.
   const candidates = await Promise.all(
     depots.map((d) =>
       listCandidateEcritures(
@@ -43,6 +48,11 @@ export default async function DepotsPage({
       ),
     ),
   );
+
+  // Liste élargie : 200 dernières écritures du groupe pour permettre une
+  // recherche profonde quand l'heuristique ne propose rien d'utile.
+  // Partagée entre tous les dépôts (un seul fetch).
+  const allEcritures = await listAllAttachableEcritures({ groupId: ctx.groupId });
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -82,7 +92,12 @@ export default async function DepotsPage({
       ) : (
         <ul className="space-y-4">
           {depots.map((d, idx) => (
-            <DepotCard key={d.id} depot={d} candidates={candidates[idx]} />
+            <DepotCard
+              key={d.id}
+              depot={d}
+              candidates={candidates[idx]}
+              allEcritures={allEcritures}
+            />
           ))}
         </ul>
       )}
@@ -93,10 +108,28 @@ export default async function DepotsPage({
 function DepotCard({
   depot,
   candidates,
+  allEcritures,
 }: {
   depot: DepotEnriched;
   candidates: Awaited<ReturnType<typeof listCandidateEcritures>>;
+  allEcritures: Awaited<ReturnType<typeof listAllAttachableEcritures>>;
 }) {
+  const candidateIds = new Set(candidates.map((c) => c.id));
+  const others = allEcritures.filter((e) => !candidateIds.has(e.id));
+  const ecritureLabel = (
+    c: Awaited<ReturnType<typeof listCandidateEcritures>>[number],
+  ) => {
+    const desc =
+      c.description.length > 50
+        ? c.description.slice(0, 50) + '…'
+        : c.description;
+    const unite = c.unite_code ? ` (${c.unite_code})` : '';
+    const justifMark =
+      c.existing_justifs_count > 0
+        ? ` · ${c.existing_justifs_count} justif${c.existing_justifs_count > 1 ? 's' : ''} déjà`
+        : '';
+    return `${c.date_ecriture} · ${formatAmount(c.amount_cents)} · ${desc}${unite}${justifMark}`;
+  };
   const justifLink = depot.justif_path ? (
     <Link
       href={`/api/justificatifs/${depot.justif_path}`}
@@ -175,22 +208,36 @@ function DepotCard({
                   <option value="" disabled>
                     — Choisir une écriture —
                   </option>
-                  {candidates.length === 0 && (
-                    <option disabled>(aucune écriture sans justif ne matche)</option>
+                  <optgroup
+                    label={
+                      candidates.length > 0
+                        ? `Suggestions (${candidates.length})`
+                        : 'Suggestions (aucune)'
+                    }
+                  >
+                    {candidates.length === 0 && (
+                      <option disabled>(rien ne matche dans la tolérance)</option>
+                    )}
+                    {candidates.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {ecritureLabel(c)}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {others.length > 0 && (
+                    <optgroup label={`Toutes les écritures (${others.length} dernières)`}>
+                      {others.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {ecritureLabel(c)}
+                        </option>
+                      ))}
+                    </optgroup>
                   )}
-                  {candidates.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.date_ecriture} · {formatAmount(c.amount_cents)} ·{' '}
-                      {c.description.length > 50
-                        ? c.description.slice(0, 50) + '…'
-                        : c.description}
-                      {c.unite_code ? ` (${c.unite_code})` : ''}
-                    </option>
-                  ))}
                 </NativeSelect>
               </Field>
               <p className="text-[11.5px] text-fg-subtle">
-                Tolérance ±10 % sur le montant et ±15 jours sur la date.
+                Suggestions = ±10 % sur le montant, ±15 jours sur la date.
+                Sinon, choisis dans la liste élargie en dessous.
               </p>
               <div className="flex justify-end">
                 <PendingButton size="sm">Rattacher</PendingButton>

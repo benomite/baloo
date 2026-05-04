@@ -115,3 +115,26 @@ export async function attachDepotToEcriture(formData: FormData): Promise<void> {
   revalidatePath(`/ecritures/${ecritureId}`);
   redirect('/depots?attached=' + encodeURIComponent(depotId));
 }
+
+// Variante de l'action : sens inverse (l'utilisateur est sur la fiche
+// écriture et choisit un dépôt en attente à y rattacher). Même logique,
+// redirection finale différente.
+export async function attachDepotFromEcriture(formData: FormData): Promise<void> {
+  const ctx = await getCurrentContext();
+  if (!isAdminRole(ctx.role)) {
+    redirect('/ecritures?error=' + encodeURIComponent('Action réservée aux trésoriers / RG.'));
+  }
+  const depotId = formData.get('depot_id') as string | null;
+  const ecritureId = formData.get('ecriture_id') as string | null;
+  if (!depotId || !ecritureId) {
+    redirect('/ecritures?error=' + encodeURIComponent('Dépôt et écriture requis.'));
+  }
+  try {
+    await attachDepotToEcritureService({ groupId: ctx.groupId }, depotId, ecritureId);
+  } catch (err) {
+    redirect(`/ecritures/${ecritureId}?error=` + encodeURIComponent(err instanceof Error ? err.message : String(err)));
+  }
+  revalidatePath('/depots');
+  revalidatePath(`/ecritures/${ecritureId}`);
+  redirect(`/ecritures/${ecritureId}`);
+}
