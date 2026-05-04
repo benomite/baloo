@@ -2,11 +2,12 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/page-header';
 import { TabLink } from '@/components/shared/tab-link';
-import { listEcritures } from '@/lib/queries/ecritures';
-import { listCategories, listUnites, listModesPaiement, listActivites, listCartes } from '@/lib/queries/reference';
+import { listEcritures, getEcriture } from '@/lib/queries/ecritures';
+import { listCategories, listUnites, listModesPaiement, listActivites, listCartes, getTopCategoryIds } from '@/lib/queries/reference';
 import { EcritureFilters } from '@/components/ecritures/ecriture-filters';
 import { ScanDraftsButton } from '@/components/ecritures/scan-drafts-button';
 import { EcrituresTable } from '@/components/ecritures/ecritures-table';
+import { EcritureDrawer } from '@/components/ecritures/ecriture-drawer';
 import { getCurrentContext } from '@/lib/context';
 import { requireNotParent } from '@/lib/auth/access';
 
@@ -28,15 +29,26 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
   };
   // Toutes ces queries sont indépendantes : on les parallélise pour
   // ne payer que le RTT le plus long (au lieu de la somme).
-  const [{ ecritures, total }, categories, unites, modesPaiement, activites, cartes] =
-    await Promise.all([
-      listEcritures(filters),
-      listCategories(),
-      listUnites(),
-      listModesPaiement(),
-      listActivites(),
-      listCartes(),
-    ]);
+  const detailId = params.detail || undefined;
+  const [
+    { ecritures, total },
+    categories,
+    unites,
+    modesPaiement,
+    activites,
+    cartes,
+    topCategoryIds,
+    detailEcriture,
+  ] = await Promise.all([
+    listEcritures(filters),
+    listCategories(),
+    listUnites(),
+    listModesPaiement(),
+    listActivites(),
+    listCartes(),
+    getTopCategoryIds(5),
+    detailId ? getEcriture(detailId) : Promise.resolve(undefined),
+  ]);
 
   const presetQS = (preset: 'all' | 'incomplete' | 'from_bank') => {
     const sp = new URLSearchParams();
@@ -79,6 +91,18 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
         activites={activites}
         cartes={cartes}
       />
+
+      {detailEcriture && (
+        <EcritureDrawer
+          ecriture={detailEcriture}
+          categories={categories}
+          topCategoryIds={topCategoryIds}
+          unites={unites}
+          modesPaiement={modesPaiement}
+          activites={activites}
+          cartes={cartes}
+        />
+      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { Landmark } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { EcritureStatusBadge } from '@/components/shared/status-badge';
@@ -49,6 +50,15 @@ type Item =
   | { kind: 'row'; key: string; ecriture: Ecriture; index: number; inGroup: boolean };
 
 export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes }: Props) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // Préserve les filtres courants (?type=, ?incomplete=…) en ajoutant
+  // ?detail= pour ouvrir le drawer sur cette écriture.
+  const detailHref = (id: string) => {
+    const sp = new URLSearchParams(searchParams.toString());
+    sp.set('detail', id);
+    return `${pathname}?${sp.toString()}`;
+  };
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [anchorIndex, setAnchorIndex] = useState<number | null>(null);
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
@@ -255,9 +265,10 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                 <TableCell className="whitespace-nowrap">{e.date_ecriture}</TableCell>
                 <TableCell className="max-w-[280px]">
                   <Link
-                    href={`/ecritures/${e.id}`}
+                    href={detailHref(e.id)}
                     className="hover:underline block truncate"
-                    title={e.description}
+                    title={`${e.description} — clic pour ouvrir le panneau d'édition`}
+                    scroll={false}
                   >
                     {e.description}
                   </Link>
