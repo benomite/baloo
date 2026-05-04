@@ -97,6 +97,73 @@ export async function getReferentielsCounts(
   };
 }
 
+// Vue groupée des branches/projets par unité terrain SGDF.
+// Phase 1 du refacto unites/branches-projets : permet de visualiser le
+// mapping détecté (Comptaweb → SGDF) sans toucher aux FK existantes.
+export interface UniteTerrainGroup {
+  id: string;
+  code: string;
+  nom: string;
+  couleur: string | null;
+  branches_projets: Array<{
+    id: string;
+    name: string;
+    code: string;
+    comptaweb_id: number | null;
+  }>;
+}
+
+export interface UnitesTerrainView {
+  groups: UniteTerrainGroup[];
+  orphans: Array<{ id: string; name: string; code: string; comptaweb_id: number | null }>;
+}
+
+export async function getUnitesTerrainView(
+  { groupId }: ReferenceContext,
+): Promise<UnitesTerrainView> {
+  const db = getDb();
+  const [terrains, branches] = await Promise.all([
+    db.prepare(
+      `SELECT id, code, nom, couleur FROM unites_terrain
+       WHERE group_id = ? ORDER BY code`,
+    ).all<{ id: string; code: string; nom: string; couleur: string | null }>(groupId),
+    db.prepare(
+      `SELECT id, name, code, comptaweb_id, unite_terrain_id
+       FROM unites WHERE group_id = ? ORDER BY name`,
+    ).all<{
+      id: string;
+      name: string;
+      code: string;
+      comptaweb_id: number | null;
+      unite_terrain_id: string | null;
+    }>(groupId),
+  ]);
+
+  const groupsMap = new Map<string, UniteTerrainGroup>();
+  for (const t of terrains) {
+    groupsMap.set(t.id, { ...t, branches_projets: [] });
+  }
+  const orphans: UnitesTerrainView['orphans'] = [];
+  for (const b of branches) {
+    if (b.unite_terrain_id && groupsMap.has(b.unite_terrain_id)) {
+      groupsMap.get(b.unite_terrain_id)!.branches_projets.push({
+        id: b.id,
+        name: b.name,
+        code: b.code,
+        comptaweb_id: b.comptaweb_id,
+      });
+    } else {
+      orphans.push({
+        id: b.id,
+        name: b.name,
+        code: b.code,
+        comptaweb_id: b.comptaweb_id,
+      });
+    }
+  }
+  return { groups: Array.from(groupsMap.values()), orphans };
+}
+
 // Détail des référentiels pour la page d'inspection /import.
 // Chaque entrée contient comptaweb_id pour distinguer les entrées
 // synchronisées des locales pures.

@@ -41,6 +41,31 @@ export async function ensureBusinessSchema(): Promise<void> {
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
+    -- unites_terrain = vraies unités SGDF du groupe (Farfadets,
+    -- Louveteaux/Jeannettes, Scouts/Guides, Pionniers/Caravelles,
+    -- Compagnons, Impeesas, Groupe, Ajustements). Une unité_terrain
+    -- regroupe plusieurs branches/projets Comptaweb (fonctionnement,
+    -- camp, weekend...).
+    -- DOIT être créée avant unites pour la FK.
+    CREATE TABLE IF NOT EXISTS unites_terrain (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL REFERENCES groupes(id),
+      code TEXT NOT NULL,
+      nom TEXT NOT NULL,
+      couleur TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      UNIQUE(group_id, code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_unites_terrain_group ON unites_terrain(group_id);
+
+    -- unites = branches/projets Comptaweb au sens lignes budgétaires.
+    -- À refacto en branches_projets (phase 2). La FK unite_terrain_id
+    -- (ajoutée en phase 1) lie chaque ligne à sa vraie unité SGDF.
+    -- ATTENTION : sur les BDDs déjà déployées, le CREATE TABLE est un
+    -- no-op : la colonne unite_terrain_id est ajoutée par auth/schema.ts
+    -- via ALTER TABLE. Pas de CREATE INDEX ici sur cette colonne (il
+    -- planterait sur les BDDs pré-migration), il vit dans auth/schema.ts.
     CREATE TABLE IF NOT EXISTS unites (
       id TEXT PRIMARY KEY,
       group_id TEXT NOT NULL,
@@ -48,6 +73,7 @@ export async function ensureBusinessSchema(): Promise<void> {
       name TEXT NOT NULL,
       comptaweb_id INTEGER,
       couleur TEXT,
+      unite_terrain_id TEXT REFERENCES unites_terrain(id),
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 

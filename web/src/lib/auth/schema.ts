@@ -30,6 +30,7 @@
 
 import { getDb } from '../db';
 import { ensureBusinessSchema } from '../db/business-schema';
+import { inferUniteTerrain } from '../unites-terrain';
 
 let ensured = false;
 // Lazy-init appelé depuis l'adapter NextAuth (cf. adapter.ts) au
@@ -375,6 +376,53 @@ export async function ensureAuthSchema(): Promise<void> {
     await db.exec(
       'ALTER TABLE depots_justificatifs ADD COLUMN remboursement_id TEXT REFERENCES remboursements(id)',
     );
+  }
+
+  // unites.unite_terrain_id : phase 1 du refacto unités/branches-projets.
+  // Lie chaque branche/projet Comptaweb (table unites) à sa vraie unité
+  // SGDF (table unites_terrain). Le backfill des données existantes est
+  // fait par migrations.ts → backfillUnitesTerrain() au boot.
+  const uniteCols = await db
+    .prepare("PRAGMA table_info(unites)")
+    .all<{ name: string }>();
+  if (uniteCols.length > 0 && !uniteCols.some((c) => c.name === 'unite_terrain_id')) {
+    await db.exec(
+      'ALTER TABLE unites ADD COLUMN unite_terrain_id TEXT REFERENCES unites_terrain(id)',
+    );
+  }
+  await db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_unites_unite_terrain ON unites(unite_terrain_id)',
+  );
+
+  // Backfill des unite_terrain_id pour les branches/projets pré-existants
+  // qui n'ont pas encore été liées à une unité terrain. Idempotent : ne
+  // touche que les rows où unite_terrain_id IS NULL et dont le label
+  // matche une branche SGDF connue. Tourne 1× par cold start.
+  const orphans = await db
+    .prepare("SELECT id, group_id, name FROM unites WHERE unite_terrain_id IS NULL")
+    .all<{ id: string; group_id: string; name: string }>();
+  if (orphans.length > 0) {
+    const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+    for (const orphan of orphans) {
+      const spec = inferUniteTerrain(orphan.name);
+      if (!spec) continue;
+      let utRow = await db
+        .prepare('SELECT id FROM unites_terrain WHERE group_id = ? AND code = ? LIMIT 1')
+        .get<{ id: string }>(orphan.group_id, spec.code);
+      if (!utRow) {
+        const utId = `ut-${orphan.group_id}-${spec.code.toLowerCase()}`;
+        await db
+          .prepare(
+            `INSERT INTO unites_terrain (id, group_id, code, nom, couleur, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(utId, orphan.group_id, spec.code, spec.nom, spec.couleur, now, now);
+        utRow = { id: utId };
+      }
+      await db
+        .prepare('UPDATE unites SET unite_terrain_id = ? WHERE id = ?')
+        .run(utRow.id, orphan.id);
+    }
   }
 
   ensured = true;

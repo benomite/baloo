@@ -12,6 +12,7 @@
 import type { DbWrapper } from '../db';
 import type { RefOption } from './types';
 import type { ScrapedCarte } from './cartes-scrape';
+import { inferUniteTerrain, type UniteTerrainSpec } from '../unites-terrain';
 
 export interface RefSyncStats {
   ajoutees: number;
@@ -123,6 +124,28 @@ async function findOrphelines(
   return rows.filter((r) => !cwIds.has(r.comptaweb_id)).map((r) => r.id);
 }
 
+// Récupère ou crée l'unité terrain SGDF pour un groupe + un code branche.
+// Idempotent : la contrainte UNIQUE(group_id, code) garantit un seul row.
+async function getOrCreateUniteTerrain(
+  db: DbWrapper,
+  groupId: string,
+  spec: UniteTerrainSpec,
+  now: string,
+): Promise<string> {
+  const existing = await db
+    .prepare('SELECT id FROM unites_terrain WHERE group_id = ? AND code = ? LIMIT 1')
+    .get<{ id: string }>(groupId, spec.code);
+  if (existing) return existing.id;
+  const id = `ut-${groupId}-${spec.code.toLowerCase()}`;
+  await db
+    .prepare(
+      `INSERT INTO unites_terrain (id, group_id, code, nom, couleur, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(id, groupId, spec.code, spec.nom, spec.couleur, now, now);
+  return id;
+}
+
 async function syncUnites(
   db: DbWrapper,
   groupId: string,
@@ -134,13 +157,16 @@ async function syncUnites(
   const existingCodesRows = await db.prepare('SELECT code FROM unites WHERE group_id = ?').all<{ code: string }>(groupId);
   const existingCodes = new Set(existingCodesRows.map((r) => r.code));
 
-  const getByCwId = db.prepare('SELECT id FROM unites WHERE comptaweb_id = ? AND group_id = ? LIMIT 1');
+  const getByCwId = db.prepare('SELECT id, unite_terrain_id FROM unites WHERE comptaweb_id = ? AND group_id = ? LIMIT 1');
   const getByName = db.prepare(
     'SELECT id, name FROM unites WHERE group_id = ? AND comptaweb_id IS NULL',
   );
   const updateCwId = db.prepare('UPDATE unites SET comptaweb_id = ? WHERE id = ?');
+  const updateUniteTerrain = db.prepare(
+    'UPDATE unites SET unite_terrain_id = ? WHERE id = ? AND unite_terrain_id IS NULL',
+  );
   const insertUnite = db.prepare(
-    'INSERT INTO unites (id, group_id, code, name, comptaweb_id, couleur, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO unites (id, group_id, code, name, comptaweb_id, couleur, unite_terrain_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
   );
 
   for (const opt of options) {
@@ -148,7 +174,19 @@ async function syncUnites(
     if (!Number.isFinite(cwId) || !opt.label) continue;
     cwIds.add(cwId);
 
-    if (await getByCwId.get(cwId, groupId)) {
+    // Détection de l'unité terrain SGDF (Farfadets, LJ, SG…) à partir
+    // du label de la branche/projet Comptaweb. Crée l'unité_terrain
+    // si elle n'existe pas encore pour ce groupe.
+    const utSpec = inferUniteTerrain(opt.label);
+    const utId = utSpec ? await getOrCreateUniteTerrain(db, groupId, utSpec, now) : null;
+
+    const existing = await getByCwId.get<{ id: string; unite_terrain_id: string | null }>(cwId, groupId);
+    if (existing) {
+      // Rétro-link : si l'unité existait sans unite_terrain_id (créée
+      // avant le refacto), on la lie au passage.
+      if (!existing.unite_terrain_id && utId) {
+        await updateUniteTerrain.run(utId, existing.id);
+      }
       stats.inchangees++;
       continue;
     }
@@ -162,6 +200,7 @@ async function syncUnites(
     });
     if (matched) {
       await updateCwId.run(cwId, matched.id);
+      if (utId) await updateUniteTerrain.run(utId, matched.id);
       stats.mappees++;
       continue;
     }
@@ -169,7 +208,7 @@ async function syncUnites(
     const code = deriveUniteCode(opt.label, existingCodes);
     existingCodes.add(code);
     const id = await uniqueId(db, 'unites', `u-${groupId}-${slugify(opt.label)}`);
-    await insertUnite.run(id, groupId, code, opt.label, cwId, inferCouleurUnite(opt.label), now);
+    await insertUnite.run(id, groupId, code, opt.label, cwId, inferCouleurUnite(opt.label), utId, now);
     stats.ajoutees++;
   }
 

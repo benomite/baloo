@@ -32,8 +32,10 @@ import { uploadComptawebCsv } from '@/lib/actions/comptaweb-import';
 import {
   getReferentielsCounts,
   getReferentielsDetails,
+  getUnitesTerrainView,
   type ReferentielCount,
   type RefDetailRow,
+  type UnitesTerrainView,
 } from '@/lib/services/reference';
 import { cn } from '@/lib/utils';
 
@@ -49,7 +51,7 @@ export default async function ImportPage({
 }) {
   const [ctx, params] = await Promise.all([getCurrentContext(), searchParams]);
   requireAdmin(ctx.role);
-  const [imports, refCounts, refDetails] = await Promise.all([
+  const [imports, refCounts, refDetails, unitesView] = await Promise.all([
     getDb()
       .prepare(
         'SELECT * FROM comptaweb_imports ORDER BY import_date DESC LIMIT 50',
@@ -64,6 +66,7 @@ export default async function ImportPage({
       }>(),
     getReferentielsCounts({ groupId: ctx.groupId }),
     getReferentielsDetails({ groupId: ctx.groupId }),
+    getUnitesTerrainView({ groupId: ctx.groupId }),
   ]);
 
   // Le flash "imported" encode "ecritures_creees|fichier".
@@ -151,6 +154,46 @@ export default async function ImportPage({
           <RefDetail label="Activités" rows={refDetails.activites} icon={<Layers size={13} strokeWidth={2} />} />
           <RefDetail label="Cartes" rows={refDetails.cartes} icon={<CreditCard size={13} strokeWidth={2} />} />
         </div>
+      </Section>
+
+      {/* === Bloc 1bis : Mapping branches/projets → unités terrain === */}
+      <Section
+        title="Unités terrain (vraies unités SGDF)"
+        subtitle="Comptaweb expose des branches/projets (1 par ligne budgétaire). Baloo les regroupe sous l unité SGDF correspondante (Farfadets, LJ, SG, ...)."
+        className="mb-6"
+      >
+        {unitesView.groups.length === 0 && unitesView.orphans.length === 0 ? (
+          <p className="text-[12.5px] text-fg-muted italic">
+            Aucune unité encore détectée. Lance la synchronisation des configurations ci-dessus.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {unitesView.groups.map((g) => (
+              <UniteTerrainCard key={g.id} group={g} />
+            ))}
+            {unitesView.orphans.length > 0 && (
+              <div className="mt-3 rounded-lg border border-dashed border-amber-300 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/20 px-3 py-2.5">
+                <div className="text-[11px] uppercase tracking-wide font-medium text-amber-800 dark:text-amber-300 mb-1.5">
+                  Branches/projets non mappés ({unitesView.orphans.length})
+                </div>
+                <p className="text-[11.5px] text-amber-800 dark:text-amber-300/90 mb-2">
+                  Aucune unité SGDF n a pu être déduite du libellé. À mapper manuellement (phase suivante).
+                </p>
+                <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-0.5 text-[12px]">
+                  {unitesView.orphans.map((o) => (
+                    <li key={o.id} className="text-fg flex items-center gap-1.5">
+                      <span className="size-1.5 rounded-full bg-amber-500/60 shrink-0" />
+                      {o.name}
+                      <span className="text-fg-subtle font-mono text-[10.5px] ml-auto">
+                        {o.code}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
       </Section>
 
       {/* === Bloc 2 : Historique des imports CSV === */}
@@ -324,6 +367,49 @@ function RefCount({
         <p className="text-[10.5px] text-fg-subtle mt-1">
           {count.total - count.mapped} local{count.total - count.mapped > 1 ? 'es' : 'e'} sans mapping
         </p>
+      )}
+    </div>
+  );
+}
+
+function UniteTerrainCard({ group }: { group: UnitesTerrainView['groups'][number] }) {
+  const couleur = group.couleur ?? '#C9C9C9';
+  return (
+    <div className="rounded-lg border border-border-soft bg-bg-elevated overflow-hidden">
+      <div
+        className="px-3 py-2 flex items-center gap-2.5"
+        style={{ boxShadow: `inset 3px 0 0 0 ${couleur}` }}
+      >
+        <span
+          className="size-2.5 rounded-full shrink-0 ring-1 ring-black/5"
+          style={{ backgroundColor: couleur }}
+          aria-hidden
+        />
+        <span className="font-semibold text-[13.5px] text-fg">{group.nom}</span>
+        <span className="text-[10.5px] uppercase tracking-wide text-fg-subtle font-mono bg-bg-sunken rounded px-1">
+          {group.code}
+        </span>
+        <span className="text-[11.5px] text-fg-muted ml-auto">
+          {group.branches_projets.length} branche{group.branches_projets.length > 1 ? 's' : ''}/projet{group.branches_projets.length > 1 ? 's' : ''}
+        </span>
+      </div>
+      {group.branches_projets.length > 0 && (
+        <ul className="border-t border-border-soft divide-y divide-border-soft/60 bg-bg-sunken/30">
+          {group.branches_projets.map((bp) => (
+            <li
+              key={bp.id}
+              className="px-3 py-1.5 flex items-center gap-2 text-[12.5px]"
+            >
+              <span className="text-fg-muted font-mono text-[10.5px]">{bp.code}</span>
+              <span className="text-fg flex-1 truncate">{bp.name}</span>
+              {bp.comptaweb_id !== null && (
+                <span className="text-[10.5px] text-fg-subtle tabular-nums">
+                  cw#{bp.comptaweb_id}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
