@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { HandCoins, Inbox, Paperclip, Receipt, XCircle } from 'lucide-react';
+import { ChevronDown, FileText, Link2, Paperclip, X } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Input } from '@/components/ui/input';
 import { Alert } from '@/components/ui/alert';
@@ -24,6 +24,7 @@ import {
   attachDepotToRemboursement,
 } from '@/lib/actions/depots';
 import { formatAmount } from '@/lib/format';
+import { cn } from '@/lib/utils';
 
 interface SearchParams {
   error?: string;
@@ -97,7 +98,7 @@ export default async function DepotsPage({
           description="Tous les justificatifs déposés ont été traités. Profite-en pour respirer."
         />
       ) : (
-        <ul className="divide-y divide-border-soft rounded-lg border border-border-soft bg-bg-elevated overflow-hidden">
+        <ul className="divide-y divide-border-soft rounded-xl border border-border-soft bg-bg-elevated overflow-hidden shadow-[0_1px_0_rgba(15,23,42,0.04)]">
           {depots.map((d, idx) => (
             <DepotRow
               key={d.id}
@@ -158,169 +159,197 @@ function DepotRow({
     return `${date} · ${formatAmount(r.total_cents)} · ${r.demandeur}${unite}${justifMark}`;
   };
 
-  const meta = [
-    depot.date_estimee,
-    depot.unite_code,
-    depot.category_name,
-    depot.submitter_name ?? depot.submitter_email,
-    depot.carte_label,
-  ].filter(Boolean) as string[];
+  // Métadonnées en chips discrètes pour mieux scanner.
+  const chips = [
+    depot.date_estimee && { label: depot.date_estimee, mono: true },
+    depot.unite_code && { label: depot.unite_code, accent: true },
+    depot.category_name && { label: depot.category_name },
+    depot.carte_label && { label: depot.carte_label },
+  ].filter(Boolean) as { label: string; mono?: boolean; accent?: boolean }[];
 
   return (
-    <li className="px-4 py-3">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="font-medium text-[13.5px] text-fg flex-1 min-w-0 truncate">
-          {depot.titre}
-        </span>
-        {depot.amount_cents !== null && (
-          <span className="tabular-nums font-medium text-[13.5px] text-fg">
-            <Amount cents={depot.amount_cents} />
-          </span>
-        )}
-        <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10.5px] font-medium text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
-          <Inbox size={10} strokeWidth={2.25} />
-          à traiter
-        </span>
+    <li className="group/row relative px-4 py-3.5 transition-colors hover:bg-bg-sunken/40">
+      <div className="flex items-start gap-4">
+        <div className="flex-1 min-w-0">
+          {/* Header : titre + déposeur, montant aligné à droite */}
+          <div className="flex items-baseline gap-3">
+            <h3 className="font-semibold text-[14px] text-fg leading-tight truncate flex-1 min-w-0">
+              {depot.titre}
+            </h3>
+            {depot.amount_cents !== null && (
+              <span className="tabular-nums font-semibold text-[15px] text-fg shrink-0">
+                <Amount cents={depot.amount_cents} />
+              </span>
+            )}
+          </div>
+
+          {depot.description && (
+            <p className="mt-0.5 text-[12.5px] text-fg-muted truncate">
+              {depot.description}
+            </p>
+          )}
+
+          {/* Chips métadonnées + déposeur + lien fichier */}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-medium text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+              <span className="size-1.5 rounded-full bg-amber-500" aria-hidden />
+              à traiter
+            </span>
+            {chips.map((c, i) => (
+              <span
+                key={i}
+                className={cn(
+                  'inline-block rounded px-1.5 py-0.5 text-[11px]',
+                  c.mono && 'tabular-nums',
+                  c.accent
+                    ? 'bg-brand-50 text-brand font-medium'
+                    : 'bg-bg-sunken text-fg-muted',
+                )}
+              >
+                {c.label}
+              </span>
+            ))}
+            <span className="text-[11px] text-fg-subtle">
+              · {depot.submitter_name ?? depot.submitter_email}
+            </span>
+            {depot.justif_path && (
+              <Link
+                href={`/api/justificatifs/${depot.justif_path}`}
+                target="_blank"
+                rel="noopener"
+                className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-brand hover:underline underline-offset-2"
+              >
+                <Paperclip size={11} strokeWidth={1.75} />
+                voir le fichier
+              </Link>
+            )}
+          </div>
+        </div>
       </div>
 
-      {(depot.description || meta.length > 0) && (
-        <div className="mt-0.5 text-[12px] text-fg-muted flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          {depot.description && <span className="italic">{depot.description}</span>}
-          {meta.map((m, i) => (
-            <span key={i} className="tabular-nums">
-              {i > 0 || depot.description ? '· ' : ''}
-              {m}
-            </span>
-          ))}
-          {depot.justif_path && (
-            <Link
-              href={`/api/justificatifs/${depot.justif_path}`}
-              target="_blank"
-              rel="noopener"
-              className="inline-flex items-center gap-1 text-brand hover:underline underline-offset-2"
+      {/* Barre d'actions : 1 disclosure "Rattacher" + 1 "Rejeter", à droite */}
+      <div className="mt-2.5 flex flex-wrap items-center justify-end gap-1.5">
+        <details className="group/attach relative" name={`actions-${depot.id}`}>
+          <summary className="cursor-pointer list-none inline-flex items-center gap-1.5 rounded-md bg-brand/10 px-2.5 py-1 text-[12px] font-medium text-brand transition-colors hover:bg-brand/15 group-open/attach:bg-brand group-open/attach:text-white">
+            <Link2 size={12} strokeWidth={2} />
+            Rattacher
+            <ChevronDown size={11} strokeWidth={2.25} className="transition-transform group-open/attach:rotate-180" />
+          </summary>
+          <div className="mt-3 rounded-lg border border-border-soft bg-bg p-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <AttachPanel
+              label="à une écriture comptable"
+              footer="Suggestions = ±10 % sur le montant, ±15 jours sur la date."
             >
-              · <Paperclip size={11} strokeWidth={1.75} /> fichier
-            </Link>
-          )}
-        </div>
-      )}
-
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px]">
-        <ActionDetails
-          label="Rattacher à une écriture"
-          icon={<Receipt size={12} strokeWidth={2} />}
-          tone="brand"
-        >
-          <form action={attachDepotToEcriture} className="space-y-3 mt-2">
-            <input type="hidden" name="depot_id" value={depot.id} />
-            <Field label="Écriture candidate" htmlFor={`ecriture-${depot.id}`} required>
-              <NativeSelect
-                id={`ecriture-${depot.id}`}
-                name="ecriture_id"
-                required
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  — Choisir une écriture —
-                </option>
-                <optgroup
-                  label={
-                    candidates.length > 0
-                      ? `Suggestions (${candidates.length})`
-                      : 'Suggestions (aucune)'
-                  }
+              <form action={attachDepotToEcriture} className="space-y-2.5">
+                <input type="hidden" name="depot_id" value={depot.id} />
+                <NativeSelect
+                  id={`ecriture-${depot.id}`}
+                  name="ecriture_id"
+                  required
+                  defaultValue=""
+                  aria-label="Écriture candidate"
                 >
-                  {candidates.length === 0 && (
-                    <option disabled>(rien ne matche dans la tolérance)</option>
-                  )}
-                  {candidates.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {ecritureLabel(c)}
-                    </option>
-                  ))}
-                </optgroup>
-                {others.length > 0 && (
-                  <optgroup label={`Toutes les écritures (${others.length} dernières)`}>
-                    {others.map((c) => (
+                  <option value="" disabled>
+                    — Choisir une écriture —
+                  </option>
+                  <optgroup
+                    label={
+                      candidates.length > 0
+                        ? `Suggestions (${candidates.length})`
+                        : 'Suggestions (aucune)'
+                    }
+                  >
+                    {candidates.length === 0 && (
+                      <option disabled>(rien ne matche dans la tolérance)</option>
+                    )}
+                    {candidates.map((c) => (
                       <option key={c.id} value={c.id}>
                         {ecritureLabel(c)}
                       </option>
                     ))}
                   </optgroup>
-                )}
-              </NativeSelect>
-            </Field>
-            <p className="text-[11px] text-fg-subtle">
-              Suggestions = ±10 % sur le montant, ±15 jours sur la date.
-            </p>
-            <div className="flex justify-end">
-              <PendingButton size="sm">Rattacher</PendingButton>
-            </div>
-          </form>
-        </ActionDetails>
-
-        <ActionDetails
-          label="Rattacher à une demande"
-          icon={<HandCoins size={12} strokeWidth={2} />}
-          tone="brand"
-        >
-          <form action={attachDepotToRemboursement} className="space-y-3 mt-2">
-            <input type="hidden" name="depot_id" value={depot.id} />
-            <Field label="Demande de remboursement" htmlFor={`remb-${depot.id}`} required>
-              <NativeSelect
-                id={`remb-${depot.id}`}
-                name="remboursement_id"
-                required
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  — Choisir une demande —
-                </option>
-                <optgroup
-                  label={
-                    rembCandidates.length > 0
-                      ? `Suggestions (${rembCandidates.length})`
-                      : 'Suggestions (aucune)'
-                  }
-                >
-                  {rembCandidates.length === 0 && (
-                    <option disabled>(rien ne matche dans la tolérance)</option>
+                  {others.length > 0 && (
+                    <optgroup label={`Toutes les écritures (${others.length} dernières)`}>
+                      {others.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {ecritureLabel(c)}
+                        </option>
+                      ))}
+                    </optgroup>
                   )}
-                  {rembCandidates.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {rembLabel(r)}
-                    </option>
-                  ))}
-                </optgroup>
-                {otherRembs.length > 0 && (
-                  <optgroup label={`Toutes les demandes actives (${otherRembs.length})`}>
-                    {otherRembs.map((r) => (
+                </NativeSelect>
+                <div className="flex justify-end">
+                  <PendingButton size="sm">Rattacher</PendingButton>
+                </div>
+              </form>
+            </AttachPanel>
+
+            <AttachPanel
+              label="à une demande de remboursement"
+              footer="Demandes actives uniquement (non clôturées)."
+            >
+              <form action={attachDepotToRemboursement} className="space-y-2.5">
+                <input type="hidden" name="depot_id" value={depot.id} />
+                <NativeSelect
+                  id={`remb-${depot.id}`}
+                  name="remboursement_id"
+                  required
+                  defaultValue=""
+                  aria-label="Demande de remboursement"
+                >
+                  <option value="" disabled>
+                    — Choisir une demande —
+                  </option>
+                  <optgroup
+                    label={
+                      rembCandidates.length > 0
+                        ? `Suggestions (${rembCandidates.length})`
+                        : 'Suggestions (aucune)'
+                    }
+                  >
+                    {rembCandidates.length === 0 && (
+                      <option disabled>(rien ne matche dans la tolérance)</option>
+                    )}
+                    {rembCandidates.map((r) => (
                       <option key={r.id} value={r.id}>
                         {rembLabel(r)}
                       </option>
                     ))}
                   </optgroup>
-                )}
-              </NativeSelect>
-            </Field>
-            <p className="text-[11px] text-fg-subtle">
-              Demandes encore actives (pas terminées ni refusées).
-              Suggestions = ±10 % sur le total, ±15 jours sur la date.
-            </p>
-            <div className="flex justify-end">
-              <PendingButton size="sm">Rattacher</PendingButton>
-            </div>
-          </form>
-        </ActionDetails>
+                  {otherRembs.length > 0 && (
+                    <optgroup label={`Toutes les demandes actives (${otherRembs.length})`}>
+                      {otherRembs.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {rembLabel(r)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </NativeSelect>
+                <div className="flex justify-end">
+                  <PendingButton size="sm">Rattacher</PendingButton>
+                </div>
+              </form>
+            </AttachPanel>
+          </div>
+        </details>
 
-        <ActionDetails
-          label="Rejeter"
-          icon={<XCircle size={12} strokeWidth={2} />}
-          tone="destructive"
-        >
-          <form action={rejectDepot} className="space-y-3 mt-2">
+        <details className="group/reject relative" name={`actions-${depot.id}`}>
+          <summary className="cursor-pointer list-none inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium text-fg-muted transition-colors hover:bg-destructive/10 hover:text-destructive group-open/reject:bg-destructive group-open/reject:text-white">
+            <X size={12} strokeWidth={2} />
+            Rejeter
+          </summary>
+          <form
+            action={rejectDepot}
+            className="mt-3 rounded-lg border border-border-soft bg-bg p-3 flex flex-wrap items-end gap-2"
+          >
             <input type="hidden" name="id" value={depot.id} />
-            <Field label="Motif du rejet" htmlFor={`motif-${depot.id}`} required>
+            <Field
+              label="Motif du rejet"
+              htmlFor={`motif-${depot.id}`}
+              required
+              className="flex-1 min-w-[200px] m-0"
+            >
               <Input
                 id={`motif-${depot.id}`}
                 name="motif"
@@ -328,43 +357,33 @@ function DepotRow({
                 placeholder="Ex. justif illisible, hors scope, doublon"
               />
             </Field>
-            <div className="flex justify-end">
-              <PendingButton variant="destructive" size="sm">
-                Rejeter
-              </PendingButton>
-            </div>
+            <PendingButton variant="destructive" size="sm">
+              Rejeter
+            </PendingButton>
           </form>
-        </ActionDetails>
+        </details>
       </div>
     </li>
   );
 }
 
-function ActionDetails({
+function AttachPanel({
   label,
-  icon,
-  tone,
+  footer,
   children,
 }: {
   label: string;
-  icon: React.ReactNode;
-  tone: 'brand' | 'destructive';
+  footer: string;
   children: React.ReactNode;
 }) {
-  const summaryClass =
-    tone === 'destructive'
-      ? 'text-destructive hover:underline'
-      : 'text-brand hover:underline';
   return (
-    <details className="group w-full">
-      <summary
-        className={`cursor-pointer list-none inline-flex items-center gap-1 font-medium underline-offset-2 ${summaryClass}`}
-      >
-        <span className="transition-transform group-open:rotate-90 inline-block">▸</span>
-        {icon}
-        {label}
-      </summary>
-      <div className="mt-2 pl-4 border-l border-border-soft">{children}</div>
-    </details>
+    <div>
+      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-fg-subtle font-medium mb-1.5">
+        <FileText size={10} strokeWidth={2} />
+        Rattacher {label}
+      </div>
+      {children}
+      <p className="mt-1.5 text-[10.5px] text-fg-subtle">{footer}</p>
+    </div>
   );
 }
