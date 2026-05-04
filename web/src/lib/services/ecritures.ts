@@ -119,8 +119,13 @@ export async function listEcritures(
      LEFT JOIN cartes ca ON ca.id = e.carte_id
      ${where}
      ORDER BY
-       CASE e.status WHEN 'brouillon' THEN 0 WHEN 'valide' THEN 1 ELSE 2 END,
-       e.date_ecriture DESC, e.created_at DESC
+       e.date_ecriture DESC,
+       -- Préserve le groupement par ligne bancaire : toutes les écritures
+       -- d'un même paiement multi-commerçants restent ensemble, peu
+       -- importe leur status (brouillon / validé / synchronisé).
+       e.ligne_bancaire_id DESC,
+       COALESCE(e.ligne_bancaire_sous_index, 0) ASC,
+       e.created_at DESC
      LIMIT ? OFFSET ?`,
   ).all<Ecriture>(...values, limit, offset);
 

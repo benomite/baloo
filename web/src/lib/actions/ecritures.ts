@@ -64,7 +64,10 @@ export async function updateEcriture(id: string, formData: FormData) {
   revalidatePath('/ecritures');
   revalidatePath(`/ecritures/${id}`);
   revalidatePath('/');
-  redirect(`/ecritures/${id}`);
+  // Pas de redirect : on reste sur la page courante (drawer ou page
+  // détail). Next va re-render via revalidatePath. Avant on faisait
+  // redirect /ecritures/[id] systématiquement, ce qui faisait sortir
+  // du drawer après chaque save.
 }
 
 export async function updateEcritureStatus(id: string, status: string) {
