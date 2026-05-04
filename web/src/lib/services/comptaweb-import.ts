@@ -297,10 +297,12 @@ export async function importComptawebCsv(
     // vers dépôts/remb sont préservés. Les écritures saisie_comptaweb
     // qui ne correspondent à aucune ligne du nouveau CSV ne sont PAS
     // touchées (le CSV n'est pas la vérité absolue, c'est un complément).
-    // Matching en cascade : le plus précis vers le plus tolérant.
-    // Inclut category_id pour distinguer 2 ventilations de même montant
-    // sur une même ligne parent (ex: regroupement national avec FSI 420€
-    // ET Territoire 420€ — sans category_id, le UPSERT loose les confond).
+    // Matching cascade : TOUS les niveaux incluent category_id pour
+    // éviter qu'une ventilation matche une autre ventilation du même
+    // regroupement (ex: FSI 420€ vs Territoire 420€). Sans category_id,
+    // le matching loose voit 2 écritures identiques en (date, amount,
+    // type, piece NULL) et UPDATE la 1ère trouvée — la 2e ventilation
+    // n'est jamais INSERTée.
     const findExact = txDb.prepare(
       `SELECT id FROM ecritures
        WHERE group_id = ? AND status = 'saisie_comptaweb'
@@ -318,17 +320,14 @@ export async function importComptawebCsv(
          AND COALESCE(category_id, '') = COALESCE(?, '')
        LIMIT 1`,
     );
-    const findByPiece = txDb.prepare(
+    // Niveau "loose" mais TOUJOURS avec category_id : matche les
+    // anciennes écritures sans piece ni description (encoding cassé)
+    // mais distingue les ventilations différentes par leur catégorie.
+    const findByCat = txDb.prepare(
       `SELECT id FROM ecritures
        WHERE group_id = ? AND status = 'saisie_comptaweb'
          AND date_ecriture = ? AND amount_cents = ? AND type = ?
-         AND COALESCE(numero_piece, '') = COALESCE(?, '')
-       LIMIT 1`,
-    );
-    const findLoose = txDb.prepare(
-      `SELECT id FROM ecritures
-       WHERE group_id = ? AND status = 'saisie_comptaweb'
-         AND date_ecriture = ? AND amount_cents = ? AND type = ?
+         AND COALESCE(category_id, '') = COALESCE(?, '')
        LIMIT 1`,
     );
     const updateExisting = txDb.prepare(
@@ -365,11 +364,8 @@ export async function importComptawebCsv(
         (await findByPieceCat.get<{ id: string }>(
           groupId, args.date, args.amount, args.type, args.piece, args.categoryId,
         )) ||
-        (await findByPiece.get<{ id: string }>(
-          groupId, args.date, args.amount, args.type, args.piece,
-        )) ||
-        (await findLoose.get<{ id: string }>(
-          groupId, args.date, args.amount, args.type,
+        (await findByCat.get<{ id: string }>(
+          groupId, args.date, args.amount, args.type, args.categoryId,
         ));
       if (existing) {
         await updateExisting.run(
