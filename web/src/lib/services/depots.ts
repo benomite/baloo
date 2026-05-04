@@ -234,16 +234,24 @@ export async function attachDepotToEcriture(
   const db = getDb();
 
   const depot = await db
-    .prepare('SELECT statut FROM depots_justificatifs WHERE id = ? AND group_id = ?')
-    .get<{ statut: string }>(depotId, groupId);
+    .prepare(
+      `SELECT statut, category_id, unite_id, carte_id
+       FROM depots_justificatifs WHERE id = ? AND group_id = ?`,
+    )
+    .get<{
+      statut: string;
+      category_id: string | null;
+      unite_id: string | null;
+      carte_id: string | null;
+    }>(depotId, groupId);
   if (!depot) throw new Error(`Dépôt ${depotId} introuvable.`);
   if (depot.statut !== 'a_traiter') {
     throw new Error(`Dépôt déjà ${depot.statut}, impossible de rattacher.`);
   }
 
   const ecriture = await db
-    .prepare('SELECT id FROM ecritures WHERE id = ? AND group_id = ?')
-    .get<{ id: string }>(ecritureId, groupId);
+    .prepare('SELECT id, status FROM ecritures WHERE id = ? AND group_id = ?')
+    .get<{ id: string; status: string }>(ecritureId, groupId);
   if (!ecriture) throw new Error(`Écriture ${ecritureId} introuvable dans ce groupe.`);
 
   // Migre le file vers l'écriture (pour qu'il soit visible par les
@@ -259,6 +267,29 @@ export async function attachDepotToEcriture(
      SET statut = 'rattache', ecriture_id = ?, updated_at = ?
      WHERE id = ? AND group_id = ?`,
   ).run(ecritureId, currentTimestamp(), depotId, groupId);
+
+  // Enrichissement : si l'écriture est encore en brouillon, on copie les
+  // infos du dépôt dans les champs encore vides (COALESCE → on n'écrase
+  // jamais une valeur déjà saisie). Évite au trésorier de re-saisir
+  // catégorie / unité / carte que le déposeur a déjà renseignées.
+  // numero_piece reste vide : il vient de Comptaweb, pas du dépôt.
+  if (ecriture.status === 'brouillon') {
+    await db.prepare(
+      `UPDATE ecritures SET
+         category_id = COALESCE(category_id, ?),
+         unite_id    = COALESCE(unite_id, ?),
+         carte_id    = COALESCE(carte_id, ?),
+         updated_at  = ?
+       WHERE id = ? AND group_id = ? AND status = 'brouillon'`,
+    ).run(
+      depot.category_id,
+      depot.unite_id,
+      depot.carte_id,
+      currentTimestamp(),
+      ecritureId,
+      groupId,
+    );
+  }
 
   return (await db.prepare('SELECT * FROM depots_justificatifs WHERE id = ?').get<Depot>(depotId))!;
 }
