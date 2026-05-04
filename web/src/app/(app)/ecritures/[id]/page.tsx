@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { Landmark, Mail } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Landmark, Lock, Mail } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { EcritureForm } from '@/components/ecritures/ecriture-form';
 import { JustificatifsCard } from '@/components/ecritures/justificatifs-card';
@@ -13,6 +13,7 @@ import { listJustificatifsForEcriture } from '@/lib/queries/justificatifs';
 import { listCategories, listUnites, listModesPaiement, listActivites, listCartes, getTopCategoryIds } from '@/lib/queries/reference';
 import { updateEcriture, updateEcritureStatus } from '@/lib/actions/ecritures';
 import { listDepots } from '@/lib/services/depots';
+import { computeReadiness } from '@/lib/sync-readiness';
 import { sendRelance } from '@/lib/actions/relances';
 import { SyncDraftButton } from '@/components/ecritures/sync-draft-button';
 import { Amount } from '@/components/shared/amount';
@@ -73,6 +74,16 @@ export default async function EcritureDetailPage({
     justifsBundle.viaRemboursement.reduce((sum, r) => sum + r.justifs.length + r.rib.length, 0);
   const updateAction = updateEcriture.bind(null, id);
   const noJustif = totalJustifs === 0 && ecriture.justif_attendu !== 0;
+  const justifMissing =
+    ecriture.type === 'depense' &&
+    ecriture.justif_attendu === 1 &&
+    totalJustifs === 0;
+  const readiness = computeReadiness(ecriture, {
+    categories,
+    unites,
+    modesPaiement,
+    activites,
+  });
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -151,6 +162,8 @@ export default async function EcritureDetailPage({
         </Alert>
       )}
 
+      <ReadinessBanner readiness={readiness} justifMissing={justifMissing} />
+
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(280px,320px)] gap-6 items-start">
         <EcritureForm
           action={updateAction}
@@ -191,6 +204,65 @@ export default async function EcritureDetailPage({
 // espaces multiples, met une casse plus humaine.
 function cleanDescription(raw: string): string {
   return raw.replace(/\s+/g, ' ').trim();
+}
+
+function ReadinessBanner({
+  readiness,
+  justifMissing,
+}: {
+  readiness: ReturnType<typeof computeReadiness>;
+  justifMissing: boolean;
+}) {
+  if (readiness.level === 'synced') {
+    return (
+      <div className="mb-6 rounded-lg border border-emerald-300 bg-emerald-50/60 dark:border-emerald-900/40 dark:bg-emerald-950/20 px-4 py-3">
+        <div className="flex items-center gap-2 text-[13px] font-medium text-emerald-800 dark:text-emerald-300">
+          <Lock size={14} strokeWidth={2.25} />
+          {readiness.message}
+        </div>
+        <p className="text-[12px] text-emerald-700/90 dark:text-emerald-400/80 mt-0.5 ml-6">
+          Les champs synchronisables sont verrouillés.
+        </p>
+      </div>
+    );
+  }
+  if (readiness.level === 'ready') {
+    return (
+      <div className="mb-6 rounded-lg border border-emerald-300 bg-emerald-50/60 dark:border-emerald-900/40 dark:bg-emerald-950/20 px-4 py-3">
+        <div className="flex items-center gap-2 text-[13px] font-medium text-emerald-800 dark:text-emerald-300">
+          <CheckCircle2 size={14} strokeWidth={2.25} />
+          {readiness.message}
+        </div>
+        <p className="text-[12px] text-emerald-700/90 dark:text-emerald-400/80 mt-0.5 ml-6">
+          Tous les champs requis sont mappés Comptaweb.
+          {justifMissing && ' Justificatif manquant (non bloquant pour la sync).'}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-950/20 px-4 py-3">
+      <div className="flex items-center gap-2 text-[13px] font-medium text-amber-900 dark:text-amber-300 mb-1.5">
+        <AlertTriangle size={14} strokeWidth={2.25} />
+        À compléter avant synchronisation Comptaweb
+      </div>
+      <ul className="ml-6 space-y-0.5">
+        {readiness.missingFields.map((m) => (
+          <li
+            key={m}
+            className="text-[12.5px] text-amber-900 dark:text-amber-200 list-disc list-inside"
+          >
+            {m}
+          </li>
+        ))}
+        {justifMissing && (
+          <li className="text-[12.5px] text-amber-700 dark:text-amber-300/80 list-disc list-inside italic">
+            justificatif (non bloquant pour sync, mais à fournir)
+          </li>
+        )}
+      </ul>
+    </div>
+  );
 }
 
 function RelanceCard({

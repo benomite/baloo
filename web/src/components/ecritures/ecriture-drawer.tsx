@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { AlertTriangle, ExternalLink, Landmark } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ExternalLink, Landmark, Lock } from 'lucide-react';
 import { Drawer } from '@/components/ui/drawer';
 import { EcritureForm } from '@/components/ecritures/ecriture-form';
 import { JustificatifsCard } from '@/components/ecritures/justificatifs-card';
@@ -12,7 +12,7 @@ import { Amount } from '@/components/shared/amount';
 import { PendingButton } from '@/components/shared/pending-button';
 import { Alert } from '@/components/ui/alert';
 import { updateEcriture, updateEcritureStatus } from '@/lib/actions/ecritures';
-import { computeMissingFields } from '@/lib/services/ecritures';
+import { computeReadiness } from '@/lib/sync-readiness';
 import { type EcritureJustifsBundle } from '@/lib/queries/justificatifs';
 import { type DepotEnriched } from '@/lib/services/depots';
 import type {
@@ -75,9 +75,15 @@ export function EcritureDrawer({
       (sum, r) => sum + r.justifs.length + r.rib.length,
       0,
     );
-  const missing = computeMissingFields({
-    ...ecriture,
-    has_justificatif: totalJustifs > 0,
+  const justifMissing =
+    ecriture.type === 'depense' &&
+    ecriture.justif_attendu === 1 &&
+    totalJustifs === 0;
+  const readiness = computeReadiness(ecriture, {
+    categories,
+    unites,
+    modesPaiement,
+    activites,
   });
 
   return (
@@ -149,25 +155,11 @@ export function EcritureDrawer({
         </Alert>
       )}
 
-      {/* À COMPLÉTER — bandeau actionnable si missing fields */}
-      {missing.length > 0 && (
-        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-950/20 px-3 py-2.5">
-          <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold text-amber-900 dark:text-amber-300 mb-1.5">
-            <AlertTriangle size={12} strokeWidth={2.25} />
-            À compléter ({missing.length})
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {missing.map((m) => (
-              <span
-                key={m}
-                className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200 px-2 py-0.5 text-[11.5px] font-medium"
-              >
-                {m}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* ÉTAT — bandeau qui dit clairement où on en est */}
+      <ReadinessBanner
+        readiness={readiness}
+        justifMissing={justifMissing}
+      />
 
       {/* FORMULAIRE D'ÉDITION (priorité : c'est le travail principal) */}
       <EcritureForm
@@ -195,7 +187,7 @@ export function EcritureDrawer({
         />
       </div>
 
-      {/* CYCLE DE VIE — en bas, après le travail. Sépaation visuelle nette. */}
+      {/* CYCLE DE VIE — en bas, après le travail. Séparation visuelle nette. */}
       <div className="mt-6 pt-4 border-t border-border-soft">
         <div className="flex items-center gap-1.5 text-[10.5px] uppercase tracking-wide font-medium text-fg-subtle mb-2">
           Cycle de vie
@@ -229,5 +221,71 @@ export function EcritureDrawer({
         </div>
       </div>
     </Drawer>
+  );
+}
+
+function ReadinessBanner({
+  readiness,
+  justifMissing,
+}: {
+  readiness: ReturnType<typeof computeReadiness>;
+  justifMissing: boolean;
+}) {
+  // 3 niveaux visuels :
+  //   - synced     → vert tendre, icône lock (immutable)
+  //   - ready      → vert vif, icône check (clic pour sync)
+  //   - incomplete → ambre, icône warning + liste précise
+  if (readiness.level === 'synced') {
+    return (
+      <div className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50/60 dark:border-emerald-900/40 dark:bg-emerald-950/20 px-3 py-2.5">
+        <div className="flex items-center gap-1.5 text-[12.5px] font-medium text-emerald-800 dark:text-emerald-300">
+          <Lock size={13} strokeWidth={2.25} />
+          {readiness.message}
+        </div>
+        <p className="text-[11.5px] text-emerald-700/90 dark:text-emerald-400/80 mt-0.5 ml-5">
+          Les champs synchronisables sont verrouillés.
+        </p>
+      </div>
+    );
+  }
+
+  if (readiness.level === 'ready') {
+    return (
+      <div className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50/60 dark:border-emerald-900/40 dark:bg-emerald-950/20 px-3 py-2.5">
+        <div className="flex items-center gap-1.5 text-[12.5px] font-medium text-emerald-800 dark:text-emerald-300">
+          <CheckCircle2 size={13} strokeWidth={2.25} />
+          {readiness.message}
+        </div>
+        <p className="text-[11.5px] text-emerald-700/90 dark:text-emerald-400/80 mt-0.5 ml-5">
+          Tous les champs requis sont mappés Comptaweb.
+          {justifMissing && ' Justificatif manquant (non bloquant pour la sync).'}
+        </p>
+      </div>
+    );
+  }
+
+  // incomplete
+  return (
+    <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-950/20 px-3 py-2.5">
+      <div className="flex items-center gap-1.5 text-[12.5px] font-medium text-amber-900 dark:text-amber-300 mb-1.5">
+        <AlertTriangle size={13} strokeWidth={2.25} />
+        À compléter avant synchronisation Comptaweb
+      </div>
+      <ul className="ml-5 space-y-0.5 mb-1">
+        {readiness.missingFields.map((m) => (
+          <li
+            key={m}
+            className="text-[12px] text-amber-900 dark:text-amber-200 list-disc list-inside"
+          >
+            {m}
+          </li>
+        ))}
+        {justifMissing && (
+          <li className="text-[12px] text-amber-700 dark:text-amber-300/80 list-disc list-inside italic">
+            justificatif (non bloquant pour sync, mais à fournir)
+          </li>
+        )}
+      </ul>
+    </div>
   );
 }
