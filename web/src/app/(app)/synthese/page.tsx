@@ -167,6 +167,54 @@ export default async function SynthesePage({
         </Table>
       </Section>
 
+      <Section
+        title="Par catégorie (comparable au compte de résultat Comptaweb)"
+        subtitle="Agrégat ligne par ligne. Une catégorie sans comptaweb_id ne sera jamais sync — ses montants peuvent expliquer un écart avec le CR Comptaweb."
+        className="mb-8"
+        bodyClassName="px-0 pb-0"
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Catégorie</TableHead>
+              <TableHead className="text-right">Dépenses</TableHead>
+              <TableHead className="text-right">Recettes</TableHead>
+              <TableHead className="text-right">CW#</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.parCategorie.map((c) => (
+              <TableRow key={c.category_id ?? 'none'}>
+                <TableCell className="font-medium flex items-center gap-1.5">
+                  {c.comptaweb_id === null && c.category_id !== null && (
+                    <span
+                      className="size-1.5 rounded-full bg-amber-500 shrink-0"
+                      title="Pas de mapping Comptaweb — non synchronisable"
+                    />
+                  )}
+                  {c.category_id === null && (
+                    <span
+                      className="size-1.5 rounded-full bg-rose-500 shrink-0"
+                      title="Écritures sans catégorie — à compléter"
+                    />
+                  )}
+                  {c.category_name}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {c.depenses > 0 ? <Amount cents={c.depenses} tone="negative" /> : <span className="text-fg-subtle">—</span>}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {c.recettes > 0 ? <Amount cents={c.recettes} tone="positive" /> : <span className="text-fg-subtle">—</span>}
+                </TableCell>
+                <TableCell className="text-right tabular-nums text-[11px] text-fg-subtle">
+                  {c.comptaweb_id ?? <span className="text-amber-700">—</span>}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Section>
+
       {data.dernierImport ? (
         <p className="text-[12px] text-fg-muted inline-flex items-center gap-1.5">
           <AlertTriangle size={13} strokeWidth={1.75} className="text-fg-subtle" />

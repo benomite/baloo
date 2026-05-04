@@ -27,6 +27,14 @@ export function currentExercice(now: Date = new Date()): string {
   return m >= 8 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
 }
 
+export interface CategorieRow {
+  category_id: string | null;
+  category_name: string;
+  comptaweb_id: number | null;
+  depenses: number;
+  recettes: number;
+}
+
 export interface OverviewData {
   totalDepenses: number;
   totalRecettes: number;
@@ -35,6 +43,7 @@ export interface OverviewData {
   totalRecettesFormatted: string;
   soldeFormatted: string;
   parUnite: { code: string; name: string; couleur: string | null; depenses: number; recettes: number; solde: number }[];
+  parCategorie: CategorieRow[];
   remboursementsEnAttente: { count: number; total: number; totalFormatted: string };
   alertes: { depensesSansJustificatif: number; nonSyncComptaweb: number };
   dernierImport: { date: string; fichier: string } | null;
@@ -75,6 +84,23 @@ export async function getOverview(
     GROUP BY u.id ORDER BY u.code
   `).all<{ code: string; name: string; couleur: string | null; depenses: number; recettes: number }>(groupId, ...dateValues, groupId);
 
+  // Breakdown par catégorie SGDF — comparable ligne à ligne au compte de
+  // résultat Comptaweb (qui agrège par "Nature" = catégorie). Les
+  // écritures sans catégorie sont regroupées sous "(non catégorisé)".
+  const parCategorie = await db.prepare(`
+    SELECT
+      c.id as category_id,
+      COALESCE(c.name, '(non catégorisé)') as category_name,
+      c.comptaweb_id,
+      COALESCE(SUM(CASE WHEN e.type = 'depense' THEN e.amount_cents ELSE 0 END), 0) as depenses,
+      COALESCE(SUM(CASE WHEN e.type = 'recette' THEN e.amount_cents ELSE 0 END), 0) as recettes
+    FROM ecritures e
+    LEFT JOIN categories c ON c.id = e.category_id
+    WHERE e.group_id = ?${dateClause}
+    GROUP BY c.id
+    ORDER BY (depenses + recettes) DESC
+  `).all<CategorieRow>(groupId, ...dateValues);
+
   const rbt = await db.prepare(
     "SELECT COUNT(*) as count, COALESCE(SUM(amount_cents), 0) as total FROM remboursements WHERE group_id = ? AND status IN ('demande', 'valide')"
   ).get<{ count: number; total: number }>(groupId);
@@ -104,6 +130,7 @@ export async function getOverview(
     totalRecettesFormatted: formatAmount(totRec),
     soldeFormatted: formatAmount(totRec - totDep),
     parUnite: parUnite.map(u => ({ ...u, solde: u.recettes - u.depenses })),
+    parCategorie,
     remboursementsEnAttente: { count: rbt?.count ?? 0, total: rbt?.total ?? 0, totalFormatted: formatAmount(rbt?.total ?? 0) },
     alertes: { depensesSansJustificatif: sansJustif?.count ?? 0, nonSyncComptaweb: nonSync?.count ?? 0 },
     dernierImport: lastImport ?? null,
