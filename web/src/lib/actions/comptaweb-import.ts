@@ -40,7 +40,17 @@ export async function uploadComptawebCsv(formData: FormData): Promise<void> {
     redirect('/import?error=' + encodeURIComponent('Le fichier doit être un .csv.'));
   }
 
-  const content = await file.text();
+  // Comptaweb exporte le CSV en Windows-1252 (encodage Excel français).
+  // file.text() le décode en UTF-8 par défaut → les caractères accentués
+  // se cassent ("D�pense" au lieu de "Dépense"), et les colonnes avec
+  // accent (Dépense, Catégorie, Activité, Branche/Pôle) ne matchent
+  // plus → données importées partielles. On force Windows-1252.
+  // Fallback UTF-8 si jamais l'export devient UTF-8 plus tard.
+  const buffer = await file.arrayBuffer();
+  const utf8Try = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
+  const content = utf8Try.includes('Dépense') || utf8Try.includes('Catégorie')
+    ? utf8Try
+    : new TextDecoder('windows-1252').decode(buffer);
 
   let result;
   try {
