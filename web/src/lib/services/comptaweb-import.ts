@@ -252,6 +252,7 @@ export async function importComptawebCsv(
   // "ECR-2026-1000" → on aurait pris seqNum=99, généré ECR-2026-100, et
   // collision UNIQUE car ECR-2026-100 existait déjà.
   // Filtre sur l'année courante : pas de mélange inter-années.
+  const currentYear = new Date().getFullYear();
   const maxRow = await db
     .prepare(
       `SELECT MAX(CAST(SUBSTR(id, 10) AS INTEGER)) as maxNum
@@ -259,7 +260,6 @@ export async function importComptawebCsv(
     )
     .get<{ maxNum: number | null }>(`ECR-${currentYear}-%`);
   let seqNum = maxRow?.maxNum ?? 0;
-  const currentYear = new Date().getFullYear();
   function nextEcrId(): string {
     seqNum++;
     return `ECR-${currentYear}-${String(seqNum).padStart(4, '0')}`;
