@@ -340,3 +340,113 @@ export async function listAllAttachableEcritures(
     )
     .all<CandidateEcriture>(...values);
 }
+
+// === Liaison dépôt → demande de remboursement ===
+//
+// Symétrique du flux dépôt → écriture mais pour les demandes de
+// remboursement encore actives (pas terminées ni refusées). Permet à un
+// utilisateur de déposer un justif AVANT d'avoir fait sa demande, puis
+// au trésorier de rapprocher quand la demande arrive.
+
+export interface CandidateRemboursement {
+  id: string;
+  date_depense: string | null;
+  demandeur: string;
+  total_cents: number;
+  status: string;
+  unite_code: string | null;
+  existing_justifs_count: number;
+}
+
+const REMB_ATTACHABLE_STATUSES = "'a_traiter', 'valide_tresorier', 'valide_rg', 'virement_effectue'";
+
+export async function listCandidateRemboursements(
+  { groupId }: { groupId: string },
+  opts: { amount_cents?: number | null; date_estimee?: string | null } = {},
+): Promise<CandidateRemboursement[]> {
+  const conditions: string[] = [
+    'r.group_id = ?',
+    `r.status IN (${REMB_ATTACHABLE_STATUSES})`,
+  ];
+  const values: unknown[] = [groupId];
+  if (opts.amount_cents) {
+    const tol = Math.max(100, Math.round(Math.abs(opts.amount_cents) * 0.1));
+    conditions.push('ABS(r.total_cents - ?) <= ?');
+    values.push(Math.abs(opts.amount_cents), tol);
+  }
+  if (opts.date_estimee) {
+    conditions.push("r.date_depense IS NOT NULL AND ABS(julianday(r.date_depense) - julianday(?)) <= 15");
+    values.push(opts.date_estimee);
+  }
+  return await getDb()
+    .prepare(
+      `SELECT r.id, r.date_depense, r.demandeur, r.total_cents, r.status,
+              un.code AS unite_code,
+              (SELECT COUNT(*) FROM justificatifs j
+                WHERE j.entity_type = 'remboursement' AND j.entity_id = r.id) AS existing_justifs_count
+       FROM remboursements r
+       LEFT JOIN unites un ON un.id = r.unite_id
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY ABS(julianday(COALESCE(r.date_depense, '1970-01-01')) - julianday(COALESCE(?, COALESCE(r.date_depense, '1970-01-01')))) ASC,
+                COALESCE(r.date_depense, r.created_at) DESC
+       LIMIT 30`,
+    )
+    .all<CandidateRemboursement>(...values, opts.date_estimee ?? null);
+}
+
+export async function listAllAttachableRemboursements(
+  { groupId }: { groupId: string },
+): Promise<CandidateRemboursement[]> {
+  return await getDb()
+    .prepare(
+      `SELECT r.id, r.date_depense, r.demandeur, r.total_cents, r.status,
+              un.code AS unite_code,
+              (SELECT COUNT(*) FROM justificatifs j
+                WHERE j.entity_type = 'remboursement' AND j.entity_id = r.id) AS existing_justifs_count
+       FROM remboursements r
+       LEFT JOIN unites un ON un.id = r.unite_id
+       WHERE r.group_id = ? AND r.status IN (${REMB_ATTACHABLE_STATUSES})
+       ORDER BY COALESCE(r.date_depense, r.created_at) DESC
+       LIMIT 100`,
+    )
+    .all<CandidateRemboursement>(groupId);
+}
+
+export async function attachDepotToRemboursement(
+  { groupId }: { groupId: string },
+  depotId: string,
+  remboursementId: string,
+): Promise<Depot> {
+  await ensureDepotsSchema();
+  const db = getDb();
+
+  const depot = await db
+    .prepare('SELECT statut FROM depots_justificatifs WHERE id = ? AND group_id = ?')
+    .get<{ statut: string }>(depotId, groupId);
+  if (!depot) throw new Error(`Dépôt ${depotId} introuvable.`);
+  if (depot.statut !== 'a_traiter') {
+    throw new Error(`Dépôt déjà ${depot.statut}, impossible de rattacher.`);
+  }
+
+  const remb = await db
+    .prepare('SELECT id, status FROM remboursements WHERE id = ? AND group_id = ?')
+    .get<{ id: string; status: string }>(remboursementId, groupId);
+  if (!remb) throw new Error(`Demande de remboursement ${remboursementId} introuvable dans ce groupe.`);
+  if (remb.status === 'termine' || remb.status === 'refuse') {
+    throw new Error(`Demande ${remboursementId} clôturée (${remb.status}), impossible de rattacher.`);
+  }
+
+  await db.prepare(
+    `UPDATE justificatifs
+     SET entity_type = 'remboursement', entity_id = ?
+     WHERE entity_type = 'depot' AND entity_id = ?`,
+  ).run(remboursementId, depotId);
+
+  await db.prepare(
+    `UPDATE depots_justificatifs
+     SET statut = 'rattache', remboursement_id = ?, updated_at = ?
+     WHERE id = ? AND group_id = ?`,
+  ).run(remboursementId, currentTimestamp(), depotId, groupId);
+
+  return (await db.prepare('SELECT * FROM depots_justificatifs WHERE id = ?').get<Depot>(depotId))!;
+}

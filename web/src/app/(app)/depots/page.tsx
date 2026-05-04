@@ -1,11 +1,10 @@
 import Link from 'next/link';
-import { Inbox, Paperclip, Receipt, XCircle } from 'lucide-react';
+import { HandCoins, Inbox, Paperclip, Receipt, XCircle } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Input } from '@/components/ui/input';
 import { Alert } from '@/components/ui/alert';
 import { NativeSelect } from '@/components/ui/native-select';
-import { Section } from '@/components/shared/section';
-import { Field, DataField } from '@/components/shared/field';
+import { Field } from '@/components/shared/field';
 import { Amount } from '@/components/shared/amount';
 import { EmptyState } from '@/components/shared/empty-state';
 import { PendingButton } from '@/components/shared/pending-button';
@@ -15,9 +14,15 @@ import {
   listDepots,
   listCandidateEcritures,
   listAllAttachableEcritures,
+  listCandidateRemboursements,
+  listAllAttachableRemboursements,
   type DepotEnriched,
 } from '@/lib/services/depots';
-import { rejectDepot, attachDepotToEcriture } from '@/lib/actions/depots';
+import {
+  rejectDepot,
+  attachDepotToEcriture,
+  attachDepotToRemboursement,
+} from '@/lib/actions/depots';
 import { formatAmount } from '@/lib/format';
 
 interface SearchParams {
@@ -25,9 +30,6 @@ interface SearchParams {
   rejected?: string;
   attached?: string;
 }
-
-// `formatAmount` est encore utilisé pour les `<option>` (texte uniquement,
-// pas de JSX possible) — ailleurs, on préfère <Amount/>.
 
 export default async function DepotsPage({
   searchParams,
@@ -38,21 +40,28 @@ export default async function DepotsPage({
   requireAdmin(ctx.role);
   const depots = await listDepots({ groupId: ctx.groupId }, { statut: 'a_traiter' });
 
-  // Pour chaque dépôt, on précharge les candidats matching (heuristique
-  // ±10% / ±15j). N+1 acceptable pour le volume attendu.
-  const candidates = await Promise.all(
-    depots.map((d) =>
-      listCandidateEcritures(
-        { groupId: ctx.groupId },
-        { amount_cents: d.amount_cents, date_estimee: d.date_estimee },
+  // Préchargement : suggestions matching ±10 % / ±15 j par dépôt + listes
+  // élargies partagées (écritures + remboursements actifs du groupe).
+  const [candidates, allEcritures, rembCandidates, allRembs] = await Promise.all([
+    Promise.all(
+      depots.map((d) =>
+        listCandidateEcritures(
+          { groupId: ctx.groupId },
+          { amount_cents: d.amount_cents, date_estimee: d.date_estimee },
+        ),
       ),
     ),
-  );
-
-  // Liste élargie : 200 dernières écritures du groupe pour permettre une
-  // recherche profonde quand l'heuristique ne propose rien d'utile.
-  // Partagée entre tous les dépôts (un seul fetch).
-  const allEcritures = await listAllAttachableEcritures({ groupId: ctx.groupId });
+    listAllAttachableEcritures({ groupId: ctx.groupId }),
+    Promise.all(
+      depots.map((d) =>
+        listCandidateRemboursements(
+          { groupId: ctx.groupId },
+          { amount_cents: d.amount_cents, date_estimee: d.date_estimee },
+        ),
+      ),
+    ),
+    listAllAttachableRemboursements({ groupId: ctx.groupId }),
+  ]);
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -72,14 +81,12 @@ export default async function DepotsPage({
       )}
       {params.rejected && (
         <Alert variant="warning" className="mb-4">
-          Dépôt <code className="font-mono text-[12.5px] font-medium">{params.rejected}</code>{' '}
-          rejeté.
+          Dépôt <code className="font-mono text-[12.5px] font-medium">{params.rejected}</code> rejeté.
         </Alert>
       )}
       {params.attached && (
         <Alert variant="success" className="mb-4">
-          Dépôt <code className="font-mono text-[12.5px] font-medium">{params.attached}</code>{' '}
-          rattaché à une écriture.
+          Dépôt <code className="font-mono text-[12.5px] font-medium">{params.attached}</code> rattaché.
         </Alert>
       )}
 
@@ -90,13 +97,15 @@ export default async function DepotsPage({
           description="Tous les justificatifs déposés ont été traités. Profite-en pour respirer."
         />
       ) : (
-        <ul className="space-y-4">
+        <ul className="divide-y divide-border-soft rounded-lg border border-border-soft bg-bg-elevated overflow-hidden">
           {depots.map((d, idx) => (
-            <DepotCard
+            <DepotRow
               key={d.id}
               depot={d}
               candidates={candidates[idx]}
               allEcritures={allEcritures}
+              rembCandidates={rembCandidates[idx]}
+              allRembs={allRembs}
             />
           ))}
         </ul>
@@ -105,14 +114,18 @@ export default async function DepotsPage({
   );
 }
 
-function DepotCard({
+function DepotRow({
   depot,
   candidates,
   allEcritures,
+  rembCandidates,
+  allRembs,
 }: {
   depot: DepotEnriched;
   candidates: Awaited<ReturnType<typeof listCandidateEcritures>>;
   allEcritures: Awaited<ReturnType<typeof listAllAttachableEcritures>>;
+  rembCandidates: Awaited<ReturnType<typeof listCandidateRemboursements>>;
+  allRembs: Awaited<ReturnType<typeof listAllAttachableRemboursements>>;
 }) {
   const candidateIds = new Set(candidates.map((c) => c.id));
   const others = allEcritures.filter((e) => !candidateIds.has(e.id));
@@ -130,145 +143,228 @@ function DepotCard({
         : '';
     return `${c.date_ecriture} · ${formatAmount(c.amount_cents)} · ${desc}${unite}${justifMark}`;
   };
-  const justifLink = depot.justif_path ? (
-    <Link
-      href={`/api/justificatifs/${depot.justif_path}`}
-      target="_blank"
-      rel="noopener"
-      className="inline-flex items-center gap-1.5 text-brand hover:underline underline-offset-2"
-    >
-      <Paperclip size={12} strokeWidth={1.75} />
-      Voir le fichier
-    </Link>
-  ) : (
-    <span className="text-fg-subtle italic">manquant</span>
-  );
+
+  const rembCandidateIds = new Set(rembCandidates.map((r) => r.id));
+  const otherRembs = allRembs.filter((r) => !rembCandidateIds.has(r.id));
+  const rembLabel = (
+    r: Awaited<ReturnType<typeof listCandidateRemboursements>>[number],
+  ) => {
+    const date = r.date_depense ?? '?';
+    const unite = r.unite_code ? ` (${r.unite_code})` : '';
+    const justifMark =
+      r.existing_justifs_count > 0
+        ? ` · ${r.existing_justifs_count} justif${r.existing_justifs_count > 1 ? 's' : ''} déjà`
+        : '';
+    return `${date} · ${formatAmount(r.total_cents)} · ${r.demandeur}${unite}${justifMark}`;
+  };
+
+  const meta = [
+    depot.date_estimee,
+    depot.unite_code,
+    depot.category_name,
+    depot.submitter_name ?? depot.submitter_email,
+    depot.carte_label,
+  ].filter(Boolean) as string[];
 
   return (
-    <li>
-      <Section
-        title={depot.titre}
-        subtitle={depot.description ?? undefined}
-        action={
-          <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
-            <Inbox size={11} strokeWidth={2.25} />à traiter
+    <li className="px-4 py-3">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="font-medium text-[13.5px] text-fg flex-1 min-w-0 truncate">
+          {depot.titre}
+        </span>
+        {depot.amount_cents !== null && (
+          <span className="tabular-nums font-medium text-[13.5px] text-fg">
+            <Amount cents={depot.amount_cents} />
           </span>
-        }
-      >
-        <dl className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-3 text-[12.5px]">
-          <DataField
-            label="Déposé par"
-            value={depot.submitter_name ?? depot.submitter_email}
-          />
-          <DataField
-            label="Montant"
-            value={
-              depot.amount_cents !== null ? (
-                <span className="tabular-nums font-medium text-fg">
-                  <Amount cents={depot.amount_cents} />
-                </span>
-              ) : (
-                '—'
-              )
-            }
-          />
-          <DataField
-            label="Date estimée"
-            value={
-              <span className="tabular-nums">{depot.date_estimee ?? '—'}</span>
-            }
-          />
-          <DataField label="Unité" value={depot.unite_code ?? '—'} />
-          <DataField label="Catégorie" value={depot.category_name ?? '—'} />
-          <DataField label="Carte" value={depot.carte_label ?? '—'} />
-          <DataField
-            label="Déposé le"
-            value={
-              <span className="tabular-nums">{depot.created_at.slice(0, 10)}</span>
-            }
-          />
-          <DataField label="Justif" value={justifLink} />
-        </dl>
+        )}
+        <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10.5px] font-medium text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+          <Inbox size={10} strokeWidth={2.25} />
+          à traiter
+        </span>
+      </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-border-soft">
-          <details className="rounded-md border border-border-soft bg-bg-sunken/40 px-3 py-2.5 group">
-            <summary className="cursor-pointer text-[13px] font-medium text-fg list-none flex items-center gap-1.5">
-              <Receipt size={13} strokeWidth={2} className="text-brand" />
-              Rattacher à une écriture
-            </summary>
-            <form action={attachDepotToEcriture} className="mt-3 space-y-3">
-              <input type="hidden" name="depot_id" value={depot.id} />
-              <Field label="Écriture candidate" htmlFor={`ecriture-${depot.id}`} required>
-                <NativeSelect
-                  id={`ecriture-${depot.id}`}
-                  name="ecriture_id"
-                  required
-                  defaultValue=""
+      {(depot.description || meta.length > 0) && (
+        <div className="mt-0.5 text-[12px] text-fg-muted flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          {depot.description && <span className="italic">{depot.description}</span>}
+          {meta.map((m, i) => (
+            <span key={i} className="tabular-nums">
+              {i > 0 || depot.description ? '· ' : ''}
+              {m}
+            </span>
+          ))}
+          {depot.justif_path && (
+            <Link
+              href={`/api/justificatifs/${depot.justif_path}`}
+              target="_blank"
+              rel="noopener"
+              className="inline-flex items-center gap-1 text-brand hover:underline underline-offset-2"
+            >
+              · <Paperclip size={11} strokeWidth={1.75} /> fichier
+            </Link>
+          )}
+        </div>
+      )}
+
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px]">
+        <ActionDetails
+          label="Rattacher à une écriture"
+          icon={<Receipt size={12} strokeWidth={2} />}
+          tone="brand"
+        >
+          <form action={attachDepotToEcriture} className="space-y-3 mt-2">
+            <input type="hidden" name="depot_id" value={depot.id} />
+            <Field label="Écriture candidate" htmlFor={`ecriture-${depot.id}`} required>
+              <NativeSelect
+                id={`ecriture-${depot.id}`}
+                name="ecriture_id"
+                required
+                defaultValue=""
+              >
+                <option value="" disabled>
+                  — Choisir une écriture —
+                </option>
+                <optgroup
+                  label={
+                    candidates.length > 0
+                      ? `Suggestions (${candidates.length})`
+                      : 'Suggestions (aucune)'
+                  }
                 >
-                  <option value="" disabled>
-                    — Choisir une écriture —
-                  </option>
-                  <optgroup
-                    label={
-                      candidates.length > 0
-                        ? `Suggestions (${candidates.length})`
-                        : 'Suggestions (aucune)'
-                    }
-                  >
-                    {candidates.length === 0 && (
-                      <option disabled>(rien ne matche dans la tolérance)</option>
-                    )}
-                    {candidates.map((c) => (
+                  {candidates.length === 0 && (
+                    <option disabled>(rien ne matche dans la tolérance)</option>
+                  )}
+                  {candidates.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {ecritureLabel(c)}
+                    </option>
+                  ))}
+                </optgroup>
+                {others.length > 0 && (
+                  <optgroup label={`Toutes les écritures (${others.length} dernières)`}>
+                    {others.map((c) => (
                       <option key={c.id} value={c.id}>
                         {ecritureLabel(c)}
                       </option>
                     ))}
                   </optgroup>
-                  {others.length > 0 && (
-                    <optgroup label={`Toutes les écritures (${others.length} dernières)`}>
-                      {others.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {ecritureLabel(c)}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                </NativeSelect>
-              </Field>
-              <p className="text-[11.5px] text-fg-subtle">
-                Suggestions = ±10 % sur le montant, ±15 jours sur la date.
-                Sinon, choisis dans la liste élargie en dessous.
-              </p>
-              <div className="flex justify-end">
-                <PendingButton size="sm">Rattacher</PendingButton>
-              </div>
-            </form>
-          </details>
+                )}
+              </NativeSelect>
+            </Field>
+            <p className="text-[11px] text-fg-subtle">
+              Suggestions = ±10 % sur le montant, ±15 jours sur la date.
+            </p>
+            <div className="flex justify-end">
+              <PendingButton size="sm">Rattacher</PendingButton>
+            </div>
+          </form>
+        </ActionDetails>
 
-          <details className="rounded-md border border-border-soft bg-bg-sunken/40 px-3 py-2.5 group">
-            <summary className="cursor-pointer text-[13px] font-medium text-destructive list-none flex items-center gap-1.5">
-              <XCircle size={13} strokeWidth={2} />
-              Rejeter
-            </summary>
-            <form action={rejectDepot} className="mt-3 space-y-3">
-              <input type="hidden" name="id" value={depot.id} />
-              <Field label="Motif du rejet" htmlFor={`motif-${depot.id}`} required>
-                <Input
-                  id={`motif-${depot.id}`}
-                  name="motif"
-                  required
-                  placeholder="Ex. justif illisible, hors scope, doublon"
-                />
-              </Field>
-              <div className="flex justify-end">
-                <PendingButton variant="destructive" size="sm">
-                  Rejeter
-                </PendingButton>
-              </div>
-            </form>
-          </details>
-        </div>
-      </Section>
+        <ActionDetails
+          label="Rattacher à une demande"
+          icon={<HandCoins size={12} strokeWidth={2} />}
+          tone="brand"
+        >
+          <form action={attachDepotToRemboursement} className="space-y-3 mt-2">
+            <input type="hidden" name="depot_id" value={depot.id} />
+            <Field label="Demande de remboursement" htmlFor={`remb-${depot.id}`} required>
+              <NativeSelect
+                id={`remb-${depot.id}`}
+                name="remboursement_id"
+                required
+                defaultValue=""
+              >
+                <option value="" disabled>
+                  — Choisir une demande —
+                </option>
+                <optgroup
+                  label={
+                    rembCandidates.length > 0
+                      ? `Suggestions (${rembCandidates.length})`
+                      : 'Suggestions (aucune)'
+                  }
+                >
+                  {rembCandidates.length === 0 && (
+                    <option disabled>(rien ne matche dans la tolérance)</option>
+                  )}
+                  {rembCandidates.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {rembLabel(r)}
+                    </option>
+                  ))}
+                </optgroup>
+                {otherRembs.length > 0 && (
+                  <optgroup label={`Toutes les demandes actives (${otherRembs.length})`}>
+                    {otherRembs.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {rembLabel(r)}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </NativeSelect>
+            </Field>
+            <p className="text-[11px] text-fg-subtle">
+              Demandes encore actives (pas terminées ni refusées).
+              Suggestions = ±10 % sur le total, ±15 jours sur la date.
+            </p>
+            <div className="flex justify-end">
+              <PendingButton size="sm">Rattacher</PendingButton>
+            </div>
+          </form>
+        </ActionDetails>
+
+        <ActionDetails
+          label="Rejeter"
+          icon={<XCircle size={12} strokeWidth={2} />}
+          tone="destructive"
+        >
+          <form action={rejectDepot} className="space-y-3 mt-2">
+            <input type="hidden" name="id" value={depot.id} />
+            <Field label="Motif du rejet" htmlFor={`motif-${depot.id}`} required>
+              <Input
+                id={`motif-${depot.id}`}
+                name="motif"
+                required
+                placeholder="Ex. justif illisible, hors scope, doublon"
+              />
+            </Field>
+            <div className="flex justify-end">
+              <PendingButton variant="destructive" size="sm">
+                Rejeter
+              </PendingButton>
+            </div>
+          </form>
+        </ActionDetails>
+      </div>
     </li>
+  );
+}
+
+function ActionDetails({
+  label,
+  icon,
+  tone,
+  children,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  tone: 'brand' | 'destructive';
+  children: React.ReactNode;
+}) {
+  const summaryClass =
+    tone === 'destructive'
+      ? 'text-destructive hover:underline'
+      : 'text-brand hover:underline';
+  return (
+    <details className="group w-full">
+      <summary
+        className={`cursor-pointer list-none inline-flex items-center gap-1 font-medium underline-offset-2 ${summaryClass}`}
+      >
+        <span className="transition-transform group-open:rotate-90 inline-block">▸</span>
+        {icon}
+        {label}
+      </summary>
+      <div className="mt-2 pl-4 border-l border-border-soft">{children}</div>
+    </details>
   );
 }

@@ -7,6 +7,7 @@ import {
   createDepot as createDepotService,
   rejectDepot as rejectDepotService,
   attachDepotToEcriture as attachDepotToEcritureService,
+  attachDepotToRemboursement as attachDepotToRemboursementService,
 } from '../services/depots';
 import { parseAmount } from '../format';
 
@@ -113,6 +114,26 @@ export async function attachDepotToEcriture(formData: FormData): Promise<void> {
   }
   revalidatePath('/depots');
   revalidatePath(`/ecritures/${ecritureId}`);
+  redirect('/depots?attached=' + encodeURIComponent(depotId));
+}
+
+export async function attachDepotToRemboursement(formData: FormData): Promise<void> {
+  const ctx = await getCurrentContext();
+  if (!isAdminRole(ctx.role)) {
+    redirect('/depots?error=' + encodeURIComponent('Action réservée aux trésoriers / RG.'));
+  }
+  const depotId = formData.get('depot_id') as string | null;
+  const remboursementId = formData.get('remboursement_id') as string | null;
+  if (!depotId || !remboursementId) {
+    redirect('/depots?error=' + encodeURIComponent('Dépôt et remboursement requis.'));
+  }
+  try {
+    await attachDepotToRemboursementService({ groupId: ctx.groupId }, depotId, remboursementId);
+  } catch (err) {
+    redirect('/depots?error=' + encodeURIComponent(err instanceof Error ? err.message : String(err)));
+  }
+  revalidatePath('/depots');
+  revalidatePath(`/remboursements/${remboursementId}`);
   redirect('/depots?attached=' + encodeURIComponent(depotId));
 }
 

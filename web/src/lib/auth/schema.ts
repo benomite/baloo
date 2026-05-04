@@ -363,5 +363,19 @@ export async function ensureAuthSchema(): Promise<void> {
   await db.exec('CREATE INDEX IF NOT EXISTS idx_abandons_status ON abandons_frais(status)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_abandons_annee ON abandons_frais(annee_fiscale)');
 
+  // depots_justificatifs.remboursement_id : un dépôt peut désormais être
+  // rattaché soit à une écriture (existant) soit à une demande de
+  // remboursement. Colonne nullable, pas de CHECK SQL : la cohérence
+  // (exactement un des deux est rempli quand statut='rattache') est
+  // garantie côté code.
+  const depotCols = await db
+    .prepare("PRAGMA table_info(depots_justificatifs)")
+    .all<{ name: string }>();
+  if (depotCols.length > 0 && !depotCols.some((c) => c.name === 'remboursement_id')) {
+    await db.exec(
+      'ALTER TABLE depots_justificatifs ADD COLUMN remboursement_id TEXT REFERENCES remboursements(id)',
+    );
+  }
+
   ensured = true;
 }

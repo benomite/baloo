@@ -277,6 +277,7 @@ export async function ensureBusinessSchema(): Promise<void> {
       carte_id TEXT REFERENCES cartes(id),
       statut TEXT NOT NULL DEFAULT 'a_traiter',
       ecriture_id TEXT REFERENCES ecritures(id),
+      remboursement_id TEXT REFERENCES remboursements(id),
       motif_rejet TEXT,
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
       updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
