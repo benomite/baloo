@@ -247,8 +247,18 @@ export async function importComptawebCsv(
   }
 
   // Compteur local pour éviter les appels nextId() répétés (perf).
-  const existingIds = await db.prepare(`SELECT id FROM ecritures WHERE id LIKE ? ORDER BY id DESC LIMIT 1`).get<{ id: string }>(`ECR-%`);
-  let seqNum = existingIds ? parseInt(existingIds.id.split('-').pop()!, 10) : 0;
+  // Calcule le seqNum de départ via MAX(CAST AS INTEGER) sur le suffix.
+  // ORDER BY id DESC lex est buggué : "ECR-2026-99" est lex supérieur à
+  // "ECR-2026-1000" → on aurait pris seqNum=99, généré ECR-2026-100, et
+  // collision UNIQUE car ECR-2026-100 existait déjà.
+  // Filtre sur l'année courante : pas de mélange inter-années.
+  const maxRow = await db
+    .prepare(
+      `SELECT MAX(CAST(SUBSTR(id, 10) AS INTEGER)) as maxNum
+       FROM ecritures WHERE id LIKE ?`,
+    )
+    .get<{ maxNum: number | null }>(`ECR-${currentYear}-%`);
+  let seqNum = maxRow?.maxNum ?? 0;
   const currentYear = new Date().getFullYear();
   function nextEcrId(): string {
     seqNum++;
