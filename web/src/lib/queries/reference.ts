@@ -4,6 +4,7 @@ import {
   listModesPaiement as listModesPaiementService,
   listUnites as listUnitesService,
   listActivites as listActivitesService,
+  getTopCategoryIdsForGroup as getTopCategoryIdsForGroupService,
 } from '../services/reference';
 import { listCartes as listCartesService } from '../services/cartes';
 import type { Category, Unite, ModePaiement, Activite, Carte } from '../types';
@@ -24,6 +25,11 @@ export async function listActivites(): Promise<Activite[]> {
 export async function listCartes(): Promise<Carte[]> {
   const { groupId } = await getCurrentContext();
   return listCartesService({ groupId });
+}
+
+export async function getTopCategoryIds(limit = 5): Promise<string[]> {
+  const { groupId } = await getCurrentContext();
+  return getTopCategoryIdsForGroupService({ groupId }, limit);
 }
 
 export type { Category, ModePaiement };

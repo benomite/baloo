@@ -9,8 +9,9 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { Alert } from '@/components/ui/alert';
 import { getCurrentContext } from '@/lib/context';
 import { requireCanSubmit } from '@/lib/auth/access';
-import { listUnites, listCategories, listCartes } from '@/lib/queries/reference';
+import { listUnites, listCategories, listCartes, getTopCategoryIds } from '@/lib/queries/reference';
 import { createDepot } from '@/lib/actions/depots';
+import { CategoryPicker } from '@/components/shared/category-picker';
 
 interface SearchParams {
   error?: string;
@@ -22,10 +23,11 @@ export default async function DepotPage({ searchParams }: { searchParams: Promis
   requireCanSubmit(ctx.role);
 
   const params = await searchParams;
-  const [unites, categories, cartes] = await Promise.all([
+  const [unites, categories, cartes, topCategoryIds] = await Promise.all([
     listUnites(),
     listCategories(),
     listCartes(),
+    getTopCategoryIds(5),
   ]);
 
   const today = new Date().toISOString().split('T')[0];
@@ -100,14 +102,12 @@ export default async function DepotPage({ searchParams }: { searchParams: Promis
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Catégorie" htmlFor="category_id">
-              <NativeSelect id="category_id" name="category_id">
-                <option value="">— Aucune —</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </NativeSelect>
+              <CategoryPicker
+                id="category_id"
+                name="category_id"
+                categories={categories}
+                topIds={topCategoryIds}
+              />
             </Field>
             <Field label="Unité" htmlFor="unite_id">
               <NativeSelect id="unite_id" name="unite_id" defaultValue={defaultUnite}>

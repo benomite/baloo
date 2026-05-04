@@ -14,7 +14,7 @@ import {
   listJustificatifsForEcriture,
   type EcritureJustifsBundle,
 } from '@/lib/queries/justificatifs';
-import { listCategories, listUnites, listModesPaiement, listActivites, listCartes } from '@/lib/queries/reference';
+import { listCategories, listUnites, listModesPaiement, listActivites, listCartes, getTopCategoryIds } from '@/lib/queries/reference';
 import { updateEcriture, updateEcritureStatus } from '@/lib/actions/ecritures';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
 import { attachDepotFromEcriture } from '@/lib/actions/depots';
@@ -52,6 +52,7 @@ export default async function EcritureDetailPage({
     ecriture,
     justifsBundle,
     categories,
+    topCategoryIds,
     unites,
     modesPaiement,
     activites,
@@ -62,6 +63,7 @@ export default async function EcritureDetailPage({
     getEcriture(id),
     listJustificatifsForEcriture(id),
     listCategories(),
+    getTopCategoryIds(5),
     listUnites(),
     listModesPaiement(),
     listActivites(),
@@ -150,6 +152,7 @@ export default async function EcritureDetailPage({
         <EcritureForm
           action={updateAction}
           categories={categories}
+          topCategoryIds={topCategoryIds}
           unites={unites}
           modesPaiement={modesPaiement}
           activites={activites}

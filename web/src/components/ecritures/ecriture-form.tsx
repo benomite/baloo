@@ -9,11 +9,13 @@ import { Field } from '@/components/shared/field';
 import { Section } from '@/components/shared/section';
 import { NativeSelect } from '@/components/ui/native-select';
 import { PendingButton } from '@/components/shared/pending-button';
+import { CategoryPicker } from '@/components/shared/category-picker';
 import type { Category, Unite, ModePaiement, Activite, Carte, Ecriture } from '@/lib/types';
 
 export function EcritureForm({
   action,
   categories,
+  topCategoryIds,
   unites,
   modesPaiement,
   activites,
@@ -22,6 +24,7 @@ export function EcritureForm({
 }: {
   action: (formData: FormData) => void;
   categories: Category[];
+  topCategoryIds: string[];
   unites: Unite[];
   modesPaiement: ModePaiement[];
   activites: Activite[];
@@ -120,19 +123,14 @@ export function EcritureForm({
             </NativeSelect>
           </Field>
           <Field label="Catégorie" htmlFor="category_id">
-            <NativeSelect
+            <CategoryPicker
               id="category_id"
               name="category_id"
+              categories={categories}
+              topIds={topCategoryIds}
               defaultValue={ecriture?.category_id ?? ''}
               disabled={locked}
-            >
-              <option value="">— Aucune —</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </NativeSelect>
+            />
           </Field>
           <Field label="Activité" htmlFor="activite_id">
             <NativeSelect

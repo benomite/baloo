@@ -1,9 +1,24 @@
 import { PageHeader } from '@/components/layout/page-header';
 import { EcritureForm } from '@/components/ecritures/ecriture-form';
 import { createEcriture } from '@/lib/actions/ecritures';
-import { listCategories, listUnites, listModesPaiement, listActivites, listCartes } from '@/lib/queries/reference';
+import {
+  listCategories,
+  listUnites,
+  listModesPaiement,
+  listActivites,
+  listCartes,
+  getTopCategoryIds,
+} from '@/lib/queries/reference';
 
 export default async function NouvelleEcriturePage() {
+  const [categories, topCategoryIds, unites, modesPaiement, activites, cartes] = await Promise.all([
+    listCategories(),
+    getTopCategoryIds(5),
+    listUnites(),
+    listModesPaiement(),
+    listActivites(),
+    listCartes(),
+  ]);
   return (
     <div className="max-w-3xl mx-auto">
       <PageHeader
@@ -13,11 +28,12 @@ export default async function NouvelleEcriturePage() {
       />
       <EcritureForm
         action={createEcriture}
-        categories={await listCategories()}
-        unites={await listUnites()}
-        modesPaiement={await listModesPaiement()}
-        activites={await listActivites()}
-        cartes={await listCartes()}
+        categories={categories}
+        topCategoryIds={topCategoryIds}
+        unites={unites}
+        modesPaiement={modesPaiement}
+        activites={activites}
+        cartes={cartes}
       />
     </div>
   );
