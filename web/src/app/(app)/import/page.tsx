@@ -25,6 +25,7 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { Amount } from '@/components/shared/amount';
 import { PendingButton } from '@/components/shared/pending-button';
 import { SyncReferentielsButton } from '@/components/config/sync-referentiels-button';
+import { DedupEcrituresButton } from '@/components/admin/dedup-ecritures-button';
 import { getDb } from '@/lib/db';
 import { getCurrentContext } from '@/lib/context';
 import { requireAdmin } from '@/lib/auth/access';
@@ -202,6 +203,7 @@ export default async function ImportPage({
         subtitle="50 derniers imports CSV. Sert à tracer ce qui a été fait à l onboarding ou en réimport ponctuel."
         className="mb-6"
         bodyClassName={imports.length === 0 ? undefined : 'px-0 pb-0'}
+        action={<DedupEcrituresButton />}
       >
         {imports.length === 0 ? (
           <EmptyState

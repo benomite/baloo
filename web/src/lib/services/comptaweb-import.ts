@@ -287,14 +287,29 @@ export async function importComptawebCsv(
     // vers dépôts/remb sont préservés. Les écritures saisie_comptaweb
     // qui ne correspondent à aucune ligne du nouveau CSV ne sont PAS
     // touchées (le CSV n'est pas la vérité absolue, c'est un complément).
-    const findExisting = txDb.prepare(
+    // Matching en cascade pour rattraper les écritures pré-existantes
+    // qui peuvent avoir des champs partiellement remplis (ancien import
+    // sans description, ou avec piece différente). Préférence du plus
+    // précis vers le plus tolérant.
+    const findExact = txDb.prepare(
       `SELECT id FROM ecritures
-       WHERE group_id = ?
-         AND status = 'saisie_comptaweb'
-         AND date_ecriture = ?
-         AND amount_cents = ?
-         AND type = ?
+       WHERE group_id = ? AND status = 'saisie_comptaweb'
+         AND date_ecriture = ? AND amount_cents = ? AND type = ?
          AND COALESCE(numero_piece, '') = COALESCE(?, '')
+         AND COALESCE(description, '') = COALESCE(?, '')
+       LIMIT 1`,
+    );
+    const findByPiece = txDb.prepare(
+      `SELECT id FROM ecritures
+       WHERE group_id = ? AND status = 'saisie_comptaweb'
+         AND date_ecriture = ? AND amount_cents = ? AND type = ?
+         AND COALESCE(numero_piece, '') = COALESCE(?, '')
+       LIMIT 1`,
+    );
+    const findLoose = txDb.prepare(
+      `SELECT id FROM ecritures
+       WHERE group_id = ? AND status = 'saisie_comptaweb'
+         AND date_ecriture = ? AND amount_cents = ? AND type = ?
        LIMIT 1`,
     );
     const updateExisting = txDb.prepare(
@@ -324,13 +339,16 @@ export async function importComptawebCsv(
       piece: string | null;
       notes: string;
     }) {
-      const existing = await findExisting.get<{ id: string }>(
-        groupId,
-        args.date,
-        args.amount,
-        args.type,
-        args.piece,
-      );
+      const existing =
+        (await findExact.get<{ id: string }>(
+          groupId, args.date, args.amount, args.type, args.piece, args.description,
+        )) ||
+        (await findByPiece.get<{ id: string }>(
+          groupId, args.date, args.amount, args.type, args.piece,
+        )) ||
+        (await findLoose.get<{ id: string }>(
+          groupId, args.date, args.amount, args.type,
+        ));
       if (existing) {
         await updateExisting.run(
           args.uniteId,

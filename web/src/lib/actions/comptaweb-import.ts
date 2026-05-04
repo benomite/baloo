@@ -4,6 +4,11 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { getCurrentContext } from '../context';
 import { importComptawebCsv } from '../services/comptaweb-import';
+import {
+  findCsvDuplicates as findCsvDuplicatesService,
+  deleteCsvDuplicates as deleteCsvDuplicatesService,
+  type DedupReport,
+} from '../services/dedup-ecritures';
 import { logError } from '../log';
 
 const ADMIN_ROLES = ['tresorier', 'RG'];
@@ -59,4 +64,51 @@ export async function uploadComptawebCsv(formData: FormData): Promise<void> {
     '/import?imported=' +
       encodeURIComponent(`${result.ecritures_creees ?? 0}|${result.fichier ?? filename}`),
   );
+}
+
+// Détecte les doublons d'écritures saisie_comptaweb dans le groupe
+// (générés par d'anciens imports CSV qui ne matchaient pas correctement
+// les enregistrements existants). Dry-run par défaut : ne supprime rien,
+// retourne juste le rapport.
+export async function detectEcritureDuplicates(): Promise<DedupReport & { ok: boolean; error?: string }> {
+  try {
+    const ctx = await getCurrentContext();
+    if (!ADMIN_ROLES.includes(ctx.role)) {
+      return { ok: false, error: 'Action réservée aux trésoriers / RG.', groups: [], totalDuplicates: 0, totalDeletable: 0, totalKeptDespite: 0 };
+    }
+    const report = await findCsvDuplicatesService({ groupId: ctx.groupId });
+    return { ok: true, ...report };
+  } catch (err) {
+    logError('dedup-ecritures', 'Détection doublons échouée', err);
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+      groups: [], totalDuplicates: 0, totalDeletable: 0, totalKeptDespite: 0,
+    };
+  }
+}
+
+// Supprime les doublons identifiés. Re-vérifie l'absence de liens
+// externes au moment du DELETE (race condition). Le user a explicitement
+// validé cette opération qui est une exception ciblée à la règle
+// "JAMAIS de DELETE" (cf. CLAUDE.md) : on ne supprime QUE des écritures
+// générées automatiquement par un import et qui n'ont reçu aucune
+// donnée enrichie de l'utilisateur.
+export async function deleteEcritureDuplicates(
+  ids: string[],
+): Promise<{ ok: boolean; deleted?: number; skipped?: number; error?: string }> {
+  try {
+    const ctx = await getCurrentContext();
+    if (!ADMIN_ROLES.includes(ctx.role)) {
+      return { ok: false, error: 'Action réservée aux trésoriers / RG.' };
+    }
+    const result = await deleteCsvDuplicatesService({ groupId: ctx.groupId }, ids);
+    revalidatePath('/import');
+    revalidatePath('/ecritures');
+    revalidatePath('/synthese');
+    return { ok: true, ...result };
+  } catch (err) {
+    logError('dedup-ecritures', 'Suppression doublons échouée', err);
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
