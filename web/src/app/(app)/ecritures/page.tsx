@@ -4,6 +4,8 @@ import { PageHeader } from '@/components/layout/page-header';
 import { TabLink } from '@/components/shared/tab-link';
 import { listEcritures, getEcriture } from '@/lib/queries/ecritures';
 import { listCategories, listUnites, listModesPaiement, listActivites, listCartes, getTopCategoryIds } from '@/lib/queries/reference';
+import { listJustificatifsForEcriture } from '@/lib/queries/justificatifs';
+import { listDepots } from '@/lib/services/depots';
 import { EcritureFilters } from '@/components/ecritures/ecriture-filters';
 import { ScanDraftsButton } from '@/components/ecritures/scan-drafts-button';
 import { EcrituresTable } from '@/components/ecritures/ecritures-table';
@@ -39,6 +41,8 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     cartes,
     topCategoryIds,
     detailEcriture,
+    detailJustifs,
+    detailPendingDepots,
   ] = await Promise.all([
     listEcritures(filters),
     listCategories(),
@@ -48,6 +52,12 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     listCartes(),
     getTopCategoryIds(5),
     detailId ? getEcriture(detailId) : Promise.resolve(undefined),
+    detailId
+      ? listJustificatifsForEcriture(detailId)
+      : Promise.resolve(null),
+    detailId
+      ? listDepots({ groupId: ctx.groupId }, { statut: 'a_traiter' })
+      : Promise.resolve(null),
   ]);
 
   const presetQS = (preset: 'all' | 'incomplete' | 'from_bank') => {
@@ -92,9 +102,11 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
         cartes={cartes}
       />
 
-      {detailEcriture && (
+      {detailEcriture && detailJustifs && detailPendingDepots && (
         <EcritureDrawer
           ecriture={detailEcriture}
+          justifsBundle={detailJustifs}
+          pendingDepots={detailPendingDepots}
           categories={categories}
           topCategoryIds={topCategoryIds}
           unites={unites}
