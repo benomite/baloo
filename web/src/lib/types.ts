@@ -125,6 +125,7 @@ export interface Category {
   name: string;
   type: 'depense' | 'recette' | 'les_deux';
   comptaweb_nature: string | null;
+  comptaweb_id: number | null;
 }
 
 export interface Unite {
@@ -132,16 +133,19 @@ export interface Unite {
   code: string;
   name: string;
   couleur: string | null;
+  comptaweb_id: number | null;
 }
 
 export interface ModePaiement {
   id: string;
   name: string;
+  comptaweb_id: number | null;
 }
 
 export interface Activite {
   id: string;
   name: string;
+  comptaweb_id: number | null;
 }
 
 export interface Justificatif {

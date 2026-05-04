@@ -10,6 +10,7 @@ import { Section } from '@/components/shared/section';
 import { NativeSelect } from '@/components/ui/native-select';
 import { PendingButton } from '@/components/shared/pending-button';
 import { CategoryPicker } from '@/components/shared/category-picker';
+import { keepSelectable, isUnmapped } from '@/lib/selectable';
 import type { Category, Unite, ModePaiement, Activite, Carte, Ecriture } from '@/lib/types';
 
 export function EcritureForm({
@@ -35,6 +36,17 @@ export function EcritureForm({
     ? `${Math.floor(ecriture.amount_cents / 100)},${String(ecriture.amount_cents % 100).padStart(2, '0')}`
     : '';
   const locked = ecriture?.status === 'saisie_comptaweb';
+
+  // Filtrage saisie : on ne propose que les référentiels mappés Comptaweb,
+  // sauf la valeur courante orpheline qu'on conserve pour ne pas la
+  // perdre à l'édition. Le suffixe "(non sync)" alerte le trésorier.
+  const selectableCategories = keepSelectable(categories, ecriture?.category_id);
+  const selectableUnites = keepSelectable(unites, ecriture?.unite_id);
+  const selectableModes = keepSelectable(modesPaiement, ecriture?.mode_paiement_id);
+  const selectableActivites = keepSelectable(activites, ecriture?.activite_id);
+  const selectableCartes = keepSelectable(cartes, ecriture?.carte_id);
+  const decorate = (item: { name: string; comptaweb_id: number | null }): string =>
+    item.comptaweb_id === null ? `${item.name} (non sync)` : item.name;
 
   return (
     <form action={action} className="space-y-6">
@@ -115,9 +127,9 @@ export function EcritureForm({
               disabled={locked}
             >
               <option value="">— Aucune —</option>
-              {unites.map((u) => (
+              {selectableUnites.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {u.code} — {u.name}
+                  {u.code} — {u.name}{isUnmapped(u) ? ' (non sync)' : ''}
                 </option>
               ))}
             </NativeSelect>
@@ -126,7 +138,11 @@ export function EcritureForm({
             <CategoryPicker
               id="category_id"
               name="category_id"
-              categories={categories}
+              categories={selectableCategories.map((c) => ({
+                id: c.id,
+                name: c.name,
+                unmapped: isUnmapped(c),
+              }))}
               topIds={topCategoryIds}
               defaultValue={ecriture?.category_id ?? ''}
               disabled={locked}
@@ -140,9 +156,9 @@ export function EcritureForm({
               disabled={locked}
             >
               <option value="">— Aucune —</option>
-              {activites.map((a) => (
+              {selectableActivites.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.name}
+                  {decorate(a)}
                 </option>
               ))}
             </NativeSelect>
@@ -155,9 +171,9 @@ export function EcritureForm({
               disabled={locked}
             >
               <option value="">— Aucun —</option>
-              {modesPaiement.map((m) => (
+              {selectableModes.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.name}
+                  {decorate(m)}
                 </option>
               ))}
             </NativeSelect>
@@ -175,10 +191,11 @@ export function EcritureForm({
             disabled={locked}
           >
             <option value="">— Aucune —</option>
-            {cartes.map((c) => (
+            {selectableCartes.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.type === 'procurement' ? 'Procurement' : 'CB'} — {c.porteur}
                 {c.code_externe ? ` (${c.code_externe})` : ''}
+                {isUnmapped(c) ? ' (non sync)' : ''}
               </option>
             ))}
           </NativeSelect>

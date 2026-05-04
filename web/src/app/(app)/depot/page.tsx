@@ -13,6 +13,7 @@ import { listUnites, listCategories, listCartes, getTopCategoryIds } from '@/lib
 import { createDepot } from '@/lib/actions/depots';
 import { CategoryPicker } from '@/components/shared/category-picker';
 import { JustifCapture } from '@/components/shared/justif-capture';
+import { keepSelectable, isUnmapped } from '@/lib/selectable';
 
 interface SearchParams {
   error?: string;
@@ -24,12 +25,16 @@ export default async function DepotPage({ searchParams }: { searchParams: Promis
   requireCanSubmit(ctx.role);
 
   const params = await searchParams;
-  const [unites, categories, cartes, topCategoryIds] = await Promise.all([
+  const [unitesAll, categoriesAll, cartesAll, topCategoryIds] = await Promise.all([
     listUnites(),
     listCategories(),
     listCartes(),
     getTopCategoryIds(5),
   ]);
+  // Pas de valeur courante (création), on filtre simplement les non-mappés.
+  const unites = keepSelectable(unitesAll, null);
+  const categories = keepSelectable(categoriesAll, null);
+  const cartes = keepSelectable(cartesAll, null);
 
   const today = new Date().toISOString().split('T')[0];
   const defaultUnite = ctx.scopeUniteId ?? '';
@@ -99,7 +104,11 @@ export default async function DepotPage({ searchParams }: { searchParams: Promis
               <CategoryPicker
                 id="category_id"
                 name="category_id"
-                categories={categories}
+                categories={categories.map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                  unmapped: isUnmapped(c),
+                }))}
                 topIds={topCategoryIds}
               />
             </Field>

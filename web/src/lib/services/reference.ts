@@ -10,13 +10,13 @@ export interface ReferenceContext {
 
 export async function listCategories(): Promise<Category[]> {
   return await getDb()
-    .prepare('SELECT id, name, type, comptaweb_nature FROM categories ORDER BY name')
+    .prepare('SELECT id, name, type, comptaweb_nature, comptaweb_id FROM categories ORDER BY name')
     .all<Category>();
 }
 
 export async function listModesPaiement(): Promise<ModePaiement[]> {
   return await getDb()
-    .prepare('SELECT id, name FROM modes_paiement ORDER BY name')
+    .prepare('SELECT id, name, comptaweb_id FROM modes_paiement ORDER BY name')
     .all<ModePaiement>();
 }
 
@@ -24,13 +24,13 @@ export async function listModesPaiement(): Promise<ModePaiement[]> {
 
 export async function listUnites({ groupId }: ReferenceContext): Promise<Unite[]> {
   return await getDb()
-    .prepare('SELECT id, code, name, couleur FROM unites WHERE group_id = ? ORDER BY code')
+    .prepare('SELECT id, code, name, couleur, comptaweb_id FROM unites WHERE group_id = ? ORDER BY code')
     .all<Unite>(groupId);
 }
 
 export async function listActivites({ groupId }: ReferenceContext): Promise<Activite[]> {
   return await getDb()
-    .prepare('SELECT id, name FROM activites WHERE group_id = ? ORDER BY name')
+    .prepare('SELECT id, name, comptaweb_id FROM activites WHERE group_id = ? ORDER BY name')
     .all<Activite>(groupId);
 }
 

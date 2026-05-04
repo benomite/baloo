@@ -16,6 +16,13 @@ import { NativeSelect } from '@/components/ui/native-select';
 export interface CategoryOption {
   id: string;
   name: string;
+  /** True si l'item n'a pas de comptaweb_id (héritage local pur).
+   *  Affiché avec un suffixe "(non sync)" pour informer l'utilisateur. */
+  unmapped?: boolean;
+}
+
+function decorate(c: CategoryOption): string {
+  return c.unmapped ? `${c.name} (non sync)` : c.name;
 }
 
 export function CategoryPicker({
@@ -58,7 +65,7 @@ export function CategoryPicker({
         {allowEmpty && <option value="">— {emptyLabel} —</option>}
         {categories.map((c) => (
           <option key={c.id} value={c.id}>
-            {c.name}
+            {decorate(c)}
           </option>
         ))}
       </NativeSelect>
@@ -90,12 +97,12 @@ export function CategoryPicker({
             disabled={disabled}
             onClick={() => setValue(c.id)}
           >
-            {c.name}
+            {decorate(c)}
           </Chip>
         ))}
         {selectedOther && (
           <Chip active disabled={disabled} onClick={() => setValue('')}>
-            {selectedOther.name} ✕
+            {decorate(selectedOther)} ✕
           </Chip>
         )}
       </div>
