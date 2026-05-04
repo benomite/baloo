@@ -408,39 +408,24 @@ export async function ensureAuthSchema(): Promise<void> {
   }
   await db.exec('DROP TABLE IF EXISTS unites_terrain');
 
-  // Backfill : pour chaque unité, recalcule la branche SGDF + corrige la
-  // couleur si elle correspond à un ancien hex (avant correction de la
-  // charte) ou si elle est NULL. Idempotent. Tourne 1× par cold start.
+  // Backfill : pour chaque unité, recalcule la catégorie SGDF + force
+  // la couleur officielle de la charte. Idempotent : ne UPDATE que si
+  // les valeurs stockées diffèrent. Rattrape automatiquement :
+  //   - les anciennes valeurs erronées de phase 1/1bis (branche='AJ'
+  //     ou 'AD' ou 'IM' qui n'existent plus côté code)
+  //   - les couleurs personnalisées en hex qui ne matchent pas la charte
+  //   - les unités créées avant l ajout de la colonne branche
+  // Tourne 1× par cold start.
   const allUnites = await db
     .prepare("SELECT id, name, couleur, branche FROM unites")
     .all<{ id: string; name: string; couleur: string | null; branche: string | null }>();
-  // Anciennes couleurs erronées qu'on doit écraser même si non-NULL.
-  const STALE_COLORS = new Set([
-    '#E8485F', // ancien Farfadets (rose)
-    '#7D1C2F', // ancien PC (bordeaux)
-    '#9B4A97', // ancien Impeesas (violet seul)
-    '#4A4A4A', // ancien Groupe (gris foncé)
-    '#00934D', // ancien Compagnons
-  ]);
   for (const u of allUnites) {
     const spec = inferBrancheSGDF(u.name);
     if (!spec) continue;
-    const needsBranche = u.branche !== spec.code;
-    const needsCouleur = !u.couleur || STALE_COLORS.has(u.couleur);
-    if (!needsBranche && !needsCouleur) continue;
-    if (needsBranche && needsCouleur) {
-      await db
-        .prepare('UPDATE unites SET branche = ?, couleur = ? WHERE id = ?')
-        .run(spec.code, spec.couleur, u.id);
-    } else if (needsBranche) {
-      await db
-        .prepare('UPDATE unites SET branche = ? WHERE id = ?')
-        .run(spec.code, u.id);
-    } else {
-      await db
-        .prepare('UPDATE unites SET couleur = ? WHERE id = ?')
-        .run(spec.couleur, u.id);
-    }
+    if (u.branche === spec.code && u.couleur === spec.couleur) continue;
+    await db
+      .prepare('UPDATE unites SET branche = ?, couleur = ? WHERE id = ?')
+      .run(spec.code, spec.couleur, u.id);
   }
 
   ensured = true;
