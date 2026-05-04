@@ -1086,4 +1086,66 @@ Puis `await trace('myFn', maFonction())`. L'erreur apparaît dans `/admin/errors
 
 ---
 
+## ADR-028 — Capture justif type "scan" : niveaux 1 + 2 livrés, niveau 3 (OCR + pré-remplissage) reporté
+
+**Date** : 2026-05-04
+**Statut** : niveaux 1 + 2 acceptés et livrés ; niveau 3 reporté
+
+**Contexte** : la capture de justif via `<input type="file" capture="environment">` natif fonctionne mais produit des photos lourdes, mal cadrées, peu lisibles. Adobe Scan a fixé l'attente UX : détection automatique du document + crop perspective + filtre noir/blanc. Faut-il imiter, jusqu'où ?
+
+**Décision** : implémenter en 3 niveaux progressifs, ne livrer que les 2 premiers maintenant.
+
+### Niveau 1 — toujours actif (composant `JustifCapture`)
+- 2 boutons explicites "Prendre une photo" / "Choisir un fichier"
+- Preview immédiat
+- 3 filtres canvas 2D : Couleur (passthrough), Document (contraste +20 %, sat -15 %), Noir & blanc (grayscale + contraste 2.1×)
+- Resize max 2000 px sur le grand côté + JPEG q=0.85 → upload 5-10× plus léger
+- PDF passe en pass-through sans traitement
+
+Aucune dépendance externe ajoutée. Aucun coût bundle. Marche partout.
+
+### Niveau 2 — à la demande
+- Bouton "Détecter le document" dans la preview
+- Charge OpenCV.js (~9 Mo) depuis le CDN `docs.opencv.org/4.7.0/opencv.js` + jscanify (lazy import via `jscanify/client`)
+- Détection auto des 4 coins du papier (Canny + Otsu + findContours)
+- Mode crop : overlay SVG avec poignées draggables pour ajuster manuellement
+- "Appliquer" → `cv.warpPerspective` → image rectifiée, traverse ensuite le pipeline filtre niveau 1
+- Fallback si la détection échoue : 4 coins par défaut (10/90 %) avec invite à les ajuster
+
+**Choix CDN externe** plutôt que self-host d'OpenCV.js : éviter de stocker 9 Mo de binaire dans `/public` (pollue le repo, ralentit les builds). Compromis assumé : dépendance d'un service externe, mais `docs.opencv.org` est l'endpoint officiel et stable depuis des années. Si problème de fiabilité, fallback simple : copier le fichier dans `/public/opencv/opencv.js` et mettre à jour `OPENCV_CDN` dans `lib/scanify.ts`.
+
+### Niveau 3 — REPORTÉ : OCR + pré-remplissage automatique du formulaire de dépôt
+
+**Vision** : après la capture (et idéalement le crop), Baloo lit le justif et pré-remplit `titre`, `amount_cents`, `date_estimee`, suggère `category_id`, et propose `unite_id` quand pertinent. L'utilisateur valide / corrige.
+
+**Options techniques envisagées** :
+
+| Approche | Lib / API | Coût | Qualité OCR | Latence | Pré-remplissage intelligent |
+|---|---|---|---|---|---|
+| Tesseract.js client | `tesseract.js` (~3 Mo + langs) | gratuit | moyenne (tickets imprimés OK, manuscrits non) | 2-10 s sur mobile | non, juste OCR brut → faut parser nous-mêmes |
+| Anthropic vision serveur | `claude-haiku-4-5` multimodal | ~0.5-2 ¢ / image | excellente, multilingue, comprend le contexte | 1-3 s | oui directement (prompt structured output → champs prêts) |
+| Mistral Pixtral / OCR | API Mistral | ~0.1-0.5 ¢ / image | bonne | 1-2 s | partiel (OCR + parsing à faire) |
+| Google Vision API | Cloud Vision OCR | ~0.15 ¢ / image | excellente | 0.5-1 s | non, juste OCR + entity extraction limité |
+
+**Préférence à explorer** : **Anthropic vision côté serveur** (route API Next dédiée) avec un prompt qui demande directement les champs structurés (montant TTC, date, vendeur, catégorie suggérée parmi la liste du groupe). Avantages : qualité top, pré-remplissage en un seul aller-retour, cohérent avec la stack actuelle si on intègre l'API Anthropic. Coût ~0.5-2 ¢/justif acceptable au volume groupe SGDF (~100-200 justifs/an = max 4 €/an).
+
+**Pourquoi reporté** :
+- Coût opérationnel récurrent (même faible) → besoin d'un budget assumé et d'une variable d'env supplémentaire (`ANTHROPIC_API_KEY`)
+- Complexité prompt + validation des champs extraits (le LLM peut halluciner un montant, faut UI de relecture obligatoire)
+- Intérêt à valider d'abord en usage réel que le scan niveau 1+2 est utilisé activement avant d'ajouter cette couche
+- Gain UX réel mais marginal vs coût d'implémentation
+
+**À reprendre quand** : (a) le scan niveau 1+2 est utilisé sur > 50 % des dépôts en prod, et (b) l'utilisateur identifie le pré-remplissage manuel comme friction réelle (pas juste hypothétique).
+
+### Conséquences
+
+- Niveau 1 + 2 livrés sur `/depot`. Composant `JustifCapture` réutilisable ailleurs si besoin (justifs liés à des écritures, RIB des remboursements, etc.).
+- Dépendance npm `jscanify@1.4.2` ajoutée. ~30 Mo unpacked (OpenCV.js inclus dans le package, mais on charge OpenCV via CDN, pas depuis node_modules). Bundle Next 16 ne pèse que jscanify.js (~10 KB), chargé en lazy chunk.
+- L'utilisateur paye un coût initial de ~9 Mo + 3-5 s de chargement uniquement quand il clique "Détecter le document" — jamais sur la prise de photo standard.
+- Si OpenCV CDN tombe : niveau 1 reste fonctionnel, le bouton "Détecter" affiche une erreur claire.
+
+**Liens** : commits `eb586b5` (niveau 1), `cb91a1c` (niveau 2). Code : `web/src/components/shared/justif-capture.tsx`, `web/src/lib/scanify.ts`, `web/src/types/jscanify.d.ts`.
+
+---
+
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*
