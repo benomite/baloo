@@ -17,7 +17,7 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { Field } from '@/components/shared/field';
 import { getCurrentContext } from '@/lib/context';
 import { requireAdmin } from '@/lib/auth/access';
-import { listUnites } from '@/lib/queries/reference';
+import { listSelectableUnites } from '@/lib/queries/reference';
 import {
   listActiveUsers,
   listInactiveUsers,
@@ -72,7 +72,7 @@ export default async function AdminInvitationsPage({
   requireAdmin(ctx.role);
 
   const [unites, pending, active, inactive] = await Promise.all([
-    listUnites(),
+    listSelectableUnites(),
     listPendingInvitations({ groupId: ctx.groupId }),
     listActiveUsers({ groupId: ctx.groupId }),
     listInactiveUsers({ groupId: ctx.groupId }),

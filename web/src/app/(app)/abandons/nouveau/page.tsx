@@ -9,7 +9,7 @@ import { FileMultiUploader } from '@/components/ui/file-multi-uploader';
 import { PendingButton } from '@/components/shared/pending-button';
 import { getCurrentContext } from '@/lib/context';
 import { requireAdmin } from '@/lib/auth/access';
-import { listUnites } from '@/lib/queries/reference';
+import { listSelectableUnites } from '@/lib/queries/reference';
 import { createAbandonForOther } from '@/lib/actions/abandons';
 
 interface SearchParams {
@@ -25,7 +25,7 @@ export default async function NouvelAbandonAdminPage({
   requireAdmin(ctx.role);
 
   const params = await searchParams;
-  const unites = await listUnites();
+  const unites = await listSelectableUnites();
   const today = new Date().toISOString().split('T')[0];
 
   return (

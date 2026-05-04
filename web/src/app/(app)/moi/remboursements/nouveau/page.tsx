@@ -3,7 +3,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Alert } from '@/components/ui/alert';
 import { getCurrentContext } from '@/lib/context';
 import { getDb } from '@/lib/db';
-import { listUnites } from '@/lib/queries/reference';
+import { listSelectableUnites } from '@/lib/queries/reference';
 import { createMyRemboursement } from '@/lib/actions/remboursements';
 import { RemboursementForm } from '@/components/rembs/remboursement-form';
 
@@ -47,7 +47,7 @@ export default async function MyNouveauRemboursementPage({
 
   const [params, unites, lastRib] = await Promise.all([
     searchParams,
-    listUnites(),
+    listSelectableUnites(),
     getLastRibForUser(ctx.userId, ctx.groupId),
   ]);
   const today = new Date().toISOString().split('T')[0];

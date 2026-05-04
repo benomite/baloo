@@ -11,7 +11,7 @@ import { Field } from '@/components/shared/field';
 import { Section } from '@/components/shared/section';
 import { NativeSelect } from '@/components/ui/native-select';
 import { listMouvementsCaisse } from '@/lib/queries/caisse';
-import { listUnites, listActivites } from '@/lib/queries/reference';
+import { listSelectableUnites, listSelectableActivites } from '@/lib/queries/reference';
 import { createMouvementCaisse } from '@/lib/actions/caisse';
 import { getCurrentContext } from '@/lib/context';
 import { requireAdmin } from '@/lib/auth/access';
@@ -21,8 +21,8 @@ export default async function CaissePage() {
   requireAdmin(ctx.role);
   const [{ mouvements, solde }, unites, activites] = await Promise.all([
     listMouvementsCaisse(),
-    listUnites(),
-    listActivites(),
+    listSelectableUnites(),
+    listSelectableActivites(),
   ]);
 
   const today = new Date().toISOString().split('T')[0];

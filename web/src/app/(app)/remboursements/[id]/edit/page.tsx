@@ -2,7 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
 import { Alert } from '@/components/ui/alert';
 import { getCurrentContext } from '@/lib/context';
-import { listUnites } from '@/lib/queries/reference';
+import { listSelectableUnites } from '@/lib/queries/reference';
 import { getRemboursement } from '@/lib/queries/remboursements';
 import { listLignes } from '@/lib/services/remboursements';
 import { listJustificatifs } from '@/lib/queries/justificatifs';
@@ -24,15 +24,16 @@ export default async function EditRemboursementPage({
 }) {
   const { id } = await params;
 
-  const [sp, ctx, r, unites, lignes, justifs] = await Promise.all([
+  const [sp, ctx, r, lignes, justifs] = await Promise.all([
     searchParams,
     getCurrentContext(),
     getRemboursement(id),
-    listUnites(),
     listLignes(id),
     listJustificatifs('remboursement', id),
   ]);
   if (!r) notFound();
+  // Préserve l'unité orpheline éventuellement déjà sur la demande.
+  const unites = await listSelectableUnites(r.unite_id);
 
   const isAdmin = ADMIN_ROLES.includes(ctx.role);
   const isOwner = !!r.submitted_by_user_id && r.submitted_by_user_id === ctx.userId;

@@ -3,7 +3,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Alert } from '@/components/ui/alert';
 import { getCurrentContext } from '@/lib/context';
 import { requireNotParent } from '@/lib/auth/access';
-import { listUnites } from '@/lib/queries/reference';
+import { listSelectableUnites } from '@/lib/queries/reference';
 import { createForeignRemboursement } from '@/lib/actions/remboursements';
 import { RemboursementForm } from '@/components/rembs/remboursement-form';
 
@@ -27,7 +27,7 @@ export default async function NouveauRemboursementForeignPage({
   requireNotParent(ctx.role);
 
   const params = await searchParams;
-  const unites = await listUnites();
+  const unites = await listSelectableUnites();
   const today = new Date().toISOString().split('T')[0];
 
   return (

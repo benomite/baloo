@@ -11,7 +11,7 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { FileMultiUploader } from '@/components/ui/file-multi-uploader';
 import { getCurrentContext } from '@/lib/context';
 import { getDb } from '@/lib/db';
-import { listUnites } from '@/lib/queries/reference';
+import { listSelectableUnites } from '@/lib/queries/reference';
 import { createMyAbandon } from '@/lib/actions/abandons';
 
 // Récupère les 5 dernières natures distinctes des demandes (rembs +
@@ -50,7 +50,7 @@ export default async function MyNouveauAbandonPage({
 
   const [params, unites, natureSuggestions] = await Promise.all([
     searchParams,
-    listUnites(),
+    listSelectableUnites(),
     getNatureSuggestions(ctx.userId, ctx.groupId),
   ]);
   const today = new Date().toISOString().split('T')[0];
