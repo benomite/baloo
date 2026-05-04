@@ -1,8 +1,10 @@
 import {
+  ChevronDown,
   CreditCard,
   FolderTree,
   HandCoins,
   Layers,
+  Link2,
   Tags,
   Upload,
 } from 'lucide-react';
@@ -29,7 +31,9 @@ import { requireAdmin } from '@/lib/auth/access';
 import { uploadComptawebCsv } from '@/lib/actions/comptaweb-import';
 import {
   getReferentielsCounts,
+  getReferentielsDetails,
   type ReferentielCount,
+  type RefDetailRow,
 } from '@/lib/services/reference';
 import { cn } from '@/lib/utils';
 
@@ -45,7 +49,7 @@ export default async function ImportPage({
 }) {
   const [ctx, params] = await Promise.all([getCurrentContext(), searchParams]);
   requireAdmin(ctx.role);
-  const [imports, refCounts] = await Promise.all([
+  const [imports, refCounts, refDetails] = await Promise.all([
     getDb()
       .prepare(
         'SELECT * FROM comptaweb_imports ORDER BY import_date DESC LIMIT 50',
@@ -59,6 +63,7 @@ export default async function ImportPage({
         total_recettes_cents: number;
       }>(),
     getReferentielsCounts({ groupId: ctx.groupId }),
+    getReferentielsDetails({ groupId: ctx.groupId }),
   ]);
 
   // Le flash "imported" encode "ecritures_creees|fichier".
@@ -91,9 +96,11 @@ export default async function ImportPage({
         </Alert>
       )}
 
+      {/* === Bloc 1 : Configurations / Référentiels (usage récurrent) === */}
       <Section
-        title="Configurations en place"
-        subtitle="Référentiels actuellement chargés. Si un compte est à zéro, lance la synchronisation ci-dessous."
+        title="Configurations Comptaweb"
+        subtitle="Branches, projets, natures, modes de paiement, cartes. À synchroniser dès qu une config bouge côté Comptaweb."
+        action={<SyncReferentielsButton />}
         className="mb-6"
       >
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
@@ -129,67 +136,35 @@ export default async function ImportPage({
           />
         </div>
         <p className="text-[11.5px] text-fg-subtle mt-3">
-          <strong>Mappées</strong> = liées à une entrée Comptaweb (synchronisation faite).
+          <strong>Mappées</strong> = liées à une entrée Comptaweb (sync faite).
           Le reste est local pur (créé côté Baloo, sans correspondance Comptaweb).
+          Sync additive uniquement, rien n&apos;est jamais supprimé.
         </p>
+
+        <div className="mt-4 pt-4 border-t border-border-soft space-y-1">
+          <p className="text-[12px] uppercase tracking-wide font-medium text-fg-subtle mb-2">
+            Inspecter le détail
+          </p>
+          <RefDetail label="Catégories" rows={refDetails.categories} icon={<Tags size={13} strokeWidth={2} />} />
+          <RefDetail label="Modes de paiement" rows={refDetails.modes_paiement} icon={<HandCoins size={13} strokeWidth={2} />} />
+          <RefDetail label="Unités" rows={refDetails.unites} icon={<FolderTree size={13} strokeWidth={2} />} />
+          <RefDetail label="Activités" rows={refDetails.activites} icon={<Layers size={13} strokeWidth={2} />} />
+          <RefDetail label="Cartes" rows={refDetails.cartes} icon={<CreditCard size={13} strokeWidth={2} />} />
+        </div>
       </Section>
 
-      <div className="grid gap-6 md:grid-cols-2 mb-8 items-start">
-        <Section
-          title="Synchroniser les référentiels"
-          subtitle="Branches / projets / natures / activités / modes de paiement."
-        >
-          <p className="text-[13px] text-fg-muted leading-relaxed">
-            Récupère depuis Comptaweb les configurations et les ajoute ou remappe en local. Additif
-            uniquement — rien n&apos;est supprimé. À relancer après toute modification côté
-            Comptaweb (ex. nouvelle branche « Groupe », nouveau projet de camp).
-          </p>
-          <div className="flex justify-end pt-2">
-            <SyncReferentielsButton />
-          </div>
-        </Section>
-
-        <Section
-          title="Importer un fichier CSV"
-          subtitle="Export Recettes / Dépenses Comptaweb (5 MB max)."
-        >
-          <p className="text-[13px] text-fg-muted leading-relaxed">
-            Exporte le fichier <em>« Gestion courante — Recettes/Dépenses »</em> depuis Comptaweb
-            au format CSV, puis dépose-le ici. L&apos;import crée les écritures manquantes,
-            résout les FK (catégorie / unité / mode de paiement) automatiquement quand c&apos;est
-            possible.
-          </p>
-          <form action={uploadComptawebCsv} encType="multipart/form-data" className="space-y-3">
-            <Field label="Fichier CSV" htmlFor="csv" required>
-              <Input
-                id="csv"
-                name="csv"
-                type="file"
-                accept=".csv,text/csv"
-                required
-                className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-brand-50 file:text-brand file:font-medium file:text-[13px] file:cursor-pointer hover:file:bg-brand-100 file:transition-colors"
-              />
-            </Field>
-            <div className="flex justify-end">
-              <PendingButton size="sm" pendingLabel="Import en cours…">
-                <Upload size={13} strokeWidth={2} className="mr-1.5" />
-                Importer
-              </PendingButton>
-            </div>
-          </form>
-        </Section>
-      </div>
-
+      {/* === Bloc 2 : Historique des imports CSV === */}
       <Section
         title={`Historique des imports (${imports.length})`}
-        subtitle="50 derniers imports."
+        subtitle="50 derniers imports CSV. Sert à tracer ce qui a été fait à l onboarding ou en réimport ponctuel."
+        className="mb-6"
         bodyClassName={imports.length === 0 ? undefined : 'px-0 pb-0'}
       >
         {imports.length === 0 ? (
           <EmptyState
             emoji="📥"
             title="Aucun import pour le moment"
-            description="Quand tu lanceras un import (CSV ou via le MCP), il apparaîtra ici avec son bilan."
+            description="Quand tu lanceras un import CSV, il apparaîtra ici avec son bilan."
           />
         ) : (
           <Table>
@@ -224,6 +199,54 @@ export default async function ImportPage({
           </Table>
         )}
       </Section>
+
+      {/* === Bloc 3 : Import CSV (ponctuel, en repli) === */}
+      <details className="rounded-xl border border-dashed border-border-soft bg-bg-elevated/40 px-5 py-4 group">
+        <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <Upload size={14} strokeWidth={2} className="text-fg-subtle" />
+            <div>
+              <span className="text-[13.5px] font-semibold text-fg">
+                Import CSV ponctuel
+              </span>
+              <span className="ml-2 text-[11.5px] text-fg-subtle">
+                onboarding ou réimport spécial — rare
+              </span>
+            </div>
+          </div>
+          <ChevronDown
+            size={14}
+            strokeWidth={2}
+            className="text-fg-subtle transition-transform group-open:rotate-180"
+          />
+        </summary>
+        <div className="mt-4 pt-4 border-t border-border-soft">
+          <p className="text-[12.5px] text-fg-muted leading-relaxed mb-3">
+            Exporte le fichier <em>« Gestion courante — Recettes/Dépenses »</em> depuis Comptaweb
+            au format CSV (5 Mo max), puis dépose-le ici. L&apos;import crée les écritures
+            manquantes et résout automatiquement les FK (catégorie / unité / mode de paiement)
+            quand c&apos;est possible.
+          </p>
+          <form action={uploadComptawebCsv} encType="multipart/form-data" className="space-y-3">
+            <Field label="Fichier CSV" htmlFor="csv" required>
+              <Input
+                id="csv"
+                name="csv"
+                type="file"
+                accept=".csv,text/csv"
+                required
+                className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-brand-50 file:text-brand file:font-medium file:text-[13px] file:cursor-pointer hover:file:bg-brand-100 file:transition-colors"
+              />
+            </Field>
+            <div className="flex justify-end">
+              <PendingButton size="sm" pendingLabel="Import en cours…">
+                <Upload size={13} strokeWidth={2} className="mr-1.5" />
+                Importer
+              </PendingButton>
+            </div>
+          </form>
+        </div>
+      </details>
     </div>
   );
 }
@@ -303,5 +326,74 @@ function RefCount({
         </p>
       )}
     </div>
+  );
+}
+
+function RefDetail({
+  label,
+  rows,
+  icon,
+}: {
+  label: string;
+  rows: RefDetailRow[];
+  icon: React.ReactNode;
+}) {
+  return (
+    <details className="group/refdetail rounded-md hover:bg-bg-sunken/40 transition-colors">
+      <summary className="cursor-pointer list-none px-2 py-1.5 flex items-center justify-between gap-2 text-[12.5px]">
+        <span className="inline-flex items-center gap-1.5 font-medium text-fg">
+          <ChevronDown
+            size={11}
+            strokeWidth={2.25}
+            className="text-fg-subtle transition-transform -rotate-90 group-open/refdetail:rotate-0"
+          />
+          {icon}
+          {label}
+          <span className="text-fg-subtle font-normal">({rows.length})</span>
+        </span>
+      </summary>
+      <div className="mt-1 ml-5 mr-2 mb-2">
+        {rows.length === 0 ? (
+          <p className="text-[11.5px] text-fg-subtle italic px-2 py-1">
+            (vide — synchronise pour récupérer la liste)
+          </p>
+        ) : (
+          <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-0.5">
+            {rows.map((r) => (
+              <li
+                key={r.id}
+                className="flex items-center gap-1.5 text-[12px] py-0.5"
+              >
+                <span
+                  className={cn(
+                    'inline-block size-1.5 rounded-full shrink-0',
+                    r.comptaweb_id !== null
+                      ? 'bg-emerald-500'
+                      : 'bg-fg-subtle/40',
+                  )}
+                  title={
+                    r.comptaweb_id !== null
+                      ? `Mappé Comptaweb #${r.comptaweb_id}`
+                      : 'Local sans mapping'
+                  }
+                />
+                <span className="text-fg truncate">{r.label}</span>
+                {r.badge && (
+                  <span className="text-[10px] uppercase tracking-wide text-fg-subtle bg-bg-sunken rounded px-1">
+                    {r.badge}
+                  </span>
+                )}
+                {r.comptaweb_id !== null && (
+                  <span className="text-[10.5px] text-fg-subtle tabular-nums ml-auto inline-flex items-center gap-0.5">
+                    <Link2 size={9} strokeWidth={2} />
+                    {r.comptaweb_id}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </details>
   );
 }

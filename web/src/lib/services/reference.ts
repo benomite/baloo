@@ -97,6 +97,103 @@ export async function getReferentielsCounts(
   };
 }
 
+// Détail des référentiels pour la page d'inspection /import.
+// Chaque entrée contient comptaweb_id pour distinguer les entrées
+// synchronisées des locales pures.
+export interface RefDetailRow {
+  id: string;
+  label: string;
+  sublabel?: string | null;
+  comptaweb_id: number | null;
+  badge?: string | null;
+}
+
+export interface ReferentielsDetails {
+  categories: RefDetailRow[];
+  modes_paiement: RefDetailRow[];
+  unites: RefDetailRow[];
+  activites: RefDetailRow[];
+  cartes: RefDetailRow[];
+}
+
+export async function getReferentielsDetails(
+  { groupId }: ReferenceContext,
+): Promise<ReferentielsDetails> {
+  const db = getDb();
+  const [cats, modes, unites, activites, cartes] = await Promise.all([
+    db.prepare(
+      `SELECT id, name, type, comptaweb_nature, comptaweb_id
+       FROM categories ORDER BY name`,
+    ).all<{
+      id: string;
+      name: string;
+      type: string;
+      comptaweb_nature: string | null;
+      comptaweb_id: number | null;
+    }>(),
+    db.prepare(
+      `SELECT id, name, comptaweb_id FROM modes_paiement ORDER BY name`,
+    ).all<{ id: string; name: string; comptaweb_id: number | null }>(),
+    db.prepare(
+      `SELECT id, code, name, comptaweb_id, couleur
+       FROM unites WHERE group_id = ? ORDER BY code`,
+    ).all<{
+      id: string;
+      code: string;
+      name: string;
+      comptaweb_id: number | null;
+      couleur: string | null;
+    }>(groupId),
+    db.prepare(
+      `SELECT id, name, comptaweb_id
+       FROM activites WHERE group_id = ? ORDER BY name`,
+    ).all<{ id: string; name: string; comptaweb_id: number | null }>(groupId),
+    db.prepare(
+      `SELECT id, type, porteur, code_externe, statut, comptaweb_id
+       FROM cartes WHERE group_id = ? ORDER BY statut, porteur`,
+    ).all<{
+      id: string;
+      type: string;
+      porteur: string;
+      code_externe: string | null;
+      statut: string;
+      comptaweb_id: number | null;
+    }>(groupId),
+  ]);
+  return {
+    categories: cats.map((c) => ({
+      id: c.id,
+      label: c.name,
+      sublabel: c.comptaweb_nature,
+      comptaweb_id: c.comptaweb_id,
+      badge: c.type !== 'les_deux' ? c.type : null,
+    })),
+    modes_paiement: modes.map((m) => ({
+      id: m.id,
+      label: m.name,
+      comptaweb_id: m.comptaweb_id,
+    })),
+    unites: unites.map((u) => ({
+      id: u.id,
+      label: `${u.code} — ${u.name}`,
+      sublabel: u.couleur,
+      comptaweb_id: u.comptaweb_id,
+    })),
+    activites: activites.map((a) => ({
+      id: a.id,
+      label: a.name,
+      comptaweb_id: a.comptaweb_id,
+    })),
+    cartes: cartes.map((c) => ({
+      id: c.id,
+      label: `${c.type === 'cb' ? 'CB' : 'Procurement'} · ${c.porteur}`,
+      sublabel: c.code_externe,
+      comptaweb_id: c.comptaweb_id,
+      badge: c.statut === 'ancienne' ? 'ancienne' : null,
+    })),
+  };
+}
+
 // Top N catégories les plus utilisées par un groupe (basé sur les
 // écritures existantes). Sert à alimenter un sélecteur "favoris" dans
 // les formulaires : les 4-5 catégories les plus fréquentes en chips
