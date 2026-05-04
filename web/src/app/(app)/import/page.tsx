@@ -32,10 +32,10 @@ import { uploadComptawebCsv } from '@/lib/actions/comptaweb-import';
 import {
   getReferentielsCounts,
   getReferentielsDetails,
-  getUnitesTerrainView,
+  getUnitesGroupedByBranche,
   type ReferentielCount,
   type RefDetailRow,
-  type UnitesTerrainView,
+  type BrancheGroup,
 } from '@/lib/services/reference';
 import { cn } from '@/lib/utils';
 
@@ -51,7 +51,7 @@ export default async function ImportPage({
 }) {
   const [ctx, params] = await Promise.all([getCurrentContext(), searchParams]);
   requireAdmin(ctx.role);
-  const [imports, refCounts, refDetails, unitesView] = await Promise.all([
+  const [imports, refCounts, refDetails, unitesGrouped] = await Promise.all([
     getDb()
       .prepare(
         'SELECT * FROM comptaweb_imports ORDER BY import_date DESC LIMIT 50',
@@ -66,7 +66,7 @@ export default async function ImportPage({
       }>(),
     getReferentielsCounts({ groupId: ctx.groupId }),
     getReferentielsDetails({ groupId: ctx.groupId }),
-    getUnitesTerrainView({ groupId: ctx.groupId }),
+    getUnitesGroupedByBranche({ groupId: ctx.groupId }),
   ]);
 
   // Le flash "imported" encode "ecritures_creees|fichier".
@@ -156,31 +156,31 @@ export default async function ImportPage({
         </div>
       </Section>
 
-      {/* === Bloc 1bis : Mapping branches/projets → unités terrain === */}
+      {/* === Bloc 1bis : Unités groupées par branche SGDF === */}
       <Section
-        title="Unités terrain (vraies unités SGDF)"
-        subtitle="Comptaweb expose des branches/projets (1 par ligne budgétaire). Baloo les regroupe sous l unité SGDF correspondante (Farfadets, LJ, SG, ...)."
+        title="Unités du groupe (par branche SGDF)"
+        subtitle="1 ligne Comptaweb = 1 unité. Plusieurs unités peuvent partager la même branche d age (donc la même couleur de la charte)."
         className="mb-6"
       >
-        {unitesView.groups.length === 0 && unitesView.orphans.length === 0 ? (
+        {unitesGrouped.groups.length === 0 && unitesGrouped.orphans.length === 0 ? (
           <p className="text-[12.5px] text-fg-muted italic">
             Aucune unité encore détectée. Lance la synchronisation des configurations ci-dessus.
           </p>
         ) : (
           <div className="space-y-2">
-            {unitesView.groups.map((g) => (
-              <UniteTerrainCard key={g.id} group={g} />
+            {unitesGrouped.groups.map((g) => (
+              <BrancheCard key={g.spec.code} group={g} />
             ))}
-            {unitesView.orphans.length > 0 && (
+            {unitesGrouped.orphans.length > 0 && (
               <div className="mt-3 rounded-lg border border-dashed border-amber-300 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/20 px-3 py-2.5">
                 <div className="text-[11px] uppercase tracking-wide font-medium text-amber-800 dark:text-amber-300 mb-1.5">
-                  Branches/projets non mappés ({unitesView.orphans.length})
+                  Unités sans branche détectée ({unitesGrouped.orphans.length})
                 </div>
                 <p className="text-[11.5px] text-amber-800 dark:text-amber-300/90 mb-2">
-                  Aucune unité SGDF n a pu être déduite du libellé. À mapper manuellement (phase suivante).
+                  Aucune branche SGDF n a pu être déduite du libellé. À mapper manuellement (édition unité à venir).
                 </p>
                 <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-0.5 text-[12px]">
-                  {unitesView.orphans.map((o) => (
+                  {unitesGrouped.orphans.map((o) => (
                     <li key={o.id} className="text-fg flex items-center gap-1.5">
                       <span className="size-1.5 rounded-full bg-amber-500/60 shrink-0" />
                       {o.name}
@@ -372,8 +372,8 @@ function RefCount({
   );
 }
 
-function UniteTerrainCard({ group }: { group: UnitesTerrainView['groups'][number] }) {
-  const couleur = group.couleur ?? '#C9C9C9';
+function BrancheCard({ group }: { group: BrancheGroup }) {
+  const couleur = group.spec.couleur;
   return (
     <div className="rounded-lg border border-border-soft bg-bg-elevated overflow-hidden">
       <div
@@ -385,32 +385,27 @@ function UniteTerrainCard({ group }: { group: UnitesTerrainView['groups'][number
           style={{ backgroundColor: couleur }}
           aria-hidden
         />
-        <span className="font-semibold text-[13.5px] text-fg">{group.nom}</span>
+        <span className="font-semibold text-[13.5px] text-fg">{group.spec.nom}</span>
         <span className="text-[10.5px] uppercase tracking-wide text-fg-subtle font-mono bg-bg-sunken rounded px-1">
-          {group.code}
+          {group.spec.code}
         </span>
         <span className="text-[11.5px] text-fg-muted ml-auto">
-          {group.branches_projets.length} branche{group.branches_projets.length > 1 ? 's' : ''}/projet{group.branches_projets.length > 1 ? 's' : ''}
+          {group.unites.length} unité{group.unites.length > 1 ? 's' : ''}
         </span>
       </div>
-      {group.branches_projets.length > 0 && (
-        <ul className="border-t border-border-soft divide-y divide-border-soft/60 bg-bg-sunken/30">
-          {group.branches_projets.map((bp) => (
-            <li
-              key={bp.id}
-              className="px-3 py-1.5 flex items-center gap-2 text-[12.5px]"
-            >
-              <span className="text-fg-muted font-mono text-[10.5px]">{bp.code}</span>
-              <span className="text-fg flex-1 truncate">{bp.name}</span>
-              {bp.comptaweb_id !== null && (
-                <span className="text-[10.5px] text-fg-subtle tabular-nums">
-                  cw#{bp.comptaweb_id}
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+      <ul className="border-t border-border-soft divide-y divide-border-soft/60 bg-bg-sunken/30">
+        {group.unites.map((u) => (
+          <li key={u.id} className="px-3 py-1.5 flex items-center gap-2 text-[12.5px]">
+            <span className="text-fg-muted font-mono text-[10.5px]">{u.code}</span>
+            <span className="text-fg flex-1 truncate">{u.name}</span>
+            {u.comptaweb_id !== null && (
+              <span className="text-[10.5px] text-fg-subtle tabular-nums">
+                cw#{u.comptaweb_id}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

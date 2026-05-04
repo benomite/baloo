@@ -30,7 +30,7 @@
 
 import { getDb } from '../db';
 import { ensureBusinessSchema } from '../db/business-schema';
-import { inferUniteTerrain } from '../unites-terrain';
+import { inferBrancheSGDF } from '../branches-sgdf';
 
 let ensured = false;
 // Lazy-init appelé depuis l'adapter NextAuth (cf. adapter.ts) au
@@ -378,50 +378,68 @@ export async function ensureAuthSchema(): Promise<void> {
     );
   }
 
-  // unites.unite_terrain_id : phase 1 du refacto unités/branches-projets.
-  // Lie chaque branche/projet Comptaweb (table unites) à sa vraie unité
-  // SGDF (table unites_terrain). Le backfill des données existantes est
-  // fait par migrations.ts → backfillUnitesTerrain() au boot.
+  // === Refacto unités SGDF (revu 2026-05-04) ===
+  //
+  // Phase 1 (déployée puis revue) : on avait créé une table unites_terrain
+  // pour modéliser un parent qui n'existe pas. En réalité, 1 ligne
+  // Comptaweb "branche/projet" = 1 unité SGDF directement, et plusieurs
+  // unités peuvent partager la même branche d'âge (ex: 2 LJ).
+  //
+  // Phase 1bis : on retire unites_terrain + unite_terrain_id, on ajoute
+  // une simple colonne `branche` sur unites pour le regroupement SGDF.
   const uniteCols = await db
     .prepare("PRAGMA table_info(unites)")
     .all<{ name: string }>();
-  if (uniteCols.length > 0 && !uniteCols.some((c) => c.name === 'unite_terrain_id')) {
-    await db.exec(
-      'ALTER TABLE unites ADD COLUMN unite_terrain_id TEXT REFERENCES unites_terrain(id)',
-    );
+  if (uniteCols.length > 0 && !uniteCols.some((c) => c.name === 'branche')) {
+    await db.exec('ALTER TABLE unites ADD COLUMN branche TEXT');
   }
-  await db.exec(
-    'CREATE INDEX IF NOT EXISTS idx_unites_unite_terrain ON unites(unite_terrain_id)',
-  );
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_unites_branche ON unites(branche)');
 
-  // Backfill des unite_terrain_id pour les branches/projets pré-existants
-  // qui n'ont pas encore été liées à une unité terrain. Idempotent : ne
-  // touche que les rows où unite_terrain_id IS NULL et dont le label
-  // matche une branche SGDF connue. Tourne 1× par cold start.
-  const orphans = await db
-    .prepare("SELECT id, group_id, name FROM unites WHERE unite_terrain_id IS NULL")
-    .all<{ id: string; group_id: string; name: string }>();
-  if (orphans.length > 0) {
-    const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
-    for (const orphan of orphans) {
-      const spec = inferUniteTerrain(orphan.name);
-      if (!spec) continue;
-      let utRow = await db
-        .prepare('SELECT id FROM unites_terrain WHERE group_id = ? AND code = ? LIMIT 1')
-        .get<{ id: string }>(orphan.group_id, spec.code);
-      if (!utRow) {
-        const utId = `ut-${orphan.group_id}-${spec.code.toLowerCase()}`;
-        await db
-          .prepare(
-            `INSERT INTO unites_terrain (id, group_id, code, nom, couleur, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          )
-          .run(utId, orphan.group_id, spec.code, spec.nom, spec.couleur, now, now);
-        utRow = { id: utId };
-      }
+  // Cleanup phase 1 : drop la colonne unite_terrain_id et la table
+  // unites_terrain. SQLite/libsql 3.35+ supportent DROP COLUMN. Si jamais
+  // ça plante (vieille version), on tolère et la colonne reste orpheline.
+  if (uniteCols.some((c) => c.name === 'unite_terrain_id')) {
+    try {
+      await db.exec('DROP INDEX IF EXISTS idx_unites_unite_terrain');
+      await db.exec('ALTER TABLE unites DROP COLUMN unite_terrain_id');
+    } catch {
+      // Garder la colonne orpheline est OK : on ne l'utilise plus.
+    }
+  }
+  await db.exec('DROP TABLE IF EXISTS unites_terrain');
+
+  // Backfill : pour chaque unité, recalcule la branche SGDF + corrige la
+  // couleur si elle correspond à un ancien hex (avant correction de la
+  // charte) ou si elle est NULL. Idempotent. Tourne 1× par cold start.
+  const allUnites = await db
+    .prepare("SELECT id, name, couleur, branche FROM unites")
+    .all<{ id: string; name: string; couleur: string | null; branche: string | null }>();
+  // Anciennes couleurs erronées qu'on doit écraser même si non-NULL.
+  const STALE_COLORS = new Set([
+    '#E8485F', // ancien Farfadets (rose)
+    '#7D1C2F', // ancien PC (bordeaux)
+    '#9B4A97', // ancien Impeesas (violet seul)
+    '#4A4A4A', // ancien Groupe (gris foncé)
+    '#00934D', // ancien Compagnons
+  ]);
+  for (const u of allUnites) {
+    const spec = inferBrancheSGDF(u.name);
+    if (!spec) continue;
+    const needsBranche = u.branche !== spec.code;
+    const needsCouleur = !u.couleur || STALE_COLORS.has(u.couleur);
+    if (!needsBranche && !needsCouleur) continue;
+    if (needsBranche && needsCouleur) {
       await db
-        .prepare('UPDATE unites SET unite_terrain_id = ? WHERE id = ?')
-        .run(utRow.id, orphan.id);
+        .prepare('UPDATE unites SET branche = ?, couleur = ? WHERE id = ?')
+        .run(spec.code, spec.couleur, u.id);
+    } else if (needsBranche) {
+      await db
+        .prepare('UPDATE unites SET branche = ? WHERE id = ?')
+        .run(spec.code, u.id);
+    } else {
+      await db
+        .prepare('UPDATE unites SET couleur = ? WHERE id = ?')
+        .run(spec.couleur, u.id);
     }
   }
 

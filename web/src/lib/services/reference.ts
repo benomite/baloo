@@ -97,71 +97,71 @@ export async function getReferentielsCounts(
   };
 }
 
-// Vue groupée des branches/projets par unité terrain SGDF.
-// Phase 1 du refacto unites/branches-projets : permet de visualiser le
-// mapping détecté (Comptaweb → SGDF) sans toucher aux FK existantes.
-export interface UniteTerrainGroup {
+// Vue des unités groupées par branche SGDF (Farfadets, LJ, SG, PC, CO,
+// Adultes, Ajustements). 1 ligne Comptaweb = 1 unité ; plusieurs unités
+// peuvent partager la même branche (et donc la même couleur charte).
+import { ALL_BRANCHES_SGDF, type BrancheCode, type BrancheSGDFSpec } from '../branches-sgdf';
+
+export interface UniteRow {
   id: string;
   code: string;
-  nom: string;
+  name: string;
   couleur: string | null;
-  branches_projets: Array<{
-    id: string;
-    name: string;
-    code: string;
-    comptaweb_id: number | null;
-  }>;
+  comptaweb_id: number | null;
 }
 
-export interface UnitesTerrainView {
-  groups: UniteTerrainGroup[];
-  orphans: Array<{ id: string; name: string; code: string; comptaweb_id: number | null }>;
+export interface BrancheGroup {
+  spec: BrancheSGDFSpec;
+  unites: UniteRow[];
 }
 
-export async function getUnitesTerrainView(
+export interface UnitesGroupedView {
+  groups: BrancheGroup[];
+  orphans: UniteRow[];
+}
+
+export async function getUnitesGroupedByBranche(
   { groupId }: ReferenceContext,
-): Promise<UnitesTerrainView> {
-  const db = getDb();
-  const [terrains, branches] = await Promise.all([
-    db.prepare(
-      `SELECT id, code, nom, couleur FROM unites_terrain
-       WHERE group_id = ? ORDER BY code`,
-    ).all<{ id: string; code: string; nom: string; couleur: string | null }>(groupId),
-    db.prepare(
-      `SELECT id, name, code, comptaweb_id, unite_terrain_id
+): Promise<UnitesGroupedView> {
+  const rows = await getDb()
+    .prepare(
+      `SELECT id, code, name, couleur, comptaweb_id, branche
        FROM unites WHERE group_id = ? ORDER BY name`,
-    ).all<{
+    )
+    .all<{
       id: string;
-      name: string;
       code: string;
+      name: string;
+      couleur: string | null;
       comptaweb_id: number | null;
-      unite_terrain_id: string | null;
-    }>(groupId),
-  ]);
+      branche: string | null;
+    }>(groupId);
 
-  const groupsMap = new Map<string, UniteTerrainGroup>();
-  for (const t of terrains) {
-    groupsMap.set(t.id, { ...t, branches_projets: [] });
+  const groupsMap = new Map<BrancheCode, BrancheGroup>();
+  for (const spec of ALL_BRANCHES_SGDF) {
+    groupsMap.set(spec.code, { spec, unites: [] });
   }
-  const orphans: UnitesTerrainView['orphans'] = [];
-  for (const b of branches) {
-    if (b.unite_terrain_id && groupsMap.has(b.unite_terrain_id)) {
-      groupsMap.get(b.unite_terrain_id)!.branches_projets.push({
-        id: b.id,
-        name: b.name,
-        code: b.code,
-        comptaweb_id: b.comptaweb_id,
-      });
+  const orphans: UniteRow[] = [];
+  for (const r of rows) {
+    const row: UniteRow = {
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      couleur: r.couleur,
+      comptaweb_id: r.comptaweb_id,
+    };
+    const code = r.branche as BrancheCode | null;
+    if (code && groupsMap.has(code)) {
+      groupsMap.get(code)!.unites.push(row);
     } else {
-      orphans.push({
-        id: b.id,
-        name: b.name,
-        code: b.code,
-        comptaweb_id: b.comptaweb_id,
-      });
+      orphans.push(row);
     }
   }
-  return { groups: Array.from(groupsMap.values()), orphans };
+  // Filtre les groupes vides pour ne pas polluer l'UI.
+  return {
+    groups: Array.from(groupsMap.values()).filter((g) => g.unites.length > 0),
+    orphans,
+  };
 }
 
 // Détail des référentiels pour la page d'inspection /import.
