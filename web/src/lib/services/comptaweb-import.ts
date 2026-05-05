@@ -334,17 +334,14 @@ export async function importComptawebCsv(
          AND numero_piece = ?
        LIMIT 1`,
     );
-    // findByCat : matche les anciennes écritures sans piece ni
-    // description (encoding cassé pré-fix). Activé uniquement si
-    // category_id NON NULL — sinon 2 ventilations sans catégorie
-    // (FSI vs ancienne Territoire) seraient fusionnées.
-    const findByCat = txDb.prepare(
-      `SELECT id FROM ecritures
-       WHERE group_id = ? AND status = 'saisie_comptaweb'
-         AND date_ecriture = ? AND amount_cents = ? AND type = ?
-         AND COALESCE(category_id, '') = COALESCE(?, '')
-       LIMIT 1`,
-    );
+    // findByCat retiré (commit suivant 38dd100→…) : il confondait 2
+    // ventilations distinctes ayant mêmes (date, amount, type, cat)
+    // → UPDATE au lieu d'INSERT pour la 2e. Cas concret audité via
+    // MCP : LeRest 24€ Cotisations confondue avec Ruseva 24€ Cotisations
+    // (même 20/12/2025, même cat) ; mestre 568€ Participation 22/09
+    // probablement confondue avec une autre ventilation 568€.
+    // On préfère générer un INSERT (rattrapable via "Détecter doublons")
+    // plutôt que perdre une ventilation entière silencieusement.
     const updateExisting = txDb.prepare(
       `UPDATE ecritures SET
          unite_id         = COALESCE(unite_id,         ?),
@@ -373,12 +370,11 @@ export async function importComptawebCsv(
       notes: string;
     }) {
       // Cascade matching : du plus précis vers le plus tolérant.
-      // findByPiece et findByCat sont conditionnels pour éviter les
-      // faux match :
-      // - findByPiece : seulement si piece existe (sinon 2 ventilations
-      //   sans piece à même date/amount seraient fusionnées)
-      // - findByCat : seulement si category_id existe (sinon 2 lignes
-      //   sans catégorie seraient fusionnées)
+      // findByPiece est conditionnel : seulement si piece existe (sinon
+      // 2 ventilations sans piece à même date/amount seraient fusionnées).
+      // PLUS de findByCat car il confondait 2 ventilations distinctes
+      // de même catégorie/montant/date (cf. cas LeRest vs Ruseva 24€
+      // Cotisations Impeesas le 20/12, mestre 568€ Participation 22/09).
       const existing =
         (await findExact.get<{ id: string }>(
           groupId, args.date, args.amount, args.type, args.piece, args.description, args.categoryId,
@@ -389,11 +385,6 @@ export async function importComptawebCsv(
         (args.piece
           ? await findByPiece.get<{ id: string }>(
               groupId, args.date, args.amount, args.type, args.piece,
-            )
-          : null) ||
-        (args.categoryId
-          ? await findByCat.get<{ id: string }>(
-              groupId, args.date, args.amount, args.type, args.categoryId,
             )
           : null);
       if (existing) {
