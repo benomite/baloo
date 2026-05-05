@@ -262,6 +262,20 @@ export async function deleteCsvDuplicates(
 // category_id défini. Si une twin existe → l'orphelin est un doublon de
 // la twin (créé par un import qui a raté le mapping de catégorie). Sinon
 // l'orphelin est légitime, juste à compléter à la main.
+//
+// BUG ÉVITÉ (incident 2026-05-05) : un même tuple (date, piece, description)
+// peut héberger plusieurs ventilations distinctes à même montant mais
+// catégories différentes (ex. "Inscriptions cash 423€" ESP-2501 27/09 a
+// 7 ventilations dont Cotisations 20€ ET Dons 20€). Si l'une devient
+// orpheline cat=null, l'autre apparaît comme "twin" alors qu'elles sont
+// distinctes — supprimer l'orphelin perdrait une vraie ventilation.
+//
+// Garde-fou : on regarde combien d'écritures partagent (date, piece,
+// description) avec l'orphelin (toutes catégories). Si > 2, c'est un
+// cas multi-ventilations — on classe l'orphelin "à compléter à la main",
+// pas en doublon. Seuls les cas "exactement 2 écritures (1 twin + 1
+// orphelin)" sont proposés en suppression — là c'est un vrai doublon
+// issu d'un re-import buggé.
 // ============================================================================
 
 export interface OrphanCandidate {
@@ -306,6 +320,8 @@ export async function findOrphansWithoutCategory(
   const withoutTwin: OrphanCandidate[] = [];
 
   for (const o of orphans) {
+    // Twin candidate : autre écriture à mêmes (date, amount, type, piece,
+    // description) avec catégorie définie.
     const twin = await db
       .prepare(
         `SELECT e.id, c.name as cat_name
@@ -324,6 +340,22 @@ export async function findOrphansWithoutCategory(
         o.numero_piece, o.description,
       );
 
+    // Garde-fou multi-ventilations : combien d'écritures partagent le
+    // même (date, piece, description) — toutes catégories et montants
+    // confondus ? Si > 2, c'est un regroupement avec plusieurs
+    // ventilations distinctes. L'orphelin pourrait être l'une d'elles,
+    // pas un doublon. On classe en "à compléter à la main".
+    const sameRegroupement = await db
+      .prepare(
+        `SELECT COUNT(*) as n FROM ecritures
+         WHERE group_id = ? AND status = 'saisie_comptaweb'
+           AND date_ecriture = ?
+           AND COALESCE(numero_piece, '') = COALESCE(?, '')
+           AND COALESCE(description, '') = COALESCE(?, '')`,
+      )
+      .get<{ n: number }>(groupId, o.date_ecriture, o.numero_piece, o.description);
+    const regroupementSize = sameRegroupement?.n ?? 0;
+
     const justifs = await db
       .prepare(`SELECT COUNT(*) as n FROM justificatifs WHERE entity_type='ecriture' AND entity_id=?`)
       .get<{ n: number }>(o.id);
@@ -341,7 +373,13 @@ export async function findOrphansWithoutCategory(
       twin_category_name: twin?.cat_name ?? null,
       has_links,
     };
-    if (twin && !has_links) withTwin.push(candidate);
+    // Suppression sûre seulement si :
+    // - twin existe avec catégorie définie
+    // - aucun lien externe
+    // - exactement 2 écritures partagent (date, piece, description) :
+    //   la twin + l'orphelin (= cas simple "vrai doublon", pas
+    //   multi-ventilations)
+    if (twin && !has_links && regroupementSize === 2) withTwin.push(candidate);
     else withoutTwin.push(candidate);
   }
 
