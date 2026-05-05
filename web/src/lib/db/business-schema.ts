@@ -240,19 +240,51 @@ export async function ensureBusinessSchema(): Promise<void> {
     -- ce CREATE INDEX plante sur les BDDs pré-migration (CREATE TABLE
     -- IF NOT EXISTS étant un no-op, la colonne n est pas encore là).
 
-    -- mouvements_caisse : avec unite_id, activite_id intégrés.
+    -- mouvements_caisse : avec unite_id, activite_id, et workflow espèces
+    -- intégré (type, numero_piece, status, depot_id pour les sorties qui
+    -- sont des dépôts en banque). Pas de CHECK sur status (cf. AGENTS.md).
     CREATE TABLE IF NOT EXISTS mouvements_caisse (
       id TEXT PRIMARY KEY,
       group_id TEXT NOT NULL,
       date_mouvement TEXT NOT NULL,
       description TEXT NOT NULL,
       amount_cents INTEGER NOT NULL,
+      type TEXT,
+      numero_piece TEXT,
+      status TEXT NOT NULL DEFAULT 'saisi',
+      depot_id TEXT,
+      airtable_id TEXT,
+      comptaweb_ecriture_id INTEGER,
       solde_apres_cents INTEGER,
       unite_id TEXT REFERENCES unites(id),
       activite_id TEXT REFERENCES activites(id),
       notes TEXT,
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
+    CREATE INDEX IF NOT EXISTS idx_mvt_caisse_group ON mouvements_caisse(group_id);
+    -- Les index sur status/depot_id/airtable_id sont créés dans
+    -- auth/schema.ts APRÈS l'ALTER TABLE qui ajoute ces colonnes
+    -- (cf. AGENTS.md : CREATE TABLE IF NOT EXISTS = no-op sur BDD
+    -- existante, donc les nouvelles colonnes ne sont pas créées par ce
+    -- bloc — le CREATE INDEX planterait sur "no such column").
+
+    -- depots_especes : transfert d'espèces caisse → banque. Symétrique
+    -- de depots_cheques. Lien vers l'écriture banque correspondante
+    -- (rapprochement Comptaweb).
+    CREATE TABLE IF NOT EXISTS depots_especes (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      date_depot TEXT NOT NULL,
+      total_amount_cents INTEGER NOT NULL,
+      detail_billets TEXT,
+      ecriture_id TEXT REFERENCES ecritures(id),
+      airtable_id TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_depots_especes_group ON depots_especes(group_id);
+    CREATE INDEX IF NOT EXISTS idx_depots_especes_ecriture ON depots_especes(ecriture_id);
+    CREATE INDEX IF NOT EXISTS idx_depots_especes_airtable ON depots_especes(airtable_id);
 
     CREATE TABLE IF NOT EXISTS depots_cheques (
       id TEXT PRIMARY KEY,

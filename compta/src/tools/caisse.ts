@@ -15,6 +15,24 @@ interface ListMouvementsResponse {
   solde: number;
 }
 
+interface CaisseDiscoverResponse {
+  caisses: Array<{ id: number; libelle: string; gerant: string; devise: string; inactif: boolean }>;
+}
+
+interface CaisseSyncResponse {
+  caisseId: number;
+  libelle: string;
+  soldeComptaweb: number;
+  soldeBaloo: number;
+  stats: {
+    pulled: number;
+    inserted: number;
+    matched_by_cw_id: number;
+    matched_by_fallback: number;
+    unchanged: number;
+  };
+}
+
 export function registerCaisseTools(server: McpServer) {
   server.tool(
     'list_mouvements_caisse',
@@ -31,6 +49,43 @@ export function registerCaisseTools(server: McpServer) {
         })),
       };
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'cw_list_caisses',
+    'Liste les caisses du groupe côté Comptaweb (utile pour récupérer caisseId à passer à cw_sync_caisse).',
+    {},
+    async () => {
+      const data = await api.get<CaisseDiscoverResponse>('/api/caisse/sync');
+      return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'cw_sync_caisse',
+    "Synchronise les mouvements de caisse depuis Comptaweb vers Baloo (pull). Idempotent : ne crée pas de doublon (matching par comptaweb_ecriture_id, fallback numero_piece+date+montant). Si caisse_id est omis, prend la première caisse active.",
+    {
+      caisse_id: z.number().int().positive().optional().describe('ID de la caisse Comptaweb (cf. cw_list_caisses).'),
+    },
+    async (params) => {
+      const data = await api.post<CaisseSyncResponse>('/api/caisse/sync', { caisse_id: params.caisse_id });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                ...data,
+                solde_comptaweb: formatAmount(data.soldeComptaweb),
+                solde_baloo: formatAmount(data.soldeBaloo),
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
     },
   );
 

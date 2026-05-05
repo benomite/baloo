@@ -5,6 +5,17 @@ export { fetchReferentielsCreer, createEcriture } from './ecritures-write';
 export { applyReferentielsSync } from './sync-referentiels-logic';
 export { fetchCartesProcurement, fetchCartesBancaires, fetchAllCartes } from './cartes-scrape';
 export type { ScrapedCarte, CarteType } from './cartes-scrape';
+export {
+  fetchCaisseGestion,
+  fetchCaisseList,
+  parseCaisseGestionHtml,
+  parseCaisseListHtml,
+} from './caisse-scrape';
+export type {
+  CaisseGestionData,
+  CaisseListItem,
+  MouvementCaisseComptaweb,
+} from './caisse-scrape';
 export type {
   SyncReferentielsReport,
   RefSyncStats,

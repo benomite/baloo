@@ -21,6 +21,7 @@
     "migrate:justifs-to-blob": "tsx scripts/migrate-justifs-to-blob.ts",
     "migrate:blobs-to-private": "tsx scripts/migrate-blobs-to-private.ts",
     "import:airtable-rembs": "tsx scripts/import-airtable-rembs.ts",
+    "import:airtable-caisse": "tsx scripts/import-airtable-caisse.ts",
     "link:rembs-ecritures": "tsx scripts/link-rembs-to-ecritures.ts",
     "demote:unlinked-termine": "tsx scripts/demote-unlinked-termine.ts"
   },

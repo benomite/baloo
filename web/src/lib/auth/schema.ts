@@ -181,6 +181,64 @@ export async function ensureAuthSchema(): Promise<void> {
     await db.exec('ALTER TABLE mouvements_caisse ADD COLUMN activite_id TEXT REFERENCES activites(id)');
   }
 
+  // Chantier "récup caisse Airtable" 2026-05 : workflow espèces avec
+  // type (entree/sortie/depot), status (saisi/depose/rapproche),
+  // numero_piece (ESP-XXXX/DEP-XXXX hérité Airtable), depot_id (lien
+  // vers le dépôt en banque qui a vidé la caisse), airtable_id
+  // (idempotence import). Pas de CHECK sur status (cf. AGENTS.md).
+  const caisseCols2 = await db
+    .prepare("PRAGMA table_info(mouvements_caisse)")
+    .all<{ name: string }>();
+  const hasCaisseCol = (n: string) => caisseCols2.some((c) => c.name === n);
+  if (!hasCaisseCol('type')) {
+    await db.exec('ALTER TABLE mouvements_caisse ADD COLUMN type TEXT');
+  }
+  if (!hasCaisseCol('numero_piece')) {
+    await db.exec('ALTER TABLE mouvements_caisse ADD COLUMN numero_piece TEXT');
+  }
+  if (!hasCaisseCol('status')) {
+    // Nullable + backfill (cf. piège Turso ALTER NOT NULL DEFAULT).
+    await db.exec("ALTER TABLE mouvements_caisse ADD COLUMN status TEXT DEFAULT 'saisi'");
+    await db.exec("UPDATE mouvements_caisse SET status = 'saisi' WHERE status IS NULL");
+  }
+  if (!hasCaisseCol('depot_id')) {
+    await db.exec('ALTER TABLE mouvements_caisse ADD COLUMN depot_id TEXT');
+  }
+  if (!hasCaisseCol('airtable_id')) {
+    await db.exec('ALTER TABLE mouvements_caisse ADD COLUMN airtable_id TEXT');
+  }
+  if (!hasCaisseCol('comptaweb_ecriture_id')) {
+    await db.exec('ALTER TABLE mouvements_caisse ADD COLUMN comptaweb_ecriture_id INTEGER');
+  }
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_mvt_caisse_group ON mouvements_caisse(group_id)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_mvt_caisse_status ON mouvements_caisse(status)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_mvt_caisse_depot ON mouvements_caisse(depot_id)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_mvt_caisse_airtable ON mouvements_caisse(airtable_id)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_mvt_caisse_cw_ecriture ON mouvements_caisse(comptaweb_ecriture_id)');
+
+  // depots_especes : table créée tardivement, lazy-init côté
+  // business-schema.ts mais on garantit ici qu'elle existe sur les BDDs
+  // pré-existantes (le CREATE TABLE IF NOT EXISTS de business-schema
+  // est un no-op si une autre table portant ce nom existe déjà — ici
+  // elle n'existait pas, donc le CREATE le crée bien, mais on duplique
+  // par sécurité).
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS depots_especes (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      date_depot TEXT NOT NULL,
+      total_amount_cents INTEGER NOT NULL,
+      detail_billets TEXT,
+      ecriture_id TEXT REFERENCES ecritures(id),
+      airtable_id TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+  `);
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_depots_especes_group ON depots_especes(group_id)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_depots_especes_ecriture ON depots_especes(ecriture_id)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_depots_especes_airtable ON depots_especes(airtable_id)');
+
   // Chantier 2-bis P2-workflows : refonte du modèle remboursement vers
   // un modèle "1 demande = N lignes de dépense" (cf. workflow valdesous,
   // doc à venir). Recréation de la table pour :

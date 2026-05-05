@@ -30,6 +30,12 @@ export type JustificatifStatus = (typeof JUSTIFICATIF_STATUSES)[number];
 export const DEPOT_TYPES = ['banque', 'ancv'] as const;
 export type DepotType = (typeof DEPOT_TYPES)[number];
 
+export const MOUVEMENT_CAISSE_TYPES = ['entree', 'sortie', 'depot'] as const;
+export type MouvementCaisseType = (typeof MOUVEMENT_CAISSE_TYPES)[number];
+
+export const MOUVEMENT_CAISSE_STATUSES = ['saisi', 'depose', 'rapproche'] as const;
+export type MouvementCaisseStatus = (typeof MOUVEMENT_CAISSE_STATUSES)[number];
+
 export interface Ecriture {
   id: string;
   group_id: string;
@@ -111,6 +117,12 @@ export interface MouvementCaisse {
   date_mouvement: string;
   description: string;
   amount_cents: number;
+  type: MouvementCaisseType | null;
+  numero_piece: string | null;
+  status: MouvementCaisseStatus;
+  depot_id: string | null;
+  airtable_id: string | null;
+  comptaweb_ecriture_id: number | null;
   unite_id?: string | null;
   activite_id?: string | null;
   solde_apres_cents: number | null;
@@ -118,6 +130,18 @@ export interface MouvementCaisse {
   created_at: string;
   unite_code?: string | null;
   activite_name?: string | null;
+}
+
+export interface DepotEspeces {
+  id: string;
+  group_id: string;
+  date_depot: string;
+  total_amount_cents: number;
+  detail_billets: string | null;
+  ecriture_id: string | null;
+  airtable_id: string | null;
+  notes: string | null;
+  created_at: string;
 }
 
 export interface Category {
