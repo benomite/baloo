@@ -320,9 +320,24 @@ export async function importComptawebCsv(
          AND COALESCE(category_id, '') = COALESCE(?, '')
        LIMIT 1`,
     );
-    // Niveau "loose" mais TOUJOURS avec category_id : matche les
-    // anciennes écritures sans piece ni description (encoding cassé)
-    // mais distingue les ventilations différentes par leur catégorie.
+    // findByPiece : matche par (date, amount, type, piece) sans
+    // contrainte de category. Activé uniquement si piece NON NULL.
+    // Le numero_piece est un identifiant Comptaweb unique (JUS-XXX,
+    // ECR-XXX, SA25-XX) → pas de risque de confondre 2 ventilations.
+    // Cas typique : un Draft existant a category renseignée mais le
+    // CSV ré-import a category=NULL (findCategoryId raté) — sans
+    // ce niveau, INSERT en doublon.
+    const findByPiece = txDb.prepare(
+      `SELECT id FROM ecritures
+       WHERE group_id = ? AND status = 'saisie_comptaweb'
+         AND date_ecriture = ? AND amount_cents = ? AND type = ?
+         AND numero_piece = ?
+       LIMIT 1`,
+    );
+    // findByCat : matche les anciennes écritures sans piece ni
+    // description (encoding cassé pré-fix). Activé uniquement si
+    // category_id NON NULL — sinon 2 ventilations sans catégorie
+    // (FSI vs ancienne Territoire) seraient fusionnées.
     const findByCat = txDb.prepare(
       `SELECT id FROM ecritures
        WHERE group_id = ? AND status = 'saisie_comptaweb'
@@ -357,11 +372,13 @@ export async function importComptawebCsv(
       piece: string | null;
       notes: string;
     }) {
-      // findByCat n'est tenté QUE si on a une category_id : sinon
-      // 2 ventilations sans catégorie (cas FSI vs ancienne Territoire
-      // pré-fix encoding) seraient fusionnées par erreur. On préfère
-      // générer un doublon (rattrapable via dedup) plutôt que perdre
-      // une ventilation entière.
+      // Cascade matching : du plus précis vers le plus tolérant.
+      // findByPiece et findByCat sont conditionnels pour éviter les
+      // faux match :
+      // - findByPiece : seulement si piece existe (sinon 2 ventilations
+      //   sans piece à même date/amount seraient fusionnées)
+      // - findByCat : seulement si category_id existe (sinon 2 lignes
+      //   sans catégorie seraient fusionnées)
       const existing =
         (await findExact.get<{ id: string }>(
           groupId, args.date, args.amount, args.type, args.piece, args.description, args.categoryId,
@@ -369,6 +386,11 @@ export async function importComptawebCsv(
         (await findByPieceCat.get<{ id: string }>(
           groupId, args.date, args.amount, args.type, args.piece, args.categoryId,
         )) ||
+        (args.piece
+          ? await findByPiece.get<{ id: string }>(
+              groupId, args.date, args.amount, args.type, args.piece,
+            )
+          : null) ||
         (args.categoryId
           ? await findByCat.get<{ id: string }>(
               groupId, args.date, args.amount, args.type, args.categoryId,
