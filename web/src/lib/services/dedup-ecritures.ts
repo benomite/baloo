@@ -7,8 +7,13 @@
 // écritures complètes.
 //
 // Stratégie :
-// 1. Grouper par (group, date, amount, type) — clé naturelle d'une ligne
-//    bancaire. À l'intérieur de chaque groupe, plusieurs lignes = doublons.
+// 1. Grouper par (group, date, amount, type, numero_piece, description).
+//    Ces 6 champs forment l'identité d'une écriture — 2 lignes qui les
+//    partagent sont vraiment des doublons. Sans description+piece, on
+//    confondait des ventilations distinctes : mestre 568€ Participation
+//    piece=10 vs chabrol 568€ Cotisations piece=6 (mêmes date/amount/type
+//    mais écritures différentes), ou Ruseva 24€ vs LeRest 24€ (Inscriptions
+//    Impeesa différentes le même jour).
 // 2. Choisir la "meilleure" par scoring (description renseignée, unite_id,
 //    category_id, mode_paiement_id, activite_id, justif_attendu, notes).
 // 3. Pour les autres : DELETE seulement si elles n'ont AUCUN lien externe :
@@ -75,14 +80,18 @@ export async function findCsvDuplicates({ groupId }: { groupId: string }): Promi
   // saisie_comptaweb dans ce groupe.
   const dupKeys = await db
     .prepare(
-      `SELECT date_ecriture, amount_cents, type, COUNT(*) as cnt
+      `SELECT date_ecriture, amount_cents, type,
+              COALESCE(numero_piece, '') as piece,
+              COALESCE(description, '') as descr,
+              COUNT(*) as cnt
        FROM ecritures
        WHERE group_id = ? AND status = 'saisie_comptaweb'
-       GROUP BY date_ecriture, amount_cents, type
+       GROUP BY date_ecriture, amount_cents, type,
+                COALESCE(numero_piece, ''), COALESCE(description, '')
        HAVING cnt > 1
        ORDER BY date_ecriture DESC`,
     )
-    .all<{ date_ecriture: string; amount_cents: number; type: 'depense' | 'recette'; cnt: number }>(groupId);
+    .all<{ date_ecriture: string; amount_cents: number; type: 'depense' | 'recette'; piece: string; descr: string; cnt: number }>(groupId);
 
   const groups: DedupGroup[] = [];
   let totalDuplicates = 0;
@@ -96,9 +105,11 @@ export async function findCsvDuplicates({ groupId }: { groupId: string }): Promi
                 category_id, mode_paiement_id, activite_id, notes
          FROM ecritures
          WHERE group_id = ? AND status = 'saisie_comptaweb'
-           AND date_ecriture = ? AND amount_cents = ? AND type = ?`,
+           AND date_ecriture = ? AND amount_cents = ? AND type = ?
+           AND COALESCE(numero_piece, '') = ?
+           AND COALESCE(description, '') = ?`,
       )
-      .all<EcritureRow>(groupId, k.date_ecriture, k.amount_cents, k.type);
+      .all<EcritureRow>(groupId, k.date_ecriture, k.amount_cents, k.type, k.piece, k.descr);
 
     // Pour chaque écriture, vérifier si elle a un lien externe.
     const candidates: DedupCandidate[] = [];
