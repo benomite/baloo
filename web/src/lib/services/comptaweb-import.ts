@@ -375,13 +375,21 @@ export async function importComptawebCsv(
       // PLUS de findByCat car il confondait 2 ventilations distinctes
       // de même catégorie/montant/date (cf. cas LeRest vs Ruseva 24€
       // Cotisations Impeesas le 20/12, mestre 568€ Participation 22/09).
+      // findByPieceCat est conditionné à piece non vide : sinon
+      // COALESCE(numero_piece, '') = '' matche n'importe quelle écriture
+      // sans piece (cas concret : "Inscription Impeesa LeRest" et
+      // "Inscription Impeesa Ruseva" — mêmes date/amount/type/cat,
+      // pieces NULL, descriptions différentes — findExact ne matche
+      // pas (description ≠) mais findByPieceCat fusionne à tort).
       const existing =
         (await findExact.get<{ id: string }>(
           groupId, args.date, args.amount, args.type, args.piece, args.description, args.categoryId,
         )) ||
-        (await findByPieceCat.get<{ id: string }>(
-          groupId, args.date, args.amount, args.type, args.piece, args.categoryId,
-        )) ||
+        (args.piece
+          ? await findByPieceCat.get<{ id: string }>(
+              groupId, args.date, args.amount, args.type, args.piece, args.categoryId,
+            )
+          : null) ||
         (args.piece
           ? await findByPiece.get<{ id: string }>(
               groupId, args.date, args.amount, args.type, args.piece,
