@@ -121,6 +121,10 @@ Les intégrations sont documentées dans [`doc/integrations.md`](doc/integration
 - **Airtable** : MCP officiel, lecture seule au MVP (PAT en lecture).
 - **Google Workspace (Gmail + Drive)** : MCP communautaire `taylorwilsdon/google_workspace_mcp`, lancé avec `--read-only --tools gmail drive`. La lecture seule est imposée par le MCP lui-même.
 - **Notion** : accessible uniquement si le user a un compte **membre** du workspace (pas invité). Cf. doc/integrations.md.
+- **`compta` (Baloo BDD prod)** : MCP local qui appelle l'API webapp Next.js via HTTP. Permet de lire/écrire en BDD prod sans passer par l'UI. Utile pour audit (totaux, listes filtrées) et corrections ciblées (notes, todos, personnes). PAS d'opération DELETE exposée sur les écritures (cohérent avec la règle "JAMAIS de DELETE" de cette doc).
+  - Config : `compta/.env` doit contenir `BALOO_API_URL=https://baloo.benomite.com` + `BALOO_API_TOKEN=<token>`. Sans token : MCP renvoie 401.
+  - Génération token : `cd web && pnpm exec tsx scripts/generate-api-token.ts <email-trésorier> --name "<nom>"`. Token affiché 1× (hash SHA-256 stocké en BDD).
+  - Si `vue_ensemble` ou autres outils MCP renvoient 401 → token absent ou expiré → demander au user de régénérer + redémarrer Claude Code.
 
 Si un MCP est disponible, préfère-le à une demande manuelle à l'utilisateur. Si un MCP semble indisponible ou casse, signale-le clairement et propose une alternative.
 
