@@ -184,10 +184,22 @@ export async function importComptawebCsv(
   // Lookup catégories / activités / unités en parallèle — 3 requêtes
   // indépendantes, on économise 2 RTT sur libsql HTTP.
   const [categories, activites, unites] = await Promise.all([
-    db.prepare(`SELECT id, name FROM categories`).all<{ id: string; name: string }>(),
+    db.prepare(`SELECT id, name, comptaweb_nature FROM categories`).all<{ id: string; name: string; comptaweb_nature: string | null }>(),
     db.prepare(`SELECT id, name FROM activites WHERE group_id = ?`).all<{ id: string; name: string }>(groupId),
     db.prepare(`SELECT id, code, name FROM unites WHERE group_id = ?`).all<{ id: string; code: string; name: string }>(groupId),
   ]);
+  // Match d'abord par comptaweb_nature (libellé exact tel qu'il sort du
+  // CSV Comptaweb) ; fallback sur name (fuzzy). Le mapping name fuzzy
+  // ratait "Participation au Fct du Mouvement" car cn="participation au
+  // fonctionnement du mouvement" — startsWith/includes faux par "fct" ≠
+  // "fonctionnement". Du coup category_id=null à l'INSERT et findExact ne
+  // matchait plus l'écriture précédente (qui avait cat correct via un
+  // ancien mapping), créant un doublon.
+  const categoriesByNature = new Map(
+    categories
+      .filter((c) => c.comptaweb_nature)
+      .map((c) => [normalize(c.comptaweb_nature!), c.id]),
+  );
   const categoriesByName = new Map(categories.map((c) => [normalize(c.name), c.id]));
   const activitesByName = new Map(activites.map((a) => [normalize(a.name), a.id]));
   const unitesByCode = new Map(unites.map((u) => [u.code, u.id]));
@@ -196,6 +208,7 @@ export async function importComptawebCsv(
   function findCategoryId(name: string): string | null {
     const n = normalize(name);
     if (!n) return null;
+    if (categoriesByNature.has(n)) return categoriesByNature.get(n)!;
     if (categoriesByName.has(n)) return categoriesByName.get(n)!;
     for (const c of categories) {
       const cn = normalize(c.name);

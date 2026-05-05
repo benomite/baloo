@@ -7,13 +7,17 @@
 // écritures complètes.
 //
 // Stratégie :
-// 1. Grouper par (group, date, amount, type, numero_piece, description).
-//    Ces 6 champs forment l'identité d'une écriture — 2 lignes qui les
-//    partagent sont vraiment des doublons. Sans description+piece, on
-//    confondait des ventilations distinctes : mestre 568€ Participation
-//    piece=10 vs chabrol 568€ Cotisations piece=6 (mêmes date/amount/type
-//    mais écritures différentes), ou Ruseva 24€ vs LeRest 24€ (Inscriptions
-//    Impeesa différentes le même jour).
+// 1. Grouper par (group, date, amount, type, numero_piece, description,
+//    category_id). Ces 7 champs forment l'identité d'une écriture — 2
+//    lignes qui les partagent sont vraiment des doublons. Sans
+//    description+piece+cat, on confondait des ventilations distinctes :
+//    - mestre 568€ Participation piece=10 vs chabrol 568€ Cotisations
+//      piece=6 (mêmes date/amount/type mais écritures différentes)
+//    - Ruseva 24€ vs LeRest 24€ (Inscriptions Impeesa différentes le
+//      même jour)
+//    - Regroupement prélèvements 420€ Territoire vs 420€ FSI (mêmes
+//      date/amount/type/piece/description, ventilations distinctes
+//      différenciées par catégorie uniquement)
 // 2. Choisir la "meilleure" par scoring (description renseignée, unite_id,
 //    category_id, mode_paiement_id, activite_id, justif_attendu, notes).
 // 3. Pour les autres : DELETE seulement si elles n'ont AUCUN lien externe :
@@ -90,15 +94,17 @@ export async function findCsvDuplicates({ groupId }: { groupId: string }): Promi
       `SELECT date_ecriture, amount_cents, type,
               COALESCE(numero_piece, '') as piece,
               COALESCE(description, '') as descr,
+              COALESCE(category_id, '') as cat,
               COUNT(*) as cnt
        FROM ecritures
        WHERE group_id = ? AND status = 'saisie_comptaweb'
        GROUP BY date_ecriture, amount_cents, type,
-                COALESCE(numero_piece, ''), COALESCE(description, '')
+                COALESCE(numero_piece, ''), COALESCE(description, ''),
+                COALESCE(category_id, '')
        HAVING cnt > 1
        ORDER BY date_ecriture DESC`,
     )
-    .all<{ date_ecriture: string; amount_cents: number; type: 'depense' | 'recette'; piece: string; descr: string; cnt: number }>(groupId);
+    .all<{ date_ecriture: string; amount_cents: number; type: 'depense' | 'recette'; piece: string; descr: string; cat: string; cnt: number }>(groupId);
 
   const groups: DedupGroup[] = [];
   let totalDuplicates = 0;
@@ -118,9 +124,10 @@ export async function findCsvDuplicates({ groupId }: { groupId: string }): Promi
          WHERE e.group_id = ? AND e.status = 'saisie_comptaweb'
            AND e.date_ecriture = ? AND e.amount_cents = ? AND e.type = ?
            AND COALESCE(e.numero_piece, '') = ?
-           AND COALESCE(e.description, '') = ?`,
+           AND COALESCE(e.description, '') = ?
+           AND COALESCE(e.category_id, '') = ?`,
       )
-      .all<EcritureRow>(groupId, k.date_ecriture, k.amount_cents, k.type, k.piece, k.descr);
+      .all<EcritureRow>(groupId, k.date_ecriture, k.amount_cents, k.type, k.piece, k.descr, k.cat);
 
     // Pour chaque écriture, vérifier si elle a un lien externe.
     const candidates: DedupCandidate[] = [];
