@@ -119,6 +119,102 @@ Si un commentaire SQL contient un backtick (par exemple en mettant un nom de col
 
 Vu le bug : commit `1253841` (commentaire avec `` `donateur` `` qui cassait TS).
 
+## Import CSV Comptaweb
+
+Tout le pipeline d'import (`lib/services/comptaweb-import.ts`) a un piège
+fondamental : le CSV peut produire **plusieurs ventilations distinctes
+au même tuple** `(date, amount, type, piece, description)` qui ne se
+différencient que par la **catégorie**. Tout matching qui ignore `cat`
+fusionne ces ventilations et perd des données. Tout matching qui
+ignore une autre dimension (description, piece) idem.
+
+### Matching cascade UPSERT
+L'ordre des lookups dans `upsertEcriture` est critique :
+
+```ts
+const existing =
+  (await findExact.get(...)) ||              // tout égal y compris cat
+  (args.piece ? findByPieceCat(...) : null) || // piece+cat (piece NON null)
+  (args.piece ? findByPiece(...) : null);     // piece seul (piece NON null)
+```
+
+- `findExact` doit comparer **toutes** les colonnes d'identité :
+  `date+amount+type+piece+description+category_id` (avec COALESCE pour
+  les nullables).
+- `findByPieceCat` et `findByPiece` doivent être **conditionnés à
+  `piece` non vide** : sinon `COALESCE(piece, '') = ''` matche n'importe
+  quelle écriture sans piece, fusionnant des ventilations distinctes.
+- **Pas de `findByCat` sans piece** : confond 2 ventilations à mêmes
+  date/amount/type/cat (ex. LeRest 24€ Cotisations Impeesa vs Ruseva
+  24€ Cotisations Impeesa, mêmes 20/12/2025).
+
+Vu les bugs : commits `9e3475e`, `eeaf030`, `434e6fe`.
+
+### Mapping nature CSV → category_id : utiliser `comptaweb_nature`
+
+La table `categories` a un champ `comptaweb_nature` qui contient le
+**libellé exact** que Comptaweb met dans la colonne `Nature` du CSV
+(ex. `"Participation au Fct du Mouvement"`). Le champ `name` est le
+libellé "humain" plus long (ex. `"Participation au fonctionnement du
+mouvement"`).
+
+Matching à faire dans cet ordre :
+1. **Exact sur `comptaweb_nature`** (priorité : 100% fiable)
+2. Exact sur `name` (fallback)
+3. Fuzzy sur `name` (startsWith/includes — dernier recours)
+
+Le fuzzy seul échoue sur les abréviations ("Fct" ≠ "fonctionnement").
+Quand le mapping rate, la ventilation se retrouve avec `category_id =
+null` ; au re-import suivant `findExact` ne match plus l'écriture
+précédente (qui avait cat correct via une chance fuzzy passée), et un
+**doublon** est créé.
+
+Vu le bug : commit `36cf6da`.
+
+### Dédup et cleanup orphelins : critère = identité complète
+
+`dedup-ecritures.ts` groupe par `(date, amount, type, piece, description,
+category_id)` — les 6 champs d'identité d'une écriture. Un critère plus
+laxiste fusionne des ventilations distinctes (ex. mestre 568€
+Participation piece=10 vs chabrol 568€ Cotisations piece=6).
+
+Le cleanup orphelins (`findOrphansWithoutCategory`) cherche pour chaque
+écriture cat=null une "twin" cat-définie avec mêmes
+`(date, amount, type, piece, description)`. **Garde-fou** : il ne
+propose la suppression que si exactement 2 écritures partagent
+`(date, piece, description)` toutes catégories confondues. Si > 2,
+c'est un regroupement multi-ventilations (ex. ESP-2501 27/09 a 7
+ventilations dont Cotisations 20€ ET Dons 20€) — l'orphelin pourrait
+être l'une d'elles, suppression dangereuse.
+
+Vu le bug : commit `7989125` (cleanup avait supprimé Dons 20€ ESP-2501
+en la prenant pour un doublon de Cotisations 20€ ESP-2501).
+
+### Encoding CSV : Windows-1252
+
+L'export Comptaweb est en **Windows-1252** (Excel français), pas UTF-8.
+Lecture obligatoire via :
+```ts
+const content = new TextDecoder('windows-1252').decode(buffer);
+```
+Sinon les colonnes "Dépense" / "Dépôt" deviennent illisibles → totaux
+à zéro et lignes mal classées comme transferts internes.
+
+Vu le bug : commit `4a19d70`.
+
+### Outils de debug
+
+`web/scripts/audit-csv-totals.ts` : calcule les totaux dépenses/recettes
+attendus en parsant le CSV en local (sans toucher la BDD). Sert à
+vérifier que `solde Baloo synced ≈ solde compte de résultat Comptaweb`.
+
+`web/scripts/audit-csv-matching.ts` : trace les groupes du CSV pour
+diagnostic du parser sans appel BDD.
+
+```bash
+pnpm tsx scripts/audit-csv-totals.ts <chemin-csv>
+```
+
 ## Git / déploiement
 
 ### Pas de push sans accord explicite
