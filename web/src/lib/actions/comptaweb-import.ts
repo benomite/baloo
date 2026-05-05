@@ -7,7 +7,10 @@ import { importComptawebCsv } from '../services/comptaweb-import';
 import {
   findCsvDuplicates as findCsvDuplicatesService,
   deleteCsvDuplicates as deleteCsvDuplicatesService,
+  findOrphansWithoutCategory as findOrphansService,
+  deleteOrphansWithoutCategory as deleteOrphansService,
   type DedupReport,
+  type OrphanReport,
 } from '../services/dedup-ecritures';
 import {
   findInternalTransfers as findTransfertsService,
@@ -124,6 +127,47 @@ export async function deleteEcritureDuplicates(
     return { ok: true, ...result };
   } catch (err) {
     logError('dedup-ecritures', 'Suppression doublons échouée', err);
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// Détecte les écritures saisie_comptaweb sans catégorie qui ont une
+// "twin" (mêmes date, amount, type, piece, description) avec catégorie
+// définie. Ces orphelins sont des doublons générés par d'anciens imports
+// avant le fix mapping comptaweb_nature. Dry-run.
+export async function detectOrphansWithoutCategory(): Promise<OrphanReport & { ok: boolean; error?: string }> {
+  try {
+    const ctx = await getCurrentContext();
+    if (!ADMIN_ROLES.includes(ctx.role)) {
+      return { ok: false, error: 'Action réservée aux trésoriers / RG.', withTwin: [], withoutTwin: [], totalDeletable: 0, totalNeedsCompletion: 0 };
+    }
+    const report = await findOrphansService({ groupId: ctx.groupId });
+    return { ok: true, ...report };
+  } catch (err) {
+    logError('orphans-no-category', 'Détection orphelins échouée', err);
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+      withTwin: [], withoutTwin: [], totalDeletable: 0, totalNeedsCompletion: 0,
+    };
+  }
+}
+
+export async function deleteOrphansWithoutCategory(
+  ids: string[],
+): Promise<{ ok: boolean; deleted?: number; skipped?: number; error?: string }> {
+  try {
+    const ctx = await getCurrentContext();
+    if (!ADMIN_ROLES.includes(ctx.role)) {
+      return { ok: false, error: 'Action réservée aux trésoriers / RG.' };
+    }
+    const result = await deleteOrphansService({ groupId: ctx.groupId }, ids);
+    revalidatePath('/import');
+    revalidatePath('/ecritures');
+    revalidatePath('/synthese');
+    return { ok: true, ...result };
+  } catch (err) {
+    logError('orphans-no-category', 'Suppression orphelins échouée', err);
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }

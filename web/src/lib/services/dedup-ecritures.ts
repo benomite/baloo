@@ -247,3 +247,117 @@ export async function deleteCsvDuplicates(
   }
   return { deleted, skipped };
 }
+
+// ============================================================================
+// Cleanup des orphelins cat=null générés par d'anciens imports buggés.
+//
+// Contexte : avant le fix mapping comptaweb_nature, certaines ventilations
+// CSV n'étaient pas mappées à la bonne catégorie (ex. "Participation au
+// Fct du Mouvement" → fuzzy fail → category_id=null). Du coup findExact
+// ne matchait pas l'écriture précédente (qui avait cat correct via mapping
+// fuzzy plus chanceux à un autre import) → INSERT en doublon avec cat=null.
+//
+// Détection : pour chaque écriture saisie_comptaweb avec category_id=null,
+// chercher une "twin" (mêmes date, amount, type, piece, description) qui a
+// category_id défini. Si une twin existe → l'orphelin est un doublon de
+// la twin (créé par un import qui a raté le mapping de catégorie). Sinon
+// l'orphelin est légitime, juste à compléter à la main.
+// ============================================================================
+
+export interface OrphanCandidate {
+  id: string;
+  date_ecriture: string;
+  amount_cents: number;
+  type: 'depense' | 'recette';
+  description: string | null;
+  numero_piece: string | null;
+  notes: string | null;
+  twin_id: string | null;
+  twin_category_name: string | null;
+  has_links: boolean;
+}
+
+export interface OrphanReport {
+  withTwin: OrphanCandidate[]; // peuvent être supprimés (doublons d'une twin)
+  withoutTwin: OrphanCandidate[]; // légitimes, à compléter à la main
+  totalDeletable: number;
+  totalNeedsCompletion: number;
+}
+
+export async function findOrphansWithoutCategory(
+  { groupId }: { groupId: string },
+): Promise<OrphanReport> {
+  const db = getDb();
+  const orphans = await db
+    .prepare(
+      `SELECT id, date_ecriture, amount_cents, type, description, numero_piece, notes
+       FROM ecritures
+       WHERE group_id = ? AND status = 'saisie_comptaweb'
+         AND category_id IS NULL
+       ORDER BY date_ecriture DESC`,
+    )
+    .all<{
+      id: string; date_ecriture: string; amount_cents: number;
+      type: 'depense' | 'recette'; description: string | null;
+      numero_piece: string | null; notes: string | null;
+    }>(groupId);
+
+  const withTwin: OrphanCandidate[] = [];
+  const withoutTwin: OrphanCandidate[] = [];
+
+  for (const o of orphans) {
+    const twin = await db
+      .prepare(
+        `SELECT e.id, c.name as cat_name
+         FROM ecritures e
+         LEFT JOIN categories c ON c.id = e.category_id
+         WHERE e.group_id = ? AND e.status = 'saisie_comptaweb'
+           AND e.id != ?
+           AND e.date_ecriture = ? AND e.amount_cents = ? AND e.type = ?
+           AND COALESCE(e.numero_piece, '') = COALESCE(?, '')
+           AND COALESCE(e.description, '') = COALESCE(?, '')
+           AND e.category_id IS NOT NULL
+         LIMIT 1`,
+      )
+      .get<{ id: string; cat_name: string | null }>(
+        groupId, o.id, o.date_ecriture, o.amount_cents, o.type,
+        o.numero_piece, o.description,
+      );
+
+    const justifs = await db
+      .prepare(`SELECT COUNT(*) as n FROM justificatifs WHERE entity_type='ecriture' AND entity_id=?`)
+      .get<{ n: number }>(o.id);
+    const depots = await db
+      .prepare(`SELECT COUNT(*) as n FROM depots_justificatifs WHERE ecriture_id=?`)
+      .get<{ n: number }>(o.id);
+    const rembs = await db
+      .prepare(`SELECT COUNT(*) as n FROM remboursements WHERE ecriture_id=?`)
+      .get<{ n: number }>(o.id);
+    const has_links = (justifs?.n ?? 0) + (depots?.n ?? 0) + (rembs?.n ?? 0) > 0;
+
+    const candidate: OrphanCandidate = {
+      ...o,
+      twin_id: twin?.id ?? null,
+      twin_category_name: twin?.cat_name ?? null,
+      has_links,
+    };
+    if (twin && !has_links) withTwin.push(candidate);
+    else withoutTwin.push(candidate);
+  }
+
+  return {
+    withTwin,
+    withoutTwin,
+    totalDeletable: withTwin.length,
+    totalNeedsCompletion: withoutTwin.length,
+  };
+}
+
+export async function deleteOrphansWithoutCategory(
+  { groupId }: { groupId: string },
+  ids: string[],
+): Promise<DedupExecResult> {
+  // Réutilise la même logique que deleteCsvDuplicates (re-check liens
+  // externes + status saisie_comptaweb) — sécurité identique.
+  return deleteCsvDuplicates({ groupId }, ids);
+}

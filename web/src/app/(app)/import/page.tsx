@@ -27,6 +27,7 @@ import { PendingButton } from '@/components/shared/pending-button';
 import { SyncReferentielsButton } from '@/components/config/sync-referentiels-button';
 import { DedupEcrituresButton } from '@/components/admin/dedup-ecritures-button';
 import { CleanupTransfertsButton } from '@/components/admin/cleanup-transferts-button';
+import { CleanupOrphansButton } from '@/components/admin/cleanup-orphans-button';
 import { getDb } from '@/lib/db';
 import { getCurrentContext } from '@/lib/context';
 import { requireAdmin } from '@/lib/auth/access';
@@ -207,6 +208,7 @@ export default async function ImportPage({
         action={
           <div className="flex flex-wrap items-start gap-2">
             <CleanupTransfertsButton />
+            <CleanupOrphansButton />
             <DedupEcrituresButton />
           </div>
         }
