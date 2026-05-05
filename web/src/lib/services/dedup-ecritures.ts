@@ -27,8 +27,12 @@ import { getDb } from '../db';
 export interface DedupCandidate {
   id: string;
   description: string | null;
+  numero_piece: string | null;
   unite_id: string | null;
+  unite_name: string | null;
   category_id: string | null;
+  category_name: string | null;
+  notes: string | null;
   has_links: boolean; // a un justif/dépôt/remb attaché
   score: number;
 }
@@ -56,8 +60,11 @@ interface EcritureRow {
   amount_cents: number;
   type: 'depense' | 'recette';
   description: string | null;
+  numero_piece: string | null;
   unite_id: string | null;
+  unite_name: string | null;
   category_id: string | null;
+  category_name: string | null;
   mode_paiement_id: string | null;
   activite_id: string | null;
   notes: string | null;
@@ -101,13 +108,17 @@ export async function findCsvDuplicates({ groupId }: { groupId: string }): Promi
   for (const k of dupKeys) {
     const rows = await db
       .prepare(
-        `SELECT id, date_ecriture, amount_cents, type, description, unite_id,
-                category_id, mode_paiement_id, activite_id, notes
-         FROM ecritures
-         WHERE group_id = ? AND status = 'saisie_comptaweb'
-           AND date_ecriture = ? AND amount_cents = ? AND type = ?
-           AND COALESCE(numero_piece, '') = ?
-           AND COALESCE(description, '') = ?`,
+        `SELECT e.id, e.date_ecriture, e.amount_cents, e.type, e.description,
+                e.numero_piece, e.unite_id, u.name as unite_name,
+                e.category_id, c.name as category_name,
+                e.mode_paiement_id, e.activite_id, e.notes
+         FROM ecritures e
+         LEFT JOIN unites u ON u.id = e.unite_id
+         LEFT JOIN categories c ON c.id = e.category_id
+         WHERE e.group_id = ? AND e.status = 'saisie_comptaweb'
+           AND e.date_ecriture = ? AND e.amount_cents = ? AND e.type = ?
+           AND COALESCE(e.numero_piece, '') = ?
+           AND COALESCE(e.description, '') = ?`,
       )
       .all<EcritureRow>(groupId, k.date_ecriture, k.amount_cents, k.type, k.piece, k.descr);
 
@@ -134,8 +145,12 @@ export async function findCsvDuplicates({ groupId }: { groupId: string }): Promi
       candidates.push({
         id: r.id,
         description: r.description,
+        numero_piece: r.numero_piece,
         unite_id: r.unite_id,
+        unite_name: r.unite_name,
         category_id: r.category_id,
+        category_name: r.category_name,
+        notes: r.notes,
         has_links: hasLinks,
         score: scoreEcriture(r),
       });
