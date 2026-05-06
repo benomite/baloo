@@ -198,59 +198,57 @@ export async function fetchCaisseGestion(
   return parseCaisseGestionHtml(html);
 }
 
-// Liste des caisses du groupe (page `/caisse`). Sert à découvrir
-// l'identifiant de la caisse principale au premier sync.
+// Liste des caisses du groupe. Source : le `<select
+// name="caissegestion">` de `/caisse/gestion?m=1` qui contient toutes
+// les caisses en dur dans le HTML (la page `/caisse` charge ses
+// données via AJAX/DataTables et le tbody est vide côté SSR — donc
+// inutilisable depuis un fetch serveur).
 export function parseCaisseListHtml(html: string): CaisseListItem[] {
-  // Comme parseCaisseGestionHtml : si Comptaweb sert le formulaire de
-  // login en HTTP 200 (cookie expiré sans redirect), on doit le
-  // détecter pour que withAutoReLogin re-tente. Sinon le parser
-  // retourne juste [] et on conclut "aucune caisse active" à tort.
+  // Détection page de login servie en 200 (cf. parseCaisseGestionHtml).
   const looksLikeLogin =
     /id=["']?kc-page-title|action=["']?[^"']*openid-connect|name=["']?password["']/i.test(
       html,
     );
-  if (looksLikeLogin && !/\/caisse\/\d+\/(show|edit)/.test(html)) {
+  if (looksLikeLogin && !/name=["']caissegestion["']/.test(html)) {
     throw new ComptawebSessionExpiredError();
   }
 
   const $ = cheerio.load(html);
+  const select = $('select[name="caissegestion"]').first();
   const out: CaisseListItem[] = [];
-  // Les liens "/caisse/{id}/show" / "/caisse/{id}/edit" pointent vers
-  // chaque caisse. On déduit la liste depuis ces liens et on récupère
-  // le libellé via la première cellule de la ligne.
-  $('a[href^="/caisse/"]').each((_, a) => {
-    const href = $(a).attr('href') ?? '';
-    const m = href.match(/^\/caisse\/(\d+)\//);
-    if (!m) return;
-    const id = Number(m[1]);
-    if (out.some((c) => c.id === id)) return;
-    const tr = $(a).closest('tr');
-    const cells = tr.find('td').toArray();
-    if (cells.length < 3) return;
-    // Colonnes thead : Libellé | Devise | Utilisateur qui la gère | Inactive
+  select.find('option').each((_, opt) => {
+    const value = $(opt).attr('value') ?? '';
+    const id = Number(value);
+    if (!Number.isFinite(id) || id <= 0) return;
+    const libelle = $(opt).text().trim();
+    if (!libelle) return;
     out.push({
       id,
-      libelle: $(cells[0]).text().trim(),
-      devise: $(cells[1]).text().trim(),
-      gerant: $(cells[2]).text().trim(),
-      inactif: ($(cells[3]).text().trim() || '').toLowerCase().includes('inactive'),
+      libelle,
+      // Le select ne porte ni gérant, ni devise, ni statut actif/inactif.
+      // Comptaweb n'expose pas ces infos dans cette source ; on met des
+      // valeurs raisonnables par défaut. Si la caisse était inactive,
+      // elle ne serait pas dans le select de gestion.
+      devise: '',
+      gerant: '',
+      inactif: false,
     });
   });
   return out;
 }
 
 export async function fetchCaisseList(config: ComptawebConfig): Promise<CaisseListItem[]> {
-  const html = await fetchHtml(config, '/caisse');
+  // On utilise `/caisse/gestion?m=1` (et non `/caisse`) parce que cette
+  // page contient le `<select name="caissegestion">` rempli côté SSR.
+  // La page `/caisse` charge sa table via AJAX → tbody vide en SSR.
+  const html = await fetchHtml(config, '/caisse/gestion?m=1');
   const list = parseCaisseListHtml(html);
   if (list.length === 0) {
-    // Erreur "0 caisse" : on attache un échantillon du HTML pour
-    // comprendre côté `/admin/errors` (page de login non détectée ?
-    // structure inattendue ?). Évite de redéployer juste pour debug.
-    const sample = html.replace(/\s+/g, ' ').slice(0, 1500);
+    const sample = html.replace(/\s+/g, ' ').slice(0, 2000);
     const titleMatch = html.match(/<title>([^<]*)<\/title>/i);
     throw Object.assign(
       new Error(
-        `Page /caisse retournée par Comptaweb ne contient aucune caisse parseable. ` +
+        `Page /caisse/gestion?m=1 ne contient aucun option de caisse. ` +
           `Title="${titleMatch?.[1]?.trim() ?? '(inconnu)'}", htmlLen=${html.length}.`,
       ),
       { htmlSample: sample },

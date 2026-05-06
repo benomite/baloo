@@ -44,24 +44,14 @@ const FIXTURE_GESTION = `<!doctype html><html><body>
 </table>
 </body></html>`;
 
+// Le parser source = le <select name="caissegestion"> de
+// /caisse/gestion?m=1, plus fiable que la table /caisse (chargée en
+// AJAX donc vide côté SSR).
 const FIXTURE_LIST = `<!doctype html><html><body>
-<table>
-  <thead>
-    <tr><th>Libellé</th><th>Devise</th><th>Utilisateur qui la gère</th><th>Inactive</th><th></th></tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>Caisse Groupe</td>
-      <td>Euro</td>
-      <td>FOURNAND DAMIEN</td>
-      <td>Active</td>
-      <td>
-        <a href="/caisse/141/show">Voir</a>
-        <a href="/caisse/141/edit">Modifier</a>
-      </td>
-    </tr>
-  </tbody>
-</table>
+<select name="caissegestion">
+  <option value="0">— choisir une caisse —</option>
+  <option value="141">Caisse Groupe</option>
+</select>
 </body></html>`;
 
 describe('parseCaisseGestionHtml', () => {
@@ -104,10 +94,19 @@ describe('parseCaisseGestionHtml', () => {
 });
 
 describe('parseCaisseListHtml', () => {
-  it('extrait les caisses depuis les liens /caisse/{id}/show', () => {
+  it('extrait les caisses depuis le select de /caisse/gestion?m=1', () => {
     const list = parseCaisseListHtml(FIXTURE_LIST);
     expect(list).toEqual([
-      { id: 141, libelle: 'Caisse Groupe', gerant: 'FOURNAND DAMIEN', devise: 'Euro', inactif: false },
+      { id: 141, libelle: 'Caisse Groupe', devise: '', gerant: '', inactif: false },
     ]);
+  });
+
+  it('ignore les options sans valeur numérique (placeholder)', () => {
+    const html = `<select name="caissegestion">
+      <option value="0">— choisir —</option>
+      <option value="">vide</option>
+      <option value="abc">non numérique</option>
+    </select>`;
+    expect(parseCaisseListHtml(html)).toEqual([]);
   });
 });
