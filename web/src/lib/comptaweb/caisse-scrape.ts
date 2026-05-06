@@ -60,40 +60,49 @@ function mapType(text: string): 'recette' | 'depense' | 'transfert' {
   throw new Error(`Type de mouvement caisse inconnu : "${text}"`);
 }
 
+// Sélection robuste : Comptaweb rend une table "wrapper" qui agrège
+// les headers des sous-tables. On filtre donc par le **set exact** des
+// headers attendus (et non un sous-ensemble), pour viser la vraie
+// table de chaque type.
+function tableHeaders($: CheerioAPI, t: AnyNode): string[] {
+  return $(t)
+    .find('thead th, thead td')
+    .toArray()
+    .map((th) => $(th).text().replace(/\s+/g, ' ').trim());
+}
+
 function findMouvementsTable($: CheerioAPI): Cheerio<AnyNode> {
-  // La table mouvements porte un thead avec ces colonnes typiques.
-  // On choisit la première table qui matche pour être robuste à
-  // d'autres tables présentes (ex. tableau récap solde au-dessus).
-  const tables = $('table');
-  for (const t of tables.toArray()) {
-    const ths = $(t)
-      .find('thead th, thead td')
-      .toArray()
-      .map((th) => $(th).text().trim());
+  for (const t of $('table').toArray()) {
+    const ths = tableHeaders($, t);
+    // Vraie table mouvements : commence par '' (case action) puis
+    // Date/Type/Montant/Intitulé/N° de pièce/Catégorie de tiers.
+    // Exactement 7 colonnes — exclut la wrapper qui en a 14.
     if (
+      ths.length === 7 &&
       ths.includes('Type de transaction') &&
       ths.includes('N° de pièce') &&
-      ths.includes('Intitulé')
+      ths.includes('Intitulé') &&
+      !ths.includes('Solde')
     ) {
       return $(t);
     }
   }
   throw new Error(
-    "Table mouvements caisse introuvable (en-tête 'Type de transaction'/'N° de pièce'/'Intitulé' attendue) — structure Comptaweb a peut-être changé.",
+    "Table mouvements caisse introuvable (en-tête 7 colonnes 'Date/Type/Montant/...' attendue) — structure Comptaweb a peut-être changé.",
   );
 }
 
 function findSoldeTable($: CheerioAPI): Cheerio<AnyNode> | null {
-  const tables = $('table');
-  for (const t of tables.toArray()) {
-    const ths = $(t)
-      .find('thead th, thead td')
-      .toArray()
-      .map((th) => $(th).text().trim());
+  for (const t of $('table').toArray()) {
+    const ths = tableHeaders($, t);
+    // Vraie table solde : exactement 7 colonnes Caisse/Gérant/Devise/
+    // Solde début/Dépenses/Recettes/Solde.
     if (
+      ths.length === 7 &&
       ths.includes('Solde début') &&
       ths.includes('Solde') &&
-      ths.includes('Recettes')
+      ths.includes('Recettes') &&
+      !ths.includes('Type de transaction')
     ) {
       return $(t);
     }
@@ -116,12 +125,24 @@ export function parseCaisseGestionHtml(html: string): CaisseGestionData {
     throw new ComptawebSessionExpiredError();
   }
 
-  // Caisse id : extrait de /caisse/gestion?id=<id> via une option du
-  // select<select name="caissegestion">. Plus stable que de retomber
-  // sur l'URL (parfois on est dans un POST).
-  const selected = $('select[name="caissegestion"] option[selected]').first();
-  const caisseId = Number(selected.attr('value') ?? '0');
-  const libelle = selected.text().trim() || 'inconnu';
+  // Caisse id : Comptaweb n'expose pas un select avec selected dans
+  // cette page. On extrait l'ID depuis le lien d'export (toujours
+  // présent : `/caisse/export/<id>/1`) et le libellé depuis la
+  // caption ("Caisse : <libellé>").
+  const exportLink = $('a[href*="/caisse/export/"]')
+    .toArray()
+    .map((a) => $(a).attr('href') ?? '')
+    .find((h) => /\/caisse\/export\/\d+/.test(h));
+  const caisseId = exportLink
+    ? Number(exportLink.match(/\/caisse\/export\/(\d+)/)?.[1] ?? 0)
+    : 0;
+  const captionText = $('caption')
+    .toArray()
+    .map((c) => $(c).text().replace(/\s+/g, ' ').trim())
+    .find((t) => /caisse\s*:/i.test(t));
+  const libelle = captionText
+    ? captionText.replace(/^.*?caisse\s*:\s*/i, '').trim() || 'inconnu'
+    : 'inconnu';
 
   let soldeDebutCentimes = 0;
   let depensesCentimes = 0;
@@ -198,39 +219,43 @@ export async function fetchCaisseGestion(
   return parseCaisseGestionHtml(html);
 }
 
-// Liste des caisses du groupe. Source : le `<select
-// name="caissegestion">` de `/caisse/gestion?m=1` qui contient toutes
-// les caisses en dur dans le HTML (la page `/caisse` charge ses
-// données via AJAX/DataTables et le tbody est vide côté SSR — donc
-// inutilisable depuis un fetch serveur).
+// Liste des caisses du groupe. Source : page `/caisse/gestion?m=1`
+// qui rend en SSR un récap par caisse (libellé / gérant / devise /
+// solde) avec, sur chaque <tr>, un `onclick="window.location.href=
+// '/caisse/gestion?id=<N>'"` qui porte l'ID de la caisse.
+//
+// Le SSR contient bien la table (vérifié 2026-05-06 depuis Node) ;
+// la page rendue navigateur ajoute juste DataTables. Un User-Agent
+// "neutre" récupère exactement le même HTML.
 export function parseCaisseListHtml(html: string): CaisseListItem[] {
-  // Détection page de login servie en 200 (cf. parseCaisseGestionHtml).
+  // Détection page de login servie en 200.
   const looksLikeLogin =
     /id=["']?kc-page-title|action=["']?[^"']*openid-connect|name=["']?password["']/i.test(
       html,
     );
-  if (looksLikeLogin && !/name=["']caissegestion["']/.test(html)) {
+  if (looksLikeLogin && !/\/caisse\/gestion\?id=\d+/.test(html)) {
     throw new ComptawebSessionExpiredError();
   }
 
   const $ = cheerio.load(html);
-  const select = $('select[name="caissegestion"]').first();
   const out: CaisseListItem[] = [];
-  select.find('option').each((_, opt) => {
-    const value = $(opt).attr('value') ?? '';
-    const id = Number(value);
-    if (!Number.isFinite(id) || id <= 0) return;
-    const libelle = $(opt).text().trim();
-    if (!libelle) return;
+  $('tr[onclick*="/caisse/gestion?id="]').each((_, tr) => {
+    const onclick = $(tr).attr('onclick') ?? '';
+    const m = onclick.match(/\/caisse\/gestion\?id=(\d+)/);
+    if (!m) return;
+    const id = Number(m[1]);
+    if (out.some((c) => c.id === id)) return;
+    const tds = $(tr).find('td').toArray();
+    if (tds.length < 3) return;
+    // Colonnes thead : Caisse | Gérant | Devise | Solde début | Dépenses | Recettes | Solde
     out.push({
       id,
-      libelle,
-      // Le select ne porte ni gérant, ni devise, ni statut actif/inactif.
-      // Comptaweb n'expose pas ces infos dans cette source ; on met des
-      // valeurs raisonnables par défaut. Si la caisse était inactive,
-      // elle ne serait pas dans le select de gestion.
-      devise: '',
-      gerant: '',
+      libelle: $(tds[0]).text().replace(/\s+/g, ' ').trim(),
+      gerant: $(tds[1]).text().replace(/\s+/g, ' ').trim(),
+      devise: $(tds[2]).text().replace(/\s+/g, ' ').trim(),
+      // La page de gestion ne liste que les caisses actives ; pas d'info
+      // d'inactivité ici. Si Comptaweb les masquait, elles ne seraient
+      // pas dans la table.
       inactif: false,
     });
   });

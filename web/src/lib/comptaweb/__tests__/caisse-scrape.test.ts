@@ -1,11 +1,25 @@
 import { describe, it, expect } from 'vitest';
 import { parseCaisseGestionHtml, parseCaisseListHtml } from '../caisse-scrape';
 
+// Reproduit la structure réelle vue sur /caisse/gestion?id=141
+// (capturée 2026-05-06 via probe Node) :
+//  - <caption>Caisse : Caisse Groupe</caption>
+//  - lien d'export /caisse/export/141/1 (porte l'ID)
+//  - une table SOLDE (7 colonnes)
+//  - une table MOUVEMENTS (7 colonnes incl. "")
+//  - une table "wrapper" qui agrège les headers des 2 sous-tables
+//    (artefact d'imbrication HTML — le parser doit l'ignorer).
 const FIXTURE_GESTION = `<!doctype html><html><body>
-<select name="caissegestion">
-  <option value="0">— choisir —</option>
-  <option value="141" selected>Caisse Groupe</option>
-</select>
+<a href="/caisse/export/141/1">Export CSV</a>
+<table>
+  <caption>Caisse  : Caisse Groupe</caption>
+  <thead>
+    <tr>
+      <th>Caisse</th><th>Gérant</th><th>Devise</th><th>Solde début</th><th>Dépenses</th><th>Recettes</th><th>Solde</th>
+      <th></th><th>Date</th><th>Type de transaction</th><th>Montant</th><th>Intitulé</th><th>N° de pièce</th><th>Catégorie de tiers</th>
+    </tr>
+  </thead>
+</table>
 <table>
   <thead>
     <tr><th>Caisse</th><th>Gérant</th><th>Devise</th><th>Solde début</th><th>Dépenses</th><th>Recettes</th><th>Solde</th></tr>
@@ -44,14 +58,26 @@ const FIXTURE_GESTION = `<!doctype html><html><body>
 </table>
 </body></html>`;
 
-// Le parser source = le <select name="caissegestion"> de
-// /caisse/gestion?m=1, plus fiable que la table /caisse (chargée en
-// AJAX donc vide côté SSR).
+// Reproduit la structure de /caisse/gestion?m=1 : 1 ligne par caisse,
+// avec onclick="window.location.href='/caisse/gestion?id=N'" qui
+// porte l'ID. Capturé 2026-05-06.
 const FIXTURE_LIST = `<!doctype html><html><body>
-<select name="caissegestion">
-  <option value="0">— choisir une caisse —</option>
-  <option value="141">Caisse Groupe</option>
-</select>
+<table>
+  <thead>
+    <tr><th>Caisse</th><th>Gérant</th><th>Devise</th><th>Solde début</th><th>Dépenses</th><th>Recettes</th><th>Solde</th></tr>
+  </thead>
+  <tbody>
+    <tr onclick="window.location.href='/caisse/gestion?id=141';">
+      <td>Caisse Groupe</td>
+      <td>FOURNAND DAMIEN</td>
+      <td>EUR</td>
+      <td>0,00</td>
+      <td>2980,67</td>
+      <td>3093,67</td>
+      <td>113,00</td>
+    </tr>
+  </tbody>
+</table>
 </body></html>`;
 
 describe('parseCaisseGestionHtml', () => {
@@ -94,19 +120,21 @@ describe('parseCaisseGestionHtml', () => {
 });
 
 describe('parseCaisseListHtml', () => {
-  it('extrait les caisses depuis le select de /caisse/gestion?m=1', () => {
+  it('extrait les caisses depuis tr[onclick] de /caisse/gestion?m=1', () => {
     const list = parseCaisseListHtml(FIXTURE_LIST);
     expect(list).toEqual([
-      { id: 141, libelle: 'Caisse Groupe', devise: '', gerant: '', inactif: false },
+      {
+        id: 141,
+        libelle: 'Caisse Groupe',
+        gerant: 'FOURNAND DAMIEN',
+        devise: 'EUR',
+        inactif: false,
+      },
     ]);
   });
 
-  it('ignore les options sans valeur numérique (placeholder)', () => {
-    const html = `<select name="caissegestion">
-      <option value="0">— choisir —</option>
-      <option value="">vide</option>
-      <option value="abc">non numérique</option>
-    </select>`;
+  it('retourne [] sur une page sans tr.onclick caisse (ex. page partielle)', () => {
+    const html = `<table><tbody><tr><td>Aucune caisse</td></tr></tbody></table>`;
     expect(parseCaisseListHtml(html)).toEqual([]);
   });
 });
