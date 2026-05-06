@@ -5,6 +5,10 @@ import {
   listCandidateEcrituresForDepot,
   type CandidateEcritureBanque,
 } from '../services/depots-especes';
+import {
+  countCaisseOrphans as countCaisseOrphansService,
+  type CaisseOrphansSummary,
+} from '../services/caisse-sync';
 import type { MouvementCaisse, DepotEspeces } from '../types';
 
 export async function listMouvementsCaisse(
@@ -19,6 +23,11 @@ export async function listDepotsEspeces(
 ): Promise<DepotEspeces[]> {
   const { groupId } = await getCurrentContext();
   return listDepotsEspecesService({ groupId }, options);
+}
+
+export async function countCaisseOrphans(): Promise<CaisseOrphansSummary> {
+  const { groupId } = await getCurrentContext();
+  return countCaisseOrphansService(groupId);
 }
 
 // Pour chaque dépôt en attente, charge les écritures candidates en

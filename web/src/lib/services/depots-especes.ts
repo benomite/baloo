@@ -16,7 +16,7 @@ export async function listDepotsEspeces(
   { groupId }: DepotsEspecesContext,
   options: ListDepotsEspecesOptions = {},
 ): Promise<DepotEspeces[]> {
-  const conditions: string[] = ['group_id = ?'];
+  const conditions: string[] = ['group_id = ?', 'archived_at IS NULL'];
   const values: unknown[] = [groupId];
   if (options.pending_only) conditions.push('ecriture_id IS NULL');
 

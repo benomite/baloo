@@ -210,11 +210,24 @@ export async function ensureAuthSchema(): Promise<void> {
   if (!hasCaisseCol('comptaweb_ecriture_id')) {
     await db.exec('ALTER TABLE mouvements_caisse ADD COLUMN comptaweb_ecriture_id INTEGER');
   }
+  if (!hasCaisseCol('archived_at')) {
+    // Soft-delete : utilisé pour archiver les lignes orphelines
+    // (import legacy non rapproché à Comptaweb) sans casser les liens.
+    await db.exec('ALTER TABLE mouvements_caisse ADD COLUMN archived_at TEXT');
+  }
   await db.exec('CREATE INDEX IF NOT EXISTS idx_mvt_caisse_group ON mouvements_caisse(group_id)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_mvt_caisse_status ON mouvements_caisse(status)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_mvt_caisse_depot ON mouvements_caisse(depot_id)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_mvt_caisse_airtable ON mouvements_caisse(airtable_id)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_mvt_caisse_cw_ecriture ON mouvements_caisse(comptaweb_ecriture_id)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_mvt_caisse_archived ON mouvements_caisse(archived_at) WHERE archived_at IS NULL');
+
+  const depotsEspecesCols = await db
+    .prepare("PRAGMA table_info(depots_especes)")
+    .all<{ name: string }>();
+  if (depotsEspecesCols.length > 0 && !depotsEspecesCols.some((c) => c.name === 'archived_at')) {
+    await db.exec('ALTER TABLE depots_especes ADD COLUMN archived_at TEXT');
+  }
 
   // depots_especes : table créée tardivement, lazy-init côté
   // business-schema.ts mais on garantit ici qu'elle existe sur les BDDs

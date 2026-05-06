@@ -1,4 +1,4 @@
-import { Coins, Plus, Banknote, ArrowDownToLine, Link2, RefreshCw } from 'lucide-react';
+import { Coins, Plus, Banknote, ArrowDownToLine, Link2, RefreshCw, Trash2 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -10,13 +10,18 @@ import { PendingButton } from '@/components/shared/pending-button';
 import { Field } from '@/components/shared/field';
 import { Section } from '@/components/shared/section';
 import { NativeSelect } from '@/components/ui/native-select';
-import { listMouvementsCaisse, listDepotsAvecCandidates } from '@/lib/queries/caisse';
+import {
+  listMouvementsCaisse,
+  listDepotsAvecCandidates,
+  countCaisseOrphans,
+} from '@/lib/queries/caisse';
 import { listSelectableUnites, listSelectableActivites } from '@/lib/queries/reference';
 import {
   createMouvementCaisse,
   createDepotEspecesAction,
   rapprocherDepotEspecesAction,
   syncCaisseFromComptawebAction,
+  archiveOrphanedCaisseRowsAction,
 } from '@/lib/actions/caisse';
 import { getCurrentContext } from '@/lib/context';
 import { requireAdmin } from '@/lib/auth/access';
@@ -43,9 +48,10 @@ const STATUS_TONE: Record<MouvementCaisseStatus, 'outline' | 'secondary' | 'defa
 export default async function CaissePage() {
   const ctx = await getCurrentContext();
   requireAdmin(ctx.role);
-  const [{ mouvements, solde }, depotsPending, unites, activites] = await Promise.all([
+  const [{ mouvements, solde }, depotsPending, orphans, unites, activites] = await Promise.all([
     listMouvementsCaisse(),
     listDepotsAvecCandidates(),
+    countCaisseOrphans(),
     listSelectableUnites(),
     listSelectableActivites(),
   ]);
@@ -72,6 +78,37 @@ export default async function CaissePage() {
           </form>
         }
       />
+
+      {(orphans.mouvementsOrphelins > 0 || orphans.depotsOrphelins > 0) && (
+        <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div className="text-sm">
+            <div className="font-medium text-amber-900">
+              {orphans.mouvementsOrphelins + orphans.depotsOrphelins} ligne(s) potentiellement
+              dupliquées avec Comptaweb
+            </div>
+            <div className="text-amber-800/80">
+              {orphans.mouvementsOrphelins > 0 && (
+                <>
+                  {orphans.mouvementsOrphelins} mouvement(s) issu(s) de l'import historique sans
+                  correspondance Comptaweb
+                  {orphans.depotsOrphelins > 0 ? ' · ' : '.'}
+                </>
+              )}
+              {orphans.depotsOrphelins > 0 && (
+                <>{orphans.depotsOrphelins} dépôt(s) en attente déjà rapproché(s) côté Comptaweb.</>
+              )}{' '}
+              Archive-les pour aligner Baloo sur Comptaweb (les lignes restent en BDD, juste
+              masquées).
+            </div>
+          </div>
+          <form action={archiveOrphanedCaisseRowsAction}>
+            <PendingButton variant="outline" size="sm" pendingLabel="Archivage…">
+              <Trash2 size={14} strokeWidth={2} className="mr-1.5" />
+              Nettoyer les doublons
+            </PendingButton>
+          </form>
+        </div>
+      )}
 
       <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
         <StatCard label="Solde caisse" icon={Coins} value={<Amount cents={solde} tone="signed" />} />

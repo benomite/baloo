@@ -255,6 +255,7 @@ export async function ensureBusinessSchema(): Promise<void> {
       depot_id TEXT,
       airtable_id TEXT,
       comptaweb_ecriture_id INTEGER,
+      archived_at TEXT,
       solde_apres_cents INTEGER,
       unite_id TEXT REFERENCES unites(id),
       activite_id TEXT REFERENCES activites(id),
@@ -280,6 +281,7 @@ export async function ensureBusinessSchema(): Promise<void> {
       ecriture_id TEXT REFERENCES ecritures(id),
       airtable_id TEXT,
       notes TEXT,
+      archived_at TEXT,
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
     CREATE INDEX IF NOT EXISTS idx_depots_especes_group ON depots_especes(group_id);

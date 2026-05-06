@@ -42,6 +42,9 @@ export async function listMouvementsCaisse(
     values.push(options.activite_id);
   }
 
+  // Soft-delete : on exclut les lignes archivées de la liste et du
+  // solde par défaut (cf. archiveOrphanedCaisseRows dans caisse-sync).
+  conditions.push('m.archived_at IS NULL');
   const where = `WHERE ${conditions.join(' AND ')}`;
 
   const mouvements = await db

@@ -216,6 +216,117 @@ export async function persistCaisseSync(
   };
 }
 
+// Détecte les lignes potentiellement orphelines après une sync.
+// Critère : import Airtable (`airtable_id` posé) qui n'a pas trouvé
+// de match Comptaweb après la sync (`comptaweb_ecriture_id` toujours
+// null) → c'est un doublon de la ligne mère Comptaweb (ventilation
+// historique de l'ancien outil).
+//
+// Idem côté `depots_especes` : aucune ligne Comptaweb ne pointe vers
+// ces dépôts (les transferts internes sont désormais représentés
+// comme des mouvements caisse `type='depot'`).
+export interface CaisseOrphansSummary {
+  mouvementsOrphelins: number;
+  mouvementsAmountCents: number;
+  depotsOrphelins: number;
+  depotsAmountCents: number;
+}
+
+export async function countCaisseOrphans(
+  groupId: string,
+): Promise<CaisseOrphansSummary> {
+  const db = getDb();
+  const m = await db
+    .prepare(
+      `SELECT COUNT(*) AS n, COALESCE(SUM(amount_cents), 0) AS total
+         FROM mouvements_caisse
+        WHERE group_id = ?
+          AND airtable_id IS NOT NULL
+          AND comptaweb_ecriture_id IS NULL
+          AND archived_at IS NULL`,
+    )
+    .get<{ n: number; total: number }>(groupId);
+  const d = await db
+    .prepare(
+      `SELECT COUNT(*) AS n, COALESCE(SUM(total_amount_cents), 0) AS total
+         FROM depots_especes
+        WHERE group_id = ?
+          AND ecriture_id IS NULL
+          AND airtable_id IS NOT NULL
+          AND archived_at IS NULL`,
+    )
+    .get<{ n: number; total: number }>(groupId);
+  return {
+    mouvementsOrphelins: m?.n ?? 0,
+    mouvementsAmountCents: m?.total ?? 0,
+    depotsOrphelins: d?.n ?? 0,
+    depotsAmountCents: d?.total ?? 0,
+  };
+}
+
+// Archive (soft-delete) les lignes orphelines de la caisse. Préfère
+// poser `archived_at` plutôt que DELETE — cf. règle "JAMAIS DELETE de
+// données métier" (CLAUDE.md / mémoire user). Si demain la sync les
+// re-rapproche par un nouveau matching, on pourra les ré-activer.
+export interface CaisseCleanupResult {
+  mouvementsArchives: number;
+  depotsArchives: number;
+}
+
+export async function archiveOrphanedCaisseRows(
+  groupId: string,
+): Promise<CaisseCleanupResult> {
+  const db = getDb();
+  const now = currentTimestamp();
+
+  const before = await countCaisseOrphans(groupId);
+
+  await db
+    .prepare(
+      `UPDATE mouvements_caisse
+          SET archived_at = ?
+        WHERE group_id = ?
+          AND airtable_id IS NOT NULL
+          AND comptaweb_ecriture_id IS NULL
+          AND archived_at IS NULL`,
+    )
+    .run(now, groupId);
+  await db
+    .prepare(
+      `UPDATE depots_especes
+          SET archived_at = ?
+        WHERE group_id = ?
+          AND ecriture_id IS NULL
+          AND airtable_id IS NOT NULL
+          AND archived_at IS NULL`,
+    )
+    .run(now, groupId);
+
+  // Recalcul des solde_apres_cents sur les lignes restantes (sans
+  // archived) pour avoir une chronologie correcte dans l'UI.
+  const ordered = await db
+    .prepare(
+      `SELECT id, amount_cents
+         FROM mouvements_caisse
+        WHERE group_id = ?
+          AND archived_at IS NULL
+        ORDER BY date_mouvement ASC, created_at ASC`,
+    )
+    .all<{ id: string; amount_cents: number }>(groupId);
+  let running = 0;
+  for (const row of ordered) {
+    running += row.amount_cents;
+    await db
+      .prepare('UPDATE mouvements_caisse SET solde_apres_cents = ? WHERE id = ?')
+      .run(running, row.id);
+  }
+
+  return {
+    mouvementsArchives: before.mouvementsOrphelins,
+    depotsArchives: before.depotsOrphelins,
+  };
+}
+
 // Helper de découverte : utile au premier sync pour identifier la
 // caisse (ou les caisses) du groupe sans config en dur.
 export async function discoverCaisses(): Promise<

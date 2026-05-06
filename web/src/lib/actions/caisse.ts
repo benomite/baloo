@@ -10,6 +10,7 @@ import { attachDepotEspecesToEcriture } from '../services/depots-especes';
 import {
   syncCaisseFromComptaweb,
   resolveCaisseId,
+  archiveOrphanedCaisseRows,
 } from '../services/caisse-sync';
 import { parseAmount } from '../format';
 import { logError } from '../log';
@@ -70,6 +71,13 @@ export async function rapprocherDepotEspecesAction(formData: FormData) {
     throw new Error('Dépôt et écriture banque requis.');
   }
   await attachDepotEspecesToEcriture({ groupId: ctx.groupId }, depotId, ecritureId);
+  revalidatePath('/caisse');
+  revalidatePath('/');
+}
+
+export async function archiveOrphanedCaisseRowsAction() {
+  const ctx = await getCurrentContext();
+  await archiveOrphanedCaisseRows(ctx.groupId);
   revalidatePath('/caisse');
   revalidatePath('/');
 }
