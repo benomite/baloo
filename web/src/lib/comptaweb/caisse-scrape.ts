@@ -201,6 +201,18 @@ export async function fetchCaisseGestion(
 // Liste des caisses du groupe (page `/caisse`). Sert à découvrir
 // l'identifiant de la caisse principale au premier sync.
 export function parseCaisseListHtml(html: string): CaisseListItem[] {
+  // Comme parseCaisseGestionHtml : si Comptaweb sert le formulaire de
+  // login en HTTP 200 (cookie expiré sans redirect), on doit le
+  // détecter pour que withAutoReLogin re-tente. Sinon le parser
+  // retourne juste [] et on conclut "aucune caisse active" à tort.
+  const looksLikeLogin =
+    /id=["']?kc-page-title|action=["']?[^"']*openid-connect|name=["']?password["']/i.test(
+      html,
+    );
+  if (looksLikeLogin && !/\/caisse\/\d+\/(show|edit)/.test(html)) {
+    throw new ComptawebSessionExpiredError();
+  }
+
   const $ = cheerio.load(html);
   const out: CaisseListItem[] = [];
   // Les liens "/caisse/{id}/show" / "/caisse/{id}/edit" pointent vers

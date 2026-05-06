@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { syncCaisseFromComptaweb, discoverCaisses } from '@/lib/services/caisse-sync';
+import {
+  syncCaisseFromComptaweb,
+  discoverCaisses,
+  resolveCaisseId,
+} from '@/lib/services/caisse-sync';
 import { jsonError, parseJsonBody, requireApiContext } from '@/lib/api/route-helpers';
 import { ComptawebSessionExpiredError } from '@/lib/comptaweb/http';
 import { logError } from '@/lib/log';
@@ -33,14 +37,7 @@ export async function POST(request: Request) {
   if ('error' in parsed) return parsed.error;
 
   try {
-    let caisseId = parsed.data.caisse_id;
-    if (!caisseId) {
-      const list = await discoverCaisses();
-      const active = list.find((c) => !c.inactif);
-      if (!active) return jsonError('Aucune caisse active trouvée côté Comptaweb.', 404);
-      caisseId = active.id;
-    }
-
+    const caisseId = parsed.data.caisse_id ?? (await resolveCaisseId());
     const result = await syncCaisseFromComptaweb(groupId, caisseId);
     return Response.json(result);
   } catch (err) {

@@ -223,3 +223,28 @@ export async function discoverCaisses(): Promise<
 > {
   return await withAutoReLogin((config) => fetchCaisseList(config));
 }
+
+// Résolution du caisseId à utiliser pour la sync. Stratégie :
+//  1. Env var `COMPTAWEB_CAISSE_ID` (override explicite, ex. multi-caisses).
+//  2. Découverte automatique via `/caisse` (filtre les caisses inactives).
+// Si l'étape 2 retourne une liste vide (parsing inattendu, page différente),
+// on lève une erreur explicite plutôt que silencieuse.
+export async function resolveCaisseId(): Promise<number> {
+  const fromEnv = process.env.COMPTAWEB_CAISSE_ID;
+  if (fromEnv) {
+    const n = Number(fromEnv);
+    if (!Number.isFinite(n) || n <= 0) {
+      throw new Error(`COMPTAWEB_CAISSE_ID="${fromEnv}" invalide (entier positif attendu).`);
+    }
+    return n;
+  }
+
+  const list = await discoverCaisses();
+  const active = list.find((c) => !c.inactif);
+  if (active) return active.id;
+
+  throw new Error(
+    `Aucune caisse active découverte côté Comptaweb (parser a renvoyé ${list.length} caisse(s)). ` +
+      `Définir COMPTAWEB_CAISSE_ID dans l'env Vercel pour bypasser la découverte.`,
+  );
+}

@@ -9,7 +9,7 @@ import {
 import { attachDepotEspecesToEcriture } from '../services/depots-especes';
 import {
   syncCaisseFromComptaweb,
-  discoverCaisses,
+  resolveCaisseId,
 } from '../services/caisse-sync';
 import { parseAmount } from '../format';
 import { logError } from '../log';
@@ -79,10 +79,7 @@ export async function syncCaisseFromComptawebAction(formData: FormData) {
     const ctx = await getCurrentContext();
     let caisseId = Number(formData.get('caisse_id'));
     if (!caisseId || Number.isNaN(caisseId)) {
-      const list = await discoverCaisses();
-      const active = list.find((c) => !c.inactif);
-      if (!active) throw new Error('Aucune caisse active trouvée côté Comptaweb.');
-      caisseId = active.id;
+      caisseId = await resolveCaisseId();
     }
     const result = await syncCaisseFromComptaweb(ctx.groupId, caisseId);
     console.log(
