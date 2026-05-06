@@ -91,10 +91,13 @@ export async function syncCaisseFromComptawebAction(formData: FormData) {
     const data: Record<string, unknown> = {
       caisseIdFromForm: formData.get('caisse_id'),
     };
-    // Si l'erreur transporte un htmlSample (cf. fetchCaisseList), on
-    // l'embarque dans le log pour diagnostic.
-    if (err && typeof err === 'object' && 'htmlSample' in err) {
-      data.htmlSample = (err as { htmlSample: unknown }).htmlSample;
+    // Embarque les champs de diagnostic posés par fetchCaisseList (cf.
+    // throw avec Object.assign) dans le log /admin/errors.
+    if (err && typeof err === 'object') {
+      const e = err as Record<string, unknown>;
+      for (const k of ['htmlSample', 'selects', 'options']) {
+        if (k in e) data[k] = e[k];
+      }
     }
     logError('caisse/sync/action', 'sync failed', err, data);
     throw err;

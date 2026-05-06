@@ -244,14 +244,32 @@ export async function fetchCaisseList(config: ComptawebConfig): Promise<CaisseLi
   const html = await fetchHtml(config, '/caisse/gestion?m=1');
   const list = parseCaisseListHtml(html);
   if (list.length === 0) {
-    const sample = html.replace(/\s+/g, ' ').slice(0, 2000);
+    // Diagnostic ciblé : capture toutes les balises <select> et <option>
+    // ainsi qu'une portion du body. Le head est skippé car il pollue
+    // l'échantillon sans info utile.
+    const bodyMatch = html.match(/<body[\s\S]*?<\/body>/i);
+    const bodyPortion = (bodyMatch?.[0] ?? html)
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 3000);
+    const selects = Array.from(html.matchAll(/<select[^>]*>/gi)).map((m) => m[0]);
+    const options = Array.from(html.matchAll(/<option[^>]*>([^<]*)<\/option>/gi))
+      .map((m) => `${m[0].slice(0, 80)} → "${m[1].trim().slice(0, 60)}"`)
+      .slice(0, 30);
     const titleMatch = html.match(/<title>([^<]*)<\/title>/i);
     throw Object.assign(
       new Error(
         `Page /caisse/gestion?m=1 ne contient aucun option de caisse. ` +
-          `Title="${titleMatch?.[1]?.trim() ?? '(inconnu)'}", htmlLen=${html.length}.`,
+          `Title="${titleMatch?.[1]?.trim() ?? '(inconnu)'}", htmlLen=${html.length}, ` +
+          `selectsCount=${selects.length}, optionsCount=${options.length}.`,
       ),
-      { htmlSample: sample },
+      {
+        htmlSample: bodyPortion,
+        selects: selects.slice(0, 10),
+        options,
+      },
     );
   }
   return list;
