@@ -2,6 +2,7 @@ import { Sidebar } from '@/components/layout/sidebar';
 import { MobileNav } from '@/components/layout/mobile-nav';
 import { HelpFooter } from '@/components/layout/help-footer';
 import { getCurrentContext } from '@/lib/context';
+import { countInboxItems } from '@/lib/queries/inbox';
 
 // Layout des pages authentifiées (chantier 4 ADR-016 + chantier 5).
 // `getCurrentContext` redirige vers `/login` si pas de session, et
@@ -13,6 +14,11 @@ import { getCurrentContext } from '@/lib/context';
 export default async function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   const ctx = await getCurrentContext();
 
+  // Le compteur n'est utile qu'aux admins (l'item Inbox de la nav est
+  // restreint à tresorier/RG). Inutile de payer la requête sinon.
+  const isAdmin = ctx.role === 'tresorier' || ctx.role === 'RG';
+  const inboxCount = isAdmin ? await countInboxItems(ctx.groupId) : 0;
+
   return (
     // `flex-col` sur mobile : top-bar mobile (de MobileNav) au-dessus,
     // main en dessous. `lg:flex-row` sur desktop : sidebar à gauche,
@@ -21,12 +27,12 @@ export default async function AuthenticatedLayout({ children }: { children: Reac
       {/* Top-bar mobile + drawer (<lg). Sur lg+ ses éléments sont
           tous `lg:hidden` donc consomment 0 espace. */}
       <MobileNav>
-        <Sidebar role={ctx.role} />
+        <Sidebar role={ctx.role} inboxCount={inboxCount} />
       </MobileNav>
 
       {/* Sidebar fixe desktop (lg+) */}
       <aside className="hidden lg:flex lg:flex-col lg:w-[260px] lg:shrink-0 border-r border-border bg-bg-sunken/60">
-        <Sidebar role={ctx.role} />
+        <Sidebar role={ctx.role} inboxCount={inboxCount} />
       </aside>
 
       {/* Contenu principal */}

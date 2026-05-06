@@ -60,8 +60,8 @@ export default async function MyNouveauAbandonPage({
     <div className="max-w-3xl mx-auto">
       <PageHeader
         eyebrow={{ label: 'Accueil', href: '/' }}
-        title="Abandon de frais"
-        subtitle="Tu as avancé des frais pour le groupe et tu en fais don plutôt que d'être remboursé. Tu recevras un reçu fiscal CERFA qui ouvre droit à une réduction d'impôt sur le revenu (art 200 CGI)."
+        title="Faire un don au groupe"
+        subtitle="Tu as avancé des frais pour le groupe et tu en fais don plutôt que d'être remboursé. Tu recevras un reçu fiscal CERFA (abandon de frais — art. 200 CGI) qui ouvre droit à une réduction d'impôt sur le revenu."
       />
 
       {params.error && (

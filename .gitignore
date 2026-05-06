@@ -17,6 +17,8 @@ scripts/git-hooks/secrets-patterns.local
 
 # Zone de dépôt brute (pièces sensibles, pas de versioning)
 inbox/
+# …sauf la route applicative `/inbox` (Server Component versionné).
+!web/src/app/**/inbox/
 
 # Pièces justificatives et exports
 *.pdf

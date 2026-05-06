@@ -31,8 +31,8 @@ export default async function NouvelAbandonAdminPage({
   return (
     <div className="max-w-3xl mx-auto">
       <PageHeader
-        eyebrow={{ label: 'Abandons', href: '/abandons' }}
-        title="Saisir un abandon de frais"
+        eyebrow={{ label: 'Dons au groupe', href: '/abandons' }}
+        title="Enregistrer un don au groupe"
         subtitle="Saisie pour autrui — rattrapage d'historique ou aide à un donateur qui ne peut pas saisir lui-même. Les fichiers sont optionnels (à attacher après depuis la page détail si besoin)."
       />
 
@@ -144,7 +144,7 @@ export default async function NouvelAbandonAdminPage({
 
         <div className="flex justify-end pt-2">
           <PendingButton size="lg" pendingLabel="Création…">
-            Créer l&apos;abandon
+            Enregistrer le don
           </PendingButton>
         </div>
       </form>

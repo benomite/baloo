@@ -87,18 +87,18 @@ export default async function AbandonsPage({
   return (
     <div>
       <PageHeader
-        title={isAdmin ? 'Abandons de frais' : 'Mes abandons de frais'}
+        title={isAdmin ? 'Dons au groupe' : 'Mes dons au groupe'}
         subtitle={
           isAdmin
-            ? 'Dons aux dépenses du groupe ouvrant droit à reçu fiscal CERFA.'
-            : 'Tes dons au groupe et leur statut côté CERFA.'
+            ? 'Frais avancés et offerts au groupe — reçu fiscal CERFA (abandon de frais, art. 200 CGI).'
+            : 'Frais que tu as avancés et offerts au groupe, et leur statut côté CERFA.'
         }
         actions={
           <div className="flex flex-wrap gap-2">
             <Link href="/moi/abandons/nouveau">
               <Button size="sm">
                 <Plus size={14} strokeWidth={2.25} className="mr-1" />
-                Nouvel abandon
+                Nouveau don
               </Button>
             </Link>
             {isAdmin && (
@@ -149,7 +149,7 @@ export default async function AbandonsPage({
         activeFilter === 'all' ? (
           <EmptyState
             emoji="🎁"
-            title={isAdmin ? 'Aucun abandon de frais' : "Tu n'as pas encore d'abandon"}
+            title={isAdmin ? 'Aucun don au groupe' : "Tu n'as pas encore fait de don"}
             description={
               isAdmin
                 ? "Quand un bénévole renonce à se faire rembourser des frais avancés pour le groupe, ça se déclare ici. Reçu fiscal CERFA généré pour qu'il puisse défiscaliser."

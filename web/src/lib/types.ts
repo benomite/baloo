@@ -157,6 +157,7 @@ export interface Unite {
   code: string;
   name: string;
   couleur: string | null;
+  branche: string | null;
   comptaweb_id: number | null;
 }
 

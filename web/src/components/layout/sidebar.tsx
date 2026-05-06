@@ -6,12 +6,10 @@ import {
   BookOpen,
   CircleHelp,
   Coins,
-  Download,
   Gift,
   HandCoins,
   Home,
   Inbox,
-  Landmark,
   Mail,
   Paperclip,
   ShieldAlert,
@@ -26,6 +24,9 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   roles?: string[];
+  // Identifiant logique pour brancher un compteur depuis l'extérieur
+  // (cf. `inboxCount` dans la prop du Sidebar).
+  badgeKey?: 'inbox';
 }
 
 interface NavSection {
@@ -41,25 +42,23 @@ const SECTIONS: NavSection[] = [
   {
     title: 'Comptabilité',
     items: [
-      { href: '/synthese', label: 'Synthèse', icon: TrendingUp, roles: ['tresorier', 'RG', 'chef'] },
+      { href: '/inbox', label: 'Inbox', icon: Inbox, roles: ['tresorier', 'RG'], badgeKey: 'inbox' },
       { href: '/ecritures', label: 'Écritures', icon: BookOpen },
       { href: '/caisse', label: 'Caisse', icon: Coins, roles: ['tresorier', 'RG'] },
-      { href: '/comptaweb/rapprochement', label: 'Rapprochement bancaire', icon: Landmark, roles: ['tresorier', 'RG'] },
-      { href: '/import', label: 'Import Comptaweb', icon: Download, roles: ['tresorier', 'RG'] },
+      { href: '/synthese', label: 'Synthèse', icon: TrendingUp, roles: ['tresorier', 'RG', 'chef'] },
     ],
   },
   {
     title: 'Demandes',
     items: [
       { href: '/remboursements', label: 'Remboursements', icon: HandCoins },
-      { href: '/abandons', label: 'Abandons de frais', icon: Gift, roles: ['tresorier', 'RG'] },
+      { href: '/abandons', label: 'Dons au groupe', icon: Gift, roles: ['tresorier', 'RG'] },
     ],
   },
   {
-    title: 'Atelier',
+    title: 'Espace chef',
     items: [
       { href: '/depot', label: 'Déposer un justif', icon: Paperclip, roles: ['tresorier', 'RG', 'chef', 'equipier'] },
-      { href: '/depots', label: 'Dépôts à traiter', icon: Inbox, roles: ['tresorier', 'RG'] },
     ],
   },
   {
@@ -74,9 +73,14 @@ const SECTIONS: NavSection[] = [
 interface SidebarProps {
   role: string;
   groupName?: string | null;
+  inboxCount?: number;
 }
 
-export function Sidebar({ role, groupName }: SidebarProps) {
+export function Sidebar({ role, groupName, inboxCount = 0 }: SidebarProps) {
+  const counts: Record<NonNullable<NavItem['badgeKey']>, number> = {
+    inbox: inboxCount,
+  };
+
   const pathname = usePathname();
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`));
 
@@ -127,7 +131,12 @@ export function Sidebar({ role, groupName }: SidebarProps) {
               <ul className="space-y-0.5">
                 {items.map((item) => (
                   <li key={item.href}>
-                    <NavLink href={item.href} icon={item.icon} active={isActive(item.href)}>
+                    <NavLink
+                      href={item.href}
+                      icon={item.icon}
+                      active={isActive(item.href)}
+                      badge={item.badgeKey ? counts[item.badgeKey] : undefined}
+                    >
                       {item.label}
                     </NavLink>
                   </li>
@@ -157,9 +166,19 @@ interface NavLinkProps {
   active: boolean;
   children: React.ReactNode;
   variant?: 'default' | 'subtle';
+  // Compteur optionnel rendu en pastille à droite (badge "12").
+  badge?: number;
 }
 
-function NavLink({ href, icon: Icon, active, children, variant = 'default' }: NavLinkProps) {
+function NavLink({
+  href,
+  icon: Icon,
+  active,
+  children,
+  variant = 'default',
+  badge,
+}: NavLinkProps) {
+  const showBadge = typeof badge === 'number' && badge > 0;
   return (
     <Link
       href={href}
@@ -184,7 +203,21 @@ function NavLink({ href, icon: Icon, active, children, variant = 'default' }: Na
             : 'text-fg-subtle group-hover:text-fg-muted',
         )}
       />
-      <span className="truncate">{children}</span>
+      <span className="truncate flex-1">{children}</span>
+      {showBadge && (
+        <span
+          className={cn(
+            'ml-auto inline-flex shrink-0 items-center justify-center rounded-full',
+            'min-w-[18px] h-[18px] px-1.5 text-[10.5px] font-semibold tabular-nums',
+            active
+              ? 'bg-brand text-white'
+              : 'bg-brand-50 text-brand group-hover:bg-brand-100',
+          )}
+          aria-label={`${badge} à traiter`}
+        >
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
     </Link>
   );
 }

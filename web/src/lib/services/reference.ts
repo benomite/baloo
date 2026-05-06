@@ -24,7 +24,7 @@ export async function listModesPaiement(): Promise<ModePaiement[]> {
 
 export async function listUnites({ groupId }: ReferenceContext): Promise<Unite[]> {
   return await getDb()
-    .prepare('SELECT id, code, name, couleur, comptaweb_id FROM unites WHERE group_id = ? ORDER BY code')
+    .prepare('SELECT id, code, name, couleur, branche, comptaweb_id FROM unites WHERE group_id = ? ORDER BY code')
     .all<Unite>(groupId);
 }
 

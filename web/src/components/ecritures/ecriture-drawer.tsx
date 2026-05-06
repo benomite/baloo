@@ -7,7 +7,7 @@ import { Drawer } from '@/components/ui/drawer';
 import { EcritureForm } from '@/components/ecritures/ecriture-form';
 import { JustificatifsCard } from '@/components/ecritures/justificatifs-card';
 import { SyncDraftButton } from '@/components/ecritures/sync-draft-button';
-import { EcritureStatusBadge } from '@/components/shared/status-badge';
+import { EcritureStatePair } from '@/components/shared/status-badge';
 import { Amount } from '@/components/shared/amount';
 import { PendingButton } from '@/components/shared/pending-button';
 import { Alert } from '@/components/ui/alert';
@@ -99,7 +99,10 @@ export function EcritureDrawer({
           >
             {ecriture.id}
           </Link>
-          <EcritureStatusBadge status={ecriture.status} />
+          <EcritureStatePair
+            hasJustif={!!ecriture.has_justificatif}
+            comptawebSynced={ecriture.comptaweb_synced === 1}
+          />
           <span className="ml-auto tabular-nums text-[18px] font-semibold tracking-tight">
             <Amount
               cents={ecriture.amount_cents}

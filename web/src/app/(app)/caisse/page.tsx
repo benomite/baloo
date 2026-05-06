@@ -1,4 +1,4 @@
-import { Coins, Plus, Banknote, ArrowDownToLine, Link2, RefreshCw, Trash2 } from 'lucide-react';
+import { Coins, Plus, Banknote, ArrowDownToLine, Link2, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -22,7 +22,9 @@ import {
   rapprocherDepotEspecesAction,
   syncCaisseFromComptawebAction,
   archiveOrphanedCaisseRowsAction,
+  quickAddCaisse,
 } from '@/lib/actions/caisse';
+import { Alert } from '@/components/ui/alert';
 import { getCurrentContext } from '@/lib/context';
 import { requireAdmin } from '@/lib/auth/access';
 import type { MouvementCaisseStatus, MouvementCaisseType } from '@/lib/types';
@@ -45,8 +47,18 @@ const STATUS_TONE: Record<MouvementCaisseStatus, 'outline' | 'secondary' | 'defa
   rapproche: 'default',
 };
 
-export default async function CaissePage() {
-  const ctx = await getCurrentContext();
+interface CaisseSearchParams {
+  qa_ok?: string;
+  qa_error?: string;
+  qa_input?: string;
+}
+
+export default async function CaissePage({
+  searchParams,
+}: {
+  searchParams: Promise<CaisseSearchParams>;
+}) {
+  const [ctx, params] = await Promise.all([getCurrentContext(), searchParams]);
   requireAdmin(ctx.role);
   const [{ mouvements, solde }, depotsPending, orphans, unites, activites] = await Promise.all([
     listMouvementsCaisse(),
@@ -78,6 +90,8 @@ export default async function CaissePage() {
           </form>
         }
       />
+
+      <QuickAddBox params={params} />
 
       {(orphans.mouvementsOrphelins > 0 || orphans.depotsOrphelins > 0) && (
         <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -355,6 +369,59 @@ export default async function CaissePage() {
             </TableBody>
           </Table>
         </Section>
+      )}
+    </div>
+  );
+}
+
+function QuickAddBox({ params }: { params: CaisseSearchParams }) {
+  const okMsg = params.qa_ok;
+  const errMsg = params.qa_error;
+  const initialInput = params.qa_input ?? '';
+
+  // Décode le message ok pour afficher l'unité détectée le cas échéant.
+  let okDetails: string | null = null;
+  if (okMsg && okMsg !== '1') {
+    const uniteTag = okMsg.split('|').find((p) => p.startsWith('unite='));
+    if (uniteTag) okDetails = `Unité détectée : ${uniteTag.slice(6)}`;
+  }
+
+  return (
+    <div className="mb-6 rounded-xl border border-brand-100 bg-brand-50/30 p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Sparkles size={14} strokeWidth={2} className="text-brand" />
+        <h2 className="text-[13px] font-semibold text-fg">Saisie express</h2>
+      </div>
+      <form action={quickAddCaisse} className="flex flex-wrap items-center gap-2">
+        <Input
+          name="input"
+          required
+          autoFocus
+          defaultValue={initialInput}
+          placeholder="+180 extra-job rouges  ·  -25 chocolat caravelles  ·  +50 tombola"
+          className="flex-1 min-w-[280px] font-mono"
+          aria-label="Saisie rapide caisse"
+        />
+        <PendingButton size="sm">Saisir</PendingButton>
+      </form>
+      <p className="mt-1.5 text-[11.5px] text-fg-subtle">
+        Format : <code className="font-mono">[+/-]montant description [unité]</code>{' '}
+        — pas de signe = entrée. L&apos;unité (code, nom, ou couleur SGDF :
+        rouges/oranges/bleus/verts/violets) est auto-détectée.
+      </p>
+      {okMsg && (
+        <Alert variant="success" className="mt-3">
+          ✨ Mouvement enregistré.
+          {okDetails && <span className="ml-1 text-fg-muted">{okDetails}</span>}
+          {okMsg.includes('warn') && (
+            <span className="ml-1 text-amber-700">⚠ Voir les notes.</span>
+          )}
+        </Alert>
+      )}
+      {errMsg && (
+        <Alert variant="error" className="mt-3">
+          {errMsg}
+        </Alert>
       )}
     </div>
   );

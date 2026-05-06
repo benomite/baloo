@@ -87,6 +87,54 @@ export function RemboursementStatusBadge({ status }: { status: string }) {
   return <StatusPill tone={entry.tone} label={entry.label} />;
 }
 
+// ─── Pastilles 2 axes pour les écritures ────────────────────────────
+//
+// Au lieu d'un statut unique linéaire (brouillon → validé → saisie_comptaweb)
+// qui mélange deux dimensions, on rend deux pastilles indépendantes :
+//
+//   - JustifBadge  : présent / manquant (axe documentaire)
+//   - CwBadge      : synchronisé Comptaweb / local (axe synchro)
+//
+// Cas légitimes (rappel) :
+//   - Sans justif + Local       → 🟡 ⚪ à traiter classique
+//   - Avec justif + Local       → 🟢 ⚪ prêt à pousser CW
+//   - Avec justif + CW synchro  → 🟢 🔵 idéal
+//   - Sans justif + CW synchro  → 🟡 🔵 hack légit ("synchro pour avoir
+//     la paix, justif arrive bientôt"). Représentable, non-bloquant.
+
+export function JustifBadge({ hasJustif }: { hasJustif: boolean }) {
+  return hasJustif ? (
+    <StatusPill tone="success" label="Justif" />
+  ) : (
+    <StatusPill tone="pending" label="Sans justif" />
+  );
+}
+
+export function CwBadge({ synced }: { synced: boolean }) {
+  return synced ? (
+    <StatusPill tone="progress" label="Synchro CW" />
+  ) : (
+    <StatusPill tone="neutral" label="Local" />
+  );
+}
+
+export function EcritureStatePair({
+  hasJustif,
+  comptawebSynced,
+  className,
+}: {
+  hasJustif: boolean;
+  comptawebSynced: boolean;
+  className?: string;
+}) {
+  return (
+    <span className={cn('inline-flex flex-wrap items-center gap-1', className)}>
+      <JustifBadge hasJustif={hasJustif} />
+      <CwBadge synced={comptawebSynced} />
+    </span>
+  );
+}
+
 const ABANDON_STATUS_MAP: Record<string, { tone: StatusTone; label: string }> = {
   a_traiter: { tone: 'pending', label: 'À traiter' },
   valide: { tone: 'progress', label: 'Validé' },

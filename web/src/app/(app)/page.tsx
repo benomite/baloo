@@ -2,6 +2,7 @@ import Link from 'next/link';
 import {
   ArrowRight,
   CircleHelp,
+  Coins,
   Gift,
   HandCoins,
   Inbox,
@@ -60,8 +61,13 @@ export const dynamic = 'force-dynamic';
 interface AdminCounts {
   rembsAValider: number;
   abandonsAValider: number;
-  depotsATraiter: number;
   rembsARattacher: number;
+  // Inbox = écritures sans justif (dépenses justif_attendu=1) + dépôts
+  // a_traiter. On les expose séparément pour l'UI mais le CTA pointe
+  // sur /inbox.
+  ecrituresSansJustif: number;
+  justifsOrphelins: number;
+  caisseSoldeCents: number;
 }
 
 async function getAdminCounts(groupId: string): Promise<AdminCounts> {
@@ -70,38 +76,60 @@ async function getAdminCounts(groupId: string): Promise<AdminCounts> {
   // direct sans passer par les helpers du service.
   await ensureDepotsSchema();
   const db = getDb();
-  const [rembs, abandons, depots, unlinked] = await Promise.all([
-    db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM remboursements
-         WHERE group_id = ? AND status IN ('a_traiter', 'valide_tresorier')`,
-      )
-      .get<{ n: number }>(groupId),
-    db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM abandons_frais
-         WHERE group_id = ? AND status IN ('a_traiter', 'valide')`,
-      )
-      .get<{ n: number }>(groupId),
-    db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM depots_justificatifs
-         WHERE group_id = ? AND statut = 'a_traiter'`,
-      )
-      .get<{ n: number }>(groupId),
-    db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM remboursements
-         WHERE group_id = ? AND ecriture_id IS NULL
-           AND status IN ('virement_effectue', 'termine')`,
-      )
-      .get<{ n: number }>(groupId),
-  ]);
+  const [rembs, abandons, depots, unlinked, ecrSansJustif, soldeCaisse] =
+    await Promise.all([
+      db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM remboursements
+           WHERE group_id = ? AND status IN ('a_traiter', 'valide_tresorier')`,
+        )
+        .get<{ n: number }>(groupId),
+      db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM abandons_frais
+           WHERE group_id = ? AND status IN ('a_traiter', 'valide')`,
+        )
+        .get<{ n: number }>(groupId),
+      db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM depots_justificatifs
+           WHERE group_id = ? AND statut = 'a_traiter'`,
+        )
+        .get<{ n: number }>(groupId),
+      db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM remboursements
+           WHERE group_id = ? AND ecriture_id IS NULL
+             AND status IN ('virement_effectue', 'termine')`,
+        )
+        .get<{ n: number }>(groupId),
+      db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM ecritures e
+           WHERE e.group_id = ?
+             AND e.type = 'depense'
+             AND e.justif_attendu = 1
+             AND NOT EXISTS (
+               SELECT 1 FROM justificatifs j
+               WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id
+             )`,
+        )
+        .get<{ n: number }>(groupId),
+      db
+        .prepare(
+          `SELECT COALESCE(SUM(amount_cents), 0) AS total
+           FROM mouvements_caisse
+           WHERE group_id = ? AND archived_at IS NULL`,
+        )
+        .get<{ total: number }>(groupId),
+    ]);
   return {
     rembsAValider: rembs?.n ?? 0,
     abandonsAValider: abandons?.n ?? 0,
-    depotsATraiter: depots?.n ?? 0,
     rembsARattacher: unlinked?.n ?? 0,
+    ecrituresSansJustif: ecrSansJustif?.n ?? 0,
+    justifsOrphelins: depots?.n ?? 0,
+    caisseSoldeCents: soldeCaisse?.total ?? 0,
   };
 }
 
@@ -166,8 +194,8 @@ export default async function HomePage({
       )}
       {sp.abandon_created && (
         <Alert variant="success" className="mb-4">
-          Abandon <code className="font-mono text-[12.5px] font-medium">{sp.abandon_created}</code>{' '}
-          déclaré. Le trésorier émettra le reçu fiscal.
+          Don <code className="font-mono text-[12.5px] font-medium">{sp.abandon_created}</code>{' '}
+          enregistré. Le trésorier émettra le reçu fiscal.
         </Alert>
       )}
 
@@ -224,7 +252,7 @@ function WelcomeBanner({
           <p className="mt-1 text-[12.5px] text-fg-muted leading-relaxed">
             Tu es {roleLabel} dans ton groupe SGDF.{' '}
             {canSubmit
-              ? 'Tu peux déposer un justif, demander un remboursement ou déclarer un abandon — utilise les raccourcis ci-dessous.'
+              ? 'Tu peux déposer un justif, demander un remboursement ou faire un don au groupe — utilise les raccourcis ci-dessous.'
               : 'Tu peux suivre tes paiements et tes reçus fiscaux directement depuis cette page.'}{' '}
             Pour comprendre comment tout marche,{' '}
             <Link
@@ -257,7 +285,7 @@ function QuickActions() {
     },
     {
       href: '/moi/abandons/nouveau',
-      label: 'Déclarer un abandon',
+      label: 'Faire un don au groupe',
       description: 'Renoncer au remboursement → reçu fiscal CERFA pour défiscaliser.',
       icon: Gift,
     },
@@ -460,7 +488,14 @@ function MyDemandsSection({
 }
 
 function AdminTodoSection({ counts }: { counts: AdminCounts }) {
-  const items: {
+  const inboxTotal = counts.ecrituresSansJustif + counts.justifsOrphelins;
+  const totalToDo =
+    inboxTotal +
+    counts.rembsAValider +
+    counts.abandonsAValider +
+    counts.rembsARattacher;
+
+  const secondary: {
     href: string;
     label: string;
     count: number;
@@ -476,17 +511,10 @@ function AdminTodoSection({ counts }: { counts: AdminCounts }) {
     },
     {
       href: '/abandons?status=a_traiter',
-      label: 'Abandons à valider',
+      label: 'Dons à valider',
       count: counts.abandonsAValider,
       icon: Gift,
       accent: 'amber',
-    },
-    {
-      href: '/depots',
-      label: 'Dépôts à rapprocher',
-      count: counts.depotsATraiter,
-      icon: Inbox,
-      accent: 'brand',
     },
     {
       href: '/remboursements?unlinked=1',
@@ -501,14 +529,136 @@ function AdminTodoSection({ counts }: { counts: AdminCounts }) {
     <div>
       <SectionHeader
         title="À traiter pour le groupe"
-        subtitle="Ta to-do de trésorier — chaque chiffre est cliquable."
+        subtitle={
+          totalToDo === 0
+            ? 'Tout est à jour. Tu peux clôturer le mois.'
+            : 'Ta to-do de trésorier — chaque chiffre est cliquable.'
+        }
+        action={
+          totalToDo === 0 ? (
+            <Link
+              href="/cloture"
+              className="inline-flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-brand/90 transition-colors"
+            >
+              Clôturer le mois
+              <ArrowRight size={13} strokeWidth={2} />
+            </Link>
+          ) : undefined
+        }
       />
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {items.map((it) => (
+
+      <InboxHeroCard
+        ecrituresCount={counts.ecrituresSansJustif}
+        justifsCount={counts.justifsOrphelins}
+      />
+
+      <div className="mt-3 grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <CaisseCard soldeCents={counts.caisseSoldeCents} />
+        {secondary.map((it) => (
           <TodoCard key={it.href} {...it} />
         ))}
       </div>
     </div>
+  );
+}
+
+function InboxHeroCard({
+  ecrituresCount,
+  justifsCount,
+}: {
+  ecrituresCount: number;
+  justifsCount: number;
+}) {
+  const total = ecrituresCount + justifsCount;
+  const isEmpty = total === 0;
+  return (
+    <Link
+      href="/inbox"
+      className={cn(
+        'group flex items-center gap-4 rounded-xl border p-5 transition-colors',
+        isEmpty
+          ? 'border-border bg-bg-elevated opacity-70 hover:opacity-100'
+          : 'border-brand-100 bg-brand-50/40 hover:bg-brand-50',
+      )}
+    >
+      <span
+        className={cn(
+          'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl',
+          isEmpty ? 'bg-bg-sunken text-fg-subtle' : 'bg-brand text-white',
+        )}
+      >
+        <Inbox size={22} strokeWidth={1.75} />
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-baseline gap-2">
+          <span className="text-display-sm tabular-nums leading-none text-fg">
+            {total}
+          </span>
+          <span className="text-[13px] font-medium text-fg">
+            {isEmpty ? 'Inbox vide' : 'à lier dans l’inbox'}
+          </span>
+        </div>
+        {!isEmpty && (
+          <div className="mt-1 text-[12px] text-fg-muted">
+            {ecrituresCount} écriture{ecrituresCount > 1 ? 's' : ''} sans justif
+            {' · '}
+            {justifsCount} justif{justifsCount > 1 ? 's' : ''} orphelin
+            {justifsCount > 1 ? 's' : ''}
+          </div>
+        )}
+      </div>
+      <ArrowRight
+        size={18}
+        strokeWidth={2}
+        className={cn(
+          'shrink-0 transition-colors',
+          isEmpty ? 'text-fg-subtle' : 'text-brand',
+        )}
+      />
+    </Link>
+  );
+}
+
+function CaisseCard({ soldeCents }: { soldeCents: number }) {
+  const isZero = soldeCents === 0;
+  const hint =
+    soldeCents > 5000_00
+      ? 'À déposer rapidement'
+      : soldeCents > 0
+        ? 'À déposer à l’occasion'
+        : 'Vide';
+  return (
+    <Link
+      href="/caisse"
+      className={cn(
+        'group flex flex-col gap-2 rounded-xl border border-border bg-bg-elevated p-4 transition-colors',
+        isZero
+          ? 'opacity-60 hover:opacity-100'
+          : 'hover:border-brand-100 hover:bg-brand-50/40',
+      )}
+    >
+      <div className="flex items-center justify-between">
+        <span
+          className={cn(
+            'flex h-8 w-8 items-center justify-center rounded-lg',
+            isZero ? 'bg-bg-sunken text-fg-subtle' : 'bg-brand-50 text-brand',
+          )}
+        >
+          <Coins size={16} strokeWidth={1.75} />
+        </span>
+        <ArrowRight
+          size={14}
+          strokeWidth={2}
+          className="text-fg-subtle transition-colors group-hover:text-brand"
+        />
+      </div>
+      <div>
+        <div className="text-display-sm tabular-nums leading-none text-fg">
+          <Amount cents={soldeCents} />
+        </div>
+        <div className="mt-1 text-[12.5px] text-fg-muted">Caisse · {hint}</div>
+      </div>
+    </Link>
   );
 }
 

@@ -1,5 +1,6 @@
 'use server';
 
+import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { getCurrentContext } from '../context';
 import {
@@ -12,6 +13,8 @@ import {
   resolveCaisseId,
   archiveOrphanedCaisseRows,
 } from '../services/caisse-sync';
+import { parseOmniboxInput, isOmniboxError } from '../services/caisse-omnibox';
+import { listUnites } from './../services/reference';
 import { parseAmount } from '../format';
 import { logError } from '../log';
 
@@ -39,6 +42,51 @@ export async function createMouvementCaisse(formData: FormData) {
 
   revalidatePath('/caisse');
   revalidatePath('/');
+}
+
+// Saisie express via omnibox : 1 chaîne libre `+180 extra-job rouges` →
+// 1 mouvement caisse créé instantanément, unité auto-détectée si
+// possible. Si la saisie est invalide, redirect avec un message
+// d'erreur préservant le texte saisi pour correction.
+export async function quickAddCaisse(formData: FormData) {
+  const ctx = await getCurrentContext();
+  const raw = ((formData.get('input') as string | null) ?? '').trim();
+  if (!raw) {
+    redirect('/caisse?qa_error=' + encodeURIComponent('Saisie vide.'));
+  }
+
+  const unites = await listUnites({ groupId: ctx.groupId });
+  const parsed = parseOmniboxInput(raw, unites);
+
+  if (isOmniboxError(parsed)) {
+    redirect(
+      '/caisse?qa_input=' + encodeURIComponent(raw) +
+      '&qa_error=' + encodeURIComponent(parsed.error),
+    );
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  await createMouvementCaisseService(
+    { groupId: ctx.groupId },
+    {
+      date_mouvement: today,
+      description: parsed.description,
+      amount_cents: parsed.amount_cents,
+      type: parsed.amount_cents >= 0 ? 'entree' : 'sortie',
+      unite_id: parsed.unite_id,
+      notes: parsed.warnings.length > 0 ? parsed.warnings.join(' ') : null,
+    },
+  );
+
+  revalidatePath('/caisse');
+  revalidatePath('/');
+
+  const successParts: string[] = [];
+  if (parsed.unite_match_label) successParts.push(`unite=${parsed.unite_match_label}`);
+  if (parsed.warnings.length) successParts.push('warn');
+  const successMsg = successParts.length ? successParts.join('|') : '1';
+  redirect('/caisse?qa_ok=' + encodeURIComponent(successMsg));
 }
 
 export async function createDepotEspecesAction(formData: FormData) {

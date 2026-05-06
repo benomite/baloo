@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { CheckCircle2, Circle, Clock, Landmark, Paperclip, MinusCircle } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { EcritureStatusBadge } from '@/components/shared/status-badge';
+import { EcritureStatePair } from '@/components/shared/status-badge';
 import { UniteBadge } from '@/components/shared/unite-badge';
 import { InlineSelect } from '@/components/shared/inline-select';
 import { Amount } from '@/components/shared/amount';
@@ -315,7 +315,12 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     onSave={(v) => updateEcritureField(e.id, 'category_id', v)}
                   />
                 </TableCell>
-                <TableCell className="whitespace-nowrap"><EcritureStatusBadge status={e.status} /></TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <EcritureStatePair
+                    hasJustif={!!e.has_justificatif}
+                    comptawebSynced={e.comptaweb_synced === 1}
+                  />
+                </TableCell>
                 <TableCell className="text-xs text-center whitespace-nowrap">
                   {e.missing_fields && e.missing_fields.length > 0 ? (
                     <span
