@@ -55,12 +55,36 @@ function mapType(m: MouvementCaisseComptaweb): MouvementCaisseType {
   return 'sortie';
 }
 
+// Toute ligne pulled depuis Comptaweb existe comme écriture comptable
+// validée. Pour un transfert (dépôt en banque), c'est donc équivalent
+// à "rapproché" du point de vue du livre de caisse — la trésorerie a
+// physiquement quitté la caisse pour la banque, et c'est consolidé
+// dans la compta. Pour les recettes / dépenses caisse, le statut
+// "rapproché" n'a pas de sens (elles ne passent pas par la banque) :
+// on reste à "saisi" par défaut.
 function inferStatus(m: MouvementCaisseComptaweb): MouvementCaisseStatus {
-  // Heuristique conservatrice : un transfert (dépôt en banque) qui a
-  // une écriture Comptaweb a au minimum été déposé. On ne peut pas
-  // savoir s'il a été rapproché ; le user peut le marquer manuellement.
-  if (m.type === 'transfert') return 'depose';
+  if (m.type === 'transfert') return 'rapproche';
   return 'saisi';
+}
+
+// Promotion du statut : on prend le max entre l'existant Baloo et
+// l'inféré Comptaweb pour ne JAMAIS régresser un statut (ex. une
+// ligne marquée 'rapproche' à la main ne doit pas redescendre à
+// 'saisi' à la sync suivante).
+const STATUS_RANK: Record<MouvementCaisseStatus, number> = {
+  saisi: 0,
+  depose: 1,
+  rapproche: 2,
+};
+
+function promoteStatus(
+  inferred: MouvementCaisseStatus,
+  existing: string | null | undefined,
+): MouvementCaisseStatus {
+  const existingRank = existing && existing in STATUS_RANK
+    ? STATUS_RANK[existing as MouvementCaisseStatus]
+    : 0;
+  return STATUS_RANK[inferred] >= existingRank ? inferred : (existing as MouvementCaisseStatus);
 }
 
 export async function syncCaisseFromComptaweb(
@@ -100,19 +124,22 @@ export async function persistCaisseSync(
       .get<{ id: string; status: string }>(groupId, mvt.comptawebEcritureId);
 
     if (byCwId) {
-      // Refresh des champs Comptaweb. COALESCE pour les champs que le
-      // user pourrait avoir enrichis localement, REPLACE pour amount
-      // et description (source = Comptaweb).
+      // Refresh des champs Comptaweb. amount/description = source CW.
+      // status = promotion (max entre existant et inféré) pour ne pas
+      // régresser une ligne déjà marquée 'rapproche' (ex. par
+      // l'utilisateur ou un précédent sync).
+      const promoted = promoteStatus(inferredStatus, byCwId.status);
       await db
         .prepare(
           `UPDATE mouvements_caisse
               SET amount_cents = ?,
                   description  = ?,
                   type         = COALESCE(type, ?),
-                  numero_piece = COALESCE(numero_piece, ?)
+                  numero_piece = COALESCE(numero_piece, ?),
+                  status       = ?
             WHERE id = ?`,
         )
-        .run(amountSigned, mvt.intitule, inferredType, mvt.numeroPiece, byCwId.id);
+        .run(amountSigned, mvt.intitule, inferredType, mvt.numeroPiece, promoted, byCwId.id);
       stats.matched_by_cw_id++;
       continue;
     }
@@ -122,17 +149,23 @@ export async function persistCaisseSync(
     const byPiece = mvt.numeroPiece
       ? await db
           .prepare(
-            `SELECT id FROM mouvements_caisse
+            `SELECT id, status FROM mouvements_caisse
               WHERE group_id = ?
                 AND numero_piece = ?
                 AND date_mouvement = ?
                 AND ABS(amount_cents) = ?
                 AND comptaweb_ecriture_id IS NULL`,
           )
-          .get<{ id: string }>(groupId, mvt.numeroPiece, mvt.date, mvt.montantCentimes)
+          .get<{ id: string; status: string }>(
+            groupId,
+            mvt.numeroPiece,
+            mvt.date,
+            mvt.montantCentimes,
+          )
       : null;
 
     if (byPiece) {
+      const promoted = promoteStatus(inferredStatus, byPiece.status);
       await db
         .prepare(
           `UPDATE mouvements_caisse
@@ -140,7 +173,8 @@ export async function persistCaisseSync(
                   amount_cents          = ?,
                   description           = ?,
                   type                  = COALESCE(type, ?),
-                  numero_piece          = COALESCE(numero_piece, ?)
+                  numero_piece          = COALESCE(numero_piece, ?),
+                  status                = ?
             WHERE id = ?`,
         )
         .run(
@@ -149,6 +183,7 @@ export async function persistCaisseSync(
           mvt.intitule,
           inferredType,
           mvt.numeroPiece,
+          promoted,
           byPiece.id,
         );
       stats.matched_by_fallback++;
