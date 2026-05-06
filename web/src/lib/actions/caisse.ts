@@ -12,6 +12,7 @@ import {
   discoverCaisses,
 } from '../services/caisse-sync';
 import { parseAmount } from '../format';
+import { logError } from '../log';
 
 export async function createMouvementCaisse(formData: FormData) {
   const ctx = await getCurrentContext();
@@ -74,15 +75,25 @@ export async function rapprocherDepotEspecesAction(formData: FormData) {
 }
 
 export async function syncCaisseFromComptawebAction(formData: FormData) {
-  const ctx = await getCurrentContext();
-  let caisseId = Number(formData.get('caisse_id'));
-  if (!caisseId || Number.isNaN(caisseId)) {
-    const list = await discoverCaisses();
-    const active = list.find((c) => !c.inactif);
-    if (!active) throw new Error('Aucune caisse active trouvée côté Comptaweb.');
-    caisseId = active.id;
+  try {
+    const ctx = await getCurrentContext();
+    let caisseId = Number(formData.get('caisse_id'));
+    if (!caisseId || Number.isNaN(caisseId)) {
+      const list = await discoverCaisses();
+      const active = list.find((c) => !c.inactif);
+      if (!active) throw new Error('Aucune caisse active trouvée côté Comptaweb.');
+      caisseId = active.id;
+    }
+    const result = await syncCaisseFromComptaweb(ctx.groupId, caisseId);
+    console.log(
+      `[caisse/sync] OK caisse=${caisseId} stats=${JSON.stringify(result.stats)} soldeBaloo=${result.soldeBaloo} soldeCW=${result.soldeComptaweb}`,
+    );
+    revalidatePath('/caisse');
+    revalidatePath('/');
+  } catch (err) {
+    logError('caisse/sync/action', 'sync failed', err, {
+      caisseIdFromForm: formData.get('caisse_id'),
+    });
+    throw err;
   }
-  await syncCaisseFromComptaweb(ctx.groupId, caisseId);
-  revalidatePath('/caisse');
-  revalidatePath('/');
 }

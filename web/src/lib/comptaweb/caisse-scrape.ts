@@ -1,7 +1,7 @@
 import * as cheerio from 'cheerio';
 import type { CheerioAPI, Cheerio } from 'cheerio';
 import type { AnyNode } from 'domhandler';
-import { fetchHtml } from './http';
+import { fetchHtml, ComptawebSessionExpiredError } from './http';
 import type { ComptawebConfig } from './types';
 
 // Une ligne de la vue caisse Comptaweb (`/caisse/gestion?id=<caisseId>`).
@@ -103,6 +103,18 @@ function findSoldeTable($: CheerioAPI): Cheerio<AnyNode> | null {
 
 export function parseCaisseGestionHtml(html: string): CaisseGestionData {
   const $ = cheerio.load(html);
+
+  // Détection d'une page de login servie en HTTP 200 (le re-login
+  // Keycloak renvoie parfois un formulaire au lieu d'une redirection).
+  // Sans ce check, le parser plante plus tard sur "table introuvable"
+  // et `withAutoReLogin` ne re-tente pas.
+  const looksLikeLogin =
+    /id=["']?kc-page-title|action=["']?[^"']*openid-connect|name=["']?password["']/i.test(
+      html,
+    );
+  if (looksLikeLogin && !html.includes('caissegestion')) {
+    throw new ComptawebSessionExpiredError();
+  }
 
   // Caisse id : extrait de /caisse/gestion?id=<id> via une option du
   // select<select name="caissegestion">. Plus stable que de retomber
