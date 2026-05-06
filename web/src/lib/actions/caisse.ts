@@ -88,9 +88,15 @@ export async function syncCaisseFromComptawebAction(formData: FormData) {
     revalidatePath('/caisse');
     revalidatePath('/');
   } catch (err) {
-    logError('caisse/sync/action', 'sync failed', err, {
+    const data: Record<string, unknown> = {
       caisseIdFromForm: formData.get('caisse_id'),
-    });
+    };
+    // Si l'erreur transporte un htmlSample (cf. fetchCaisseList), on
+    // l'embarque dans le log pour diagnostic.
+    if (err && typeof err === 'object' && 'htmlSample' in err) {
+      data.htmlSample = (err as { htmlSample: unknown }).htmlSample;
+    }
+    logError('caisse/sync/action', 'sync failed', err, data);
     throw err;
   }
 }

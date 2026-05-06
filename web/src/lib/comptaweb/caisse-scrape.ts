@@ -241,5 +241,20 @@ export function parseCaisseListHtml(html: string): CaisseListItem[] {
 
 export async function fetchCaisseList(config: ComptawebConfig): Promise<CaisseListItem[]> {
   const html = await fetchHtml(config, '/caisse');
-  return parseCaisseListHtml(html);
+  const list = parseCaisseListHtml(html);
+  if (list.length === 0) {
+    // Erreur "0 caisse" : on attache un échantillon du HTML pour
+    // comprendre côté `/admin/errors` (page de login non détectée ?
+    // structure inattendue ?). Évite de redéployer juste pour debug.
+    const sample = html.replace(/\s+/g, ' ').slice(0, 1500);
+    const titleMatch = html.match(/<title>([^<]*)<\/title>/i);
+    throw Object.assign(
+      new Error(
+        `Page /caisse retournée par Comptaweb ne contient aucune caisse parseable. ` +
+          `Title="${titleMatch?.[1]?.trim() ?? '(inconnu)'}", htmlLen=${html.length}.`,
+      ),
+      { htmlSample: sample },
+    );
+  }
+  return list;
 }
