@@ -70,7 +70,7 @@ export interface OverviewData {
   totalDepensesFormatted: string;
   totalRecettesFormatted: string;
   soldeFormatted: string;
-  parUnite: { id: string; code: string; name: string; couleur: string | null; depenses: number; recettes: number; solde: number }[];
+  parUnite: { id: string; code: string; name: string; couleur: string | null; depenses: number; recettes: number; solde: number; budget_prevu_depenses: number }[];
   parCategorie: CategorieRow[];
   remboursementsEnAttente: { count: number; total: number; totalFormatted: string };
   alertes: {
@@ -109,14 +109,22 @@ export async function getOverview(
      WHERE e.group_id = ? AND e.type = 'recette'${dateClause}`,
   ).get<{ total: number }>(groupId, ...dateValues);
 
-  const parUnite = await db.prepare(`
+  const saison = filters.exercice ?? currentExercice();
+
+  const parUniteRows = await db.prepare(`
     SELECT u.id, u.code, u.name, u.couleur,
       COALESCE(SUM(CASE WHEN e.type = 'depense' THEN e.amount_cents ELSE 0 END), 0) as depenses,
-      COALESCE(SUM(CASE WHEN e.type = 'recette' THEN e.amount_cents ELSE 0 END), 0) as recettes
+      COALESCE(SUM(CASE WHEN e.type = 'recette' THEN e.amount_cents ELSE 0 END), 0) as recettes,
+      COALESCE((
+        SELECT SUM(bl.amount_cents) FROM budget_lignes bl
+        JOIN budgets b ON b.id = bl.budget_id
+        WHERE b.group_id = ? AND b.saison = ?
+          AND bl.unite_id = u.id AND bl.type = 'depense'
+      ), 0) as budget_prevu_depenses
     FROM unites u LEFT JOIN ecritures e ON e.unite_id = u.id AND e.group_id = ?${dateClause}
     WHERE u.group_id = ?
     GROUP BY u.id ORDER BY u.code
-  `).all<{ id: string; code: string; name: string; couleur: string | null; depenses: number; recettes: number }>(groupId, ...dateValues, groupId);
+  `).all<{ id: string; code: string; name: string; couleur: string | null; depenses: number; recettes: number; budget_prevu_depenses: number }>(groupId, saison, groupId, ...dateValues, groupId);
 
   // Breakdown par catégorie SGDF — comparable ligne à ligne au compte de
   // résultat Comptaweb (qui agrège par "Nature" = catégorie). Les
@@ -178,7 +186,7 @@ export async function getOverview(
     totalDepensesFormatted: formatAmount(totDep),
     totalRecettesFormatted: formatAmount(totRec),
     soldeFormatted: formatAmount(totRec - totDep),
-    parUnite: parUnite.map(u => ({ ...u, solde: u.recettes - u.depenses })),
+    parUnite: parUniteRows.map(u => ({ ...u, solde: u.recettes - u.depenses })),
     parCategorie,
     remboursementsEnAttente: { count: rbt?.count ?? 0, total: rbt?.total ?? 0, totalFormatted: formatAmount(rbt?.total ?? 0) },
     alertes: {
