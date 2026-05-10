@@ -42,7 +42,7 @@ export interface OverviewData {
   totalDepensesFormatted: string;
   totalRecettesFormatted: string;
   soldeFormatted: string;
-  parUnite: { code: string; name: string; couleur: string | null; depenses: number; recettes: number; solde: number }[];
+  parUnite: { id: string; code: string; name: string; couleur: string | null; depenses: number; recettes: number; solde: number }[];
   parCategorie: CategorieRow[];
   remboursementsEnAttente: { count: number; total: number; totalFormatted: string };
   alertes: {
@@ -82,13 +82,13 @@ export async function getOverview(
   ).get<{ total: number }>(groupId, ...dateValues);
 
   const parUnite = await db.prepare(`
-    SELECT u.code, u.name, u.couleur,
+    SELECT u.id, u.code, u.name, u.couleur,
       COALESCE(SUM(CASE WHEN e.type = 'depense' THEN e.amount_cents ELSE 0 END), 0) as depenses,
       COALESCE(SUM(CASE WHEN e.type = 'recette' THEN e.amount_cents ELSE 0 END), 0) as recettes
     FROM unites u LEFT JOIN ecritures e ON e.unite_id = u.id AND e.group_id = ?${dateClause}
     WHERE u.group_id = ?
     GROUP BY u.id ORDER BY u.code
-  `).all<{ code: string; name: string; couleur: string | null; depenses: number; recettes: number }>(groupId, ...dateValues, groupId);
+  `).all<{ id: string; code: string; name: string; couleur: string | null; depenses: number; recettes: number }>(groupId, ...dateValues, groupId);
 
   // Breakdown par catégorie SGDF — comparable ligne à ligne au compte de
   // résultat Comptaweb (qui agrège par "Nature" = catégorie). Les
