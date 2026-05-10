@@ -9,6 +9,7 @@ import { getOverview } from '@/lib/queries/overview';
 import { currentExercice } from '@/lib/services/overview';
 import { getCurrentContext } from '@/lib/context';
 import { requireNotParent } from '@/lib/auth/access';
+import { UnitesGrid } from '@/components/synthese/unites-grid';
 import {
   AlertTriangle,
   ArrowDownCircle,
@@ -137,48 +138,21 @@ export default async function SynthesePage({
 
       <Section
         title="Par unité"
-        subtitle="Vue agrégée des dépenses et recettes par unité du groupe."
+        subtitle="Cliquez sur une unité pour voir le détail des dépenses et de la répartition par catégorie."
         className="mb-8"
-        bodyClassName="px-0 pb-0"
       >
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Unité</TableHead>
-              <TableHead className="text-right">Dépenses</TableHead>
-              <TableHead className="text-right">Recettes</TableHead>
-              <TableHead className="text-right">Solde</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.parUnite.map((u) => (
-              <TableRow
-                key={u.code}
-                style={
-                  u.couleur
-                    ? {
-                        boxShadow: `inset 3px 0 0 0 ${u.couleur}`,
-                        backgroundColor: `${u.couleur}0F`,
-                      }
-                    : undefined
-                }
-              >
-                <TableCell className="font-medium">
-                  {u.code} — {u.name}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  <Amount cents={u.depenses} tone="negative" />
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  <Amount cents={u.recettes} tone="positive" />
-                </TableCell>
-                <TableCell className="text-right font-medium tabular-nums">
-                  <Amount cents={u.solde} tone="signed" />
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <UnitesGrid
+          unites={data.parUnite.map((u) => ({
+            id: u.id,
+            code: u.code,
+            name: u.name,
+            couleur: u.couleur,
+            depenses: u.depenses,
+            recettes: u.recettes,
+            solde: u.solde,
+          }))}
+          exerciceParam={exerciceParam}
+        />
       </Section>
 
       <Section
