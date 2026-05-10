@@ -15,6 +15,7 @@ import {
   ArrowUpCircle,
   Clock,
   FileQuestion,
+  Layers,
   Scale,
   Upload,
 } from 'lucide-react';
@@ -100,7 +101,7 @@ export default async function SynthesePage({
         />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard
           label="Remb. en attente"
           icon={Clock}
@@ -119,6 +120,19 @@ export default async function SynthesePage({
           value={data.alertes.nonSyncComptaweb}
           sublabel="écritures validées"
         />
+        <Link href="/ecritures?sans_unite=1" className="block">
+          <StatCard
+            label="Sans unité"
+            icon={Layers}
+            value={data.alertes.ecrituresSansUnite}
+            sublabel={
+              data.alertes.remboursementsSansUnite + data.alertes.caisseSansUnite > 0
+                ? `+ ${data.alertes.remboursementsSansUnite} remb, ${data.alertes.caisseSansUnite} caisse`
+                : 'écritures'
+            }
+            className="hover:border-foreground/30 transition-colors cursor-pointer"
+          />
+        </Link>
       </div>
 
       <Section
