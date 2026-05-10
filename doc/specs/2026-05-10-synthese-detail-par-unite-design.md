@@ -23,6 +23,26 @@ Cette phase 1 se concentre sur la **visualisation des dépenses par unité** : a
 2. Créer une **page détail par unité** `/synthese/unite/[id]` regroupant les chiffres clés, la répartition par catégorie, et les écritures récentes.
 3. Conserver le filtre par exercice SGDF (Sept→Août) déjà en place sur `/synthese` et le propager au détail.
 
+### Pré-requis : couverture `unite_id`
+
+Tenir un budget par unité **suppose** que toute opération qui consomme de l'argent du groupe soit rattachée à une unité (ou explicitement à « Groupe »). Aujourd'hui :
+
+- `ecritures.unite_id` peut être NULL ; le filtre `/ecritures?incomplete=1` ne détecte les manques **que sur les brouillons** (cf. `computeMissingFields`). Les écritures `saisie_comptaweb` ou `valide` sans unité sont invisibles.
+- `remboursements.unite_id` peut être NULL ; aucun warning UI aujourd'hui.
+- `mouvements_caisse.unite_id` peut être NULL ; aucun warning UI aujourd'hui.
+
+**Phase 1 ajoute** :
+
+1. **Audit dans `getOverview`** : nouveaux compteurs
+   - `alertes.ecrituresSansUnite : number` — `ecritures.unite_id IS NULL` (tous statuts confondus)
+   - `alertes.remboursementsSansUnite : number` — `remboursements.unite_id IS NULL` et status ≠ `'refuse'`
+   - `alertes.caisseSansUnite : number` — `mouvements_caisse.unite_id IS NULL` (hors archived)
+2. **Affichage** sur `/synthese` : nouvelle stat card « Sans unité » dans le bloc d'alertes existant (à côté de « Sans justificatif » et « Non saisies Comptaweb »). Cliquable → `/ecritures?sans_unite=1` (nouveau filtre, à ajouter aux `EcritureFilters`).
+3. **Filtre `?sans_unite=1` sur `/ecritures`** : ajoute la clause `e.unite_id IS NULL`. Ne nécessite pas de nouvel index (la colonne est déjà indexée).
+4. **Pas d'auto-correction** : on signale, on laisse le trésorier rattacher manuellement (le drawer `/ecritures` permet déjà l'édition inline).
+
+Les remboursements et mouvements caisse n'ont pas de drawer d'édition unité aussi simple ; pour l'instant on se contente d'**afficher le compteur** et le user pourra creuser via la liste correspondante. Édition ergonomique = post-phase 1 si nécessaire.
+
 ## Hors scope (phase 1)
 
 - Budget prévisionnel par unité (prévu vs réel) — viendra avec la spec budgets, qui devra prendre en compte la dualité **« activités d'année »** (sept→juin/juillet) vs **« camps d'été »** (juillet/août). Deux budgets par saison à modéliser.
