@@ -28,6 +28,8 @@ export interface EcritureFilters {
   incomplete?: boolean;
   // Préset : uniquement les écritures issues d'une ligne bancaire Comptaweb.
   from_bank?: boolean;
+  // Préset : uniquement les écritures sans unité rattachée (audit de couverture).
+  sans_unite?: boolean;
 }
 
 // Renvoie la liste des champs manquants qui bloquent la synchronisation.
@@ -117,6 +119,7 @@ export async function listEcritures(
     values.push(...vals);
   }
   if (filters.from_bank) { conditions.push('e.ligne_bancaire_id IS NOT NULL'); }
+  if (filters.sans_unite) { conditions.push('e.unite_id IS NULL'); }
   if (filters.incomplete) {
     // Deux cas éligibles :
     //   - brouillon (post-filter précise si un champ manque vraiment)
