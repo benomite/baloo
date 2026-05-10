@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   BookOpen,
+  Calculator,
   CircleHelp,
   Coins,
   Gift,
@@ -46,6 +47,7 @@ const SECTIONS: NavSection[] = [
       { href: '/ecritures', label: 'Écritures', icon: BookOpen },
       { href: '/caisse', label: 'Caisse', icon: Coins, roles: ['tresorier', 'RG'] },
       { href: '/synthese', label: 'Synthèse', icon: TrendingUp, roles: ['tresorier', 'RG', 'chef'] },
+      { href: '/budgets', label: 'Budget', icon: Calculator, roles: ['tresorier', 'RG'] },
     ],
   },
   {
