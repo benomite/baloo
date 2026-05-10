@@ -225,6 +225,63 @@ export async function deleteBudgetLigne(
   return true;
 }
 
+export interface BudgetPrevuParUnite {
+  unite_id: string;
+  prevu_depenses_cents: number;
+  prevu_recettes_cents: number;
+}
+export interface BudgetPrevuParUniteActivite {
+  unite_id: string;
+  activite_id: string | null;
+  activite_name: string | null;
+  prevu_depenses_cents: number;
+  prevu_recettes_cents: number;
+}
+export interface BudgetPrevuResult {
+  parUnite: BudgetPrevuParUnite[];
+  parUniteActivite: BudgetPrevuParUniteActivite[];
+}
+
+// Agrégation du prévu pour une saison donnée. Pas de filtre exercice
+// (1 saison budget = 1 exercice SGDF, cf. spec phase 2). Si le budget
+// n'existe pas pour cette saison, renvoie des tableaux vides (pas
+// d'erreur — l'UI affichera 0 / "Pas de budget").
+export async function getBudgetPrevuParUnite(
+  { groupId }: BudgetContext,
+  saison: string,
+): Promise<BudgetPrevuResult> {
+  const db = getDb();
+  const budget = await db
+    .prepare('SELECT id FROM budgets WHERE group_id = ? AND saison = ?')
+    .get<{ id: string }>(groupId, saison);
+  if (!budget) return { parUnite: [], parUniteActivite: [] };
+
+  const parUnite = await db
+    .prepare(
+      `SELECT bl.unite_id,
+              COALESCE(SUM(CASE WHEN bl.type = 'depense' THEN bl.amount_cents ELSE 0 END), 0) as prevu_depenses_cents,
+              COALESCE(SUM(CASE WHEN bl.type = 'recette' THEN bl.amount_cents ELSE 0 END), 0) as prevu_recettes_cents
+       FROM budget_lignes bl
+       WHERE bl.budget_id = ? AND bl.unite_id IS NOT NULL
+       GROUP BY bl.unite_id`,
+    )
+    .all<BudgetPrevuParUnite>(budget.id);
+
+  const parUniteActivite = await db
+    .prepare(
+      `SELECT bl.unite_id, bl.activite_id, a.name as activite_name,
+              COALESCE(SUM(CASE WHEN bl.type = 'depense' THEN bl.amount_cents ELSE 0 END), 0) as prevu_depenses_cents,
+              COALESCE(SUM(CASE WHEN bl.type = 'recette' THEN bl.amount_cents ELSE 0 END), 0) as prevu_recettes_cents
+       FROM budget_lignes bl
+       LEFT JOIN activites a ON a.id = bl.activite_id
+       WHERE bl.budget_id = ? AND bl.unite_id IS NOT NULL
+       GROUP BY bl.unite_id, bl.activite_id`,
+    )
+    .all<BudgetPrevuParUniteActivite>(budget.id);
+
+  return { parUnite, parUniteActivite };
+}
+
 // Change le statut d'un budget (projet → vote → cloture). Anti-
 // énumération via group_id. vote_le posé à la date du jour quand statut
 // devient 'vote' ; conservé sinon (COALESCE) au cas où on rebascule.
