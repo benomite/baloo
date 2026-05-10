@@ -547,5 +547,19 @@ export async function ensureAuthSchema(): Promise<void> {
     }
   }
 
+  // Phase 2 budgets : ajout du lien activité sur les lignes budget pour
+  // la réconciliation prévu vs réel. Idempotent.
+  const bdgCols = await db
+    .prepare('PRAGMA table_info(budget_lignes)')
+    .all<{ name: string }>();
+  const hasBdg = (name: string) => bdgCols.some((c) => c.name === name);
+  if (!hasBdg('activite_id')) {
+    await db.exec('ALTER TABLE budget_lignes ADD COLUMN activite_id TEXT REFERENCES activites(id)');
+  }
+  // CREATE INDEX après l'ALTER.
+  await db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_budget_lignes_activite ON budget_lignes(activite_id)',
+  );
+
   ensured = true;
 }

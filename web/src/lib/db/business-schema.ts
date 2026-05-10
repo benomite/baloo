@@ -426,6 +426,7 @@ export async function ensureBusinessSchema(): Promise<void> {
       budget_id TEXT NOT NULL REFERENCES budgets(id),
       unite_id TEXT REFERENCES unites(id),
       category_id TEXT REFERENCES categories(id),
+      activite_id TEXT REFERENCES activites(id),
       libelle TEXT NOT NULL,
       type TEXT NOT NULL CHECK(type IN ('depense', 'recette')),
       amount_cents INTEGER NOT NULL,
@@ -435,6 +436,9 @@ export async function ensureBusinessSchema(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_budget_lignes_budget ON budget_lignes(budget_id);
     CREATE INDEX IF NOT EXISTS idx_budget_lignes_unite ON budget_lignes(unite_id);
+    -- idx_budget_lignes_activite est créé dans auth/schema.ts APRÈS l'ALTER
+    -- TABLE qui ajoute activite_id aux BDDs existantes (cf. AGENTS.md :
+    -- CREATE TABLE IF NOT EXISTS = no-op sur BDD existante).
 
     -- ============ Comptaweb (import / rapprochement) =========
     CREATE TABLE IF NOT EXISTS comptaweb_imports (
