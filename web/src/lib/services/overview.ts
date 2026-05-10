@@ -33,6 +33,17 @@ export interface CategorieRow {
   comptaweb_id: number | null;
   depenses: number;
   recettes: number;
+  budget_prevu_depenses: number;
+  budget_prevu_recettes: number;
+}
+
+export interface ParActiviteRow {
+  activite_id: string | null;
+  activite_name: string | null;
+  reel_depenses: number;
+  reel_recettes: number;
+  prevu_depenses: number;
+  prevu_recettes: number;
 }
 
 export interface EcritureLite {
@@ -58,6 +69,7 @@ export interface UniteOverviewData {
   totalRecettes: number;
   solde: number;
   parCategorie: CategorieRow[];
+  parActivite: ParActiviteRow[];
   alertes: { depensesSansJustificatif: number; nonSyncComptaweb: number };
   ecrituresRecentes: EcritureLite[];
   totalEcritures: number;
@@ -238,19 +250,83 @@ export async function getUniteOverview(
      WHERE e.group_id = ? AND e.unite_id = ?${dateClause}`,
   ).get<{ dep: number; rec: number }>(groupId, args.uniteId, ...dateValues);
 
+  const saison = filters.exercice ?? currentExercice();
+
   const parCategorie = await db.prepare(`
     SELECT
       c.id as category_id,
       COALESCE(c.name, '(non catégorisé)') as category_name,
       c.comptaweb_id,
       COALESCE(SUM(CASE WHEN e.type = 'depense' THEN e.amount_cents ELSE 0 END), 0) as depenses,
-      COALESCE(SUM(CASE WHEN e.type = 'recette' THEN e.amount_cents ELSE 0 END), 0) as recettes
+      COALESCE(SUM(CASE WHEN e.type = 'recette' THEN e.amount_cents ELSE 0 END), 0) as recettes,
+      COALESCE((
+        SELECT SUM(bl.amount_cents) FROM budget_lignes bl
+        JOIN budgets b ON b.id = bl.budget_id
+        WHERE b.group_id = ? AND b.saison = ?
+          AND bl.unite_id = ? AND bl.type = 'depense'
+          AND ((bl.category_id IS NULL AND c.id IS NULL) OR bl.category_id = c.id)
+      ), 0) as budget_prevu_depenses,
+      COALESCE((
+        SELECT SUM(bl.amount_cents) FROM budget_lignes bl
+        JOIN budgets b ON b.id = bl.budget_id
+        WHERE b.group_id = ? AND b.saison = ?
+          AND bl.unite_id = ? AND bl.type = 'recette'
+          AND ((bl.category_id IS NULL AND c.id IS NULL) OR bl.category_id = c.id)
+      ), 0) as budget_prevu_recettes
     FROM ecritures e
     LEFT JOIN categories c ON c.id = e.category_id
     WHERE e.group_id = ? AND e.unite_id = ?${dateClause}
     GROUP BY c.id
     ORDER BY (depenses + recettes) DESC
-  `).all<CategorieRow>(groupId, args.uniteId, ...dateValues);
+  `).all<CategorieRow>(
+    groupId, saison, args.uniteId,
+    groupId, saison, args.uniteId,
+    groupId, args.uniteId, ...dateValues,
+  );
+
+  const parActivite = await db.prepare(`
+    WITH reel AS (
+      SELECT e.activite_id,
+             SUM(CASE WHEN e.type = 'depense' THEN e.amount_cents ELSE 0 END) as reel_depenses,
+             SUM(CASE WHEN e.type = 'recette' THEN e.amount_cents ELSE 0 END) as reel_recettes
+      FROM ecritures e
+      WHERE e.group_id = ? AND e.unite_id = ?${dateClause}
+      GROUP BY e.activite_id
+    ),
+    prevu AS (
+      SELECT bl.activite_id,
+             SUM(CASE WHEN bl.type = 'depense' THEN bl.amount_cents ELSE 0 END) as prevu_depenses,
+             SUM(CASE WHEN bl.type = 'recette' THEN bl.amount_cents ELSE 0 END) as prevu_recettes
+      FROM budget_lignes bl
+      JOIN budgets b ON b.id = bl.budget_id
+      WHERE b.group_id = ? AND b.saison = ? AND bl.unite_id = ?
+      GROUP BY bl.activite_id
+    ),
+    union_ids AS (
+      SELECT activite_id FROM reel
+      UNION
+      SELECT activite_id FROM prevu
+    )
+    SELECT u.activite_id, a.name as activite_name,
+           COALESCE(r.reel_depenses, 0) as reel_depenses,
+           COALESCE(r.reel_recettes, 0) as reel_recettes,
+           COALESCE(p.prevu_depenses, 0) as prevu_depenses,
+           COALESCE(p.prevu_recettes, 0) as prevu_recettes
+    FROM union_ids u
+    LEFT JOIN activites a ON a.id = u.activite_id
+    LEFT JOIN reel r ON r.activite_id IS u.activite_id
+    LEFT JOIN prevu p ON p.activite_id IS u.activite_id
+  `).all<ParActiviteRow>(
+    groupId, args.uniteId, ...dateValues,
+    groupId, saison, args.uniteId,
+  );
+
+  // Tri en JS (NULLS LAST pas garanti côté SQL libsql) : prévu décroissant
+  // puis réel décroissant.
+  parActivite.sort((a, b) => {
+    if (b.prevu_depenses !== a.prevu_depenses) return b.prevu_depenses - a.prevu_depenses;
+    return b.reel_depenses - a.reel_depenses;
+  });
 
   const sansJustif = await db.prepare(`
     SELECT COUNT(*) as count FROM ecritures e
@@ -286,6 +362,7 @@ export async function getUniteOverview(
     totalRecettes: rec,
     solde: rec - dep,
     parCategorie,
+    parActivite,
     alertes: {
       depensesSansJustificatif: sansJustif?.count ?? 0,
       nonSyncComptaweb: nonSync?.count ?? 0,

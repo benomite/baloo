@@ -136,6 +136,7 @@ export default async function UniteDetailPage({
                 <TableHead>Catégorie</TableHead>
                 <TableHead className="text-right">Dépenses</TableHead>
                 <TableHead className="text-right">Recettes</TableHead>
+                <TableHead className="text-right">Budget</TableHead>
                 <TableHead className="text-right">CW#</TableHead>
               </TableRow>
             </TableHeader>
@@ -163,11 +164,73 @@ export default async function UniteDetailPage({
                   <TableCell className="text-right tabular-nums">
                     {c.recettes > 0 ? <Amount cents={c.recettes} tone="positive" /> : <span className="text-fg-subtle">—</span>}
                   </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {c.budget_prevu_depenses + c.budget_prevu_recettes > 0 ? (
+                      <span className="text-xs text-muted-foreground">
+                        <Amount cents={c.budget_prevu_depenses + c.budget_prevu_recettes} />
+                      </span>
+                    ) : (
+                      <span className="text-fg-subtle">—</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums text-[11px] text-fg-subtle">
                     {c.comptaweb_id ?? <span className="text-amber-700">—</span>}
                   </TableCell>
                 </TableRow>
               ))}
+            </TableBody>
+          </Table>
+        )}
+      </Section>
+
+      <Section
+        title="Par activité"
+        subtitle="Comparaison prévu (budget) et réel par activité pour cette unité. La dualité activités d'année vs camps se lit dans le nom des activités."
+        className="mb-8"
+        bodyClassName="px-0 pb-0"
+      >
+        {data.parActivite.length === 0 ? (
+          <p className="px-5 py-4 text-sm text-muted-foreground">
+            Aucune activité avec budget ou réel sur la période.
+          </p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Activité</TableHead>
+                <TableHead className="text-right">Prévu dép.</TableHead>
+                <TableHead className="text-right">Réel dép.</TableHead>
+                <TableHead className="text-right">Prévu rec.</TableHead>
+                <TableHead className="text-right">Réel rec.</TableHead>
+                <TableHead className="text-right">Écart dép.</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.parActivite.map((a) => {
+                const ecartDep = a.reel_depenses - a.prevu_depenses;
+                return (
+                  <TableRow key={a.activite_id ?? '__none__'}>
+                    <TableCell className="font-medium">
+                      {a.activite_name ?? <span className="text-muted-foreground">— sans activité —</span>}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {a.prevu_depenses > 0 ? <Amount cents={a.prevu_depenses} /> : <span className="text-fg-subtle">—</span>}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {a.reel_depenses > 0 ? <Amount cents={a.reel_depenses} tone="negative" /> : <span className="text-fg-subtle">—</span>}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {a.prevu_recettes > 0 ? <Amount cents={a.prevu_recettes} /> : <span className="text-fg-subtle">—</span>}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {a.reel_recettes > 0 ? <Amount cents={a.reel_recettes} tone="positive" /> : <span className="text-fg-subtle">—</span>}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums font-medium">
+                      {a.prevu_depenses > 0 ? <Amount cents={ecartDep} tone="signed" /> : <span className="text-fg-subtle">—</span>}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         )}
