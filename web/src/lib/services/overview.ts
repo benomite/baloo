@@ -35,6 +35,34 @@ export interface CategorieRow {
   recettes: number;
 }
 
+export interface EcritureLite {
+  id: string;
+  date_ecriture: string;
+  description: string;
+  amount_cents: number;
+  type: 'depense' | 'recette';
+  category_name: string | null;
+  numero_piece: string | null;
+}
+
+export interface UniteOverviewData {
+  unite: {
+    id: string;
+    code: string;
+    name: string;
+    couleur: string | null;
+    branche: string | null;
+  };
+  exerciceFiltre: string | null;
+  totalDepenses: number;
+  totalRecettes: number;
+  solde: number;
+  parCategorie: CategorieRow[];
+  alertes: { depensesSansJustificatif: number; nonSyncComptaweb: number };
+  ecrituresRecentes: EcritureLite[];
+  totalEcritures: number;
+}
+
 export interface OverviewData {
   totalDepenses: number;
   totalRecettes: number;
@@ -162,5 +190,99 @@ export async function getOverview(
     },
     dernierImport: lastImport ?? null,
     exerciceFiltre: filters.exercice ?? null,
+  };
+}
+
+export interface UniteOverviewArgs {
+  uniteId: string;
+}
+
+// Renvoie null si l'unité n'appartient pas au group (anti-énumération
+// inter-groupes — la page render un 404 indistinguable de "n'existe pas").
+export async function getUniteOverview(
+  { groupId }: OverviewContext,
+  args: UniteOverviewArgs,
+  filters: OverviewFilters = {},
+): Promise<UniteOverviewData | null> {
+  const db = getDb();
+
+  const unite = await db.prepare(
+    'SELECT id, code, name, couleur, branche FROM unites WHERE id = ? AND group_id = ?',
+  ).get<{ id: string; code: string; name: string; couleur: string | null; branche: string | null }>(
+    args.uniteId,
+    groupId,
+  );
+  if (!unite) return null;
+
+  let dateClause = '';
+  const dateValues: unknown[] = [];
+  if (filters.exercice) {
+    const { start, end } = exerciceBounds(filters.exercice);
+    dateClause = ' AND e.date_ecriture >= ? AND e.date_ecriture <= ?';
+    dateValues.push(start, end);
+  }
+
+  const totaux = await db.prepare(
+    `SELECT
+       COALESCE(SUM(CASE WHEN type = 'depense' THEN amount_cents ELSE 0 END), 0) as dep,
+       COALESCE(SUM(CASE WHEN type = 'recette' THEN amount_cents ELSE 0 END), 0) as rec
+     FROM ecritures e
+     WHERE e.group_id = ? AND e.unite_id = ?${dateClause}`,
+  ).get<{ dep: number; rec: number }>(groupId, args.uniteId, ...dateValues);
+
+  const parCategorie = await db.prepare(`
+    SELECT
+      c.id as category_id,
+      COALESCE(c.name, '(non catégorisé)') as category_name,
+      c.comptaweb_id,
+      COALESCE(SUM(CASE WHEN e.type = 'depense' THEN e.amount_cents ELSE 0 END), 0) as depenses,
+      COALESCE(SUM(CASE WHEN e.type = 'recette' THEN e.amount_cents ELSE 0 END), 0) as recettes
+    FROM ecritures e
+    LEFT JOIN categories c ON c.id = e.category_id
+    WHERE e.group_id = ? AND e.unite_id = ?${dateClause}
+    GROUP BY c.id
+    ORDER BY (depenses + recettes) DESC
+  `).all<CategorieRow>(groupId, args.uniteId, ...dateValues);
+
+  const sansJustif = await db.prepare(`
+    SELECT COUNT(*) as count FROM ecritures e
+    WHERE e.group_id = ? AND e.unite_id = ? AND e.type = 'depense' AND e.justif_attendu = 1
+    AND NOT EXISTS (SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id)
+  `).get<{ count: number }>(groupId, args.uniteId);
+
+  const nonSync = await db.prepare(
+    "SELECT COUNT(*) as count FROM ecritures WHERE group_id = ? AND unite_id = ? AND comptaweb_synced = 0 AND status != 'brouillon'",
+  ).get<{ count: number }>(groupId, args.uniteId);
+
+  const ecrituresRecentes = await db.prepare(`
+    SELECT e.id, e.date_ecriture, e.description, e.amount_cents, e.type,
+           e.numero_piece, c.name as category_name
+    FROM ecritures e
+    LEFT JOIN categories c ON c.id = e.category_id
+    WHERE e.group_id = ? AND e.unite_id = ?${dateClause}
+    ORDER BY e.date_ecriture DESC, e.id DESC
+    LIMIT 50
+  `).all<EcritureLite>(groupId, args.uniteId, ...dateValues);
+
+  const totalEcrRow = await db.prepare(
+    `SELECT COUNT(*) as count FROM ecritures e WHERE e.group_id = ? AND e.unite_id = ?${dateClause}`,
+  ).get<{ count: number }>(groupId, args.uniteId, ...dateValues);
+
+  const dep = totaux?.dep ?? 0;
+  const rec = totaux?.rec ?? 0;
+
+  return {
+    unite,
+    exerciceFiltre: filters.exercice ?? null,
+    totalDepenses: dep,
+    totalRecettes: rec,
+    solde: rec - dep,
+    parCategorie,
+    alertes: {
+      depensesSansJustificatif: sansJustif?.count ?? 0,
+      nonSyncComptaweb: nonSync?.count ?? 0,
+    },
+    ecrituresRecentes,
+    totalEcritures: totalEcrRow?.count ?? 0,
   };
 }
