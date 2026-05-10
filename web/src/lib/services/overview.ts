@@ -45,7 +45,13 @@ export interface OverviewData {
   parUnite: { code: string; name: string; couleur: string | null; depenses: number; recettes: number; solde: number }[];
   parCategorie: CategorieRow[];
   remboursementsEnAttente: { count: number; total: number; totalFormatted: string };
-  alertes: { depensesSansJustificatif: number; nonSyncComptaweb: number };
+  alertes: {
+    depensesSansJustificatif: number;
+    nonSyncComptaweb: number;
+    ecrituresSansUnite: number;
+    remboursementsSansUnite: number;
+    caisseSansUnite: number;
+  };
   dernierImport: { date: string; fichier: string } | null;
   exerciceFiltre: string | null;
 }
@@ -119,6 +125,21 @@ export async function getOverview(
     'SELECT import_date as date, source_file as fichier FROM comptaweb_imports WHERE group_id = ? ORDER BY import_date DESC LIMIT 1'
   ).get<{ date: string; fichier: string }>(groupId);
 
+  // Audit couverture unite_id : compte les opérations qui n'ont pas
+  // d'unité rattachée (tous statuts confondus, hors archived/refuse).
+  // Pré-requis pour piloter des budgets par unité.
+  const sansUniteEcr = await db.prepare(
+    "SELECT COUNT(*) as count FROM ecritures WHERE group_id = ? AND unite_id IS NULL",
+  ).get<{ count: number }>(groupId);
+
+  const sansUniteRbt = await db.prepare(
+    "SELECT COUNT(*) as count FROM remboursements WHERE group_id = ? AND unite_id IS NULL AND status != 'refuse'",
+  ).get<{ count: number }>(groupId);
+
+  const sansUniteCaisse = await db.prepare(
+    "SELECT COUNT(*) as count FROM mouvements_caisse WHERE group_id = ? AND unite_id IS NULL AND archived_at IS NULL",
+  ).get<{ count: number }>(groupId);
+
   const totDep = dep?.total ?? 0;
   const totRec = rec?.total ?? 0;
 
@@ -132,7 +153,13 @@ export async function getOverview(
     parUnite: parUnite.map(u => ({ ...u, solde: u.recettes - u.depenses })),
     parCategorie,
     remboursementsEnAttente: { count: rbt?.count ?? 0, total: rbt?.total ?? 0, totalFormatted: formatAmount(rbt?.total ?? 0) },
-    alertes: { depensesSansJustificatif: sansJustif?.count ?? 0, nonSyncComptaweb: nonSync?.count ?? 0 },
+    alertes: {
+      depensesSansJustificatif: sansJustif?.count ?? 0,
+      nonSyncComptaweb: nonSync?.count ?? 0,
+      ecrituresSansUnite: sansUniteEcr?.count ?? 0,
+      remboursementsSansUnite: sansUniteRbt?.count ?? 0,
+      caisseSansUnite: sansUniteCaisse?.count ?? 0,
+    },
     dernierImport: lastImport ?? null,
     exerciceFiltre: filters.exercice ?? null,
   };
