@@ -24,6 +24,7 @@ export interface BudgetLigne {
   budget_id: string;
   unite_id: string | null;
   category_id: string | null;
+  activite_id: string | null;
   libelle: string;
   type: BudgetLigneType;
   amount_cents: number;
@@ -86,6 +87,7 @@ export interface CreateBudgetLigneInput {
   amount_cents: number;
   unite_id?: string | null;
   category_id?: string | null;
+  activite_id?: string | null;
   notes?: string | null;
 }
 
@@ -105,13 +107,14 @@ export async function createBudgetLigne(
   const id = `bdl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
   await getDb().prepare(
-    `INSERT INTO budget_lignes (id, budget_id, unite_id, category_id, libelle, type, amount_cents, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO budget_lignes (id, budget_id, unite_id, category_id, activite_id, libelle, type, amount_cents, notes, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.budget_id,
     input.unite_id ?? null,
     input.category_id ?? null,
+    input.activite_id ?? null,
     input.libelle,
     input.type,
     input.amount_cents,
@@ -137,7 +140,7 @@ export async function listBudgetLignes(
   budgetId: string,
 ): Promise<BudgetLignesSummary> {
   const lignes = await getDb().prepare(
-    `SELECT bl.id, bl.unite_id, bl.category_id, bl.libelle, bl.type, bl.amount_cents, bl.notes
+    `SELECT bl.id, bl.budget_id, bl.unite_id, bl.category_id, bl.activite_id, bl.libelle, bl.type, bl.amount_cents, bl.notes
      FROM budget_lignes bl
      JOIN budgets b ON b.id = bl.budget_id
      WHERE bl.budget_id = ? AND b.group_id = ?
@@ -153,4 +156,92 @@ export async function listBudgetLignes(
     total_recettes_cents,
     solde_cents: total_recettes_cents - total_depenses_cents,
   };
+}
+
+export type UpdateBudgetLigneInput = Partial<{
+  libelle: string;
+  type: BudgetLigneType;
+  amount_cents: number;
+  unite_id: string | null;
+  category_id: string | null;
+  activite_id: string | null;
+  notes: string | null;
+}>;
+
+// Patch partiel d'une ligne budget. Anti-énumération via JOIN sur
+// budgets : si la ligne n'appartient pas à un budget du groupe courant,
+// retourne null (la route handler répond 404).
+export async function updateBudgetLigne(
+  { groupId }: BudgetContext,
+  ligneId: string,
+  patch: UpdateBudgetLigneInput,
+): Promise<BudgetLigne | null> {
+  const db = getDb();
+  const owned = await db
+    .prepare(
+      `SELECT bl.id FROM budget_lignes bl
+       JOIN budgets b ON b.id = bl.budget_id
+       WHERE bl.id = ? AND b.group_id = ?`,
+    )
+    .get<{ id: string }>(ligneId, groupId);
+  if (!owned) return null;
+
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  if (patch.libelle !== undefined) { sets.push('libelle = ?'); values.push(patch.libelle); }
+  if (patch.type !== undefined) { sets.push('type = ?'); values.push(patch.type); }
+  if (patch.amount_cents !== undefined) { sets.push('amount_cents = ?'); values.push(patch.amount_cents); }
+  if (patch.unite_id !== undefined) { sets.push('unite_id = ?'); values.push(patch.unite_id); }
+  if (patch.category_id !== undefined) { sets.push('category_id = ?'); values.push(patch.category_id); }
+  if (patch.activite_id !== undefined) { sets.push('activite_id = ?'); values.push(patch.activite_id); }
+  if (patch.notes !== undefined) { sets.push('notes = ?'); values.push(patch.notes); }
+  if (sets.length === 0) {
+    return (await db.prepare('SELECT * FROM budget_lignes WHERE id = ?').get<BudgetLigne>(ligneId))!;
+  }
+  sets.push('updated_at = ?');
+  values.push(currentTimestamp());
+  values.push(ligneId);
+  await db.prepare(`UPDATE budget_lignes SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+  return (await db.prepare('SELECT * FROM budget_lignes WHERE id = ?').get<BudgetLigne>(ligneId))!;
+}
+
+// DELETE simple. Le prévisionnel n'est pas concerné par la doctrine
+// "jamais de DELETE" (qui vise écritures, justifs, rembs, etc.). Anti-
+// énumération : retourne false si la ligne n'appartient pas au groupe.
+export async function deleteBudgetLigne(
+  { groupId }: BudgetContext,
+  ligneId: string,
+): Promise<boolean> {
+  const db = getDb();
+  const owned = await db
+    .prepare(
+      `SELECT bl.id FROM budget_lignes bl
+       JOIN budgets b ON b.id = bl.budget_id
+       WHERE bl.id = ? AND b.group_id = ?`,
+    )
+    .get<{ id: string }>(ligneId, groupId);
+  if (!owned) return false;
+  await db.prepare('DELETE FROM budget_lignes WHERE id = ?').run(ligneId);
+  return true;
+}
+
+// Change le statut d'un budget (projet → vote → cloture). Anti-
+// énumération via group_id. vote_le posé à la date du jour quand statut
+// devient 'vote' ; conservé sinon (COALESCE) au cas où on rebascule.
+export async function updateBudgetStatut(
+  { groupId }: BudgetContext,
+  budgetId: string,
+  statut: BudgetStatut,
+): Promise<Budget | null> {
+  const db = getDb();
+  const owned = await db
+    .prepare('SELECT id FROM budgets WHERE id = ? AND group_id = ?')
+    .get<{ id: string }>(budgetId, groupId);
+  if (!owned) return null;
+  const now = currentTimestamp();
+  const voteLe = statut === 'vote' ? now.slice(0, 10) : null;
+  await db
+    .prepare('UPDATE budgets SET statut = ?, vote_le = COALESCE(?, vote_le), updated_at = ? WHERE id = ?')
+    .run(statut, voteLe, now, budgetId);
+  return (await db.prepare('SELECT * FROM budgets WHERE id = ?').get<Budget>(budgetId))!;
 }
