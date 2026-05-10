@@ -150,6 +150,7 @@ export default async function SynthesePage({
             depenses: u.depenses,
             recettes: u.recettes,
             solde: u.solde,
+            budget_prevu_depenses: u.budget_prevu_depenses,
           }))}
           exerciceParam={exerciceParam}
         />

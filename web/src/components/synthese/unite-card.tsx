@@ -15,6 +15,7 @@ export interface UniteCardData {
   depenses: number;
   recettes: number;
   solde: number;
+  budget_prevu_depenses: number;
 }
 
 interface Props {
@@ -55,6 +56,25 @@ export function UniteCard({ unite, exerciceParam, alertes }: Props) {
           <dd className="tabular-nums"><Amount cents={unite.solde} tone="signed" /></dd>
         </div>
       </dl>
+      {unite.budget_prevu_depenses > 0 && (
+        <div className="mt-3 pt-3 border-t">
+          <div className="flex justify-between text-xs text-muted-foreground mb-1">
+            <span>Budget consommé</span>
+            <span className="tabular-nums">
+              <Amount cents={unite.depenses} /> / <Amount cents={unite.budget_prevu_depenses} />
+            </span>
+          </div>
+          <div className="h-1.5 rounded bg-muted overflow-hidden">
+            <div
+              className="h-full transition-all"
+              style={{
+                width: `${Math.min(100, Math.round((unite.depenses / unite.budget_prevu_depenses) * 100))}%`,
+                backgroundColor: unite.depenses > unite.budget_prevu_depenses ? '#dc2626' : couleur,
+              }}
+            />
+          </div>
+        </div>
+      )}
       {alertes && (alertes.sansJustif || alertes.nonSync) ? (
         <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t">
           {alertes.sansJustif ? (
