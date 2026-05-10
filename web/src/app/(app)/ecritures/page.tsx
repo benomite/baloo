@@ -27,6 +27,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     search: params.search || undefined,
     incomplete: params.incomplete === '1',
     from_bank: params.from_bank === '1',
+    sans_unite: params.sans_unite === '1',
     limit: 200,
   };
   // Toutes ces queries sont indépendantes : on les parallélise pour
@@ -60,10 +61,11 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
       : Promise.resolve(null),
   ]);
 
-  const presetQS = (preset: 'all' | 'incomplete' | 'from_bank') => {
+  const presetQS = (preset: 'all' | 'incomplete' | 'from_bank' | 'sans_unite') => {
     const sp = new URLSearchParams();
     if (preset === 'incomplete') sp.set('incomplete', '1');
     if (preset === 'from_bank') sp.set('from_bank', '1');
+    if (preset === 'sans_unite') sp.set('sans_unite', '1');
     return sp.toString() ? `?${sp.toString()}` : '';
   };
 
@@ -78,7 +80,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
           pill-buttons remplis. Le tab actif a un trait coloré sous le
           texte ; les autres sont muted. */}
       <div className="mb-4 flex flex-wrap gap-6 border-b">
-        <TabLink href={`/ecritures${presetQS('all')}`} active={!filters.incomplete && !filters.from_bank}>
+        <TabLink href={`/ecritures${presetQS('all')}`} active={!filters.incomplete && !filters.from_bank && !filters.sans_unite}>
           Toutes
         </TabLink>
         <TabLink href={`/ecritures${presetQS('incomplete')}`} active={!!filters.incomplete}>
@@ -86,6 +88,9 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
         </TabLink>
         <TabLink href={`/ecritures${presetQS('from_bank')}`} active={!!filters.from_bank}>
           Issues de la banque
+        </TabLink>
+        <TabLink href={`/ecritures${presetQS('sans_unite')}`} active={!!filters.sans_unite}>
+          Sans unité
         </TabLink>
       </div>
 
