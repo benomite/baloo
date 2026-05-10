@@ -5,9 +5,11 @@ import {
   type OverviewData,
   type OverviewFilters,
   type UniteOverviewData,
+  type EcritureLite,
+  type UniteOverviewArgs,
 } from '../services/overview';
 
-export type { OverviewData, OverviewFilters, UniteOverviewData };
+export type { OverviewData, OverviewFilters, UniteOverviewData, EcritureLite, UniteOverviewArgs };
 
 export async function getOverview(filters: OverviewFilters = {}): Promise<OverviewData> {
   const { groupId } = await getCurrentContext();

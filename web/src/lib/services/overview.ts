@@ -246,13 +246,13 @@ export async function getUniteOverview(
 
   const sansJustif = await db.prepare(`
     SELECT COUNT(*) as count FROM ecritures e
-    WHERE e.group_id = ? AND e.unite_id = ? AND e.type = 'depense' AND e.justif_attendu = 1
+    WHERE e.group_id = ? AND e.unite_id = ? AND e.type = 'depense' AND e.justif_attendu = 1${dateClause}
     AND NOT EXISTS (SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id)
-  `).get<{ count: number }>(groupId, args.uniteId);
+  `).get<{ count: number }>(groupId, args.uniteId, ...dateValues);
 
   const nonSync = await db.prepare(
-    "SELECT COUNT(*) as count FROM ecritures WHERE group_id = ? AND unite_id = ? AND comptaweb_synced = 0 AND status != 'brouillon'",
-  ).get<{ count: number }>(groupId, args.uniteId);
+    `SELECT COUNT(*) as count FROM ecritures e WHERE e.group_id = ? AND e.unite_id = ? AND e.comptaweb_synced = 0 AND e.status != 'brouillon'${dateClause}`,
+  ).get<{ count: number }>(groupId, args.uniteId, ...dateValues);
 
   const ecrituresRecentes = await db.prepare(`
     SELECT e.id, e.date_ecriture, e.description, e.amount_cents, e.type,
