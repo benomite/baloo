@@ -79,6 +79,7 @@ export async function createRepartitionAction(
     throw e;
   }
   revalidatePath('/synthese');
+  revalidatePath('/synthese/unite/[id]', 'page');
   return { error: null };
 }
 
@@ -114,6 +115,7 @@ export async function updateRepartitionAction(formData: FormData): Promise<void>
     throw e;
   }
   revalidatePath('/synthese');
+  revalidatePath('/synthese/unite/[id]', 'page');
 }
 
 const deleteSchema = z.object({ id: z.string().min(1) });
@@ -123,4 +125,5 @@ export async function deleteRepartitionAction(formData: FormData): Promise<void>
   const parsed = deleteSchema.parse({ id: formData.get('id') });
   await deleteRepartition({ groupId: ctx.groupId }, parsed.id);
   revalidatePath('/synthese');
+  revalidatePath('/synthese/unite/[id]', 'page');
 }
