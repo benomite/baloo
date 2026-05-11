@@ -151,6 +151,8 @@ export default async function SynthesePage({
             recettes: u.recettes,
             solde: u.solde,
             budget_prevu_depenses: u.budget_prevu_depenses,
+            realloc_net_cents: u.realloc_net_cents,
+            solde_avec_realloc: u.solde_avec_realloc,
           }))}
           exerciceParam={exerciceParam}
         />
