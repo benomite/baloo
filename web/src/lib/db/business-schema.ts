@@ -440,6 +440,29 @@ export async function ensureBusinessSchema(): Promise<void> {
     -- TABLE qui ajoute activite_id aux BDDs existantes (cf. AGENTS.md :
     -- CREATE TABLE IF NOT EXISTS = no-op sur BDD existante).
 
+    -- ============ Répartitions entre unités (phase 3) ===========
+    -- Mouvement Baloo-only qui déplace un montant d'une unité source
+    -- vers une unité cible. NULL côté source ou cible = "Groupe"
+    -- (pot commun). Pas de flux Comptaweb.
+    -- Validation source != cible côté code (pas de CHECK SQL —
+    -- cf. ADR-019 et convention 'workflow en code, pas en BDD').
+    CREATE TABLE IF NOT EXISTS repartitions_unites (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL REFERENCES groupes(id),
+      date_repartition TEXT NOT NULL,
+      saison TEXT NOT NULL,
+      montant_cents INTEGER NOT NULL,
+      unite_source_id TEXT REFERENCES unites(id),
+      unite_cible_id TEXT REFERENCES unites(id),
+      libelle TEXT NOT NULL,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_repartitions_group_saison ON repartitions_unites(group_id, saison);
+    CREATE INDEX IF NOT EXISTS idx_repartitions_source ON repartitions_unites(unite_source_id);
+    CREATE INDEX IF NOT EXISTS idx_repartitions_cible ON repartitions_unites(unite_cible_id);
+
     -- ============ Comptaweb (import / rapprochement) =========
     CREATE TABLE IF NOT EXISTS comptaweb_imports (
       id TEXT PRIMARY KEY,
