@@ -9,7 +9,8 @@ import { getOverview } from '@/lib/queries/overview';
 import { currentExercice } from '@/lib/services/overview';
 import { getCurrentContext } from '@/lib/context';
 import { requireNotParent } from '@/lib/auth/access';
-import { UnitesGrid } from '@/components/synthese/unites-grid';
+import { UnitesSection } from '@/components/synthese/unites-section';
+import { listUnites } from '@/lib/queries/reference';
 import {
   AlertTriangle,
   ArrowDownCircle,
@@ -54,7 +55,10 @@ export default async function SynthesePage({
   const cur = currentExercice();
   const exerciceParam = sp.exercice ?? cur;
   const exerciceFilter = exerciceParam === 'tous' ? null : exerciceParam;
-  const data = await getOverview({ exercice: exerciceFilter });
+  const [data, unitesRef] = await Promise.all([
+    getOverview({ exercice: exerciceFilter }),
+    listUnites(),
+  ]);
 
   const options = exerciceOptions();
 
@@ -136,27 +140,24 @@ export default async function SynthesePage({
         </Link>
       </div>
 
-      <Section
-        title="Par unité"
-        subtitle="Cliquez sur une unité pour voir le détail des dépenses et de la répartition par catégorie."
-        className="mb-8"
-      >
-        <UnitesGrid
-          unites={data.parUnite.map((u) => ({
-            id: u.id,
-            code: u.code,
-            name: u.name,
-            couleur: u.couleur,
-            depenses: u.depenses,
-            recettes: u.recettes,
-            solde: u.solde,
-            budget_prevu_depenses: u.budget_prevu_depenses,
-            realloc_net_cents: u.realloc_net_cents,
-            solde_avec_realloc: u.solde_avec_realloc,
-          }))}
-          exerciceParam={exerciceParam}
-        />
-      </Section>
+      <UnitesSection
+        unites={data.parUnite.map((u) => ({
+          id: u.id,
+          code: u.code,
+          name: u.name,
+          couleur: u.couleur,
+          depenses: u.depenses,
+          recettes: u.recettes,
+          solde: u.solde,
+          budget_prevu_depenses: u.budget_prevu_depenses,
+          realloc_net_cents: u.realloc_net_cents,
+          solde_avec_realloc: u.solde_avec_realloc,
+        }))}
+        exerciceParam={exerciceParam}
+        saison={exerciceFilter ?? cur}
+        unitesRef={unitesRef}
+        canCreate={ctx.role === 'tresorier' || ctx.role === 'RG'}
+      />
 
       <Section
         title="Par catégorie (comparable au compte de résultat Comptaweb)"
