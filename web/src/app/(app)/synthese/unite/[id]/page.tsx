@@ -1,13 +1,15 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, ArrowDownCircle, ArrowUpCircle, FileQuestion, Scale, Upload } from 'lucide-react';
+import { ArrowLeft, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, FileQuestion, Scale, Upload } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/layout/page-header';
 import { Amount } from '@/components/shared/amount';
 import { Section } from '@/components/shared/section';
 import { StatCard } from '@/components/shared/stat-card';
 import { TabLink } from '@/components/shared/tab-link';
+import { RepartitionsList } from '@/components/synthese/repartitions-list';
 import { getUniteOverview } from '@/lib/queries/overview';
+import { listUnites } from '@/lib/queries/reference';
 import { currentExercice } from '@/lib/services/overview';
 import { getCurrentContext } from '@/lib/context';
 import { requireNotParent } from '@/lib/auth/access';
@@ -40,7 +42,10 @@ export default async function UniteDetailPage({
   const exerciceParam = sp.exercice ?? cur;
   const exerciceFilter = exerciceParam === 'tous' ? null : exerciceParam;
 
-  const data = await getUniteOverview(id, { exercice: exerciceFilter });
+  const [data, unitesRef] = await Promise.all([
+    getUniteOverview(id, { exercice: exerciceFilter }),
+    listUnites(),
+  ]);
   if (!data) notFound();
 
   const couleur = data.unite.couleur ?? '#C9C9C9';
@@ -80,7 +85,7 @@ export default async function UniteDetailPage({
         </TabLink>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div className={`grid grid-cols-1 ${data.reallocNetCents !== 0 ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'} gap-4 mb-6`}>
         <StatCard
           label="Dépenses"
           icon={ArrowDownCircle}
@@ -91,6 +96,20 @@ export default async function UniteDetailPage({
           icon={ArrowUpCircle}
           value={<Amount cents={data.totalRecettes} tone="positive" />}
         />
+        {data.reallocNetCents !== 0 && (
+          <StatCard
+            label="Réalloc"
+            icon={ArrowLeftRight}
+            value={<Amount cents={data.reallocNetCents} tone="signed" />}
+            sublabel={
+              data.reallocEntrantesCents > 0 && data.reallocSortantesCents > 0
+                ? `+${(data.reallocEntrantesCents / 100).toFixed(0)} − ${(data.reallocSortantesCents / 100).toFixed(0)}`
+                : data.reallocEntrantesCents > 0
+                  ? 'entrées'
+                  : 'sorties'
+            }
+          />
+        )}
         <StatCard
           label="Solde"
           icon={Scale}
@@ -234,6 +253,20 @@ export default async function UniteDetailPage({
             </TableBody>
           </Table>
         )}
+      </Section>
+
+      <Section
+        title={`Répartitions de la saison (${data.repartitions.length})`}
+        subtitle="Mouvements internes entre unités impactant cette unité. Édition inline du libellé, du montant et de la date."
+        className="mb-8"
+        bodyClassName="px-0 pb-0"
+      >
+        <RepartitionsList
+          repartitions={data.repartitions}
+          unites={unitesRef}
+          uniteCourante={id}
+          canEdit={ctx.role === 'tresorier' || ctx.role === 'RG'}
+        />
       </Section>
 
       <Section
