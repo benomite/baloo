@@ -82,7 +82,18 @@ export interface OverviewData {
   totalDepensesFormatted: string;
   totalRecettesFormatted: string;
   soldeFormatted: string;
-  parUnite: { id: string; code: string; name: string; couleur: string | null; depenses: number; recettes: number; solde: number; budget_prevu_depenses: number }[];
+  parUnite: {
+    id: string;
+    code: string;
+    name: string;
+    couleur: string | null;
+    depenses: number;
+    recettes: number;
+    solde: number;
+    budget_prevu_depenses: number;
+    realloc_net_cents: number;
+    solde_avec_realloc: number;
+  }[];
   parCategorie: CategorieRow[];
   remboursementsEnAttente: { count: number; total: number; totalFormatted: string };
   alertes: {
@@ -132,11 +143,18 @@ export async function getOverview(
         JOIN budgets b ON b.id = bl.budget_id
         WHERE b.group_id = ? AND b.saison = ?
           AND bl.unite_id = u.id AND bl.type = 'depense'
-      ), 0) as budget_prevu_depenses
+      ), 0) as budget_prevu_depenses,
+      COALESCE((
+        SELECT
+          COALESCE(SUM(CASE WHEN r.unite_cible_id = u.id THEN r.montant_cents ELSE 0 END), 0)
+          - COALESCE(SUM(CASE WHEN r.unite_source_id = u.id THEN r.montant_cents ELSE 0 END), 0)
+        FROM repartitions_unites r
+        WHERE r.group_id = ? AND r.saison = ?
+      ), 0) as realloc_net_cents
     FROM unites u LEFT JOIN ecritures e ON e.unite_id = u.id AND e.group_id = ?${dateClause}
     WHERE u.group_id = ?
     GROUP BY u.id ORDER BY u.code
-  `).all<{ id: string; code: string; name: string; couleur: string | null; depenses: number; recettes: number; budget_prevu_depenses: number }>(groupId, saison, groupId, ...dateValues, groupId);
+  `).all<{ id: string; code: string; name: string; couleur: string | null; depenses: number; recettes: number; budget_prevu_depenses: number; realloc_net_cents: number }>(groupId, saison, groupId, saison, groupId, ...dateValues, groupId);
 
   // Breakdown par catégorie SGDF — comparable ligne à ligne au compte de
   // résultat Comptaweb (qui agrège par "Nature" = catégorie). Les
@@ -198,7 +216,11 @@ export async function getOverview(
     totalDepensesFormatted: formatAmount(totDep),
     totalRecettesFormatted: formatAmount(totRec),
     soldeFormatted: formatAmount(totRec - totDep),
-    parUnite: parUniteRows.map(u => ({ ...u, solde: u.recettes - u.depenses })),
+    parUnite: parUniteRows.map((u) => ({
+      ...u,
+      solde: u.recettes - u.depenses,
+      solde_avec_realloc: u.recettes - u.depenses + u.realloc_net_cents,
+    })),
     parCategorie,
     remboursementsEnAttente: { count: rbt?.count ?? 0, total: rbt?.total ?? 0, totalFormatted: formatAmount(rbt?.total ?? 0) },
     alertes: {
