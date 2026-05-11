@@ -1,5 +1,6 @@
 import { getDb } from '../db';
 import { formatAmount } from '../format';
+import type { Repartition } from './repartitions';
 
 export interface OverviewContext {
   groupId: string;
@@ -73,6 +74,10 @@ export interface UniteOverviewData {
   alertes: { depensesSansJustificatif: number; nonSyncComptaweb: number };
   ecrituresRecentes: EcritureLite[];
   totalEcritures: number;
+  reallocEntrantesCents: number;
+  reallocSortantesCents: number;
+  reallocNetCents: number;
+  repartitions: Repartition[];
 }
 
 export interface OverviewData {
@@ -350,6 +355,31 @@ export async function getUniteOverview(
     return b.reel_depenses - a.reel_depenses;
   });
 
+  const reallocTotals = await db
+    .prepare(
+      `SELECT
+         COALESCE(SUM(CASE WHEN unite_cible_id = ? THEN montant_cents ELSE 0 END), 0) as entrantes,
+         COALESCE(SUM(CASE WHEN unite_source_id = ? THEN montant_cents ELSE 0 END), 0) as sortantes
+       FROM repartitions_unites
+       WHERE group_id = ? AND saison = ?
+         AND (unite_cible_id = ? OR unite_source_id = ?)`,
+    )
+    .get<{ entrantes: number; sortantes: number }>(
+      args.uniteId, args.uniteId, groupId, saison, args.uniteId, args.uniteId,
+    );
+
+  const repartitions = await db
+    .prepare(
+      `SELECT * FROM repartitions_unites
+       WHERE group_id = ? AND saison = ?
+         AND (unite_cible_id = ? OR unite_source_id = ?)
+       ORDER BY date_repartition DESC, id DESC`,
+    )
+    .all<Repartition>(groupId, saison, args.uniteId, args.uniteId);
+
+  const entrantes = reallocTotals?.entrantes ?? 0;
+  const sortantes = reallocTotals?.sortantes ?? 0;
+
   const sansJustif = await db.prepare(`
     SELECT COUNT(*) as count FROM ecritures e
     WHERE e.group_id = ? AND e.unite_id = ? AND e.type = 'depense' AND e.justif_attendu = 1${dateClause}
@@ -382,7 +412,7 @@ export async function getUniteOverview(
     exerciceFiltre: filters.exercice ?? null,
     totalDepenses: dep,
     totalRecettes: rec,
-    solde: rec - dep,
+    solde: rec - dep + (entrantes - sortantes),
     parCategorie,
     parActivite,
     alertes: {
@@ -391,5 +421,9 @@ export async function getUniteOverview(
     },
     ecrituresRecentes,
     totalEcritures: totalEcrRow?.count ?? 0,
+    reallocEntrantesCents: entrantes,
+    reallocSortantesCents: sortantes,
+    reallocNetCents: entrantes - sortantes,
+    repartitions,
   };
 }
