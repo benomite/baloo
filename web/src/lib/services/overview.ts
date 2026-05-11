@@ -138,6 +138,8 @@ export async function getOverview(
   ).get<{ total: number }>(groupId, ...dateValues);
 
   const saison = filters.exercice ?? currentExercice();
+  const saisonClause = filters.exercice ? 'AND r.saison = ?' : '';
+  const saisonValues: unknown[] = filters.exercice ? [filters.exercice] : [];
 
   const parUniteRows = await db.prepare(`
     SELECT u.id, u.code, u.name, u.couleur,
@@ -154,12 +156,12 @@ export async function getOverview(
           COALESCE(SUM(CASE WHEN r.unite_cible_id = u.id THEN r.montant_cents ELSE 0 END), 0)
           - COALESCE(SUM(CASE WHEN r.unite_source_id = u.id THEN r.montant_cents ELSE 0 END), 0)
         FROM repartitions_unites r
-        WHERE r.group_id = ? AND r.saison = ?
+        WHERE r.group_id = ? ${saisonClause}
       ), 0) as realloc_net_cents
     FROM unites u LEFT JOIN ecritures e ON e.unite_id = u.id AND e.group_id = ?${dateClause}
     WHERE u.group_id = ?
     GROUP BY u.id ORDER BY u.code
-  `).all<{ id: string; code: string; name: string; couleur: string | null; depenses: number; recettes: number; budget_prevu_depenses: number; realloc_net_cents: number }>(groupId, saison, groupId, saison, groupId, ...dateValues, groupId);
+  `).all<{ id: string; code: string; name: string; couleur: string | null; depenses: number; recettes: number; budget_prevu_depenses: number; realloc_net_cents: number }>(groupId, saison, groupId, ...saisonValues, groupId, ...dateValues, groupId);
 
   // Breakdown par catégorie SGDF — comparable ligne à ligne au compte de
   // résultat Comptaweb (qui agrège par "Nature" = catégorie). Les
