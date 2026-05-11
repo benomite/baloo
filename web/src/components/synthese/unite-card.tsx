@@ -14,8 +14,10 @@ export interface UniteCardData {
   couleur: string | null;
   depenses: number;
   recettes: number;
-  solde: number;
+  solde: number;                    // recettes - depenses (brut, conservé pour rétrocompat)
   budget_prevu_depenses: number;
+  realloc_net_cents: number;        // NEW
+  solde_avec_realloc: number;       // NEW
 }
 
 interface Props {
@@ -51,9 +53,15 @@ export function UniteCard({ unite, exerciceParam, alertes }: Props) {
           <dt className="text-muted-foreground">Recettes</dt>
           <dd className="tabular-nums"><Amount cents={unite.recettes} tone="positive" /></dd>
         </div>
+        {unite.realloc_net_cents !== 0 && (
+          <div className="flex justify-between">
+            <dt className="text-muted-foreground">Réalloc</dt>
+            <dd className="tabular-nums"><Amount cents={unite.realloc_net_cents} tone="signed" /></dd>
+          </div>
+        )}
         <div className="flex justify-between border-t pt-1.5 font-medium">
           <dt>Solde</dt>
-          <dd className="tabular-nums"><Amount cents={unite.solde} tone="signed" /></dd>
+          <dd className="tabular-nums"><Amount cents={unite.solde_avec_realloc} tone="signed" /></dd>
         </div>
       </dl>
       {unite.budget_prevu_depenses > 0 && (
