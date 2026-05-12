@@ -42,4 +42,46 @@ export function registerComptawebTools(server: McpServer) {
       return { content: [{ type: 'text', text: JSON.stringify(details, null, 2) }] };
     },
   );
+
+  server.tool(
+    'cw_cleanup_dedup',
+    "Détecte ou supprime les doublons d'écritures Comptaweb. mode='preview' liste les candidats ; mode='apply' supprime ceux dont les ids sont fournis.",
+    {
+      mode: z.enum(['preview', 'apply']),
+      ids: z
+        .array(z.string())
+        .optional()
+        .describe("Liste des loser_id à supprimer (obligatoire si mode=apply)"),
+    },
+    async (params) => {
+      const data = await api.post('/api/comptaweb/cleanup/dedup', params);
+      return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'cw_cleanup_transferts',
+    "Détecte ou supprime les transferts internes mal importés (préfixe DEP-, patterns dépôt). mode='preview' liste, mode='apply' supprime selon ids.",
+    {
+      mode: z.enum(['preview', 'apply']),
+      ids: z.array(z.string()).optional(),
+    },
+    async (params) => {
+      const data = await api.post('/api/comptaweb/cleanup/transferts', params);
+      return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'cw_cleanup_orphelins',
+    "Détecte ou supprime les ventilations orphelines (category_id NULL avec twin). mode='preview' liste, mode='apply' supprime selon ids.",
+    {
+      mode: z.enum(['preview', 'apply']),
+      ids: z.array(z.string()).optional(),
+    },
+    async (params) => {
+      const data = await api.post('/api/comptaweb/cleanup/orphelins', params);
+      return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+    },
+  );
 }
