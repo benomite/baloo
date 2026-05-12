@@ -1148,4 +1148,80 @@ Aucune dépendance externe ajoutée. Aucun coût bundle. Marche partout.
 
 ---
 
+## ADR-029 — Modèle budget prévisionnel : saison + activité, pas de période
+
+**Date** : 2026-05-10
+**Statut** : Acté
+**Contexte** : chantier « budgets par unité » phase 2 ([`p2-budgets-par-unite.md`](p2-budgets-par-unite.md)).
+
+### Décision
+
+Un budget prévisionnel se modélise comme suit :
+
+- **1 budget par saison** (table `budgets`, `UNIQUE(group_id, saison)`). Statut global `projet / vote / cloture`. Pas de votes séparés « budget d'année » vs « budget de camps ».
+- **Lignes budget** liées à `unite_id`, `category_id` et `activite_id` (les trois nullable). La dualité « activités d'année » (sept→juin/juillet) vs « camps d'été » (juillet/août) est **dérivée des activités** elles-mêmes (`activites.name` porte le tag implicite via son libellé Comptaweb, ex. « Camp d'été LJ 2026 »).
+- **Réconciliation prévu vs réel** = matching `budget_lignes.activite_id = ecritures.activite_id` ET `unite_id = unite_id`. Cohérent avec la modélisation Comptaweb existante (chaque écriture porte déjà `activite_id`).
+
+### Alternatives écartées
+
+| Approche | Pourquoi écartée |
+|---|---|
+| 2 budgets distincts par saison (`UNIQUE(group_id, saison, type)`) | Migration lourde (recréation de table en SQLite pour modifier la contrainte UNIQUE), gain conceptuel limité tant que les votes ne sont pas distincts. Si le besoin de votes séparés émerge plus tard, on évoluera (champ `statut_camps` ou table `budget_periodes`). |
+| Dimension `periode` (`annee` / `camps`) sur `budget_lignes` | Ajoute une dimension supplémentaire à maintenir alors que l'information vit déjà dans `activite_id`. Source de bugs (oubli de saisie, désynchronisation périodes / activités). |
+| Heuristique de bucketisation par date | « Juillet-août = camps, sinon année » imprécis (achats matériel camp en mai, sorties hivernales en février chevauchant les bornes). Fragile. |
+
+### Conséquences
+
+- Migration ultra légère : `ALTER TABLE budget_lignes ADD COLUMN activite_id` + index. Idempotent dans `auth/schema.ts`.
+- Page `/budgets` affiche les lignes groupées par activité (avec « Sans activité » pour les frais transverses). L'utilisateur **voit** année vs camps via le nom des activités, pas via une UI dédiée.
+- Bloc « Par activité » sur `/synthese/unite/[id]` : couples (unité, activité) avec prévu vs réel.
+- Une ligne budget peut rester sans `activite_id` (frais transverses non rattachés) — la comparaison perd alors en granularité mais la totalisation par unité reste correcte.
+
+**Liens** : PR #10 (commits `085a715` à `5b95701`). Code : `web/src/lib/services/budgets.ts`, `web/src/app/(app)/budgets/page.tsx`, `web/src/components/budgets/budget-form.tsx`. Spec : [`specs/2026-05-10-budgets-previsionnels-par-unite-design.md`](specs/2026-05-10-budgets-previsionnels-par-unite-design.md).
+
+---
+
+## ADR-030 — Répartitions Baloo-only entre unités
+
+**Date** : 2026-05-11
+**Statut** : Acté
+**Contexte** : chantier « budgets par unité » phase 3 ([`p2-budgets-par-unite.md`](p2-budgets-par-unite.md)).
+
+### Décision
+
+Les **répartitions entre unités** (mouvements de réallocation des recettes encaissées globalement vers les enveloppes d'unités) sont modélisées via une **table dédiée `repartitions_unites`** Baloo-only :
+
+- Pas de pair d'écritures (recette / dépense) en BDD pour matérialiser la réallocation. Une répartition = 1 ligne logique avec `unite_source_id` (NULL = Groupe) et `unite_cible_id` (NULL = Groupe).
+- Aucun flux Comptaweb (pas de `cw_sync_*` sur cette table). C'est purement de la donnée interne Baloo pour la vue par unité.
+- Validation en code (`repartitions-validation.ts`, module pur testé en vitest) — pas de CHECK SQL.
+- Calcul intégré côté `getOverview.parUnite` et `getUniteOverview` via sous-requête SQL : `realloc_net_cents = Σ(cible=U) - Σ(source=U)` pour une saison donnée.
+- Hard DELETE assumé : la table n'est pas du métier comptable au sens de la doctrine « jamais de DELETE » (qui vise écritures, justifs, remb, abandons, mouvements_caisse). Une répartition supprimée par erreur peut être re-saisie sans coût.
+
+### Alternatives écartées
+
+| Approche | Pourquoi écartée |
+|---|---|
+| Pair d'écritures liées (recette unité cible + dépense unité source, type spécial) | Pollue la liste `/ecritures`, force des status spéciaux, risque de remonter par erreur dans une sync Comptaweb. Une réalloc = 1 ligne logique, pas 2. |
+| Ventilation Comptaweb native (split d'une recette mère en N filles via les ventilations Comptaweb) | Possible techniquement (cf. [`comptaweb-api.md`](comptaweb-api.md)) mais trop coûteux à la main pour ~30 écritures d'inscription. Le trésorier ne veut pas modifier 30 écritures dans Comptaweb. |
+| Re-tagger l'`unite_id` des écritures de recettes existantes | Casse le lien avec la saisie Comptaweb d'origine. Modification destructive d'une donnée comptable validée. |
+
+### Doctrine vocabulaire
+
+Le terme « **transfert interne** » est **interdit** dans le code et l'UI pour désigner ces réallocations. Il désigne déjà autre chose : les dépôts caisse → banque que Comptaweb double dans l'export CSV (cf. `cleanup-transferts.ts`). Vocabulaire retenu :
+
+- Code / BDD : `repartitions_unites`, `RepartitionContext`, `createRepartitionAction`...
+- UI : « Répartition » (substantif), « Répartir » (verbe), « Réalloc » (libellé court dans les cards / KPIs)
+
+### Conséquences
+
+- Bilan groupe total inchangé après création d'une répartition : chaque mouvement contribue `+X` côté cible et `-X` côté source, somme nulle par construction. Vérifié en intégration.
+- Anti-énumération inter-groupes systématique via `group_id = ?` sur toutes les fonctions service.
+- Édition inline limitée à `date / libellé / montant / notes`. Pour modifier source ou cible : supprimer + recréer (cohérence sémantique).
+- Permissions : création et édition réservées à `tresorier` / `RG`. Les chefs voient les répartitions impactant leur unité en lecture seule.
+- Mécanisme **complète** mais ne **remplace pas** la ventilation Comptaweb : si l'utilisateur veut aligner le compte de résultat officiel, il peut toujours ouvrir Comptaweb et modifier les écritures à la main. Une future évolution pourra automatiser via `cw_create_recette` pour créer des ventilations Comptaweb équivalentes.
+
+**Liens** : PR #11 (commits `f91e1f7` à `fdf673b`). Code : `web/src/lib/services/repartitions.ts`, `web/src/lib/services/repartitions-validation.ts`, `web/src/components/synthese/repartition-drawer.tsx`. Spec : [`specs/2026-05-11-repartitions-unites-design.md`](specs/2026-05-11-repartitions-unites-design.md).
+
+---
+
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*
