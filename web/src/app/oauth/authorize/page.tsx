@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth/auth';
+import { ensureBusinessSchema } from '@/lib/db/business-schema';
 import { findClientByClientId, validateRedirectUri } from '@/lib/services/oauth-clients';
 import { authorizeAction, denyAction } from './actions';
 
@@ -34,6 +35,7 @@ export default async function AuthorizePage({
   const scope = params.scope ?? 'treso';
   if (scope !== 'treso') return <ErrorBlock message={`scope inconnu : ${scope}.`} />;
 
+  await ensureBusinessSchema();
   const client = await findClientByClientId(params.client_id);
   if (!client) return <ErrorBlock message="Client OAuth inconnu." />;
   if (!validateRedirectUri(client, params.redirect_uri)) {

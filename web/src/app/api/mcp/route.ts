@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
+import { ensureBusinessSchema } from '@/lib/db/business-schema';
 import { verifyOauthAccessToken } from '@/lib/mcp/auth';
 import { registerAllTools } from '@/lib/mcp/register-all';
 
@@ -18,6 +19,8 @@ function unauthorized(): Response {
 }
 
 async function handle(request: Request): Promise<Response> {
+  await ensureBusinessSchema();
+
   const auth = request.headers.get('authorization');
   if (!auth?.toLowerCase().startsWith('bearer ')) return unauthorized();
 

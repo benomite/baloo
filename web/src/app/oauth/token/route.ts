@@ -1,7 +1,9 @@
+import { ensureBusinessSchema } from '@/lib/db/business-schema';
 import { consumeAuthorizationCode, AuthorizationCodeError } from '@/lib/services/oauth-codes';
 import { issueAccessToken } from '@/lib/services/oauth-access-tokens';
 
 export async function POST(request: Request) {
+  await ensureBusinessSchema();
   let form: URLSearchParams;
   try {
     const text = await request.text();
