@@ -30,7 +30,6 @@ export async function GET(request: Request) {
     include_recettes: includeRecettes,
     count: data.ecrituresOrphelines.length,
     truncated: data.ecrituresTruncated > 0,
-    truncated_count: data.ecrituresTruncated,
     ecritures: data.ecrituresOrphelines,
   });
 }

@@ -1,14 +1,22 @@
+import { z } from 'zod';
 import { listInboxItems } from '@/lib/queries/inbox';
-import { requireApiContext } from '@/lib/api/route-helpers';
+import { jsonError, requireApiContext } from '@/lib/api/route-helpers';
+
+const querySchema = z.object({}).strict();
 
 export async function GET(request: Request) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
   const { groupId } = ctxR.ctx;
 
-  // On utilise period='tout' parce que les justifs orphelins n'ont pas
-  // de filtre période dans la webapp (cf. spec).
-  const data = await listInboxItems({ groupId, period: 'tout', includeRecettes: true });
+  const params = Object.fromEntries(new URL(request.url).searchParams);
+  const parsed = querySchema.safeParse(params);
+  if (!parsed.success) return jsonError('Paramètres invalides.', 400);
+
+  // Les justifs orphelins n'ont pas de filtre période (cf. spec) :
+  // période='tout' et inclusion des recettes pour ramener tous les
+  // dépôts en statut a_traiter.
+  const data = await listInboxItems({ period: 'tout', includeRecettes: true, groupId });
 
   return Response.json({
     count: data.justifsOrphelins.length,
