@@ -85,12 +85,15 @@ export interface InboxOptions {
   // recettes — cotisations parents, subventions, virements — n'ont
   // typiquement pas de "ticket de caisse" à rapprocher.
   includeRecettes?: boolean;
+  // Optionnel : passer le groupId explicitement (usage API Bearer token).
+  // Si absent, résolu via getCurrentContext() (usage server component).
+  groupId?: string;
 }
 
 export async function listInboxItems(
   options: InboxOptions = {},
 ): Promise<InboxData> {
-  const { groupId } = await getCurrentContext();
+  const groupId = options.groupId ?? (await getCurrentContext()).groupId;
   await ensureDepotsSchema();
   const db = getDb();
 
