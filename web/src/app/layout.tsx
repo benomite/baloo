@@ -19,13 +19,34 @@ const bricolage = Bricolage_Grotesque({
   display: 'swap',
 });
 
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL ?? 'https://baloo.benomite.com';
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
     default: 'Baloo · Compta SGDF',
     template: '%s · Baloo',
   },
-  description: 'Comptabilité du groupe SGDF.',
+  description:
+    "Le carnet du trésorier d'un groupe Scouts et Guides de France : remboursements, abandons, justificatifs, caisse, budgets par unité. Open source, sync Compta-Web.",
   applicationName: 'Baloo',
+  keywords: [
+    'SGDF',
+    'Scouts et Guides de France',
+    'trésorier',
+    'compta',
+    'comptabilité',
+    'scout',
+    'groupe scout',
+    'remboursement',
+    'abandon de frais',
+    'CERFA',
+    'open source',
+    'MCP',
+  ],
+  authors: [{ name: 'Benoît Osterberger', url: 'https://github.com/benomite' }],
+  creator: 'Benoît Osterberger',
   appleWebApp: {
     capable: true,
     title: 'Baloo',
@@ -33,6 +54,29 @@ export const metadata: Metadata = {
   },
   formatDetection: {
     telephone: false,
+  },
+  openGraph: {
+    type: 'website',
+    locale: 'fr_FR',
+    siteName: 'Baloo',
+    title: 'Baloo — Le carnet du trésorier SGDF',
+    description:
+      "Webapp open source qui aide les trésoriers de groupes Scouts et Guides de France à tenir la compta opérationnelle.",
+    url: SITE_URL,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Baloo — Le carnet du trésorier SGDF',
+    description:
+      "L'outil open source qui aide les trésoriers de groupes SGDF à tenir leur compta opérationnelle.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+    },
   },
 };
 

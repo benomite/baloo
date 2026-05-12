@@ -1,8 +1,15 @@
+import Link from 'next/link';
+import type { Metadata } from 'next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { signIn } from '@/lib/auth/auth';
 import { auth } from '@/lib/auth/auth';
 import { redirect } from 'next/navigation';
 import { LoginForm } from './login-form';
+
+export const metadata: Metadata = {
+  title: 'Connexion',
+  robots: { index: false, follow: false },
+};
 
 // Page de connexion (chantier 4, ADR-016). Magic link par email — l'user
 // reçoit un lien dans sa boîte (ou en console en dev) puis clique pour
@@ -20,7 +27,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 gap-4">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>Connexion à Baloo</CardTitle>
@@ -29,6 +36,12 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <LoginForm action={loginAction} errorMessage={errorMessage} />
         </CardContent>
       </Card>
+      <p className="text-sm text-fg-subtle">
+        Tu découvres Baloo ?{' '}
+        <Link href="/about" className="underline hover:text-fg-muted">
+          À propos du projet
+        </Link>
+      </p>
     </div>
   );
 }
