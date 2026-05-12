@@ -240,7 +240,7 @@ export async function findSuggestionsForEcriture(
               un.code AS unite_code
        FROM ecritures e
        LEFT JOIN unites un ON un.id = e.unite_id
-       WHERE e.id = ? AND e.group_id = ?`,
+       WHERE e.id = ? AND e.group_id = ? AND e.justif_attendu = 1`,
     )
     .get<InboxEcriture>(ecritureId, ctx.groupId);
 
