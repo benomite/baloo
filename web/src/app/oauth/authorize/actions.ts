@@ -1,0 +1,44 @@
+'use server';
+
+import { redirect } from 'next/navigation';
+import { auth } from '@/lib/auth/auth';
+import { issueAuthorizationCode } from '@/lib/services/oauth-codes';
+import { touchLastUsed } from '@/lib/services/oauth-clients';
+
+export async function authorizeAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect('/login');
+  }
+
+  const client_id = formData.get('client_id') as string;
+  const redirect_uri = formData.get('redirect_uri') as string;
+  const scope = formData.get('scope') as string;
+  const state = formData.get('state') as string;
+  const code_challenge = formData.get('code_challenge') as string;
+  const code_challenge_method = formData.get('code_challenge_method') as string;
+
+  const code = await issueAuthorizationCode({
+    client_id,
+    user_id: session.user.id,
+    scope,
+    code_challenge,
+    code_challenge_method,
+    redirect_uri,
+  });
+  await touchLastUsed(client_id);
+
+  const url = new URL(redirect_uri);
+  url.searchParams.set('code', code);
+  if (state) url.searchParams.set('state', state);
+  redirect(url.toString());
+}
+
+export async function denyAction(formData: FormData): Promise<void> {
+  const redirect_uri = formData.get('redirect_uri') as string;
+  const state = formData.get('state') as string;
+  const url = new URL(redirect_uri);
+  url.searchParams.set('error', 'access_denied');
+  if (state) url.searchParams.set('state', state);
+  redirect(url.toString());
+}
