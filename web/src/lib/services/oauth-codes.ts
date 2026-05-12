@@ -85,12 +85,19 @@ export async function consumeAuthorizationCode(input: ConsumeCodeInput): Promise
   if (!verifyS256Pkce(input.code_verifier, row.code_challenge))
     throw new AuthorizationCodeError('invalid_grant');
 
-  await db
+  // Single-use : marquer used_at avant retour.
+  const result = await db
     .prepare(
       `UPDATE oauth_authorization_codes SET used_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
        WHERE code_hash = ? AND used_at IS NULL`,
     )
     .run(hash);
+
+  // Si changes === 0, c'est qu'un appel concurrent a deja
+  // consomme le code entre notre SELECT et notre UPDATE. Rejeter.
+  if (result.changes === 0) {
+    throw new AuthorizationCodeError('invalid_grant');
+  }
 
   return { user_id: row.user_id, scope: row.scope };
 }
