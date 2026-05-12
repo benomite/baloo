@@ -60,14 +60,22 @@ export async function POST(request: Request) {
   );
 
   let attached: { ecriture_id: string } | null = null;
+  let attachError: string | null = null;
+
   if (parsed.data.ecriture_id) {
     try {
       await attachDepotToEcriture({ groupId }, created.id, parsed.data.ecriture_id);
       attached = { ecriture_id: parsed.data.ecriture_id };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Attach failed';
-      return Response.json({ depot_id: created.id, attach_error: msg }, { status: 201 });
+      attachError = err instanceof Error ? err.message : 'Attach failed';
     }
+  }
+
+  if (attachError) {
+    return Response.json(
+      { depot_id: created.id, attached: null, attach_error: attachError },
+      { status: 200 },
+    );
   }
 
   return Response.json({ depot_id: created.id, attached }, { status: 201 });
