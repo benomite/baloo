@@ -26,6 +26,7 @@ async function handle(request: Request): Promise<Response> {
 
   const ctx = await verifyOauthAccessToken(auth.slice(7).trim());
   if (!ctx) return unauthorized();
+  if (ctx.scope !== 'treso') return unauthorized();
 
   const server = new McpServer({ name: 'baloo', version: '1.0.0' });
   registerAllTools(server, ctx);
