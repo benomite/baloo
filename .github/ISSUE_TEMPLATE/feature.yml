@@ -1,0 +1,45 @@
+name: ✨ Idée de fonctionnalité
+description: Proposer une nouvelle fonctionnalité ou une amélioration
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Avant d'investir du temps sur une PR, ouvre cette issue pour vérifier que la proposition est alignée avec la [roadmap](https://github.com/benomite/baloo/blob/main/doc/roadmap.md).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Quel besoin / quel problème ?
+      description: Décris le cas d'usage concret, pas la solution. Qui en a besoin, à quel moment, pour quoi.
+      placeholder: En tant que chef d'unité, je veux pouvoir … parce que …
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposition (optionnel)
+      description: Si tu as une idée précise de comment résoudre, décris-la. Sinon, laisse vide.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives envisagées
+      description: Autres approches que tu as considérées, ou contournements actuels.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Périmètre estimé
+      options:
+        - Petit (qq heures)
+        - Moyen (1-3 jours)
+        - Gros (semaine+)
+        - Aucune idée
+    validations:
+      required: false

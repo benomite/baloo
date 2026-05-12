@@ -1,0 +1,58 @@
+name: 🐛 Bug
+description: Signaler un comportement incorrect ou inattendu
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Merci pour ton signalement. Plus tu donnes de contexte, plus on peut t'aider vite.
+
+        ⚠️ **Pas de faille de sécurité ici** — utilise [Security Advisories](https://github.com/benomite/baloo/security/advisories/new).
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Que s'est-il passé ?
+      description: Décris le bug en quelques phrases.
+      placeholder: Quand je clique sur X, je m'attendais à Y mais j'obtiens Z.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Comment reproduire ?
+      description: Étapes minimales pour observer le problème.
+      placeholder: |
+        1. Aller sur la page …
+        2. Cliquer sur …
+        3. Observer …
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportement attendu
+      description: Ce que tu pensais voir se passer.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Contexte
+      description: Capture écran, message d'erreur, ID d'écriture/remb, navigateur, version mobile/desktop…
+    validations:
+      required: false
+
+  - type: dropdown
+    id: env
+    attributes:
+      label: Environnement
+      options:
+        - Prod (baloo.benomite.com)
+        - Dev local
+        - Autre instance
+    validations:
+      required: true

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / discussion
+    url: https://github.com/benomite/baloo/discussions
+    about: Pour les questions d'usage, demandes d'aide, retours d'expérience.
+  - name: Faille de sécurité
+    url: https://github.com/benomite/baloo/security/advisories/new
+    about: Ne PAS ouvrir d'issue publique pour un problème de sécurité.
