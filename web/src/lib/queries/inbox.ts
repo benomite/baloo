@@ -219,6 +219,108 @@ function computeSinceDate(period: InboxPeriod): string | null {
   return now.toISOString().slice(0, 10);
 }
 
+// ─── Helpers dédiés aux suggestions pour un élément isolé ───────────────────
+//
+// Ces fonctions évitent de recalculer toute l'inbox à chaque appel API
+// (GET /api/inbox/suggestions?ecriture_id=… ou ?depot_id=…).
+// Elles réutilisent les mêmes seuils et la même logique de matching que
+// computeAutoSuggestions, mais en ciblant un seul item source.
+
+export async function findSuggestionsForEcriture(
+  ctx: { groupId: string },
+  ecritureId: string,
+): Promise<InboxSuggestion[]> {
+  await ensureDepotsSchema();
+  const db = getDb();
+
+  const ecriture = db
+    .prepare(
+      `SELECT e.id, e.date_ecriture, e.description, e.amount_cents, e.type,
+              e.comptaweb_synced,
+              un.code AS unite_code
+       FROM ecritures e
+       LEFT JOIN unites un ON un.id = e.unite_id
+       WHERE e.id = ? AND e.group_id = ?`,
+    )
+    .get<InboxEcriture>(ecritureId, ctx.groupId);
+
+  if (!ecriture) return [];
+
+  const justifs = db
+    .prepare(
+      `SELECT d.id, d.titre, d.description, d.amount_cents, d.date_estimee,
+              d.created_at,
+              un.code AS unite_code,
+              c.name AS category_name,
+              u.nom_affichage AS submitter_name,
+              u.email AS submitter_email,
+              (SELECT file_path FROM justificatifs
+                WHERE entity_type = 'depot' AND entity_id = d.id
+                ORDER BY uploaded_at DESC LIMIT 1) AS justif_path
+       FROM depots_justificatifs d
+       JOIN users u ON u.id = d.submitted_by_user_id
+       LEFT JOIN unites un ON un.id = d.unite_id
+       LEFT JOIN categories c ON c.id = d.category_id
+       WHERE d.group_id = ?
+         AND d.statut = 'a_traiter'
+       ORDER BY d.created_at DESC`,
+    )
+    .all<InboxJustif>(ctx.groupId);
+
+  return computeAutoSuggestions([ecriture], justifs);
+}
+
+export async function findSuggestionsForDepot(
+  ctx: { groupId: string },
+  depotId: string,
+): Promise<InboxSuggestion[]> {
+  await ensureDepotsSchema();
+  const db = getDb();
+
+  const depot = db
+    .prepare(
+      `SELECT d.id, d.titre, d.description, d.amount_cents, d.date_estimee,
+              d.created_at,
+              un.code AS unite_code,
+              c.name AS category_name,
+              u.nom_affichage AS submitter_name,
+              u.email AS submitter_email,
+              (SELECT file_path FROM justificatifs
+                WHERE entity_type = 'depot' AND entity_id = d.id
+                ORDER BY uploaded_at DESC LIMIT 1) AS justif_path
+       FROM depots_justificatifs d
+       JOIN users u ON u.id = d.submitted_by_user_id
+       LEFT JOIN unites un ON un.id = d.unite_id
+       LEFT JOIN categories c ON c.id = d.category_id
+       WHERE d.id = ? AND d.group_id = ?
+         AND d.statut = 'a_traiter'`,
+    )
+    .get<InboxJustif>(depotId, ctx.groupId);
+
+  if (!depot) return [];
+
+  const ecritures = db
+    .prepare(
+      `SELECT e.id, e.date_ecriture, e.description, e.amount_cents, e.type,
+              e.comptaweb_synced,
+              un.code AS unite_code
+       FROM ecritures e
+       LEFT JOIN unites un ON un.id = e.unite_id
+       WHERE e.group_id = ?
+         AND e.justif_attendu = 1
+         AND NOT EXISTS (
+           SELECT 1 FROM justificatifs j
+           WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id
+         )
+       ORDER BY e.date_ecriture DESC`,
+    )
+    .all<InboxEcriture>(ctx.groupId);
+
+  return computeAutoSuggestions(ecritures, [depot]);
+}
+
+// ─── Heuristique de suggestions auto ─────────────────────────────────────────
+
 // Heuristique gloutonne : pour chaque écriture, on prend le 1er justif
 // libre qui matche. Pas de scoring sophistiqué, juste un seuil serré.
 // L'ordre de scan suit l'ordre des deux listes (chronologique inverse).
