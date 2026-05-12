@@ -492,6 +492,46 @@ export async function ensureBusinessSchema(): Promise<void> {
       raw_data TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_cwl_import ON comptaweb_lignes(import_id);
+
+    -- ============ OAuth 2.0 Authorization Server (RFC 6749 + PKCE) ==
+    -- Spec de reference : doc/plans/2026-05-12-mcp-http-oauth-design.md
+    -- Tokens stockes en hash SHA-256 en BDD (jamais en clair).
+    -- Pas de CHECK SQL sur les colonnes de workflow (doctrine ADR-019).
+
+    CREATE TABLE IF NOT EXISTS oauth_clients (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL UNIQUE,
+      client_name TEXT NOT NULL,
+      redirect_uris TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      last_used_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_oauth_clients_client_id ON oauth_clients(client_id);
+
+    CREATE TABLE IF NOT EXISTS oauth_authorization_codes (
+      code_hash TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL REFERENCES oauth_clients(client_id),
+      user_id TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      code_challenge TEXT NOT NULL,
+      code_challenge_method TEXT NOT NULL,
+      redirect_uri TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      used_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS oauth_access_tokens (
+      token_hash TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL REFERENCES oauth_clients(client_id),
+      user_id TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      last_used_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_oauth_access_tokens_user ON oauth_access_tokens(user_id);
   `);
 
   ensured = true;
