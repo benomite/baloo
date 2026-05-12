@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth/auth';
 import { issueAuthorizationCode } from '@/lib/services/oauth-codes';
-import { touchLastUsed } from '@/lib/services/oauth-clients';
+import { findClientByClientId, touchLastUsed, validateRedirectUri } from '@/lib/services/oauth-clients';
 
 export async function authorizeAction(formData: FormData): Promise<void> {
   const session = await auth();
@@ -17,6 +17,14 @@ export async function authorizeAction(formData: FormData): Promise<void> {
   const state = formData.get('state') as string;
   const code_challenge = formData.get('code_challenge') as string;
   const code_challenge_method = formData.get('code_challenge_method') as string;
+
+  // Re-validation defensive (cas POST direct sur l'action).
+  if (!client_id || !redirect_uri || !code_challenge || code_challenge_method !== 'S256' || scope !== 'treso') {
+    redirect('/login');
+  }
+  const client = await findClientByClientId(client_id);
+  if (!client) redirect('/login');
+  if (!validateRedirectUri(client, redirect_uri)) redirect('/login');
 
   const code = await issueAuthorizationCode({
     client_id,
