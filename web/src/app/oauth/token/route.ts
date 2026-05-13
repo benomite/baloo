@@ -1,13 +1,34 @@
 import { ensureBusinessSchema } from '@/lib/db/business-schema';
 import { consumeAuthorizationCode, AuthorizationCodeError } from '@/lib/services/oauth-codes';
 import { issueAccessToken } from '@/lib/services/oauth-access-tokens';
+import { logError } from '@/lib/log';
 
 export async function POST(request: Request) {
   await ensureBusinessSchema();
+
+  const text_raw = await request.text();
+  const form_log: Record<string, string | null> = {};
+  try {
+    const parsed_form = new URLSearchParams(text_raw);
+    for (const [k, v] of parsed_form.entries()) {
+      if (k === 'code' || k === 'code_verifier') {
+        form_log[k] = v.slice(0, 8) + '...(len=' + v.length + ')';
+      } else {
+        form_log[k] = v;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  logError('oauth/token', 'token exchange request', null, {
+    content_type: request.headers.get('content-type'),
+    form: form_log,
+    user_agent: request.headers.get('user-agent')?.slice(0, 80),
+  });
+
   let form: URLSearchParams;
   try {
-    const text = await request.text();
-    form = new URLSearchParams(text);
+    form = new URLSearchParams(text_raw);
   } catch {
     return errorResponse('invalid_request', 'Body invalide.', 400);
   }
@@ -49,6 +70,10 @@ export async function POST(request: Request) {
     );
   } catch (err) {
     if (err instanceof AuthorizationCodeError) {
+      logError('oauth/token', 'consumeAuthorizationCode rejected', err, {
+        reason: err.reason,
+        client_id: client_id?.slice(0, 12),
+      });
       return errorResponse(err.reason, undefined, 400);
     }
     throw err;

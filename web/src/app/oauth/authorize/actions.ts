@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth/auth';
 import { issueAuthorizationCode } from '@/lib/services/oauth-codes';
 import { findClientByClientId, touchLastUsed, validateRedirectUri } from '@/lib/services/oauth-clients';
+import { logError } from '@/lib/log';
 
 export async function authorizeAction(formData: FormData): Promise<void> {
   const session = await auth();
@@ -17,6 +18,15 @@ export async function authorizeAction(formData: FormData): Promise<void> {
   const state = formData.get('state') as string;
   const code_challenge = formData.get('code_challenge') as string;
   const code_challenge_method = formData.get('code_challenge_method') as string;
+
+  logError('oauth/authorize', 'authorize action invoked', null, {
+    user_id: session.user.id,
+    client_id,
+    redirect_uri,
+    scope,
+    has_state: Boolean(state),
+    code_challenge_method,
+  });
 
   // Re-validation defensive (cas POST direct sur l'action).
   if (!client_id || !redirect_uri || !code_challenge || code_challenge_method !== 'S256' || scope !== 'treso') {

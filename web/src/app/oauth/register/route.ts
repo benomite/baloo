@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ensureBusinessSchema } from '@/lib/db/business-schema';
 import { registerClient } from '@/lib/services/oauth-clients';
+import { logError } from '@/lib/log';
 
 const registerSchema = z
   .object({
@@ -43,6 +44,12 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return Response.json({ error: 'invalid_client_metadata' }, { status: 400 });
   }
+
+  logError('oauth/register', 'DCR request received', null, {
+    client_name: parsed.data.client_name,
+    redirect_uris: parsed.data.redirect_uris,
+    raw_body_keys: Object.keys(payload as Record<string, unknown>),
+  });
 
   const client = await registerClient({
     client_name: parsed.data.client_name,
