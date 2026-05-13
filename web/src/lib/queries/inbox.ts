@@ -233,7 +233,7 @@ export async function findSuggestionsForEcriture(
   await ensureDepotsSchema();
   const db = getDb();
 
-  const ecriture = db
+  const ecriture = await db
     .prepare(
       `SELECT e.id, e.date_ecriture, e.description, e.amount_cents, e.type,
               e.comptaweb_synced,
@@ -246,7 +246,7 @@ export async function findSuggestionsForEcriture(
 
   if (!ecriture) return [];
 
-  const justifs = db
+  const justifs = await db
     .prepare(
       `SELECT d.id, d.titre, d.description, d.amount_cents, d.date_estimee,
               d.created_at,
@@ -277,7 +277,7 @@ export async function findSuggestionsForDepot(
   await ensureDepotsSchema();
   const db = getDb();
 
-  const depot = db
+  const depot = await db
     .prepare(
       `SELECT d.id, d.titre, d.description, d.amount_cents, d.date_estimee,
               d.created_at,
@@ -299,7 +299,7 @@ export async function findSuggestionsForDepot(
 
   if (!depot) return [];
 
-  const ecritures = db
+  const ecritures = await db
     .prepare(
       `SELECT e.id, e.date_ecriture, e.description, e.amount_cents, e.type,
               e.comptaweb_synced,
