@@ -12,7 +12,7 @@ export default function UniteNotFound() {
       </Link>
       <h1 className="text-xl font-semibold mb-2">Unité introuvable</h1>
       <p className="text-sm text-muted-foreground">
-        Cette unité n'existe pas ou n'appartient pas à ton groupe. Reviens à la synthèse pour
+        Cette unité n&apos;existe pas ou n&apos;appartient pas à ton groupe. Reviens à la synthèse pour
         choisir une unité disponible.
       </p>
     </div>

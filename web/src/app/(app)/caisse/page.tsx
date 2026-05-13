@@ -103,7 +103,7 @@ export default async function CaissePage({
             <div className="text-amber-800/80">
               {orphans.mouvementsOrphelins > 0 && (
                 <>
-                  {orphans.mouvementsOrphelins} mouvement(s) issu(s) de l'import historique sans
+                  {orphans.mouvementsOrphelins} mouvement(s) issu(s) de l&apos;import historique sans
                   correspondance Comptaweb
                   {orphans.depotsOrphelins > 0 ? ' · ' : '.'}
                 </>

@@ -313,7 +313,7 @@ export default async function UniteDetailPage({
                   href={`/ecritures?unite_id=${id}`}
                   className="text-sm text-brand hover:underline underline-offset-2"
                 >
-                  Voir toutes les écritures de l'unité ({data.totalEcritures}) →
+                  Voir toutes les écritures de l&apos;unité ({data.totalEcritures}) →
                 </Link>
               </div>
             )}
