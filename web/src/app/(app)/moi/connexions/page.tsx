@@ -1,21 +1,17 @@
 import { auth } from '@/lib/auth/auth';
 import { redirect } from 'next/navigation';
 import { listActiveTokensForUser } from '@/lib/services/oauth-access-tokens';
+import { issuerUrlFromHeaders } from '@/lib/oauth/issuer';
 import { revokeAction } from './actions';
 
 export const dynamic = 'force-dynamic';
-
-function getMcpUrl(): string {
-  const base = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
-  return `${base}/api/mcp`;
-}
 
 export default async function ConnexionsPage() {
   const session = await auth();
   if (!session?.user?.id) redirect('/login?callbackUrl=/moi/connexions');
 
   const tokens = await listActiveTokensForUser(session.user.id);
-  const mcpUrl = getMcpUrl();
+  const mcpUrl = `${await issuerUrlFromHeaders()}/api/mcp`;
 
   return (
     <main className="mx-auto max-w-3xl p-6 space-y-8">

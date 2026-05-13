@@ -3,12 +3,13 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { ensureBusinessSchema } from '@/lib/db/business-schema';
 import { verifyOauthAccessToken } from '@/lib/mcp/auth';
 import { registerAllTools } from '@/lib/mcp/register-all';
+import { issuerUrlFromRequest } from '@/lib/oauth/issuer';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-function unauthorized(): Response {
-  const issuer = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
+function unauthorized(request: Request): Response {
+  const issuer = issuerUrlFromRequest(request);
   return new Response(JSON.stringify({ error: 'unauthorized' }), {
     status: 401,
     headers: {
@@ -22,11 +23,11 @@ async function handle(request: Request): Promise<Response> {
   await ensureBusinessSchema();
 
   const auth = request.headers.get('authorization');
-  if (!auth?.toLowerCase().startsWith('bearer ')) return unauthorized();
+  if (!auth?.toLowerCase().startsWith('bearer ')) return unauthorized(request);
 
   const ctx = await verifyOauthAccessToken(auth.slice(7).trim());
-  if (!ctx) return unauthorized();
-  if (ctx.scope !== 'treso') return unauthorized();
+  if (!ctx) return unauthorized(request);
+  if (ctx.scope !== 'treso') return unauthorized(request);
 
   const server = new McpServer({ name: 'baloo', version: '1.0.0' });
   registerAllTools(server, ctx);

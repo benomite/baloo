@@ -1,9 +1,7 @@
-function getIssuerUrl(): string {
-  return process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
-}
+import { issuerUrlFromRequest } from '@/lib/oauth/issuer';
 
-export async function GET() {
-  const issuer = getIssuerUrl();
+export async function GET(request: Request) {
+  const issuer = issuerUrlFromRequest(request);
   return Response.json(
     {
       issuer,
