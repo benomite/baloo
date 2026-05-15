@@ -3,6 +3,11 @@ import { ensureBusinessSchema } from '@/lib/db/business-schema';
 import { registerClient } from '@/lib/services/oauth-clients';
 import { logError } from '@/lib/log';
 
+// RFC 7591 : on doit etre tolerant sur les metadata recus. On valide
+// strictement ce dont on a besoin (client_name, redirect_uris). Pour le
+// reste (grant_types, response_types, scope, etc.), on accepte tout
+// puis on impose nos propres valeurs dans la reponse (les seules qu'on
+// supporte vraiment : authorization_code + S256 + auth method 'none').
 const registerSchema = z
   .object({
     client_name: z.string().min(1).max(100),
@@ -24,11 +29,8 @@ const registerSchema = z
         ),
       )
       .min(1),
-    token_endpoint_auth_method: z.literal('none').optional(),
-    grant_types: z.array(z.literal('authorization_code')).optional(),
-    response_types: z.array(z.literal('code')).optional(),
   })
-  .strict();
+  .passthrough();
 
 export async function POST(request: Request) {
   await ensureBusinessSchema();
