@@ -13,10 +13,10 @@ export interface EcritureCandidate {
   status: string;
 }
 
-const DATE_WINDOW_DAYS = 120;
+const DATE_WINDOW_DAYS = 365;
 
 // Liste les écritures candidates pour une rembs : même groupe, type
-// `dépense`, montant exact, fenêtre date ±120j, pas déjà liées à une
+// `dépense`, montant exact, fenêtre date ±365j, pas déjà liées à une
 // AUTRE rembs (on garde la candidate si elle est déjà liée à la
 // rembs courante — utile pour afficher l'écriture actuellement liée).
 export async function findEcritureCandidatesForRembs(

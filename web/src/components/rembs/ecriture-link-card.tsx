@@ -19,7 +19,7 @@ import {
 // État :
 //   - rembs.ecriture_id défini → affiche l'écriture liée + bouton "Délier".
 //   - rembs.ecriture_id null   → présente le sélecteur des écritures
-//     candidates (montant exact, dépense, fenêtre date ±120j) +
+//     candidates (montant exact, dépense, fenêtre date ±365j) +
 //     bouton "Lier".
 //
 // Si aucun candidat : message "aucune écriture ne matche, vérifie
@@ -51,7 +51,7 @@ export async function EcritureLinkCard({
     >
       {candidates.length === 0 ? (
         <Alert variant="info" icon={Receipt}>
-          Aucune écriture trouvée avec ce montant exact dans une fenêtre de ±120 jours.
+          Aucune écriture trouvée avec ce montant exact dans une fenêtre de ±1 an.
           Le virement n&apos;a peut-être pas encore été importé depuis Comptaweb.
         </Alert>
       ) : (
