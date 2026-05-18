@@ -32,6 +32,15 @@ const ECRITURES_COLUMNS_DDL = `
   activite_id TEXT REFERENCES activites(id),
   carte_id TEXT REFERENCES cartes(id),
   numero_piece TEXT,
+  -- Task 7 pivot miroir strict : numéro de pièce renvoyé par Comptaweb
+  -- après création réussie via le scraper (POST /recettedepense/nouveau).
+  -- Sert d identifiant de matching pour la sync incrémentale (Phase 2)
+  -- qui promouvra pending_sync vers mirror quand elle retrouvera
+  -- l écriture côté CW. Distinct de numero_piece (saisi par le user /
+  -- contenu dans l import CSV) -- peut être identique en pratique mais
+  -- sémantiquement différent : l un est input/import, l autre est output
+  -- direct du scraper. Index dédié : idx_ecritures_cw_numero_piece.
+  cw_numero_piece TEXT,
   status TEXT NOT NULL DEFAULT 'draft',
   justif_attendu INTEGER NOT NULL DEFAULT 1,
   comptaweb_synced INTEGER NOT NULL DEFAULT 0,
@@ -81,6 +90,7 @@ const ECRITURES_INDEXES_DDL = `
   CREATE INDEX IF NOT EXISTS idx_ecritures_status ON ecritures(status);
   CREATE INDEX IF NOT EXISTS idx_ecritures_ligne_bancaire ON ecritures(ligne_bancaire_id, ligne_bancaire_sous_index);
   CREATE INDEX IF NOT EXISTS idx_ecritures_carte ON ecritures(carte_id);
+  CREATE INDEX IF NOT EXISTS idx_ecritures_cw_numero_piece ON ecritures(cw_numero_piece);
 `;
 
 /**
@@ -677,5 +687,41 @@ export async function ensureBusinessSchema(): Promise<void> {
   // suppression de la CHECK SQL. Idempotent : no-op si déjà migré.
   await migrateEcrituresStatus(db);
 
+  // Task 7 pivot miroir strict : ajout de la colonne `cw_numero_piece`
+  // pour stocker le numéro de pièce renvoyé par Comptaweb après création
+  // réussie via le scraper. Idempotent.
+  await ensureEcrituresCwNumeroPiece(db);
+
   ensured = true;
+}
+
+/**
+ * Ajoute la colonne `cw_numero_piece` à `ecritures` si absente (BDDs déjà
+ * migrées vers le nouvel enum statut mais antérieures à Task 7). Crée
+ * aussi l'index `idx_ecritures_cw_numero_piece` utilisé par la sync
+ * incrémentale (Phase 2) pour matcher `pending_sync` ↔ écriture CW.
+ *
+ * Pattern d'extension cf. AGENTS.md : `ALTER TABLE ADD COLUMN` après
+ * détection via `PRAGMA table_info`, puis `CREATE INDEX IF NOT EXISTS`.
+ * Nullable (pas de DEFAULT) : la valeur est renseignée par le service
+ * `createEcritureAndPushToCw` au succès du scraping CW.
+ *
+ * Exporté pour les tests.
+ */
+export async function ensureEcrituresCwNumeroPiece(db: DbWrapper): Promise<void> {
+  const cols = await db
+    .prepare("PRAGMA table_info(ecritures)")
+    .all<{ name: string }>();
+  if (cols.length === 0) {
+    // Table absente : on laisse ensureBusinessSchema la créer plus tard
+    // avec la nouvelle colonne déjà au CREATE.
+    return;
+  }
+  const has = (n: string) => cols.some((c) => c.name === n);
+  if (!has('cw_numero_piece')) {
+    await db.exec('ALTER TABLE ecritures ADD COLUMN cw_numero_piece TEXT');
+  }
+  await db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_ecritures_cw_numero_piece ON ecritures(cw_numero_piece)',
+  );
 }
