@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { getEcriture, updateEcriture } from '@/lib/services/ecritures';
+import { ECRITURE_STATUSES } from '@/lib/types';
 import { jsonError, parseJsonBody, requireApiContext } from '@/lib/api/route-helpers';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -24,7 +25,7 @@ const patchSchema = z.object({
   numero_piece: z.string().nullish(),
   carte_id: z.string().nullish(),
   justif_attendu: z.union([z.boolean(), z.literal(0), z.literal(1)]).optional(),
-  status: z.enum(['brouillon', 'valide', 'saisie_comptaweb']).optional(),
+  status: z.enum(ECRITURE_STATUSES).optional(),
   comptaweb_synced: z.boolean().optional(),
   notes: z.string().nullish(),
 });

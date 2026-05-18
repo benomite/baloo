@@ -21,7 +21,10 @@ export interface EcritureFilters {
   carte_id?: string;
   // Format YYYY-MM. Filtre les écritures du mois donné.
   month?: string;
+  // Filtre status : soit une valeur unique (legacy), soit un tableau
+  // (utilisé par GET /api/ecritures pour filtrer `IN ('mirror', 'divergent')`).
   status?: string;
+  statusIn?: string[];
   search?: string;
   limit?: number;
   offset?: number;
@@ -89,7 +92,13 @@ export async function listEcritures(
     conditions.push('e.date_ecriture LIKE ?');
     values.push(`${filters.month}%`);
   }
-  if (filters.status) { conditions.push('e.status = ?'); values.push(filters.status); }
+  if (filters.statusIn && filters.statusIn.length > 0) {
+    conditions.push(`e.status IN (${filters.statusIn.map(() => '?').join(',')})`);
+    values.push(...filters.statusIn);
+  } else if (filters.status) {
+    conditions.push('e.status = ?');
+    values.push(filters.status);
+  }
   if (filters.search) {
     // Recherche full-text sur tous les champs lisibles : description,
     // notes, numéro de pièce, id, libellés joints (unité, catégorie,

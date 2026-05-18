@@ -4,8 +4,16 @@ import {
   createEcriture,
   type EcritureFilters,
 } from '@/lib/services/ecritures';
+import { ECRITURE_STATUSES } from '@/lib/types';
 import { jsonError, parseJsonBody, requireApiContext } from '@/lib/api/route-helpers';
+import { resolveStatusFilter } from './status-filter';
 
+// Doctrine (pivot miroir strict + MCP-first) :
+// GET /api/ecritures sert le miroir CW propre. Par défaut, ne retourne
+// que `status='mirror'`. L'opt-in `?includeDivergent=1` ajoute les
+// `divergent`. Les drafts / pending_cw / pending_sync vivent sur /inbox
+// — ils ne sortent JAMAIS via cet endpoint sauf override explicite via
+// `?status=draft` (cas usage MCP/audit).
 const listSchema = z
   .object({
     unite_id: z.string().optional(),
@@ -16,7 +24,10 @@ const listSchema = z
     mode_paiement_id: z.string().optional(),
     carte_id: z.string().optional(),
     month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
-    status: z.enum(['brouillon', 'valide', 'saisie_comptaweb']).optional(),
+    status: z.enum(ECRITURE_STATUSES).optional(),
+    // Opt-in : si `1`/`true`, ajoute les `divergent` aux `mirror` du
+    // filtre par défaut. Ignoré si `status` est forcé.
+    includeDivergent: z.string().optional(),
     search: z.string().optional(),
     limit: z.coerce.number().int().min(1).max(500).optional(),
     offset: z.coerce.number().int().min(0).optional(),
@@ -32,7 +43,12 @@ export async function GET(request: Request) {
   const params = Object.fromEntries(new URL(request.url).searchParams);
   const parsed = listSchema.safeParse(params);
   if (!parsed.success) return jsonError('Paramètres invalides.', 400);
-  return Response.json(await listEcritures({ groupId, scopeUniteId }, parsed.data as EcritureFilters));
+
+  const { includeDivergent, status, ...rest } = parsed.data;
+  const statusIn = resolveStatusFilter({ status, includeDivergent });
+  const filters: EcritureFilters = { ...rest, statusIn };
+
+  return Response.json(await listEcritures({ groupId, scopeUniteId }, filters));
 }
 
 const createSchema = z.object({

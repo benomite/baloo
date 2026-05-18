@@ -1,6 +1,8 @@
 import { getCurrentContext } from '../context';
 import { getDb } from '../db';
 import { ensureDepotsSchema } from '../services/depots';
+import { pendingStatuses } from '../services/ecritures-status';
+import type { EcritureStatus } from '../types';
 
 // Inbox du trésorier : tout ce qui attend d'être lié.
 //
@@ -370,4 +372,66 @@ function computeAutoSuggestions(
 function daysBetween(a: string, b: string): number {
   const ms = Math.abs(new Date(a).getTime() - new Date(b).getTime());
   return Math.round(ms / (1000 * 60 * 60 * 24));
+}
+
+// ─── Inbox des écritures pending ─────────────────────────────────────────
+//
+// Renvoie toutes les écritures du groupe qui ne sont pas (encore) dans
+// le miroir CW. Pivot Phase 1 : ces écritures ont status IN
+// (`draft`, `pending_cw`, `pending_sync`). C'est ce que /inbox doit
+// surfacer comme "à faire" (compléter, valider, pousser vers CW).
+//
+// Diffère de `listInboxItems` ci-dessus qui s'occupe du matching
+// (écriture ↔ justif). Ici on liste juste les écritures par statut, sans
+// joindre les justifs.
+
+export interface OrphanPendingEcriture {
+  id: string;
+  date_ecriture: string;
+  description: string;
+  amount_cents: number;
+  type: 'depense' | 'recette';
+  status: EcritureStatus;
+  unite_code: string | null;
+  category_name: string | null;
+  numero_piece: string | null;
+  comptaweb_synced: 0 | 1;
+}
+
+export interface ListOrphanPendingOptions {
+  // Par défaut, tous les statuts pending (draft / pending_cw / pending_sync).
+  // Permet de restreindre à un seul statut si besoin (audit).
+  status?: EcritureStatus;
+  // Optionnel : passer le groupId explicitement (usage API Bearer token).
+  groupId?: string;
+  // Limite dure pour éviter de rendre 1000 lignes côté MCP / dashboard.
+  limit?: number;
+}
+
+export async function listOrphanPendingEcritures(
+  options: ListOrphanPendingOptions = {},
+): Promise<OrphanPendingEcriture[]> {
+  const groupId = options.groupId ?? (await getCurrentContext()).groupId;
+  const db = getDb();
+  const limit = options.limit ?? 200;
+
+  const statuses: EcritureStatus[] = options.status
+    ? [options.status]
+    : pendingStatuses();
+  const placeholders = statuses.map(() => '?').join(',');
+
+  return await db
+    .prepare(
+      `SELECT e.id, e.date_ecriture, e.description, e.amount_cents, e.type,
+              e.status, e.numero_piece, e.comptaweb_synced,
+              un.code AS unite_code,
+              c.name AS category_name
+       FROM ecritures e
+       LEFT JOIN unites un ON un.id = e.unite_id
+       LEFT JOIN categories c ON c.id = e.category_id
+       WHERE e.group_id = ? AND e.status IN (${placeholders})
+       ORDER BY e.date_ecriture DESC, e.id DESC
+       LIMIT ?`,
+    )
+    .all<OrphanPendingEcriture>(groupId, ...statuses, limit);
 }
