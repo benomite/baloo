@@ -79,6 +79,14 @@ export interface DbWrapper {
 // Les deux exposent `execute`/`executeMultiple` avec la même signature.
 type Executor = Pick<Client, 'execute' | 'executeMultiple'>;
 
+// Exporté pour les tests : permet de construire un `DbWrapper` autour
+// d'un `Client` libsql ad hoc (typiquement un `createClient({ url:
+// 'file::memory:' })`) sans avoir à passer par `getDb()` (qui lit
+// `DB_URL`/`DB_PATH` au boot du process).
+export function wrapClient(executor: Executor): DbWrapper {
+  return wrap(executor);
+}
+
 function wrap(executor: Executor): DbWrapper {
   return {
     prepare(sql: string): Statement {
