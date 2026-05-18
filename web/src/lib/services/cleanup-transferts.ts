@@ -13,7 +13,7 @@
 // Détection : intitulé qui matche "Dépot monnaie", "Dépôt billet",
 // "Dépôt espèces" (variantes avec/sans accent corrompu) OU description
 // contient "Dépôts, retrait espèces" (la catégorie Comptaweb).
-// Filtre de sécurité : status='saisie_comptaweb' (jamais des saisies
+// Filtre de sécurité : status='mirror' (jamais des saisies
 // manuelles), aucun lien externe (justif/dépôt/remb).
 
 import { getDb } from '../db';
@@ -42,7 +42,7 @@ export interface CleanupReport {
 // Stratégies cumulables (de plus précise à plus large) :
 //  1. numero_piece commence par "DEP-" → toujours un dépôt Comptaweb
 //  2. description matche pattern "dépot/dépôt + monnaie/billet/espèces"
-//  3. ZOMBIE pré-fix : description vide ET type recette ET saisie_comptaweb
+//  3. ZOMBIE pré-fix : description vide ET type recette ET mirror
 //     → ancien import où la colonne Intitulé était illisible
 //     (et probablement la colonne Dépense aussi, d'où l'INSERT en recette
 //     au lieu du SKIP normal des transferts internes)
@@ -80,7 +80,7 @@ export async function findInternalTransfers(
               e.numero_piece, c.name as category_name
        FROM ecritures e
        LEFT JOIN categories c ON c.id = e.category_id
-       WHERE e.group_id = ? AND e.status = 'saisie_comptaweb'`,
+       WHERE e.group_id = ? AND e.status = 'mirror'`,
     )
     .all<{
       id: string;
@@ -149,7 +149,7 @@ export async function deleteInternalTransfers(
     const ok = await db
       .prepare(
         `SELECT 1 FROM ecritures
-         WHERE id = ? AND group_id = ? AND status = 'saisie_comptaweb'`,
+         WHERE id = ? AND group_id = ? AND status = 'mirror'`,
       )
       .get<{ '1': number }>(id, groupId);
     if (!ok) {

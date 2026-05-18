@@ -268,19 +268,20 @@ export async function attachDepotToEcriture(
      WHERE id = ? AND group_id = ?`,
   ).run(ecritureId, currentTimestamp(), depotId, groupId);
 
-  // Enrichissement : si l'écriture est encore en brouillon, on copie les
-  // infos du dépôt dans les champs encore vides (COALESCE → on n'écrase
-  // jamais une valeur déjà saisie). Évite au trésorier de re-saisir
-  // catégorie / unité / carte que le déposeur a déjà renseignées.
-  // numero_piece reste vide : il vient de Comptaweb, pas du dépôt.
-  if (ecriture.status === 'brouillon') {
+  // Enrichissement : si l'écriture est encore en draft (préparation
+  // locale), on copie les infos du dépôt dans les champs encore vides
+  // (COALESCE → on n'écrase jamais une valeur déjà saisie). Évite au
+  // trésorier de re-saisir catégorie / unité / carte que le déposeur a
+  // déjà renseignées. numero_piece reste vide : il vient de Comptaweb,
+  // pas du dépôt.
+  if (ecriture.status === 'draft') {
     await db.prepare(
       `UPDATE ecritures SET
          category_id = COALESCE(category_id, ?),
          unite_id    = COALESCE(unite_id, ?),
          carte_id    = COALESCE(carte_id, ?),
          updated_at  = ?
-       WHERE id = ? AND group_id = ? AND status = 'brouillon'`,
+       WHERE id = ? AND group_id = ? AND status = 'draft'`,
     ).run(
       depot.category_id,
       depot.unite_id,

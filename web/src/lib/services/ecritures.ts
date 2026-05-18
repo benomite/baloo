@@ -1,7 +1,8 @@
 import { getDb } from '../db';
 import { nextId, currentTimestamp } from '../ids';
 import { nullIfEmpty } from '../utils/form';
-import type { Ecriture } from '../types';
+import type { Ecriture, EcritureStatus } from '../types';
+import { isMirrorStatus, pendingStatuses } from './ecritures-status';
 
 export interface EcritureContext {
   groupId: string;
@@ -51,7 +52,10 @@ export function computeMissingFields(e: {
   has_justificatif?: boolean;
 }): string[] {
   const missing: string[] = [];
-  if (e.status === 'brouillon') {
+  // Tant que l'écriture n'est pas dans CW (mirror/divergent), elle est
+  // "à compléter" si un champ d'imputation manque. Couvre les nouveaux
+  // statuts pending (draft/pending_cw/pending_sync) à la fois.
+  if (!isMirrorStatus(e.status)) {
     if (!e.category_id) missing.push('nature');
     if (!e.activite_id) missing.push('activité');
     if (!e.unite_id) missing.push('unité');
@@ -122,18 +126,22 @@ export async function listEcritures(
   if (filters.sans_unite) { conditions.push('e.unite_id IS NULL'); }
   if (filters.incomplete) {
     // Deux cas éligibles :
-    //   - brouillon (post-filter précise si un champ manque vraiment)
+    //   - écriture pas encore miroir CW (draft / pending_cw / pending_sync) :
+    //     le post-filter précise si un champ manque vraiment.
     //   - dépense avec justif attendu mais aucun fichier rattaché (même
     //     post-sync Comptaweb : la ligne reste à compléter tant qu'on n'a
     //     pas le document).
+    const pending = pendingStatuses();
+    const pendingPlaceholders = pending.map(() => '?').join(',');
     conditions.push(`(
-      e.status = 'brouillon'
+      e.status IN (${pendingPlaceholders})
       OR (e.type = 'depense' AND e.justif_attendu = 1
           AND NOT EXISTS (
             SELECT 1 FROM justificatifs j
             WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id
           ))
     )`);
+    values.push(...pending);
   }
 
   const where = `WHERE ${conditions.join(' AND ')}`;
@@ -156,7 +164,7 @@ export async function listEcritures(
        e.date_ecriture DESC,
        -- Préserve le groupement par ligne bancaire : toutes les écritures
        -- d'un même paiement multi-commerçants restent ensemble, peu
-       -- importe leur status (brouillon / validé / synchronisé).
+       -- importe leur status (draft / pending_sync / mirror / divergent).
        e.ligne_bancaire_id DESC,
        COALESCE(e.ligne_bancaire_sous_index, 0) ASC,
        e.created_at DESC
@@ -258,7 +266,7 @@ export interface UpdateEcritureInput {
   numero_piece?: string | null;
   carte_id?: string | null;
   justif_attendu?: 0 | 1 | boolean;
-  status?: 'brouillon' | 'valide' | 'saisie_comptaweb';
+  status?: EcritureStatus;
   comptaweb_synced?: boolean;
   notes?: string | null;
 }
@@ -284,7 +292,11 @@ export async function updateEcriture(
     .prepare('SELECT status FROM ecritures WHERE id = ? AND group_id = ?')
     .get<{ status: string }>(id, groupId);
   if (!current) return null;
-  const lockSync = current.status === 'saisie_comptaweb';
+  // Lock sync : écriture déjà côté Comptaweb (mirror/divergent). On laisse
+  // les champs internes Baloo (notes, justif_attendu) modifiables ; la
+  // résolution d'un divergent passera par la sync de retour, pas par
+  // une édition locale.
+  const lockSync = isMirrorStatus(current.status);
 
   const sets: string[] = [];
   const values: unknown[] = [];
@@ -323,10 +335,14 @@ export async function updateEcriture(
 export async function updateEcritureStatus(
   ctx: EcritureContext,
   id: string,
-  status: 'brouillon' | 'valide' | 'saisie_comptaweb',
+  status: EcritureStatus,
 ): Promise<Ecriture | null> {
   const patch: UpdateEcritureInput = { status };
-  if (status === 'saisie_comptaweb') {
+  // mirror et divergent correspondent à "présente dans Comptaweb" : on
+  // garde le bool comptaweb_synced à 1 pour la compat des anciennes
+  // queries qui n'ont pas encore migré au check par status (cf. Note 4
+  // de la spec Task 6 : colonne redondante, à supprimer plus tard).
+  if (isMirrorStatus(status)) {
     patch.comptaweb_synced = true;
   }
   return await updateEcriture(ctx, id, patch);
@@ -350,7 +366,7 @@ export async function updateEcritureField(
     .prepare('SELECT status FROM ecritures WHERE id = ? AND group_id = ?')
     .get<{ status: string }>(id, groupId);
   if (!current) return { ok: false, reason: 'not_found' };
-  if (current.status === 'saisie_comptaweb' && isSyncField) {
+  if (isMirrorStatus(current.status) && isSyncField) {
     return { ok: false, reason: 'sync_locked' };
   }
 
@@ -376,9 +392,10 @@ export interface BatchResult {
   skipped: number;
 }
 
-// Mise à jour en masse : n'agit que sur les écritures modifiables (brouillon
-// ou valide). Les écritures synchronisées Comptaweb sont ignorées pour éviter
-// un décalage silencieux avec la prod.
+// Mise à jour en masse : n'agit que sur les écritures modifiables
+// (draft / pending_cw / pending_sync). Les écritures déjà côté CW
+// (mirror / divergent) sont ignorées pour éviter un décalage silencieux
+// avec la prod.
 export async function batchUpdateEcritures(
   { groupId }: EcritureContext,
   ids: string[],
@@ -406,7 +423,7 @@ export async function batchUpdateEcritures(
     .prepare(`SELECT id, status, description FROM ecritures WHERE group_id = ? AND id IN (${placeholders})`)
     .all<{ id: string; status: string; description: string }>(groupId, ...ids);
 
-  const editable = rows.filter((r) => r.status !== 'saisie_comptaweb');
+  const editable = rows.filter((r) => !isMirrorStatus(r.status));
   const skipped = ids.length - editable.length;
   if (editable.length === 0) return { updated: 0, skipped };
 
