@@ -1,8 +1,7 @@
 import { z } from 'zod';
 import { listOrphanPendingEcritures } from '@/lib/queries/inbox';
 import { jsonError, requireApiContext } from '@/lib/api/route-helpers';
-import { pendingStatuses } from '@/lib/services/ecritures-status';
-import type { EcritureStatus } from '@/lib/types';
+import { PENDING_STATUSES_TUPLE } from '@/lib/services/ecritures-status';
 
 // Inbox des écritures pending — pivot Phase 1 "miroir strict + MCP-first".
 //
@@ -13,13 +12,11 @@ import type { EcritureStatus } from '@/lib/types';
 // Ne JAMAIS exposer mirror/divergent depuis cet endpoint — ils sortent
 // via GET /api/ecritures (avec `?includeDivergent=1` pour les divergent).
 
-const PENDING_STATUSES = pendingStatuses();
-
 const querySchema = z
   .object({
     // Restriction optionnelle à un seul statut (audit). Sans, on
     // renvoie les 3 (draft + pending_cw + pending_sync).
-    status: z.enum(PENDING_STATUSES as unknown as [string, ...string[]]).optional(),
+    status: z.enum(PENDING_STATUSES_TUPLE).optional(),
     limit: z.coerce.number().int().min(1).max(500).optional(),
   })
   .strict();
@@ -35,7 +32,7 @@ export async function GET(request: Request) {
 
   const data = await listOrphanPendingEcritures({
     groupId,
-    status: parsed.data.status as EcritureStatus | undefined,
+    status: parsed.data.status,
     limit: parsed.data.limit,
   });
 
