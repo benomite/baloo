@@ -21,8 +21,13 @@ export interface EcritureFilters {
   carte_id?: string;
   // Format YYYY-MM. Filtre les écritures du mois donné.
   month?: string;
-  // Filtre status : soit une valeur unique (legacy), soit un tableau
-  // (utilisé par GET /api/ecritures pour filtrer `IN ('mirror', 'divergent')`).
+  // Filtre status : soit une valeur unique, soit un tableau.
+  // - `statusIn` : filtre IN sur la liste des statuts autorisés, utilisé
+  //   par GET /api/ecritures pour combiner mirror + divergent selon le
+  //   flag `includeDivergent`. À privilégier pour les nouveaux callers.
+  // - `status` : valeur unique encore utilisée par la page /ecritures
+  //   et /api/ecritures/export (filtre dropdown UI sur un statut unique).
+  //   `statusIn` prime si les deux sont fournis (fallback `else if`).
   status?: string;
   statusIn?: string[];
   search?: string;
