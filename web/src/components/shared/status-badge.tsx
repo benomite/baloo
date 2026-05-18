@@ -71,7 +71,7 @@ export function StatusPill({ tone, label, className }: StatusPillProps) {
 const ECRITURE_STATUS_MAP: Record<string, { tone: StatusTone; label: string }> = {
   draft: { tone: 'neutral', label: 'Brouillon' },
   pending_cw: { tone: 'pending', label: 'Envoi CW…' },
-  pending_sync: { tone: 'progress', label: 'Validé' },
+  pending_sync: { tone: 'progress', label: 'Envoyée à CW' },
   mirror: { tone: 'success', label: 'Miroir CW' },
   divergent: { tone: 'danger', label: 'Divergent CW' },
 };

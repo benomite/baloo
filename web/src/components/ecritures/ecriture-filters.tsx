@@ -164,7 +164,7 @@ export function EcritureFilters({
               <option value="">Tous statuts</option>
               <option value="draft">Brouillon</option>
               <option value="pending_cw">Envoi CW…</option>
-              <option value="pending_sync">Validé</option>
+              <option value="pending_sync">Envoyée à CW</option>
               <option value="mirror">Miroir CW</option>
               <option value="divergent">Divergent CW</option>
             </NativeSelect>
