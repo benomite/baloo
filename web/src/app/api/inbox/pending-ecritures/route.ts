@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { listOrphanPendingEcritures } from '@/lib/queries/inbox';
 import { jsonError, requireApiContext } from '@/lib/api/route-helpers';
 import { pendingStatuses } from '@/lib/services/ecritures-status';
+import type { EcritureStatus } from '@/lib/types';
 
 // Inbox des écritures pending — pivot Phase 1 "miroir strict + MCP-first".
 //
@@ -34,7 +35,7 @@ export async function GET(request: Request) {
 
   const data = await listOrphanPendingEcritures({
     groupId,
-    status: parsed.data.status as Parameters<typeof listOrphanPendingEcritures>[0]['status'],
+    status: parsed.data.status as EcritureStatus | undefined,
     limit: parsed.data.limit,
   });
 
