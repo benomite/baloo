@@ -13,6 +13,7 @@ import {
   type BatchPatch,
   type BatchResult,
 } from '../services/ecritures';
+import { ECRITURE_STATUSES, type EcritureStatus } from '../types';
 import { parseAmount } from '../format';
 
 export async function createEcriture(formData: FormData) {
@@ -71,11 +72,17 @@ export async function updateEcriture(id: string, formData: FormData) {
 }
 
 export async function updateEcritureStatus(id: string, status: string) {
+  // Validation runtime côté code (cf. AGENTS.md : pas de CHECK SQL sur
+  // les statuts de workflow). Un statut hors enum est rejeté avec un
+  // message clair plutôt que silencieusement appliqué.
+  if (!(ECRITURE_STATUSES as readonly string[]).includes(status)) {
+    throw new Error(`Statut écriture invalide : ${status}. Valeurs autorisées : ${ECRITURE_STATUSES.join(', ')}.`);
+  }
   const { groupId, scopeUniteId } = await getCurrentContext();
   await updateEcritureStatusService(
     { groupId, scopeUniteId },
     id,
-    status as 'brouillon' | 'valide' | 'saisie_comptaweb',
+    status as EcritureStatus,
   );
 
   revalidatePath('/ecritures');
