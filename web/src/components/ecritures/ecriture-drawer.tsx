@@ -32,8 +32,15 @@ import type {
 //   4. Bandeau "À COMPLÉTER" si missing fields — info actionnable
 //   5. Form d'édition complet (le travail principal)
 //   6. Justificatifs (souvent à compléter aussi)
-//   7. Cycle de vie (Valider, Sync, Repasser brouillon) — en bas, après
+//   7. Cycle de vie (Valider, Sync, Repasser draft) — en bas, après
 //      la décision de sauver
+//
+// Statuts post-pivot Phase 1 :
+//   draft → pending_sync → mirror (+ pending_cw transitoire / divergent)
+// Mapping UX vs ancien :
+//   - "Valider" (draft → pending_sync) = ancien (brouillon → valide)
+//   - "Marquer miroir CW" (pending_sync → mirror) = ancien (valide → saisie_comptaweb)
+//   - "Repasser brouillon" = retour à draft
 
 export function EcritureDrawer({
   ecriture,
@@ -196,24 +203,24 @@ export function EcritureDrawer({
           Cycle de vie
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {ecriture.status === 'brouillon' && (
-            <form action={updateEcritureStatus.bind(null, ecriture.id, 'valide')}>
+          {ecriture.status === 'draft' && (
+            <form action={updateEcritureStatus.bind(null, ecriture.id, 'pending_sync')}>
               <PendingButton variant="outline" size="sm">
                 Valider
               </PendingButton>
             </form>
           )}
-          {ecriture.status === 'valide' && !ecriture.comptaweb_ecriture_id && (
-            <form action={updateEcritureStatus.bind(null, ecriture.id, 'saisie_comptaweb')}>
+          {ecriture.status === 'pending_sync' && !ecriture.comptaweb_ecriture_id && (
+            <form action={updateEcritureStatus.bind(null, ecriture.id, 'mirror')}>
               <PendingButton variant="outline" size="sm">
-                Marquer saisie CW
+                Marquer miroir CW
               </PendingButton>
             </form>
           )}
           {!ecriture.comptaweb_ecriture_id && <SyncDraftButton ecritureId={ecriture.id} />}
-          {ecriture.status !== 'brouillon' && !ecriture.comptaweb_ecriture_id && (
+          {ecriture.status !== 'draft' && !ecriture.comptaweb_ecriture_id && (
             <form
-              action={updateEcritureStatus.bind(null, ecriture.id, 'brouillon')}
+              action={updateEcritureStatus.bind(null, ecriture.id, 'draft')}
               className="ml-auto"
             >
               <PendingButton variant="ghost" size="sm">

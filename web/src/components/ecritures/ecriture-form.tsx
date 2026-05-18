@@ -35,7 +35,10 @@ export function EcritureForm({
   const amountStr = ecriture
     ? `${Math.floor(ecriture.amount_cents / 100)},${String(ecriture.amount_cents % 100).padStart(2, '0')}`
     : '';
-  const locked = ecriture?.status === 'saisie_comptaweb';
+  // Lock sync : écriture déjà dans CW (mirror) ou en écart détecté
+  // (divergent). Dans les deux cas, on ne touche pas aux champs sync
+  // localement — la réconciliation passe par CW.
+  const locked = ecriture?.status === 'mirror' || ecriture?.status === 'divergent';
 
   // Filtrage saisie : on ne propose que les référentiels mappés Comptaweb,
   // sauf la valeur courante orpheline qu'on conserve pour ne pas la

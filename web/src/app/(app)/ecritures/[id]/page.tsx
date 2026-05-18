@@ -103,29 +103,29 @@ export default async function EcritureDetailPage({
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            {ecriture.status === 'brouillon' && (
-              <form action={updateEcritureStatus.bind(null, id, 'valide')}>
+            {ecriture.status === 'draft' && (
+              <form action={updateEcritureStatus.bind(null, id, 'pending_sync')}>
                 <PendingButton variant="outline" size="sm">
                   Valider
                 </PendingButton>
               </form>
             )}
-            {ecriture.status === 'valide' && !ecriture.comptaweb_ecriture_id && (
-              <form action={updateEcritureStatus.bind(null, id, 'saisie_comptaweb')}>
+            {ecriture.status === 'pending_sync' && !ecriture.comptaweb_ecriture_id && (
+              <form action={updateEcritureStatus.bind(null, id, 'mirror')}>
                 <PendingButton variant="outline" size="sm">
-                  Marquer saisie Comptaweb (sans sync)
+                  Marquer miroir CW (sans sync)
                 </PendingButton>
               </form>
             )}
             {/* Sync Comptaweb : tant que l'écriture n'a pas d'ID CW, on
-                propose la sync, peu importe son status (brouillon, valide,
-                saisie_comptaweb par erreur). */}
+                propose la sync, peu importe son status (draft, pending_*,
+                mirror posé par erreur). */}
             {!ecriture.comptaweb_ecriture_id && <SyncDraftButton ecritureId={id} />}
-            {/* Repasser en brouillon : pratique pour réparer un statut
-                avancé à tort. Verrouillé si l'écriture est vraiment
-                dans Comptaweb. */}
-            {ecriture.status !== 'brouillon' && !ecriture.comptaweb_ecriture_id && (
-              <form action={updateEcritureStatus.bind(null, id, 'brouillon')}>
+            {/* Repasser en brouillon (draft) : pratique pour réparer un
+                statut avancé à tort. Verrouillé si l'écriture est
+                vraiment dans Comptaweb (comptaweb_ecriture_id renseigné). */}
+            {ecriture.status !== 'draft' && !ecriture.comptaweb_ecriture_id && (
+              <form action={updateEcritureStatus.bind(null, id, 'draft')}>
                 <PendingButton variant="ghost" size="sm">
                   Repasser en brouillon
                 </PendingButton>

@@ -12,7 +12,7 @@ import type { OrphanCandidate } from '@/lib/services/dedup-ecritures';
 
 // Bouton de nettoyage des orphelins sans catégorie issus d'imports CSV
 // buggés (avant le fix mapping comptaweb_nature). Workflow en 2 temps :
-// 1. Détection → liste les écritures saisie_comptaweb avec category_id=null
+// 1. Détection → liste les écritures mirror avec category_id=null
 //    qui ont une "twin" (mêmes date/amount/type/piece/description) avec
 //    catégorie définie → ce sont des doublons sûrs à supprimer
 // 2. L'utilisateur peut décocher individuellement
