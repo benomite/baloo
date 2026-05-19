@@ -1224,4 +1224,52 @@ Le terme « **transfert interne** » est **interdit** dans le code et l'UI pour 
 
 ---
 
+## ADR-031 — Baloo miroir strict de Comptaweb + MCP-first
+
+**Date** : 2026-05-19
+**Statut** : Acté
+**Contexte** : pivot V1 ([`specs/2026-05-18-baloo-miroir-mcp-first-design.md`](specs/2026-05-18-baloo-miroir-mcp-first-design.md), Phase 1 livrée via [`plans/2026-05-18-baloo-miroir-mcp-first-phase-1.md`](plans/2026-05-18-baloo-miroir-mcp-first-phase-1.md)).
+
+### Décision
+
+Baloo cesse de dupliquer Comptaweb et devient son **companion**. Cinq points actés :
+
+1. **Baloo est un miroir strict de Comptaweb pour les écritures comptables**. La table `ecritures` ne contient une écriture en statut `mirror` que si elle existe vraiment dans Comptaweb. Pas d'état "saisi dans Baloo mais pas dans CW". Le cycle de vie d'une écriture passe par 5 statuts : `draft` (préparation locale) → `pending_cw` (envoi en cours) → `pending_sync` (envoyé OK, attend sync) → `mirror` (synced) → `divergent` (écart détecté).
+
+2. **MCP-first** : V1 cible explicitement les trésoriers qui pilotent leur compta depuis Claude.ai. Le MCP est le produit principal, le front est un compagnon visuel (montre "ce qui va / ne va pas", pilote les workflows multi-personnes, assiste les saisies Comptaweb). Un trésorier qui refuse le MCP peut continuer Comptaweb à la main — Baloo perd alors la majorité de sa valeur. Position assumée.
+
+3. **Pas de saisie locale Baloo qui ne soit pas transitée par Comptaweb d'abord** (pour les écritures comptables). Le service `createEcritureAndPushToCw` (`web/src/lib/services/ecritures-create.ts`) implémente ce flux : INSERT en `pending_cw` → call scraper CW → succès → UPDATE `pending_sync` (la sync incrémentale Phase 2 promouvra en `mirror`). En cas d'échec scraping, rétrograde en `draft` via `CwPushFailedError`. Cas tordu `CwLocalUpdateFailedError` (CW OK mais update local KO) traité explicitement pour éviter les doublons CW.
+
+4. **Pages `/ecritures/nouveau`, édition `/ecritures/[id]`, mouvements `/caisse` = interfaces Comptaweb assistées**, pas saisie locale. Pattern 3 boutons via `<CwAssistActions>` :
+   - "Faire dans Comptaweb pour moi" (quand un scraping write existe — écritures oui, caisse non)
+   - "Ouvrir Comptaweb pré-rempli" (si deep-link disponible — pas implémenté V1)
+   - "Tout copier" (fallback universel, format clipboard adapté à chaque type)
+
+   La caisse reste Baloo-only en V1 (Comptaweb ne supporte pas l'écriture caisse via scraping) avec bandeau d'avertissement "pense à saisir aussi dans Comptaweb".
+
+5. **`compta/` standalone définitivement supprimé**. Tous les tools MCP sont servis via la route HTTP `/api/mcp` (Streamable HTTP + OAuth 2.0). 57 tools enregistrés dans `web/src/lib/mcp/register-all.ts` : 3 historiques + 54 portés en Phase 1. Exclusions explicites : `attach_justificatif` / `upload_justificatif_orphan` (multipart filesystem incompatible MCP HTTP), `cw_create_depense` / `cw_create_recette` (doublons de `create_ecriture`), 6 tools obsolètes (`import_comptaweb_csv`, `cw_cleanup_*`, `cw_scan_drafts`, `cw_sync_draft`).
+
+### Alternatives écartées
+
+| Approche | Pourquoi écartée |
+|---|---|
+| Baloo source de vérité comptable autonome (remplacer Comptaweb) | Effort énorme, double saisie risquée, valeur ajoutée vs Comptaweb faible. La SGDF impose Comptaweb. |
+| Modèle tampon de métadonnées (Baloo ne stocke pas d'écritures, juste pointe vers Comptaweb) | Refonte BDD lourde, performances dépendantes de l'API CW, perte de la copie locale enrichie de justifs/notes. |
+| Garder le batch edit `/ecritures` (branche `feat/cartes-batch-edit`) | Incompatible avec le miroir strict. Reviendra post-V1 sous forme "batch edit pilote CW" pour les champs miroir + "batch edit local" pour les champs Baloo-only. |
+| MCP optionnel + front autonome | Multiplie les chemins de code et la surface UI à maintenir. V1 vise l'expérience MCP-first, point. |
+| `cw_numero_piece` réutilisant la colonne existante `numero_piece` | Sémantique différente (`numero_piece` est l'input utilisateur/CSV, `cw_numero_piece` est l'output renvoyé par le scraping CW). Colonne séparée + index dédié `idx_ecritures_cw_numero_piece` pour la sync incrémentale Phase 2. |
+
+### Conséquences
+
+- **Migration BDD prod au cold start** : `migrateEcrituresStatus` remappe les anciens statuts (`brouillon` → `draft`, `valide` → `pending_sync`, `saisie_comptaweb` → `mirror`) puis retire le `CHECK SQL`. `ensureEcrituresCwNumeroPiece` ajoute la colonne `cw_numero_piece` + index. Idempotentes, suivent le pattern de `auth/schema.ts`.
+- **API surface** : `GET /api/ecritures` filtre `status='mirror'` par défaut, opt-in `?includeDivergent=1`. `GET /api/inbox/pending-ecritures` (nouveau) expose les `draft`/`pending_cw`/`pending_sync`. `POST /api/ecritures` retourne 201 (succès), 502 `cw_write_failed` + `fallback_status: 'draft'` (scraping KO), 500 `cw_synced_but_local_update_failed` (cas grave nécessitant le sync incrémental).
+- **Tests** : +164 tests vs baseline (97 → 261), couvrent migrations, services, composants UI, et 1 test sentinelle par tool MCP.
+- **Phase 2 prévue** : sync incrémental on-connect (stale-while-revalidate + throttle 15min) qui promeut `pending_sync` → `mirror` par matching `cw_numero_piece`, et qui crée/maintient des drafts pour les lignes bancaires orphelines.
+- **Phase 3 prévue** : dogfood 2 semaines en MCP-only pour identifier les manques avant de construire le dashboard Phase 4.
+- **Server action legacy `services/ecritures.ts::createEcriture`** : encore présente, plus de caller actif. À nettoyer en suivi (dette mineure, pas bloquante).
+
+**Liens** : Commits Phase 1 sur `feat/phase-1-miroir-strict`, du commit `97446ef` (audit) au commit `a335fa7` (suppression `compta/`). Code clé : `web/src/lib/services/ecritures-create.ts`, `web/src/lib/db/business-schema.ts` (migration), `web/src/lib/mcp/register-all.ts` (57 tools), `web/src/components/ecritures/cw-assist-actions.tsx` (composant 3 boutons). Spec : [`specs/2026-05-18-baloo-miroir-mcp-first-design.md`](specs/2026-05-18-baloo-miroir-mcp-first-design.md). Plan : [`plans/2026-05-18-baloo-miroir-mcp-first-phase-1.md`](plans/2026-05-18-baloo-miroir-mcp-first-phase-1.md).
+
+---
+
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*
