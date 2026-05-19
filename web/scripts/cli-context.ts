@@ -3,7 +3,7 @@
 // `getCurrentContext()` (dans web/src/lib/context.ts) est async et lit la
 // session Auth.js — ça ne marche pas hors d'une requête HTTP. Pour les
 // scripts CLI, on s'appuie sur `BALOO_USER_EMAIL` chargé depuis
-// `compta/.env` via `ensureComptawebEnv()`.
+// `web/.env.local` (ou `.env` racine) via `ensureComptawebEnv()`.
 
 import { ensureComptawebEnv } from '../src/lib/comptaweb/env-loader';
 import { getDb } from '../src/lib/db';
@@ -19,7 +19,7 @@ export async function getCliContext(): Promise<CliContext> {
   const email = process.env.BALOO_USER_EMAIL;
   if (!email) {
     throw new Error(
-      'BALOO_USER_EMAIL non défini (compta/.env). Lance `cd compta && cp .env.example .env`.',
+      'BALOO_USER_EMAIL non défini. Ajoute-le à `web/.env.local` (voir web/.env.example).',
     );
   }
   const row = await getDb()

@@ -20,7 +20,7 @@ import { logError } from '../log';
 //
 // La liaison réutilise `attachDepotToEcriture` (donc cohérent avec le
 // flux manuel : migre le file, met le statut du dépôt à `rattache`,
-// enrichit les champs vides de l'écriture brouillon).
+// enrichit les champs vides de l'écriture draft).
 
 const STRICT_DATE_TOLERANCE_DAYS = 1;
 

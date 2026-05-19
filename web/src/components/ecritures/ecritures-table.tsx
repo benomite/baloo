@@ -77,7 +77,10 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
   const [anchorIndex, setAnchorIndex] = useState<number | null>(null);
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
 
-  const isEditable = (e: Ecriture) => e.status !== 'saisie_comptaweb';
+  // Non éditable = écriture déjà côté CW (mirror) ou en écart détecté
+  // (divergent). La résolution d'un divergent passe par la sync, pas
+  // par une édition locale.
+  const isEditable = (e: Ecriture) => e.status !== 'mirror' && e.status !== 'divergent';
   const editableIds = useMemo(
     () => ecritures.filter(isEditable).map((e) => e.id),
     [ecritures],

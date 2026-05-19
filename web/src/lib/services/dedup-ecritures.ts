@@ -88,7 +88,7 @@ function scoreEcriture(e: EcritureRow): number {
 export async function findCsvDuplicates({ groupId }: { groupId: string }): Promise<DedupReport> {
   const db = getDb();
   // Cherche les tuples (date, amount, type) qui ont au moins 2 écritures
-  // saisie_comptaweb dans ce groupe.
+  // mirror dans ce groupe.
   const dupKeys = await db
     .prepare(
       `SELECT date_ecriture, amount_cents, type,
@@ -97,7 +97,7 @@ export async function findCsvDuplicates({ groupId }: { groupId: string }): Promi
               COALESCE(category_id, '') as cat,
               COUNT(*) as cnt
        FROM ecritures
-       WHERE group_id = ? AND status = 'saisie_comptaweb'
+       WHERE group_id = ? AND status = 'mirror'
        GROUP BY date_ecriture, amount_cents, type,
                 COALESCE(numero_piece, ''), COALESCE(description, ''),
                 COALESCE(category_id, '')
@@ -121,7 +121,7 @@ export async function findCsvDuplicates({ groupId }: { groupId: string }): Promi
          FROM ecritures e
          LEFT JOIN unites u ON u.id = e.unite_id
          LEFT JOIN categories c ON c.id = e.category_id
-         WHERE e.group_id = ? AND e.status = 'saisie_comptaweb'
+         WHERE e.group_id = ? AND e.status = 'mirror'
            AND e.date_ecriture = ? AND e.amount_cents = ? AND e.type = ?
            AND COALESCE(e.numero_piece, '') = ?
            AND COALESCE(e.description, '') = ?
@@ -229,13 +229,13 @@ export async function deleteCsvDuplicates(
       skipped++;
       continue;
     }
-    // Vérifier aussi que c'est bien dans le groupe + status saisie_comptaweb
-    // (sécurité : on ne supprime que les écritures du CSV, jamais une
-    // écriture brouillon ou validée).
+    // Vérifier aussi que c'est bien dans le groupe + status mirror
+    // (sécurité : on ne supprime que les écritures du miroir CW,
+    // jamais un draft / pending_cw / pending_sync local).
     const ok = await db
       .prepare(
         `SELECT 1 FROM ecritures
-         WHERE id = ? AND group_id = ? AND status = 'saisie_comptaweb'`,
+         WHERE id = ? AND group_id = ? AND status = 'mirror'`,
       )
       .get<{ '1': number }>(id, groupId);
     if (!ok) {
@@ -257,7 +257,7 @@ export async function deleteCsvDuplicates(
 // ne matchait pas l'écriture précédente (qui avait cat correct via mapping
 // fuzzy plus chanceux à un autre import) → INSERT en doublon avec cat=null.
 //
-// Détection : pour chaque écriture saisie_comptaweb avec category_id=null,
+// Détection : pour chaque écriture mirror avec category_id=null,
 // chercher une "twin" (mêmes date, amount, type, piece, description) qui a
 // category_id défini. Si une twin existe → l'orphelin est un doublon de
 // la twin (créé par un import qui a raté le mapping de catégorie). Sinon
@@ -306,7 +306,7 @@ export async function findOrphansWithoutCategory(
     .prepare(
       `SELECT id, date_ecriture, amount_cents, type, description, numero_piece, notes
        FROM ecritures
-       WHERE group_id = ? AND status = 'saisie_comptaweb'
+       WHERE group_id = ? AND status = 'mirror'
          AND category_id IS NULL
        ORDER BY date_ecriture DESC`,
     )
@@ -327,7 +327,7 @@ export async function findOrphansWithoutCategory(
         `SELECT e.id, c.name as cat_name
          FROM ecritures e
          LEFT JOIN categories c ON c.id = e.category_id
-         WHERE e.group_id = ? AND e.status = 'saisie_comptaweb'
+         WHERE e.group_id = ? AND e.status = 'mirror'
            AND e.id != ?
            AND e.date_ecriture = ? AND e.amount_cents = ? AND e.type = ?
            AND COALESCE(e.numero_piece, '') = COALESCE(?, '')
@@ -348,7 +348,7 @@ export async function findOrphansWithoutCategory(
     const sameRegroupement = await db
       .prepare(
         `SELECT COUNT(*) as n FROM ecritures
-         WHERE group_id = ? AND status = 'saisie_comptaweb'
+         WHERE group_id = ? AND status = 'mirror'
            AND date_ecriture = ?
            AND COALESCE(numero_piece, '') = COALESCE(?, '')
            AND COALESCE(description, '') = COALESCE(?, '')`,
@@ -396,6 +396,6 @@ export async function deleteOrphansWithoutCategory(
   ids: string[],
 ): Promise<DedupExecResult> {
   // Réutilise la même logique que deleteCsvDuplicates (re-check liens
-  // externes + status saisie_comptaweb) — sécurité identique.
+  // externes + status mirror) — sécurité identique.
   return deleteCsvDuplicates({ groupId }, ids);
 }

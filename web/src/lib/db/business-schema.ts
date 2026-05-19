@@ -1,6 +1,173 @@
-import { getDb } from '../db';
+import { getDb, type DbWrapper } from '../db';
 
 let ensured = false;
+
+// Définition canonique de la table `ecritures` dans sa **forme courante**
+// (post-Task 5 du pivot miroir strict + MCP-first).
+//
+// Différences vs version historique :
+//   - PAS de CHECK SQL sur `status` (validation côté code, cf. ADR-019
+//     et AGENTS.md "CHECK SQL en général : à éviter pour les workflows").
+//   - DEFAULT 'draft' (nouveau enum) au lieu de 'brouillon' (ancien).
+//
+// Le nouveau enum :
+//   - draft         : préparation locale, jamais envoyé à CW
+//   - pending_cw    : en cours d'envoi vers CW
+//   - pending_sync  : envoyé à CW avec succès, attend la sync
+//   - mirror        : synced, miroir CW propre
+//   - divergent     : sync a détecté un écart
+//
+// Mapping migration anciens → nouveaux (cf. migrateEcrituresStatus) :
+//   brouillon → draft ; valide → pending_sync ; saisie_comptaweb → mirror.
+const ECRITURES_COLUMNS_DDL = `
+  id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL,
+  unite_id TEXT REFERENCES unites(id),
+  date_ecriture TEXT NOT NULL,
+  description TEXT NOT NULL,
+  amount_cents INTEGER NOT NULL,
+  type TEXT NOT NULL CHECK(type IN ('depense', 'recette')),
+  category_id TEXT REFERENCES categories(id),
+  mode_paiement_id TEXT REFERENCES modes_paiement(id),
+  activite_id TEXT REFERENCES activites(id),
+  carte_id TEXT REFERENCES cartes(id),
+  numero_piece TEXT,
+  -- Task 7 pivot miroir strict : numéro de pièce renvoyé par Comptaweb
+  -- après création réussie via le scraper (POST /recettedepense/nouveau).
+  -- Sert d identifiant de matching pour la sync incrémentale (Phase 2)
+  -- qui promouvra pending_sync vers mirror quand elle retrouvera
+  -- l écriture côté CW. Distinct de numero_piece (saisi par le user /
+  -- contenu dans l import CSV) -- peut être identique en pratique mais
+  -- sémantiquement différent : l un est input/import, l autre est output
+  -- direct du scraper. Index dédié : idx_ecritures_cw_numero_piece.
+  cw_numero_piece TEXT,
+  status TEXT NOT NULL DEFAULT 'draft',
+  justif_attendu INTEGER NOT NULL DEFAULT 1,
+  comptaweb_synced INTEGER NOT NULL DEFAULT 0,
+  ligne_bancaire_id INTEGER,
+  ligne_bancaire_sous_index INTEGER,
+  comptaweb_ecriture_id INTEGER,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+`;
+
+// Liste explicite des colonnes copiées par la migration (utilisée dans
+// INSERT INTO ... SELECT ...). DOIT correspondre aux colonnes définies
+// dans `ECRITURES_COLUMNS_DDL`. Si on ajoute une colonne au CREATE TABLE
+// par ailleurs (via ALTER TABLE ailleurs), pense à l'ajouter ici ET à
+// vérifier qu'elle existe sur l'ancienne table avant migration (sinon
+// SELECT plante).
+const ECRITURES_COLUMNS_FOR_COPY = [
+  'id',
+  'group_id',
+  'unite_id',
+  'date_ecriture',
+  'description',
+  'amount_cents',
+  'type',
+  'category_id',
+  'mode_paiement_id',
+  'activite_id',
+  'carte_id',
+  'numero_piece',
+  // status géré séparément via CASE WHEN pour le remap des valeurs
+  'justif_attendu',
+  'comptaweb_synced',
+  'ligne_bancaire_id',
+  'ligne_bancaire_sous_index',
+  'comptaweb_ecriture_id',
+  'notes',
+  'created_at',
+  'updated_at',
+] as const;
+
+const ECRITURES_INDEXES_DDL = `
+  CREATE INDEX IF NOT EXISTS idx_ecritures_group ON ecritures(group_id);
+  CREATE INDEX IF NOT EXISTS idx_ecritures_unite ON ecritures(unite_id);
+  CREATE INDEX IF NOT EXISTS idx_ecritures_date ON ecritures(date_ecriture);
+  CREATE INDEX IF NOT EXISTS idx_ecritures_type ON ecritures(type);
+  CREATE INDEX IF NOT EXISTS idx_ecritures_status ON ecritures(status);
+  CREATE INDEX IF NOT EXISTS idx_ecritures_ligne_bancaire ON ecritures(ligne_bancaire_id, ligne_bancaire_sous_index);
+  CREATE INDEX IF NOT EXISTS idx_ecritures_carte ON ecritures(carte_id);
+  CREATE INDEX IF NOT EXISTS idx_ecritures_cw_numero_piece ON ecritures(cw_numero_piece);
+`;
+
+/**
+ * Migre la table `ecritures` du vieil enum statut (`brouillon` / `valide` /
+ * `saisie_comptaweb`) vers le nouveau (`draft` / `pending_cw` /
+ * `pending_sync` / `mirror` / `divergent`) ET retire la CHECK SQL qui
+ * bloquait l'introduction de nouveaux statuts.
+ *
+ * Idempotent : détecte la présence de la CHECK ancienne dans
+ * `sqlite_master` ; si elle n'est plus là, no-op.
+ *
+ * Préservation des données : INSERT recopie TOUTES les colonnes et
+ * TOUTES les lignes (cf. règle CLAUDE.md "JAMAIS de DELETE"). Le DROP
+ * + RENAME ne porte que sur la redéfinition de schéma.
+ *
+ * Exporté pour les tests (cf. business-schema-status-migration.test.ts).
+ */
+export async function migrateEcrituresStatus(db: DbWrapper): Promise<void> {
+  const def = await db
+    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='ecritures'")
+    .get<{ sql: string }>();
+
+  if (!def?.sql) {
+    // La table n'existe pas encore : rien à migrer.
+    return;
+  }
+
+  // Détection : ancienne CHECK qui contraint `status` à
+  // `brouillon` / `valide` / `saisie_comptaweb`. Match laxiste sur
+  // 'saisie_comptaweb' qui est le marqueur le plus discriminant.
+  const hasOldCheck =
+    /CHECK\s*\(\s*status\s+IN\s*\([^)]*'saisie_comptaweb'/i.test(def.sql);
+  if (!hasOldCheck) {
+    return;
+  }
+
+  const copyCols = ECRITURES_COLUMNS_FOR_COPY.join(', ');
+  // Remap des valeurs anciennes → nouvelles. Le CASE est exhaustif sur
+  // les 3 valeurs autorisées par la vieille CHECK ; l'ELSE laisse passer
+  // une éventuelle valeur inattendue plutôt que de la perdre (par ex.
+  // une BDD bricolée à la main).
+  const statusCase = `
+    CASE status
+      WHEN 'brouillon' THEN 'draft'
+      WHEN 'valide' THEN 'pending_sync'
+      WHEN 'saisie_comptaweb' THEN 'mirror'
+      ELSE status
+    END
+  `;
+
+  // PRAGMA foreign_keys OFF le temps du DROP+RENAME (pattern auth/schema.ts) :
+  // les tables qui référencent ecritures(id) — remboursements, depots_*,
+  // mouvements_caisse, depots_justificatifs, justificatifs — bloqueraient
+  // le DROP sinon. On lit l'état initial pour le restaurer en finally
+  // (au cas où l'appelant ait délibérément FK OFF — typique d'un test
+  // isolé qui n'a pas créé les tables référencées).
+  const fkRow = await db.prepare('PRAGMA foreign_keys').get<{ foreign_keys: number }>();
+  const fkWasOn = (fkRow?.foreign_keys ?? 0) === 1;
+  await db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    await db.exec('DROP TABLE IF EXISTS ecritures_new');
+    await db.exec(`
+      CREATE TABLE ecritures_new (
+        ${ECRITURES_COLUMNS_DDL}
+      );
+      INSERT INTO ecritures_new (${copyCols}, status)
+        SELECT ${copyCols}, ${statusCase} FROM ecritures;
+      DROP TABLE ecritures;
+      ALTER TABLE ecritures_new RENAME TO ecritures;
+    `);
+    await db.exec(ECRITURES_INDEXES_DDL);
+  } finally {
+    if (fkWasOn) {
+      await db.exec('PRAGMA foreign_keys = ON');
+    }
+  }
+}
 
 // Schéma des tables métier (référentiels, annuaire, ecritures,
 // remboursements, etc.) dans leur forme **courante** : on intègre
@@ -138,36 +305,17 @@ export async function ensureBusinessSchema(): Promise<void> {
     -- ============ Métier ======================================
     -- ecritures : colonnes étendues (justif_attendu, ligne_bancaire_*,
     -- comptaweb_ecriture_id, carte_id) intégrées en CREATE.
+    --
+    -- Task 5 du pivot miroir strict : pas de CHECK sur status (workflow
+    -- validé côté code), enum draft/pending_cw/pending_sync/mirror/divergent.
+    -- DDL canonique dans ECRITURES_COLUMNS_DDL (réutilisé par la
+    -- migration). Pour les BDDs vierges, ce CREATE applique direct la
+    -- forme courante ; pour les BDDs existantes (ancienne CHECK), c'est
+    -- migrateEcrituresStatus() ci-dessous qui prend le relais.
     CREATE TABLE IF NOT EXISTS ecritures (
-      id TEXT PRIMARY KEY,
-      group_id TEXT NOT NULL,
-      unite_id TEXT REFERENCES unites(id),
-      date_ecriture TEXT NOT NULL,
-      description TEXT NOT NULL,
-      amount_cents INTEGER NOT NULL,
-      type TEXT NOT NULL CHECK(type IN ('depense', 'recette')),
-      category_id TEXT REFERENCES categories(id),
-      mode_paiement_id TEXT REFERENCES modes_paiement(id),
-      activite_id TEXT REFERENCES activites(id),
-      carte_id TEXT REFERENCES cartes(id),
-      numero_piece TEXT,
-      status TEXT NOT NULL DEFAULT 'brouillon' CHECK(status IN ('brouillon', 'valide', 'saisie_comptaweb')),
-      justif_attendu INTEGER NOT NULL DEFAULT 1,
-      comptaweb_synced INTEGER NOT NULL DEFAULT 0,
-      ligne_bancaire_id INTEGER,
-      ligne_bancaire_sous_index INTEGER,
-      comptaweb_ecriture_id INTEGER,
-      notes TEXT,
-      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      ${ECRITURES_COLUMNS_DDL}
     );
-    CREATE INDEX IF NOT EXISTS idx_ecritures_group ON ecritures(group_id);
-    CREATE INDEX IF NOT EXISTS idx_ecritures_unite ON ecritures(unite_id);
-    CREATE INDEX IF NOT EXISTS idx_ecritures_date ON ecritures(date_ecriture);
-    CREATE INDEX IF NOT EXISTS idx_ecritures_type ON ecritures(type);
-    CREATE INDEX IF NOT EXISTS idx_ecritures_status ON ecritures(status);
-    CREATE INDEX IF NOT EXISTS idx_ecritures_ligne_bancaire ON ecritures(ligne_bancaire_id, ligne_bancaire_sous_index);
-    CREATE INDEX IF NOT EXISTS idx_ecritures_carte ON ecritures(carte_id);
+    ${ECRITURES_INDEXES_DDL}
 
     -- remboursements : version moderne (P2-workflows 2-bis), pas de
     -- CHECK sur \`status\`, champs valdesous (prenom/nom/email/rib_*),
@@ -534,5 +682,46 @@ export async function ensureBusinessSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_oauth_access_tokens_user ON oauth_access_tokens(user_id);
   `);
 
+  // Task 5 pivot miroir strict : migration du statut `ecritures` vers
+  // le nouvel enum (draft/pending_cw/pending_sync/mirror/divergent) et
+  // suppression de la CHECK SQL. Idempotent : no-op si déjà migré.
+  await migrateEcrituresStatus(db);
+
+  // Task 7 pivot miroir strict : ajout de la colonne `cw_numero_piece`
+  // pour stocker le numéro de pièce renvoyé par Comptaweb après création
+  // réussie via le scraper. Idempotent.
+  await ensureEcrituresCwNumeroPiece(db);
+
   ensured = true;
+}
+
+/**
+ * Ajoute la colonne `cw_numero_piece` à `ecritures` si absente (BDDs déjà
+ * migrées vers le nouvel enum statut mais antérieures à Task 7). Crée
+ * aussi l'index `idx_ecritures_cw_numero_piece` utilisé par la sync
+ * incrémentale (Phase 2) pour matcher `pending_sync` ↔ écriture CW.
+ *
+ * Pattern d'extension cf. AGENTS.md : `ALTER TABLE ADD COLUMN` après
+ * détection via `PRAGMA table_info`, puis `CREATE INDEX IF NOT EXISTS`.
+ * Nullable (pas de DEFAULT) : la valeur est renseignée par le service
+ * `createEcritureAndPushToCw` au succès du scraping CW.
+ *
+ * Exporté pour les tests.
+ */
+export async function ensureEcrituresCwNumeroPiece(db: DbWrapper): Promise<void> {
+  const cols = await db
+    .prepare("PRAGMA table_info(ecritures)")
+    .all<{ name: string }>();
+  if (cols.length === 0) {
+    // Table absente : on laisse ensureBusinessSchema la créer plus tard
+    // avec la nouvelle colonne déjà au CREATE.
+    return;
+  }
+  const has = (n: string) => cols.some((c) => c.name === n);
+  if (!has('cw_numero_piece')) {
+    await db.exec('ALTER TABLE ecritures ADD COLUMN cw_numero_piece TEXT');
+  }
+  await db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_ecritures_cw_numero_piece ON ecritures(cw_numero_piece)',
+  );
 }

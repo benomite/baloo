@@ -190,8 +190,13 @@ export async function getOverview(
     AND NOT EXISTS (SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id)
   `).get<{ count: number }>(groupId);
 
+  // "Non-sync CW" = écriture qui devrait être miroir mais ne l'est pas
+  // (encore). Ancien critère : `comptaweb_synced=0 AND status != 'brouillon'`.
+  // Nouveau : `status NOT IN ('mirror', 'draft')` → couvre pending_cw,
+  // pending_sync, divergent. `draft` est exclu car c'est un travail en
+  // cours, pas un défaut de sync.
   const nonSync = await db.prepare(
-    "SELECT COUNT(*) as count FROM ecritures WHERE group_id = ? AND comptaweb_synced = 0 AND status != 'brouillon'"
+    "SELECT COUNT(*) as count FROM ecritures WHERE group_id = ? AND status NOT IN ('mirror', 'draft')"
   ).get<{ count: number }>(groupId);
 
   const lastImport = await db.prepare(
@@ -388,8 +393,11 @@ export async function getUniteOverview(
     AND NOT EXISTS (SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id)
   `).get<{ count: number }>(groupId, args.uniteId, ...dateValues);
 
+  // Cf. commentaire dans getOverview : `NOT IN ('mirror', 'draft')` =
+  // pending_cw / pending_sync / divergent — écritures envoyées ou en
+  // erreur de sync, mais pas encore miroir CW confirmé.
   const nonSync = await db.prepare(
-    `SELECT COUNT(*) as count FROM ecritures e WHERE e.group_id = ? AND e.unite_id = ? AND e.comptaweb_synced = 0 AND e.status != 'brouillon'${dateClause}`,
+    `SELECT COUNT(*) as count FROM ecritures e WHERE e.group_id = ? AND e.unite_id = ? AND e.status NOT IN ('mirror', 'draft')${dateClause}`,
   ).get<{ count: number }>(groupId, args.uniteId, ...dateValues);
 
   const ecrituresRecentes = await db.prepare(`

@@ -11,7 +11,24 @@
 export const ECRITURE_TYPES = ['depense', 'recette'] as const;
 export type EcritureType = (typeof ECRITURE_TYPES)[number];
 
-export const ECRITURE_STATUSES = ['brouillon', 'valide', 'saisie_comptaweb'] as const;
+// Cycle de vie d'une écriture vis-à-vis de Comptaweb (pivot Phase 1
+// "miroir strict + MCP-first") :
+//   draft         : préparation locale, jamais envoyée à CW
+//   pending_cw    : en cours d'envoi vers CW (transitoire)
+//   pending_sync  : envoyée à CW avec succès, attend la sync de retour
+//   mirror        : synchronisée, miroir CW propre — la donnée affichée
+//                   sur /ecritures par défaut
+//   divergent     : la sync de retour a détecté un écart avec CW
+//
+// Mapping migration depuis l'ancien enum (cf. ADR Phase 1 / Task 5) :
+//   brouillon → draft ; valide → pending_sync ; saisie_comptaweb → mirror.
+export const ECRITURE_STATUSES = [
+  'draft',
+  'pending_cw',
+  'pending_sync',
+  'mirror',
+  'divergent',
+] as const;
 export type EcritureStatus = (typeof ECRITURE_STATUSES)[number];
 
 export const REMBOURSEMENT_STATUSES = [

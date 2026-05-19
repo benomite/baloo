@@ -104,7 +104,7 @@ export async function scanDraftsFromComptaweb({ groupId }: DraftsContext): Promi
          category_id, mode_paiement_id, activite_id, numero_piece, status,
          comptaweb_synced, ligne_bancaire_id, ligne_bancaire_sous_index,
          comptaweb_ecriture_id, carte_id, notes, created_at, updated_at
-       ) VALUES (?, ?, NULL, ?, ?, ?, ?, NULL, ?, NULL, NULL, 'brouillon', 0, ?, ?, NULL, ?, ?, ?, ?)`,
+       ) VALUES (?, ?, NULL, ?, ?, ?, ?, NULL, ?, NULL, NULL, 'draft', 0, ?, ?, NULL, ?, ?, ?, ?)`,
     );
 
     let crees = 0;
@@ -216,10 +216,10 @@ export async function syncDraftToComptaweb(
 
     const missing: string[] = [];
     // L'écriture est sync-bloquée seulement si elle est DÉJÀ dans Comptaweb
-    // (comptaweb_ecriture_id renseigné). Le status seul (brouillon/valide/
-    // saisie_comptaweb) ne suffit pas : un user a pu marquer "saisie
-    // Comptaweb" manuellement par erreur sans avoir réellement créé la
-    // ligne côté CW. On veut quand même lui permettre de la sync ensuite.
+    // (comptaweb_ecriture_id renseigné). Le status seul (draft / pending_*
+    // / mirror) ne suffit pas : un user a pu marquer "miroir" manuellement
+    // par erreur sans avoir réellement créé la ligne côté CW. On veut
+    // quand même lui permettre de la sync ensuite.
     if (ecr.comptaweb_ecriture_id !== null) {
       missing.push(`déjà créée dans Comptaweb (id ${ecr.comptaweb_ecriture_id})`);
     }
@@ -283,8 +283,13 @@ export async function syncDraftToComptaweb(
     }
     // On persiste le numero_piece utilisé (y compris le fallback auto) pour
     // rester cohérent avec ce qu'on a envoyé côté Comptaweb.
+    // Statut cible : `mirror` (le sync direct via UI ancien place déjà
+    // l'écriture dans CW, donc on entre dans le miroir CW propre).
+    // Phase 2 introduira `pending_cw` → `mirror` via le sync de retour ;
+    // pour l'instant on reste sur le mapping 1:1 ancien `saisie_comptaweb`
+    // → `mirror`.
     await db.prepare(
-      `UPDATE ecritures SET status = 'saisie_comptaweb', comptaweb_synced = 1,
+      `UPDATE ecritures SET status = 'mirror', comptaweb_synced = 1,
        comptaweb_ecriture_id = ?, numero_piece = ?, updated_at = ? WHERE id = ?`,
     ).run(result.ecritureId ?? null, numeropiece, currentTimestamp(), ecr.id);
     return { ok: true, message: `Synchronisé vers Comptaweb (id ${result.ecritureId}).`, dryRun: false, ecritureId: result.ecritureId };

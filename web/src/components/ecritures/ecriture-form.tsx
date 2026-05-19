@@ -13,8 +13,15 @@ import { CategoryPicker } from '@/components/shared/category-picker';
 import { keepSelectable, isUnmapped } from '@/lib/selectable';
 import type { Category, Unite, ModePaiement, Activite, Carte, Ecriture } from '@/lib/types';
 
-export function EcritureForm({
-  action,
+// Corps réutilisable du formulaire : tous les champs SANS l'élément
+// `<form>` ni le bouton submit. Permet à un wrapper client (cf.
+// `NouvelleEcritureWizard`) de monter le form lui-même avec son propre
+// ref / onChange pour piloter `CwAssistActions`.
+//
+// Pour la page édition (qui utilise toujours une server action pour
+// l'UPDATE local des champs non sync), on passe par `EcritureForm` qui
+// embarque le `<form action={...}>` + un bouton submit.
+export function EcritureFormFields({
   categories,
   topCategoryIds,
   unites,
@@ -23,7 +30,6 @@ export function EcritureForm({
   cartes,
   ecriture,
 }: {
-  action: (formData: FormData) => void;
   categories: Category[];
   topCategoryIds: string[];
   unites: Unite[];
@@ -35,7 +41,10 @@ export function EcritureForm({
   const amountStr = ecriture
     ? `${Math.floor(ecriture.amount_cents / 100)},${String(ecriture.amount_cents % 100).padStart(2, '0')}`
     : '';
-  const locked = ecriture?.status === 'saisie_comptaweb';
+  // Lock sync : écriture déjà dans CW (mirror) ou en écart détecté
+  // (divergent). Dans les deux cas, on ne touche pas aux champs sync
+  // localement — la réconciliation passe par CW.
+  const locked = ecriture?.status === 'mirror' || ecriture?.status === 'divergent';
 
   // Filtrage saisie : on ne propose que les référentiels mappés Comptaweb,
   // sauf la valeur courante orpheline qu'on conserve pour ne pas la
@@ -49,7 +58,7 @@ export function EcritureForm({
     item.comptaweb_id === null ? `${item.name} (non sync)` : item.name;
 
   return (
-    <form action={action} className="space-y-6">
+    <div className="space-y-6">
       {locked && (
         <Alert variant="warning" icon={Lock}>
           Écriture synchronisée Comptaweb — les champs sync sont en lecture seule. Seuls les
@@ -223,7 +232,44 @@ export function EcritureForm({
       <Section title="Notes" subtitle="Pour mémoire — pas envoyé à Comptaweb.">
         <Textarea id="notes" name="notes" rows={3} defaultValue={ecriture?.notes ?? ''} />
       </Section>
+    </div>
+  );
+}
 
+// Wrapper `<form>` + bouton submit pour les cas où on a une server action
+// (page édition `/ecritures/[id]`, justifs, etc.). La page `/nouveau`
+// n'utilise PAS ce wrapper : elle passe par `NouvelleEcritureWizard` qui
+// monte le form lui-même et délègue le submit à `CwAssistActions`.
+export function EcritureForm({
+  action,
+  categories,
+  topCategoryIds,
+  unites,
+  modesPaiement,
+  activites,
+  cartes,
+  ecriture,
+}: {
+  action: (formData: FormData) => void;
+  categories: Category[];
+  topCategoryIds: string[];
+  unites: Unite[];
+  modesPaiement: ModePaiement[];
+  activites: Activite[];
+  cartes: Carte[];
+  ecriture?: Ecriture;
+}) {
+  return (
+    <form action={action} className="space-y-6">
+      <EcritureFormFields
+        categories={categories}
+        topCategoryIds={topCategoryIds}
+        unites={unites}
+        modesPaiement={modesPaiement}
+        activites={activites}
+        cartes={cartes}
+        ecriture={ecriture}
+      />
       <div className="flex justify-end pt-2">
         <PendingButton size="lg" pendingLabel="Enregistrement…">
           {ecriture ? 'Enregistrer les changements' : 'Créer l\'écriture'}

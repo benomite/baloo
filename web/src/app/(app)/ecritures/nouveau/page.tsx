@@ -1,6 +1,13 @@
+// Page de saisie d'une nouvelle écriture — refonte Task 8 (pivot
+// miroir strict + MCP-first).
+//
+// Doctrine : cette page **prépare** une saisie Comptaweb. Elle n'écrit
+// jamais en local sans passer par CW d'abord. La logique d'envoi est
+// dans le composant client `NouvelleEcritureWizard` qui présente le
+// bandeau, le formulaire, et les 3 boutons `CwAssistActions`.
+
 import { PageHeader } from '@/components/layout/page-header';
-import { EcritureForm } from '@/components/ecritures/ecriture-form';
-import { createEcriture } from '@/lib/actions/ecritures';
+import { NouvelleEcritureWizard } from '@/components/ecritures/nouvelle-ecriture-wizard';
 import {
   listCategories,
   listUnites,
@@ -24,10 +31,9 @@ export default async function NouvelleEcriturePage() {
       <PageHeader
         eyebrow={{ label: 'Écritures', href: '/ecritures' }}
         title="Nouvelle écriture"
-        subtitle="Créer une écriture comptable manuelle (sans passer par l'import bancaire)."
+        subtitle="Prépare une saisie Comptaweb — pilote-la depuis Baloo, ouvre CW pré-rempli, ou copie le détail pour saisie manuelle."
       />
-      <EcritureForm
-        action={createEcriture}
+      <NouvelleEcritureWizard
         categories={categories}
         topCategoryIds={topCategoryIds}
         unites={unites}

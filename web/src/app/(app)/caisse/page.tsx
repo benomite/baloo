@@ -1,4 +1,4 @@
-import { Coins, Plus, Banknote, ArrowDownToLine, Link2, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
+import { Coins, Banknote, ArrowDownToLine, Link2, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,7 @@ import { PendingButton } from '@/components/shared/pending-button';
 import { Field } from '@/components/shared/field';
 import { Section } from '@/components/shared/section';
 import { NativeSelect } from '@/components/ui/native-select';
+import { CaisseMouvementWizard } from '@/components/caisse/caisse-mouvement-wizard';
 import {
   listMouvementsCaisse,
   listDepotsAvecCandidates,
@@ -138,71 +139,12 @@ export default async function CaissePage({
           title="Saisir une entrée / sortie"
           subtitle="Argent qui entre ou sort de la caisse en espèces."
         >
-          <form action={createMouvementCaisse} className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Sens" htmlFor="sens" required>
-                <NativeSelect id="sens" name="sens" defaultValue="entree">
-                  <option value="entree">↗ Entrée (recette)</option>
-                  <option value="sortie">↘ Sortie (dépense)</option>
-                </NativeSelect>
-              </Field>
-              <Field label="Montant" htmlFor="montant" required hint="format 15,00">
-                <Input
-                  id="montant"
-                  name="montant"
-                  required
-                  placeholder="15,00"
-                  inputMode="decimal"
-                  className="tabular-nums"
-                />
-              </Field>
-            </div>
-            <Field label="Date" htmlFor="date_mouvement" required>
-              <Input
-                type="date"
-                id="date_mouvement"
-                name="date_mouvement"
-                required
-                defaultValue={today}
-              />
-            </Field>
-            <Field label="Description" htmlFor="description" required>
-              <Input
-                id="description"
-                name="description"
-                required
-                placeholder="Ex. quête camp été"
-              />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Unité" htmlFor="unite_id" hint="optionnel">
-                <NativeSelect id="unite_id" name="unite_id">
-                  <option value="">— Groupe —</option>
-                  {unites.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.code}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </Field>
-              <Field label="Activité" htmlFor="activite_id" hint="optionnel">
-                <NativeSelect id="activite_id" name="activite_id">
-                  <option value="">— Aucune —</option>
-                  {activites.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </Field>
-            </div>
-            <div className="flex justify-end">
-              <PendingButton>
-                <Plus size={14} strokeWidth={2} className="mr-1.5" />
-                Enregistrer
-              </PendingButton>
-            </div>
-          </form>
+          <CaisseMouvementWizard
+            unites={unites}
+            activites={activites}
+            defaultDate={today}
+            createMouvementAction={createMouvementCaisse}
+          />
         </Section>
 
         <Section

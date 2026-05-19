@@ -119,6 +119,31 @@ GOOGLE_OAUTH_CLIENT_SECRET=...
 
 ---
 
+## MCP Baloo HTTP (`/api/mcp`)
+
+Le serveur MCP de Baloo est servi **directement par la webapp** via la route HTTP `/api/mcp` (Streamable HTTP transport). Plus de serveur local à lancer — l'utilisateur ajoute simplement Baloo dans Claude.ai (ou Claude Desktop) en tant que connecteur MCP.
+
+**URL** : `https://baloo.benomite.com/api/mcp`
+
+**Auth** : OAuth 2.0 avec [Dynamic Client Registration](https://datatracker.ietf.org/doc/html/rfc7591) (RFC 7591). Scope unique : `treso`. Le flow est entièrement piloté par Claude — l'utilisateur consent une fois via le navigateur puis le token vit dans son client MCP.
+
+**Setup utilisateur** :
+
+1. Dans Claude.ai (Settings → Connectors) ou Claude Desktop : ajouter un connecteur custom.
+2. URL : `https://baloo.benomite.com/api/mcp`.
+3. Suivre le flow OAuth (redirect vers Baloo, login passwordless, consent).
+4. Les tools deviennent disponibles dans la conversation.
+
+**Gestion des connexions** : l'utilisateur peut voir et révoquer ses clients MCP enregistrés depuis la page `/moi/connexions` de la webapp.
+
+**Spec complète** : [`specs/2026-05-12-mcp-http-oauth-design.md`](specs/2026-05-12-mcp-http-oauth-design.md).
+
+**Tools exposés** : 57 au total — cf. `web/src/lib/mcp/register-all.ts`. Couverture complète des opérations compta opérationnelle (écritures, remboursements, abandons, caisse, dépôts chèques, justificatifs, personnes, comptes, budgets, todos, notes) + interactions Comptaweb (lecture rapprochement bancaire, sync référentiels).
+
+**Préservation des données** : les tools MCP respectent la règle "JAMAIS de DELETE" (cf. CLAUDE.md racine). Aucun outil DELETE exposé sur les tables métier ; les opérations destructives (par exemple `delete_note`) ne touchent qu'aux tables où la suppression a un sens.
+
+---
+
 ## Notion (non accessible en MCP, contrainte d'accès)
 
 Le MCP Notion officiel suppose une authentification OAuth sur un compte **membre** du workspace. Si le trésorier n'est qu'un **invité** du workspace Notion, le MCP ne peut pas être utilisé.

@@ -84,7 +84,7 @@ export async function uploadComptawebCsv(formData: FormData): Promise<void> {
   );
 }
 
-// Détecte les doublons d'écritures saisie_comptaweb dans le groupe
+// Détecte les doublons d'écritures mirror dans le groupe
 // (générés par d'anciens imports CSV qui ne matchaient pas correctement
 // les enregistrements existants). Dry-run par défaut : ne supprime rien,
 // retourne juste le rapport.
@@ -131,7 +131,7 @@ export async function deleteEcritureDuplicates(
   }
 }
 
-// Détecte les écritures saisie_comptaweb sans catégorie qui ont une
+// Détecte les écritures mirror sans catégorie qui ont une
 // "twin" (mêmes date, amount, type, piece, description) avec catégorie
 // définie. Ces orphelins sont des doublons générés par d'anciens imports
 // avant le fix mapping comptaweb_nature. Dry-run.

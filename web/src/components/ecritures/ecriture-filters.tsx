@@ -162,9 +162,11 @@ export function EcritureFilters({
               onChange={(e) => update('status', e.target.value)}
             >
               <option value="">Tous statuts</option>
-              <option value="brouillon">Brouillon</option>
-              <option value="valide">Validé</option>
-              <option value="saisie_comptaweb">Saisie Comptaweb</option>
+              <option value="draft">Brouillon</option>
+              <option value="pending_cw">Envoi CW…</option>
+              <option value="pending_sync">Envoyée à CW</option>
+              <option value="mirror">Miroir CW</option>
+              <option value="divergent">Divergent CW</option>
             </NativeSelect>
             <Input
               type="month"

@@ -62,10 +62,18 @@ export function StatusPill({ tone, label, className }: StatusPillProps) {
 
 // ---- Wrappers de domaine ----
 
+// Mapping des nouveaux statuts (pivot Phase 1 "miroir strict + MCP-first") :
+//   draft         : préparation locale (équivalent de l'ancien brouillon)
+//   pending_cw    : push CW en cours (transitoire)
+//   pending_sync  : envoyée à CW, attend la sync retour
+//   mirror        : synchronisée, miroir CW propre (≈ ancien saisie_comptaweb)
+//   divergent     : la sync a détecté un écart entre Baloo et CW
 const ECRITURE_STATUS_MAP: Record<string, { tone: StatusTone; label: string }> = {
-  brouillon: { tone: 'neutral', label: 'Brouillon' },
-  valide: { tone: 'progress', label: 'Validé' },
-  saisie_comptaweb: { tone: 'success', label: 'Saisie Comptaweb' },
+  draft: { tone: 'neutral', label: 'Brouillon' },
+  pending_cw: { tone: 'pending', label: 'Envoi CW…' },
+  pending_sync: { tone: 'progress', label: 'Envoyée à CW' },
+  mirror: { tone: 'success', label: 'Miroir CW' },
+  divergent: { tone: 'danger', label: 'Divergent CW' },
 };
 
 export function EcritureStatusBadge({ status }: { status: string }) {
@@ -89,7 +97,7 @@ export function RemboursementStatusBadge({ status }: { status: string }) {
 
 // ─── Pastilles 2 axes pour les écritures ────────────────────────────
 //
-// Au lieu d'un statut unique linéaire (brouillon → validé → saisie_comptaweb)
+// Au lieu d'un statut unique linéaire (draft → pending_sync → mirror)
 // qui mélange deux dimensions, on rend deux pastilles indépendantes :
 //
 //   - JustifBadge  : présent / manquant (axe documentaire)

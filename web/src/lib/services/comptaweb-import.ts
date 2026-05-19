@@ -12,11 +12,15 @@
 //  4. Mapping aux référentiels locaux (catégories par nature,
 //     activités par nom, unités par code — l'inférence par branche
 //     SGDF gère la majorité des cas, fallback sur le code de pièce).
-//  5. Insert en bloc dans `ecritures` avec `status='saisie_comptaweb'`,
-//     `comptaweb_synced=1`. Idempotent : on purge avant ré-import les
-//     écritures précédemment marquées `saisie_comptaweb` (les écritures
-//     saisies à la main, en `brouillon` ou `valide`, ne sont jamais
-//     touchées).
+//  5. Insert en bloc dans `ecritures` avec `status='mirror'`,
+//     `comptaweb_synced=1`. Le CSV vient de CW : c'est le miroir CW
+//     propre. UPSERT (cf. CLAUDE.md "JAMAIS de DELETE") : on n'écrase
+//     jamais les valeurs saisies à la main par le trésorier.
+//
+// Pivot Phase 1 (miroir strict + MCP-first) : avant, on utilisait le
+// statut `saisie_comptaweb`. Mapping migration : `saisie_comptaweb`
+// → `mirror`. La sync incrémentale (Phase 2) écrira directement en
+// `mirror` aussi.
 //
 // Les imports manqués (sans unité / sans catégorie / sans mode de
 // paiement) sont remontés dans `warnings` pour que l'UI puisse
@@ -307,9 +311,9 @@ export async function importComptawebCsv(
     // Sinon, INSERT.
     //
     // Conséquence : tous les justifs uploadés, notes manuelles, liens
-    // vers dépôts/remb sont préservés. Les écritures saisie_comptaweb
-    // qui ne correspondent à aucune ligne du nouveau CSV ne sont PAS
-    // touchées (le CSV n'est pas la vérité absolue, c'est un complément).
+    // vers dépôts/remb sont préservés. Les écritures mirror qui ne
+    // correspondent à aucune ligne du nouveau CSV ne sont PAS touchées
+    // (le CSV n'est pas la vérité absolue, c'est un complément).
     // Matching cascade : TOUS les niveaux incluent category_id pour
     // éviter qu'une ventilation matche une autre ventilation du même
     // regroupement (ex: FSI 420€ vs Territoire 420€). Sans category_id,
@@ -318,7 +322,7 @@ export async function importComptawebCsv(
     // n'est jamais INSERTée.
     const findExact = txDb.prepare(
       `SELECT id FROM ecritures
-       WHERE group_id = ? AND status = 'saisie_comptaweb'
+       WHERE group_id = ? AND status = 'mirror'
          AND date_ecriture = ? AND amount_cents = ? AND type = ?
          AND COALESCE(numero_piece, '') = COALESCE(?, '')
          AND COALESCE(description, '') = COALESCE(?, '')
@@ -327,7 +331,7 @@ export async function importComptawebCsv(
     );
     const findByPieceCat = txDb.prepare(
       `SELECT id FROM ecritures
-       WHERE group_id = ? AND status = 'saisie_comptaweb'
+       WHERE group_id = ? AND status = 'mirror'
          AND date_ecriture = ? AND amount_cents = ? AND type = ?
          AND COALESCE(numero_piece, '') = COALESCE(?, '')
          AND COALESCE(category_id, '') = COALESCE(?, '')
@@ -342,7 +346,7 @@ export async function importComptawebCsv(
     // ce niveau, INSERT en doublon.
     const findByPiece = txDb.prepare(
       `SELECT id FROM ecritures
-       WHERE group_id = ? AND status = 'saisie_comptaweb'
+       WHERE group_id = ? AND status = 'mirror'
          AND date_ecriture = ? AND amount_cents = ? AND type = ?
          AND numero_piece = ?
        LIMIT 1`,
@@ -367,7 +371,7 @@ export async function importComptawebCsv(
     );
     const insertEcriture = txDb.prepare(`
       INSERT INTO ecritures (id, group_id, unite_id, date_ecriture, description, amount_cents, type, category_id, mode_paiement_id, activite_id, numero_piece, status, comptaweb_synced, notes, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'saisie_comptaweb', 1, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'mirror', 1, ?, ?, ?)
     `);
 
     async function upsertEcriture(args: {
@@ -579,7 +583,7 @@ export async function importComptawebCsv(
   });
 
   // Totaux réels dans ecritures (hors transferts internes).
-  const totEcr = await db.prepare(`SELECT type, COALESCE(SUM(amount_cents),0) as s FROM ecritures WHERE status='saisie_comptaweb' AND group_id = ? GROUP BY type`).all<{ type: string; s: number }>(groupId);
+  const totEcr = await db.prepare(`SELECT type, COALESCE(SUM(amount_cents),0) as s FROM ecritures WHERE status='mirror' AND group_id = ? GROUP BY type`).all<{ type: string; s: number }>(groupId);
   const depsEcr = totEcr.find((t) => t.type === 'depense')?.s ?? 0;
   const recsEcr = totEcr.find((t) => t.type === 'recette')?.s ?? 0;
 

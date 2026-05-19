@@ -2,7 +2,7 @@
 // des intégrations du groupe courant, en complément de doc/integrations.md
 // (qui ne contient que le générique).
 //
-// Les valeurs ici sont lues dans compta/.env pour rester user-dépendantes.
+// Les valeurs ici sont lues dans web/.env.local pour rester user-dépendantes.
 
 import { ensureComptawebEnv } from '../src/lib/comptaweb/env-loader';
 import { getDb } from '../src/lib/db';

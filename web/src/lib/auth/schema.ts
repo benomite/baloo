@@ -505,12 +505,14 @@ export async function ensureAuthSchema(): Promise<void> {
   // qu'on matche par unites.name normalisé, on peut rétro-fixer en
   // extrayant la branche depuis les notes : `Import Comptaweb XXX — Branche`.
   // Idempotent : ne touche que les rows avec unite_id IS NULL.
+  //
+  // Statut cible post-Task 5/6 : `mirror` (ancien `saisie_comptaweb` → mirror).
   const orphanEcritures = await db
     .prepare(
       `SELECT id, group_id, notes
        FROM ecritures
        WHERE unite_id IS NULL
-         AND status = 'saisie_comptaweb'
+         AND status = 'mirror'
          AND notes LIKE 'Import Comptaweb %—%'`,
     )
     .all<{ id: string; group_id: string; notes: string | null }>();

@@ -7,11 +7,6 @@
         "Authorization": "Bearer ${AIRTABLE_PAT}"
       }
     },
-    "compta": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["--prefix", "compta", "tsx", "compta/src/index.ts"]
-    },
     "workspace": {
       "type": "stdio",
       "command": "uvx",

@@ -67,11 +67,11 @@ export function BatchEditBar({ selectedIds, categories, unites, modesPaiement, a
     startUpdateTransition(async () => {
       const res = await batchUpdateEcritures(selectedIds, patch);
       if (res.updated === 0 && res.skipped > 0) {
-        toast.error(`Aucune mise à jour : ${res.skipped} écriture${res.skipped > 1 ? 's' : ''} déjà synchronisée${res.skipped > 1 ? 's' : ''} Comptaweb.`);
+        toast.error(`Aucune mise à jour : ${res.skipped} écriture${res.skipped > 1 ? 's' : ''} déjà miroir CW (lecture seule).`);
         return;
       }
       let msg = `${res.updated} écriture${res.updated > 1 ? 's' : ''} mise${res.updated > 1 ? 's' : ''} à jour`;
-      if (res.skipped > 0) msg += ` · ${res.skipped} ignorée${res.skipped > 1 ? 's' : ''} (saisie Comptaweb)`;
+      if (res.skipped > 0) msg += ` · ${res.skipped} ignorée${res.skipped > 1 ? 's' : ''} (miroir CW)`;
       toast.success(msg);
       onApplied();
     });
@@ -81,7 +81,7 @@ export function BatchEditBar({ selectedIds, categories, unites, modesPaiement, a
     const n = selectedIds.length;
     const confirmed = window.confirm(
       `Synchroniser ${n} écriture${n > 1 ? 's' : ''} vers Comptaweb ?\n\n` +
-      `Cette action crée les écritures en prod dans Comptaweb et passe les drafts en statut « saisie_comptaweb ». Irréversible depuis Baloo.\n\n` +
+      `Cette action crée les écritures en prod dans Comptaweb et passe les drafts en statut « miroir CW ». Irréversible depuis Baloo.\n\n` +
       `Les drafts incomplets (nature/activité/unité/mode/justif manquant) seront ignorés.`,
     );
     if (!confirmed) return;
