@@ -16,6 +16,10 @@ import {
 import { ECRITURE_STATUSES, type EcritureStatus } from '../types';
 import { parseAmount } from '../format';
 
+// TODO Task 8 (pivot miroir strict) : cette server action utilise encore
+// le service `createEcriture` direct (INSERT BDD sans push CW). La
+// refonte UI saisie/édition basculera vers `createEcritureAndPushToCw`
+// (cf. POST /api/ecritures) avec gestion du fallback draft côté UI.
 export async function createEcriture(formData: FormData) {
   const { groupId, scopeUniteId } = await getCurrentContext();
   const created = await createEcritureService(
