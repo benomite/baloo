@@ -18,6 +18,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { InstallButton } from '@/components/pwa/install-button';
+import { SyncStatusButton } from '@/components/sync/sync-status-button';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -149,11 +150,18 @@ export function Sidebar({ role, groupName, inboxCount = 0 }: SidebarProps) {
         })}
       </nav>
 
-      {/* Footer : install PWA si proposable + Aide */}
+      {/* Footer : install PWA si proposable + Sync (admins) + Aide */}
       <div className="border-t border-border-soft p-2 space-y-2">
         <div className="px-1">
           <InstallButton />
         </div>
+        {/* Sync incrémentale Comptaweb — admins uniquement (cf. Phase 2
+            pivot miroir strict). Mount = auto-check + auto-run si stale. */}
+        {(role === 'tresorier' || role === 'RG') && (
+          <div className="px-1">
+            <SyncStatusButton />
+          </div>
+        )}
         <NavLink href="/aide" icon={CircleHelp} active={pathname === '/aide'} variant="subtle">
           Aide & guide
         </NavLink>
