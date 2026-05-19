@@ -21,8 +21,11 @@ import { registerInboxTools } from './tools/inbox';
 import { registerComptawebClientTools } from './tools/comptaweb-client';
 import { registerSyncReferentielsTools } from './tools/sync-referentiels';
 
-// Compteur cible Phase 1 : 55 tools (3 historiques + 52 portés dans la
-// Task 2 du pivot miroir strict). Décisions actées (cf.
+// Compteur Phase 1 final : 57 tools = 3 historiques + 54 portés (Vagues
+// 1-5 de la Task 2). Le brief Task 2 annonçait 55, mais le compte
+// effectif des tools listés dans les 5 vagues est 54 (Vague 3 = 16
+// tools réels, pas 14 — léger écart de comptage dans le brief sans
+// impact). Décisions actées (cf.
 // `doc/plans/2026-05-18-tools-portage-audit.md` + brief Task 2) :
 //  - 2 tools multipart (`attach_justificatif`, `upload_justificatif_orphan`)
 //    NON portés : l'upload reste UI-only.
@@ -49,7 +52,8 @@ export function registerAllTools(server: McpServer, ctx: McpContext): void {
   registerTodoTools(server, ctx);
   registerBudgetTools(server, ctx);
 
-  // Vague 3 — Workflows opérationnels (14 tools)
+  // Vague 3 — Workflows opérationnels (16 tools : caisse 4 + cheques 2
+  // + depots espèces 3 + abandons 3 + rembs 3 + justificatifs 1)
   registerCaisseTools(server, ctx);
   registerChequesTools(server, ctx);
   registerDepotsEspecesTools(server, ctx);
@@ -57,8 +61,8 @@ export function registerAllTools(server: McpServer, ctx: McpContext): void {
   registerRemboursementTools(server, ctx);
   registerJustificatifTools(server, ctx);
 
-  // Vague 4 — Écritures = déjà couvert dans registerEcrituresTools ci-dessus
-  // (list/create/update_ecriture étendus à la sémantique miroir strict).
+  // Vague 4 — Écritures (3 tools : list_ecritures étendu, create_ecriture,
+  // update_ecriture) : déjà inclus dans registerEcrituresTools ci-dessus.
 
   // Vague 5 — Inbox + Comptaweb interactions + Sync référentiels (9 tools)
   registerInboxTools(server, ctx);
