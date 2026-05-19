@@ -84,7 +84,9 @@ describe('buildCwInputFromPayload', () => {
         lookupComptawebId,
         lookupCarte: async () => null,
       }),
-    ).rejects.toThrow(/catégorie.*activité.*unité.*mode/s);
+    // Flag `s` (dotAll) demande ES2018+ (target tsconfig est ES2017).
+    // [\s\S] est l'équivalent compatible ES2017.
+    ).rejects.toThrow(/catégorie[\s\S]*activité[\s\S]*unité[\s\S]*mode/);
   });
 
   it('throw si category_id absent (pas juste le mapping)', async () => {
