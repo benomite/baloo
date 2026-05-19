@@ -5,6 +5,8 @@ import {
 } from '@/lib/services/ecritures';
 import {
   createEcritureAndPushToCw,
+  CwPushFailedError,
+  CwLocalUpdateFailedError,
   type EcriturePayload,
 } from '@/lib/services/ecritures-create';
 import { getDb } from '@/lib/db';
@@ -103,32 +105,52 @@ export async function POST(request: Request) {
       group_id: groupId,
       // cwScraper non fourni : Task 8 fournira l'adapter Baloo → CW.
       // En attendant, le service rétrograde l'écriture en `draft` et
-      // throw — capté ci-dessous pour renvoyer 502 avec ecriture_id.
+      // throw `CwPushFailedError` — capté ci-dessous pour renvoyer
+      // 502 avec ecriture_id.
       cwConfigLoader: loadConfig,
     });
     return Response.json({ ok: true, ecriture: result }, { status: 201 });
   } catch (err) {
+    // Échec CW (scraper rejette / config KO) → l'écriture est en
+    // `draft`. On utilise l'`ecritureId` porté par l'erreur (pas de
+    // requête non-déterministe sujette aux race conditions entre POST
+    // concurrents).
+    if (err instanceof CwPushFailedError) {
+      return Response.json(
+        {
+          ok: false,
+          error: 'cw_write_failed',
+          message: err.message,
+          fallback_status: 'draft' as const,
+          ecriture_id: err.ecritureId,
+        },
+        { status: 502 },
+      );
+    }
+    // CW a accepté mais l'UPDATE local a planté : état grave (Baloo
+    // dit `pending_cw`, CW a la donnée avec ce cw_numero_piece). Un
+    // retry client créerait un doublon. La sync incrémentale Phase 2
+    // ramassera l'écriture par `cw_numero_piece` et la promouvra,
+    // mais en attendant on signale explicitement la désynchro pour
+    // qu'un humain (ou un monitoring) puisse arbitrer.
+    if (err instanceof CwLocalUpdateFailedError) {
+      return Response.json(
+        {
+          ok: false,
+          error: 'cw_synced_but_local_update_failed',
+          message: err.message,
+          cw_numero_piece: err.cwNumeroPiece,
+          ecriture_id: err.ecritureId,
+        },
+        { status: 500 },
+      );
+    }
+    // Erreur non identifiée (INSERT pending_cw qui plante, etc.) :
+    // propage en 500 générique.
     const message = err instanceof Error ? err.message : String(err);
-    // Recherche de l'écriture rétrogradée pour la retourner au caller
-    // (utile au front pour rediriger vers /inbox et reprendre la saisie).
-    // On lit la plus récente du groupe en `draft` ; pas parfait, mais
-    // le service garantit qu'elle existe et c'est forcément la dernière.
-    const lastDraft = await getDb()
-      .prepare(
-        `SELECT id FROM ecritures
-           WHERE group_id = ? AND status = 'draft'
-           ORDER BY updated_at DESC LIMIT 1`,
-      )
-      .get<{ id: string }>(groupId);
     return Response.json(
-      {
-        ok: false,
-        error: 'cw_write_failed',
-        message,
-        fallback_status: 'draft' as const,
-        ecriture_id: lastDraft?.id ?? null,
-      },
-      { status: 502 },
+      { ok: false, error: 'internal_error', message },
+      { status: 500 },
     );
   }
 }

@@ -10,10 +10,15 @@
 //   3a. Succès : UPDATE status='pending_sync', store cw_numero_piece.
 //       La sync incrémentale (Phase 2) promouvra plus tard en 'mirror'
 //       quand elle retrouvera l'écriture dans la liste CW.
-//   3b. Échec  : UPDATE status='draft', propagation de l'erreur au caller.
-//       Pas de DELETE (cf. CLAUDE.md "JAMAIS de DELETE") : l'écriture
-//       reste en BDD, l'user peut la voir dans /inbox et la reprendre,
-//       réessayer le push, ou copier-coller manuellement dans CW.
+//   3b. Échec CW : UPDATE status='draft', throw `CwPushFailedError`
+//       (porteur de l'ecriture_id) — caller utilise cet id directement
+//       pour rediriger vers /inbox.
+//       Pas de DELETE (cf. CLAUDE.md "JAMAIS de DELETE").
+//   3c. CW OK mais UPDATE local KO : état grave (CW a la donnée, Baloo
+//       dit `pending_cw`). Throw `CwLocalUpdateFailedError` (porteur du
+//       cw_numero_piece) pour que le caller route un 500 explicite.
+//       La sync Phase 2 ramassera l'écriture par cw_numero_piece et
+//       complétera l'état local — mais en attendant Baloo est désynchro.
 //
 // Hors scope Task 7 :
 //   - Mapping Baloo → référentiels CW (category_id → natureId, etc.) :
@@ -26,6 +31,38 @@ import type { DbWrapper } from '../db';
 import { nextIdOn, currentTimestamp } from '../ids';
 import { nullIfEmpty } from '../utils/form';
 import type { ComptawebConfig } from '../comptaweb/types';
+
+// Erreur dédiée pour l'échec du push CW (scraper rejette ou
+// `cwConfigLoader` plante). Porte l'`ecritureId` du draft rétrogradé
+// pour que le caller redirige sans avoir à faire une requête
+// non-déterministe (race condition entre POST concurrents).
+export class CwPushFailedError extends Error {
+  constructor(
+    public readonly ecritureId: string,
+    public readonly cause: unknown,
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = 'CwPushFailedError';
+  }
+}
+
+// Erreur dédiée pour le cas où le scraper CW a réussi mais l'UPDATE local
+// `pending_sync` plante. État grave : CW a la donnée (avec
+// `cw_numero_piece`), Baloo l'a en `pending_cw`. Re-pusher créerait un
+// doublon CW. Caller doit logger et signaler à l'utilisateur — la sync
+// incrémentale Phase 2 finira par retrouver l'écriture via
+// `cw_numero_piece` et la promouvoir, mais en attendant Baloo est
+// désynchronisé.
+export class CwLocalUpdateFailedError extends Error {
+  constructor(
+    public readonly ecritureId: string,
+    public readonly cwNumeroPiece: string,
+    public readonly cause: unknown,
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = 'CwLocalUpdateFailedError';
+  }
+}
 
 // Payload "Baloo-friendly" : monnaie en cents, IDs Baloo (catégorie,
 // mode paiement, unité, activité, carte). Le scraper se charge de la
@@ -100,6 +137,8 @@ export async function createEcritureAndPushToCw(
   // 1. INSERT en `pending_cw` : snapshot du payload, l'écriture est en
   //    cours d'envoi vers CW. Si le process meurt à ce point, on aura un
   //    `pending_cw` orphelin — repérable et relançable manuellement.
+  //    Si cet INSERT throw, rien n'a été pushé : on laisse l'erreur
+  //    remonter brute (pas de rollback nécessaire — la ligne n'existe pas).
   await db
     .prepare(
       `INSERT INTO ecritures (
@@ -129,28 +168,58 @@ export async function createEcritureAndPushToCw(
 
   // 2. Push CW. Le scraper et le loader sont injectables pour les tests.
   // En prod (Task 8), on injectera l'adapter Comptaweb réel.
+  // TODO Task 8 : retirer ces deux garde-fous quand l'adapter (scraper +
+  // loader) sera toujours fourni par défaut côté route. En attendant, on
+  // évite de laisser un `pending_cw` orphelin si on est appelé sans
+  // injection : rétrograde en `draft` immédiatement et throw une
+  // `CwPushFailedError` typée pour que le caller reroute proprement.
   if (!opts.cwScraper) {
-    // Garde-fou Task 7 : pas d'adapter réel encore branché (Task 8).
-    // On évite de laisser un `pending_cw` orphelin si on est appelé sans
-    // injection : rétrograde en `draft` immédiatement et propage.
-    await rollbackToDraft(db, id);
-    throw new Error(
-      'createEcritureAndPushToCw: cwScraper non fourni (adapter Comptaweb pas encore branché — Task 8).',
+    await rollbackToDraft(db, id, group_id);
+    throw new CwPushFailedError(
+      id,
+      new Error(
+        'createEcritureAndPushToCw: cwScraper non fourni (adapter Comptaweb pas encore branché — Task 8).',
+      ),
     );
   }
   if (!opts.cwConfigLoader) {
-    await rollbackToDraft(db, id);
-    throw new Error('createEcritureAndPushToCw: cwConfigLoader non fourni.');
+    await rollbackToDraft(db, id, group_id);
+    throw new CwPushFailedError(
+      id,
+      new Error('createEcritureAndPushToCw: cwConfigLoader non fourni.'),
+    );
   }
 
+  // 2bis. Charger la config et appeler le scraper. SEUL ce bloc justifie
+  // le rollback `draft` : tant qu'on n'a pas la preuve que CW a accepté
+  // la donnée, on peut rétrograder sans risque de doublon. Si CW
+  // accepte (étape 3 ci-dessous), un échec local NE DOIT PAS rétrograder.
+  let cwResult: CwScraperResult;
   try {
     const config = await opts.cwConfigLoader();
-    const cwResult = await opts.cwScraper(config, payload);
+    cwResult = await opts.cwScraper(config, payload);
+  } catch (err) {
+    // 3b. CW a planté ou refusé : UPDATE status='draft' (PAS DE DELETE
+    // — règle CLAUDE.md). L'écriture reste en BDD avec son snapshot,
+    // visible dans /inbox. L'user peut la reprendre, réessayer le push,
+    // ou copier-coller dans CW. On throw une `CwPushFailedError` portant
+    // l'`id` du draft (évite au caller une requête non-déterministe
+    // pour le retrouver — race condition entre POST concurrents).
+    await rollbackToDraft(db, id, group_id);
+    throw new CwPushFailedError(id, err);
+  }
 
-    // 3a. Succès : UPDATE status='pending_sync', store cw_numero_piece
-    // (+ comptaweb_ecriture_id si fourni). On NE flip PAS
-    // comptaweb_synced à 1 : ce flag passe à 1 uniquement à la promotion
-    // `mirror` par la sync incrémentale (Phase 2).
+  // 3a. Succès CW : UPDATE status='pending_sync', store cw_numero_piece
+  // (+ comptaweb_ecriture_id si fourni). On NE flip PAS
+  // comptaweb_synced à 1 : ce flag passe à 1 uniquement à la promotion
+  // `mirror` par la sync incrémentale (Phase 2).
+  //
+  // 3c. Si cet UPDATE local plante alors que CW a déjà la donnée, on est
+  // dans un état grave : retrocéder en `draft` mènerait à un doublon CW
+  // au prochain retry de l'user. On laisse `pending_cw` et on throw une
+  // `CwLocalUpdateFailedError` explicite porteuse du cw_numero_piece.
+  // La sync Phase 2 finira par retrouver l'écriture par cw_numero_piece.
+  try {
     await db
       .prepare(
         `UPDATE ecritures
@@ -167,25 +236,35 @@ export async function createEcritureAndPushToCw(
         id,
         group_id,
       );
-
-    return {
-      id,
-      status: 'pending_sync',
-      cw_numero_piece: cwResult.cwNumeroPiece,
-    };
   } catch (err) {
-    // 3b. Échec : UPDATE status='draft' (PAS DE DELETE — règle CLAUDE.md).
-    // L'écriture reste en BDD avec son snapshot, visible dans /inbox.
-    // L'user peut la reprendre, réessayer le push, ou copier-coller dans CW.
-    await rollbackToDraft(db, id);
-    throw err;
+    console.error('[ecritures-create] CW push OK but local UPDATE failed', {
+      ecriture_id: id,
+      cw_numero_piece: cwResult.cwNumeroPiece,
+      error: err,
+    });
+    throw new CwLocalUpdateFailedError(id, cwResult.cwNumeroPiece, err);
   }
+
+  return {
+    id,
+    status: 'pending_sync',
+    cw_numero_piece: cwResult.cwNumeroPiece,
+  };
 }
 
-async function rollbackToDraft(db: DbWrapper, id: string): Promise<void> {
+// Rétrograde une écriture en `draft`. Scopé `group_id` par symétrie
+// avec l'UPDATE succès et défense en profondeur si jamais un mauvais
+// `id` était passé par erreur — même si en pratique l'`id` est généré
+// localement juste avant et appartient au `group_id` courant.
+async function rollbackToDraft(
+  db: DbWrapper,
+  id: string,
+  group_id: string,
+): Promise<void> {
   await db
     .prepare(
-      `UPDATE ecritures SET status = 'draft', updated_at = ? WHERE id = ?`,
+      `UPDATE ecritures SET status = 'draft', updated_at = ?
+        WHERE id = ? AND group_id = ?`,
     )
-    .run(currentTimestamp(), id);
+    .run(currentTimestamp(), id, group_id);
 }
