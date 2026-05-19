@@ -1,6 +1,10 @@
 export { loadConfig, withAutoReLogin } from './auth';
 export { fetchHtml, ComptawebSessionExpiredError } from './http';
 export { listRapprochementBancaire, parseRapprochementHtml } from './ecritures-bancaires';
+export {
+  scrapeListeEcritures,
+  parseListeEcrituresHtml,
+} from './ecritures-list-scrape';
 export { fetchReferentielsCreer, createEcriture } from './ecritures-write';
 export { applyReferentielsSync } from './sync-referentiels-logic';
 export { fetchCartesProcurement, fetchCartesBancaires, fetchAllCartes } from './cartes-scrape';
@@ -33,4 +37,6 @@ export type {
   VentilationInput,
   CreateEcritureInput,
   CreateEcritureResult,
+  CwEcritureRow,
+  ScrapeListeEcrituresResult,
 } from './types';

@@ -20,6 +20,14 @@ inbox/
 # …sauf la route applicative `/inbox` (Server Component versionné).
 !web/src/app/**/inbox/
 
+# Fixtures Comptaweb capturées localement (pages HTML brutes, contiennent
+# des données réelles du groupe). Les tests utilisent du HTML inline
+# anonymisé versionné dans les fichiers de test eux-mêmes.
+web/src/lib/comptaweb/__tests__/fixtures/*.html
+
+# Pages HTML laissées à la racine du repo (exports CW, captures de session)
+/*.html
+
 # Pièces justificatives et exports
 *.pdf
 *.xlsx
