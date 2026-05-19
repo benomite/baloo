@@ -10,6 +10,7 @@ import {
   type EcriturePayload,
 } from '@/lib/services/ecritures-create';
 import { getDb } from '@/lib/db';
+import { ensureBusinessSchema } from '@/lib/db/business-schema';
 import { ECRITURE_STATUSES } from '@/lib/types';
 import { jsonError, parseJsonBody, requireApiContext } from '@/lib/api/route-helpers';
 import { resolveStatusFilter } from './status-filter';
@@ -92,6 +93,15 @@ const createSchema = z.object({
 // qu'il n'est pas branché, on retombe sur la branche 502 (l'écriture
 // est bien stockée en draft).
 export async function POST(request: Request) {
+  // `requireApiContext` déclenche déjà `ensureAuthSchema()` (Bearer)
+  // ou l'adapter Auth.js (cookie), qui appellent tous les deux
+  // `ensureBusinessSchema()` en amont. On ajoute néanmoins un appel
+  // défensif ici : il garantit que la colonne `cw_numero_piece`
+  // (ajoutée en Task 7) existe avant l'INSERT/UPDATE, y compris si
+  // l'ordre des migrations évolue ou si la BDD est recréée à froid.
+  // C'est un no-op après le premier appel du process (cache interne).
+  await ensureBusinessSchema();
+
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
   const { groupId } = ctxR.ctx;
