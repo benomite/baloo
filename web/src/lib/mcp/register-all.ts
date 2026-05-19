@@ -6,6 +6,11 @@ import { registerRechercheTools } from './tools/recherche';
 import { registerReferenceTools } from './tools/reference';
 import { registerPersonneTools } from './tools/personnes';
 import { registerGroupeTools } from './tools/groupes';
+import { registerCompteTools } from './tools/comptes';
+import { registerCarteTools } from './tools/cartes';
+import { registerNoteTools } from './tools/notes';
+import { registerTodoTools } from './tools/todos';
+import { registerBudgetTools } from './tools/budgets';
 
 // Compteur cible Phase 1 : 55 tools (3 historiques + 52 portés dans la
 // Task 2 du pivot miroir strict). Décisions actées (cf.
@@ -27,4 +32,11 @@ export function registerAllTools(server: McpServer, ctx: McpContext): void {
   registerReferenceTools(server, ctx);
   registerPersonneTools(server, ctx);
   registerGroupeTools(server, ctx);
+
+  // Vague 2 — Comptes + Cartes + Notes + Todos + Budgets (18 tools)
+  registerCompteTools(server, ctx);
+  registerCarteTools(server, ctx);
+  registerNoteTools(server, ctx);
+  registerTodoTools(server, ctx);
+  registerBudgetTools(server, ctx);
 }
