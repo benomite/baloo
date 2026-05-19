@@ -90,7 +90,11 @@ const ECRITURES_INDEXES_DDL = `
   CREATE INDEX IF NOT EXISTS idx_ecritures_status ON ecritures(status);
   CREATE INDEX IF NOT EXISTS idx_ecritures_ligne_bancaire ON ecritures(ligne_bancaire_id, ligne_bancaire_sous_index);
   CREATE INDEX IF NOT EXISTS idx_ecritures_carte ON ecritures(carte_id);
-  CREATE INDEX IF NOT EXISTS idx_ecritures_cw_numero_piece ON ecritures(cw_numero_piece);
+  -- NB: idx_ecritures_cw_numero_piece est créé par ensureEcrituresCwNumeroPiece()
+  -- APRÈS l'ALTER TABLE ADD COLUMN. Le mettre ici provoque un crash sur
+  -- BDD existante (le CREATE TABLE IF NOT EXISTS est no-op et la colonne
+  -- n'a pas encore été ajoutée). Cf. piège documenté dans web/AGENTS.md
+  -- "CREATE INDEX doit venir APRÈS l'ALTER TABLE qui crée la colonne".
 `;
 
 /**
