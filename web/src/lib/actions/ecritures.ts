@@ -1,10 +1,8 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
 import { getCurrentContext } from '../context';
 import {
-  createEcriture as createEcritureService,
   updateEcriture as updateEcritureService,
   updateEcritureStatus as updateEcritureStatusService,
   updateEcritureField as updateEcritureFieldService,
@@ -16,34 +14,12 @@ import {
 import { ECRITURE_STATUSES, type EcritureStatus } from '../types';
 import { parseAmount } from '../format';
 
-// TODO Task 8 (pivot miroir strict) : cette server action utilise encore
-// le service `createEcriture` direct (INSERT BDD sans push CW). La
-// refonte UI saisie/édition basculera vers `createEcritureAndPushToCw`
-// (cf. POST /api/ecritures) avec gestion du fallback draft côté UI.
-export async function createEcriture(formData: FormData) {
-  const { groupId, scopeUniteId } = await getCurrentContext();
-  const created = await createEcritureService(
-    { groupId, scopeUniteId },
-    {
-      date_ecriture: formData.get('date_ecriture') as string,
-      description: formData.get('description') as string,
-      amount_cents: parseAmount(formData.get('montant') as string),
-      type: formData.get('type') as 'depense' | 'recette',
-      unite_id: (formData.get('unite_id') as string) || null,
-      category_id: (formData.get('category_id') as string) || null,
-      mode_paiement_id: (formData.get('mode_paiement_id') as string) || null,
-      activite_id: (formData.get('activite_id') as string) || null,
-      numero_piece: (formData.get('numero_piece') as string) || null,
-      carte_id: (formData.get('carte_id') as string) || null,
-      justif_attendu: formData.has('justif_attendu') ? 1 : 0,
-      notes: (formData.get('notes') as string) || null,
-    },
-  );
-
-  revalidatePath('/ecritures');
-  revalidatePath('/');
-  redirect(`/ecritures/${created.id}`);
-}
+// Note Task 8 (pivot miroir strict) : la server action `createEcriture`
+// a été retirée. La page /ecritures/nouveau passe désormais par le
+// composant client `NouvelleEcritureWizard` qui POST sur /api/ecritures
+// (qui pilote `createEcritureAndPushToCw` : push CW puis miroir local).
+// Aucun INSERT direct BDD ne reste côté front pour la saisie manuelle —
+// c'est l'invariant du pivot miroir strict.
 
 export async function updateEcriture(id: string, formData: FormData) {
   const { groupId, scopeUniteId } = await getCurrentContext();

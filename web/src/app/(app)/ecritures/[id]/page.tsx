@@ -1,7 +1,8 @@
 import { notFound } from 'next/navigation';
-import { AlertTriangle, CheckCircle2, Landmark, Lock, Mail } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info, Landmark, Lock, Mail } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { EcritureForm } from '@/components/ecritures/ecriture-form';
+import { CwAssistActions, type CwAssistPayload } from '@/components/ecritures/cw-assist-actions';
 import { JustificatifsCard } from '@/components/ecritures/justificatifs-card';
 import { EcritureStatusBadge } from '@/components/shared/status-badge';
 import { PendingButton } from '@/components/shared/pending-button';
@@ -164,17 +165,42 @@ export default async function EcritureDetailPage({
 
       <ReadinessBanner readiness={readiness} justifMissing={justifMissing} />
 
+      <CwAssistInfoBanner status={ecriture.status} />
+
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(280px,320px)] gap-6 items-start">
-        <EcritureForm
-          action={updateAction}
-          categories={categories}
-          topCategoryIds={topCategoryIds}
-          unites={unites}
-          modesPaiement={modesPaiement}
-          activites={activites}
-          cartes={cartes}
-          ecriture={ecriture}
-        />
+        <div className="space-y-6">
+          <EcritureForm
+            action={updateAction}
+            categories={categories}
+            topCategoryIds={topCategoryIds}
+            unites={unites}
+            modesPaiement={modesPaiement}
+            activites={activites}
+            cartes={cartes}
+            ecriture={ecriture}
+          />
+
+          {/* Mode dégradé Task 8 : pas de "Faire dans CW pour moi" en
+              édition (pas de scraping update côté CW). Seul "Tout copier"
+              est dispo, pour permettre de saisir les modifs CW à la main.
+              Refonte CW update = task ultérieure (hors scope V1). */}
+          <CwAssistActions
+            payload={{
+              date_ecriture: ecriture.date_ecriture,
+              description: ecriture.description,
+              amount_cents: ecriture.amount_cents,
+              type: ecriture.type,
+              category_id: ecriture.category_id,
+              mode_paiement_id: ecriture.mode_paiement_id,
+              unite_id: ecriture.unite_id,
+              activite_id: ecriture.activite_id,
+              carte_id: ecriture.carte_id,
+              numero_piece: ecriture.numero_piece,
+              notes: ecriture.notes,
+              justif_attendu: ecriture.justif_attendu === 1,
+            } satisfies CwAssistPayload}
+          />
+        </div>
 
         <aside className="lg:sticky lg:top-6 space-y-4">
           <JustificatifsCard
@@ -204,6 +230,27 @@ export default async function EcritureDetailPage({
 // espaces multiples, met une casse plus humaine.
 function cleanDescription(raw: string): string {
   return raw.replace(/\s+/g, ' ').trim();
+}
+
+// Bandeau Task 8 (pivot miroir strict) : explique le mode dégradé en
+// édition. Pour modifier le contenu CW (montant, date, libellé), il
+// faut passer par Comptaweb directement — Baloo n'a pas de scraping
+// d'update. Pour les champs Baloo-only (notes, justifs, justif_attendu),
+// l'édition locale reste OK.
+function CwAssistInfoBanner({ status }: { status: string }) {
+  if (status === 'mirror' || status === 'divergent') {
+    return (
+      <Alert variant="info" icon={Info} className="mb-6">
+        <p className="font-medium">Pour modifier le contenu envoyé à Comptaweb, passe par Comptaweb.</p>
+        <p className="mt-0.5 text-[12.5px] opacity-90">
+          Les notes, justificatifs et le flag « justif attendu » se modifient ici sans
+          aller-retour CW. Utilise « Tout copier » pour récupérer le détail si tu veux
+          le coller dans Comptaweb.
+        </p>
+      </Alert>
+    );
+  }
+  return null;
 }
 
 function ReadinessBanner({
