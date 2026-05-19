@@ -17,6 +17,9 @@ import { registerDepotsEspecesTools } from './tools/depots-especes';
 import { registerAbandonTools } from './tools/abandons';
 import { registerRemboursementTools } from './tools/remboursements';
 import { registerJustificatifTools } from './tools/justificatifs';
+import { registerInboxTools } from './tools/inbox';
+import { registerComptawebClientTools } from './tools/comptaweb-client';
+import { registerSyncReferentielsTools } from './tools/sync-referentiels';
 
 // Compteur cible Phase 1 : 55 tools (3 historiques + 52 portés dans la
 // Task 2 du pivot miroir strict). Décisions actées (cf.
@@ -53,4 +56,12 @@ export function registerAllTools(server: McpServer, ctx: McpContext): void {
   registerAbandonTools(server, ctx);
   registerRemboursementTools(server, ctx);
   registerJustificatifTools(server, ctx);
+
+  // Vague 4 — Écritures = déjà couvert dans registerEcrituresTools ci-dessus
+  // (list/create/update_ecriture étendus à la sémantique miroir strict).
+
+  // Vague 5 — Inbox + Comptaweb interactions + Sync référentiels (9 tools)
+  registerInboxTools(server, ctx);
+  registerComptawebClientTools(server, ctx);
+  registerSyncReferentielsTools(server, ctx);
 }
