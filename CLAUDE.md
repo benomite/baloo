@@ -22,15 +22,15 @@ Un groupe SGDF typique = 80 à 150 inscrits, dont ~60-80 jeunes + chefs/cheftain
 | Outil | Rôle | Statut |
 |---|---|---|
 | **Compta-Web** (outil interne SGDF) | Compta officielle du groupe | Source de vérité comptable |
-| **baloo-compta** (MCP SQLite) | Compta opérationnelle : écritures, remboursements, caisse, chèques, justificatifs, todos, personnes, comptes, budgets | **Source de vérité opérationnelle** (nouvelles entrées) |
+| **Baloo (MCP HTTP `/api/mcp`)** | Compta opérationnelle : écritures, remboursements, caisse, chèques, justificatifs, todos, personnes, comptes, budgets | **Source de vérité opérationnelle** (nouvelles entrées) |
 | **Airtable** | Historique remboursements (pour les groupes qui l'utilisaient avant de passer à baloo-compta) | Transitoire, lecture seule |
 | **Google Sheets** | Suivi d'unités pour les groupes qui l'utilisaient | Transitoire |
 | **Notion** | Organisation générale, calendrier | Source orga/planning (quand accessible en MCP) |
 | **Gmail** (asso) | Correspondance | Canal principal écrit |
 
-### MCP baloo-compta
+### MCP Baloo (HTTP `/api/mcp`)
 
-Le MCP `compta` expose les outils suivants :
+Le MCP Baloo expose les outils suivants :
 
 **Compta opérationnelle** :
 - `vue_ensemble` — état global de la trésorerie (à appeler en début de session).
@@ -121,10 +121,8 @@ Les intégrations sont documentées dans [`doc/integrations.md`](doc/integration
 - **Airtable** : MCP officiel, lecture seule au MVP (PAT en lecture).
 - **Google Workspace (Gmail + Drive)** : MCP communautaire `taylorwilsdon/google_workspace_mcp`, lancé avec `--read-only --tools gmail drive`. La lecture seule est imposée par le MCP lui-même.
 - **Notion** : accessible uniquement si le user a un compte **membre** du workspace (pas invité). Cf. doc/integrations.md.
-- **`compta` (Baloo BDD prod)** : MCP local qui appelle l'API webapp Next.js via HTTP. Permet de lire/écrire en BDD prod sans passer par l'UI. Utile pour audit (totaux, listes filtrées) et corrections ciblées (notes, todos, personnes). PAS d'opération DELETE exposée sur les écritures (cohérent avec la règle "JAMAIS de DELETE" de cette doc).
-  - Config : `compta/.env` doit contenir `BALOO_API_URL=https://baloo.benomite.com` + `BALOO_API_TOKEN=<token>`. Sans token : MCP renvoie 401.
-  - Génération token : `cd web && pnpm exec tsx scripts/generate-api-token.ts <email-trésorier> --name "<nom>"`. Token affiché 1× (hash SHA-256 stocké en BDD).
-  - Si `vue_ensemble` ou autres outils MCP renvoient 401 → token absent ou expiré → demander au user de régénérer + redémarrer Claude Code.
+- **MCP Baloo HTTP** : route `/api/mcp` de la webapp expose tous les tools (lecture/écriture BDD). Auth via OAuth 2.0 (voir `web/src/app/(app)/moi/connexions/`). Plus de setup local — l'utilisateur ajoute Baloo dans Claude Desktop via l'URL `https://baloo.benomite.com/api/mcp` et un login OAuth.
+  - Si `vue_ensemble` ou autres outils MCP renvoient 401 → token expiré → user re-authentifie via la page `/moi/connexions`.
 
 Si un MCP est disponible, préfère-le à une demande manuelle à l'utilisateur. Si un MCP semble indisponible ou casse, signale-le clairement et propose une alternative.
 
