@@ -682,6 +682,11 @@ export async function ensureBusinessSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_oauth_access_tokens_user ON oauth_access_tokens(user_id);
   `);
 
+  // Task 1 Phase 2 : table d'audit `sync_runs` pour le sync incrémental
+  // Comptaweb (cf. specs/2026-05-19-baloo-sync-incremental-design.md).
+  // Extraite en fonction pour être testable isolément.
+  await ensureSyncRunsSchema(db);
+
   // Task 5 pivot miroir strict : migration du statut `ecritures` vers
   // le nouvel enum (draft/pending_cw/pending_sync/mirror/divergent) et
   // suppression de la CHECK SQL. Idempotent : no-op si déjà migré.
@@ -724,4 +729,35 @@ export async function ensureEcrituresCwNumeroPiece(db: DbWrapper): Promise<void>
   await db.exec(
     'CREATE INDEX IF NOT EXISTS idx_ecritures_cw_numero_piece ON ecritures(cw_numero_piece)',
   );
+}
+
+/**
+ * Crée la table d'audit `sync_runs` + index (group_id, started_at DESC)
+ * si absente. Une ligne par cycle de sync incrémental Comptaweb (trigger
+ * 'client' header, 'mcp', ou 'manual'). Statuts portés en TS : 'running'
+ * (expire à 60s), 'ok', 'failed', 'skipped' (throttled / already_running).
+ * Pas de CHECK SQL (cf. AGENTS.md : validation côté code).
+ *
+ * Idempotent. Exporté pour les tests de schéma.
+ */
+export async function ensureSyncRunsSchema(db: DbWrapper): Promise<void> {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS sync_runs (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      status TEXT NOT NULL,
+      trigger TEXT NOT NULL,
+      promoted_to_mirror INTEGER NOT NULL DEFAULT 0,
+      new_drafts INTEGER NOT NULL DEFAULT 0,
+      updated_drafts INTEGER NOT NULL DEFAULT 0,
+      divergent_detected INTEGER NOT NULL DEFAULT 0,
+      error_message TEXT,
+      duration_ms INTEGER,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_runs_group_started
+      ON sync_runs(group_id, started_at DESC);
+  `);
 }
