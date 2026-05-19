@@ -1,5 +1,5 @@
 import { getDb } from '../db';
-import { nextId, currentTimestamp } from '../ids';
+import { currentTimestamp } from '../ids';
 import { nullIfEmpty } from '../utils/form';
 import type { Ecriture, EcritureStatus } from '../types';
 import { isMirrorStatus, pendingStatuses } from './ecritures-status';
@@ -214,58 +214,6 @@ export async function getEcriture({ groupId, scopeUniteId }: EcritureContext, id
      LEFT JOIN cartes ca ON ca.id = e.carte_id
      WHERE ${conditions.join(' AND ')}`,
   ).get<Ecriture>(...values);
-}
-
-export interface CreateEcritureInput {
-  date_ecriture: string;
-  description: string;
-  amount_cents: number;
-  type: 'depense' | 'recette';
-  unite_id?: string | null;
-  category_id?: string | null;
-  mode_paiement_id?: string | null;
-  activite_id?: string | null;
-  numero_piece?: string | null;
-  carte_id?: string | null;
-  justif_attendu?: 0 | 1 | boolean;
-  notes?: string | null;
-}
-
-export async function createEcriture(
-  { groupId }: EcritureContext,
-  input: CreateEcritureInput,
-): Promise<Ecriture> {
-  const db = getDb();
-  const prefix = input.type === 'depense' ? 'DEP' : 'REC';
-  const id = await nextId(prefix);
-  const now = currentTimestamp();
-  const justifAttendu = input.justif_attendu === undefined
-    ? 1
-    : (input.justif_attendu ? 1 : 0);
-
-  await db.prepare(
-    `INSERT INTO ecritures (id, group_id, date_ecriture, description, amount_cents, type, unite_id, category_id, mode_paiement_id, activite_id, numero_piece, carte_id, justif_attendu, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    groupId,
-    input.date_ecriture,
-    input.description,
-    input.amount_cents,
-    input.type,
-    nullIfEmpty(input.unite_id),
-    nullIfEmpty(input.category_id),
-    nullIfEmpty(input.mode_paiement_id),
-    nullIfEmpty(input.activite_id),
-    nullIfEmpty(input.numero_piece),
-    nullIfEmpty(input.carte_id),
-    justifAttendu,
-    nullIfEmpty(input.notes),
-    now,
-    now,
-  );
-
-  return (await db.prepare('SELECT * FROM ecritures WHERE id = ?').get<Ecriture>(id))!;
 }
 
 export interface UpdateEcritureInput {
