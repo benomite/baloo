@@ -19,7 +19,7 @@ Inclure si possible :
 Le projet considère comme **dans le périmètre** :
 
 - L'instance hébergée publiquement [`baloo.benomite.com`](https://baloo.benomite.com) — toute faille permettant un accès non autorisé à des données.
-- Le code de la webapp (`web/`) et du serveur MCP (`compta/`).
+- Le code de la webapp (`web/`), qui sert aussi le serveur MCP via `/api/mcp` (OAuth 2.0).
 - Les scripts d'import (`web/scripts/`) si exposés à un input non maîtrisé.
 
 **Hors périmètre** :

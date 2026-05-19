@@ -1,5 +1,5 @@
 // Bootstrap : crée le groupe + le user initial à partir des variables
-// d'environnement BALOO_* (chargées depuis compta/.env).
+// d'environnement BALOO_* (chargées depuis web/.env.local ou .env racine).
 //
 // Usage :
 //   pnpm bootstrap
@@ -16,7 +16,7 @@ import { currentTimestamp } from '../src/lib/ids';
 function requireEnv(key: string): string {
   const value = process.env[key];
   if (!value) {
-    throw new Error(`Variable ${key} manquante (voir compta/.env.example).`);
+    throw new Error(`Variable ${key} manquante (voir web/.env.example).`);
   }
   return value;
 }

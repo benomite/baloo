@@ -25,8 +25,7 @@ import { registerSyncReferentielsTools } from './tools/sync-referentiels';
 // 1-5 de la Task 2). Le brief Task 2 annonçait 55, mais le compte
 // effectif des tools listés dans les 5 vagues est 54 (Vague 3 = 16
 // tools réels, pas 14 — léger écart de comptage dans le brief sans
-// impact). Décisions actées (cf.
-// `doc/plans/2026-05-18-tools-portage-audit.md` + brief Task 2) :
+// impact). Décisions actées (cf. brief Task 2 du plan Phase 1) :
 //  - 2 tools multipart (`attach_justificatif`, `upload_justificatif_orphan`)
 //    NON portés : l'upload reste UI-only.
 //  - 2 doublons CW (`cw_create_depense`, `cw_create_recette`) NON portés :

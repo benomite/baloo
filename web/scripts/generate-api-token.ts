@@ -3,11 +3,14 @@
  * CLI : génère un token API long-vie pour un user (chantier 4, ADR-014).
  *
  * Usage :
- *   pnpm exec tsx scripts/generate-api-token.ts <user-email> [--name "MCP local"]
+ *   pnpm exec tsx scripts/generate-api-token.ts <user-email> [--name "client xyz"]
  *
- * Le token brut est imprimé sur stdout (à copier dans `compta/.env` sous
- * `BALOO_API_TOKEN=`). Il n'est plus jamais affiché ensuite — seul un hash
- * SHA-256 est stocké en BDD.
+ * Le token brut est imprimé sur stdout (à copier dans le client qui en a
+ * besoin, par exemple un script externe). Il n'est plus jamais affiché
+ * ensuite — seul un hash SHA-256 est stocké en BDD.
+ *
+ * Note : le MCP Baloo s'auth désormais via OAuth (cf. /api/mcp + page
+ * `/moi/connexions`). Ce script reste utile pour un PAT côté script CLI.
  */
 
 import { createApiToken } from '../src/lib/auth/api-tokens';
@@ -17,7 +20,7 @@ import { ensureAuthSchema } from '../src/lib/auth/schema';
 function parseArgs(argv: string[]): { email?: string; name: string } {
   const args = argv.slice(2);
   let email: string | undefined;
-  let name = 'MCP baloo-compta';
+  let name = 'API token';
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--name' && i + 1 < args.length) {
@@ -44,7 +47,7 @@ async function main(): Promise<void> {
 
   if (!row) {
     console.error(`Aucun user actif avec l'email ${email}.`);
-    console.error('Vérifie compta/.env (BALOO_USER_EMAIL) puis lance `cd compta && npm run bootstrap`.');
+    console.error('Vérifie web/.env.local (BALOO_USER_EMAIL) puis lance `pnpm bootstrap` dans web/.');
     process.exit(1);
   }
 
@@ -52,7 +55,7 @@ async function main(): Promise<void> {
 
   console.log(`Token créé pour ${email} ("${name}"). ID interne: ${created.id}`);
   console.log('');
-  console.log('À copier dans compta/.env :');
+  console.log('Token brut (à conserver côté client) :');
   console.log('');
   console.log(`BALOO_API_TOKEN=${created.rawToken}`);
   console.log('');

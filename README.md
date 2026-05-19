@@ -37,7 +37,7 @@ Le projet est mené par un trésorier en exercice. Il est utilisé en production
 - **Budgets par unité** — vue, prévisionnel, répartitions inter-unités (Farfadets, LJ, SG, Pi, Co, Groupe).
 - **Multi-rôles** — trésorier·ère, RG, chef·fe (scopé à son unité), équipier·ère, parent.
 - **PWA mobile + desktop** — installable Chrome / iOS, design system « carnet du trésorier ».
-- **Serveur MCP** — interface ligne de commande via [Claude Code](https://claude.com/claude-code) pour le trésorier (`vue_ensemble`, `create_ecriture`, `cw_list_rapprochement_bancaire`…).
+- **Serveur MCP HTTP** — exposé directement par la webapp via `/api/mcp` (OAuth 2.0), utilisable depuis Claude.ai ou Claude Desktop (`vue_ensemble`, `create_ecriture`, `cw_list_rapprochement_bancaire`…).
 - **Client Comptaweb** — lecture des écritures et lignes bancaires non rapprochées (avec sous-lignes DSP2 enrichies).
 
 ## Stack
@@ -47,7 +47,7 @@ Le projet est mené par un trésorier en exercice. Il est utilisé en production
 - **Auth** : NextAuth v5, magic link email (Resend).
 - **Stockage fichiers** : Vercel Blob (privé, signed URLs).
 - **Hébergement** : Vercel.
-- **MCP** : [Model Context Protocol](https://modelcontextprotocol.io/) via stdio, client HTTP de la webapp.
+- **MCP** : [Model Context Protocol](https://modelcontextprotocol.io/) via Streamable HTTP (`/api/mcp`), auth OAuth 2.0 + Dynamic Client Registration.
 
 ## Quick start
 
@@ -64,14 +64,12 @@ cp .env.example .env.local       # remplir AUTH_SECRET, TURSO_*, RESEND_API_KEY.
 pnpm bootstrap                    # crée la BDD + groupe démo
 pnpm dev                          # http://localhost:3000
 
-# 2. Serveur MCP (optionnel, pour Claude Code)
-cd ../compta
-cp .env.example .env
-$EDITOR .env                      # remplir BALOO_API_URL + BALOO_API_TOKEN
-npm install && npm start
+# 2. Serveur MCP (servi par la webapp à /api/mcp)
+# Rien à faire en local : pnpm dev sert aussi /api/mcp.
+# En prod, l'URL publique est https://baloo.benomite.com/api/mcp.
 ```
 
-Pour utiliser Baloo depuis Claude Code, assurez-vous que `.mcp.json` référence bien le serveur `compta`. Génération du token API : `cd web && pnpm exec tsx scripts/generate-api-token.ts <email>`.
+Pour utiliser Baloo depuis Claude.ai (ou Claude Desktop), ajouter un connecteur custom pointant sur `https://baloo.benomite.com/api/mcp` — le flow OAuth se déclenche automatiquement. Cf. [`doc/integrations.md`](doc/integrations.md).
 
 ## Structure du projet
 
@@ -81,7 +79,6 @@ baloo/
 │   ├── src/app/        # Routes App Router (auth /(app), publique racine)
 │   ├── src/lib/        # Services métier, auth, BDD
 │   └── scripts/        # Bootstrap, imports, migrations
-├── compta/             # Serveur MCP TypeScript (client HTTP de l'API webapp)
 ├── doc/                # Vision, architecture, ADRs, roadmap, specs
 ├── sgdf-core/          # Connaissances génériques SGDF (glossaire, process)
 ├── skills/             # Process métier (format « skill » Claude Code)

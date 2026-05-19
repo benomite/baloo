@@ -1,11 +1,13 @@
-// Source auxiliaire de variables d'environnement : compta/.env est déjà
-// maintenu pour le serveur MCP ; plutôt que de dupliquer les credentials
-// Comptaweb et BALOO_* dans web/.env.local, on les lit depuis compta/.env.
-// On charge aussi le `.env` racine (qui contient AIRTABLE_PAT,
-// GOOGLE_OAUTH_*, etc. utilisés par les MCP). À appeler au tout début
-// des server actions / scripts qui en ont besoin.
+// Source auxiliaire de variables d'environnement : on charge le `.env`
+// racine (qui contient AIRTABLE_PAT, GOOGLE_OAUTH_*, etc. utilisés par
+// les MCP externes) en complément des variables déjà présentes dans
+// `process.env`. À appeler au tout début des server actions / scripts
+// qui en ont besoin.
 //
-// TODO : supprimer ce helper quand on aura un paquet partagé.
+// Historique : ce helper chargeait aussi `compta/.env` du temps où le
+// MCP `baloo-compta` standalone existait. Le dossier `compta/` a été
+// supprimé (Phase 1 du pivot V1) — les vars Comptaweb et BALOO_*
+// vivent désormais dans `web/.env.local` ou dans les env vars Vercel.
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -49,12 +51,12 @@ export function ensureComptawebEnv(): void {
   // existent — additif, pas exclusif. Les vars déjà set dans
   // process.env (vraies env vars système) ne sont jamais écrasées.
   const candidates = [
-    // compta/.env (Comptaweb credentials, BALOO_*)
-    resolve(process.cwd(), 'compta/.env'),
-    resolve(process.cwd(), '../compta/.env'),
     // .env racine (Airtable PAT, Google OAuth, etc.)
     resolve(process.cwd(), '.env'),
     resolve(process.cwd(), '../.env'),
+    // web/.env.local (Comptaweb credentials, BALOO_*, en dev local)
+    resolve(process.cwd(), '.env.local'),
+    resolve(process.cwd(), 'web/.env.local'),
   ];
   for (const path of candidates) {
     loadEnvFile(path);
