@@ -11,6 +11,12 @@ import { registerCarteTools } from './tools/cartes';
 import { registerNoteTools } from './tools/notes';
 import { registerTodoTools } from './tools/todos';
 import { registerBudgetTools } from './tools/budgets';
+import { registerCaisseTools } from './tools/caisse';
+import { registerChequesTools } from './tools/cheques';
+import { registerDepotsEspecesTools } from './tools/depots-especes';
+import { registerAbandonTools } from './tools/abandons';
+import { registerRemboursementTools } from './tools/remboursements';
+import { registerJustificatifTools } from './tools/justificatifs';
 
 // Compteur cible Phase 1 : 55 tools (3 historiques + 52 portés dans la
 // Task 2 du pivot miroir strict). Décisions actées (cf.
@@ -39,4 +45,12 @@ export function registerAllTools(server: McpServer, ctx: McpContext): void {
   registerNoteTools(server, ctx);
   registerTodoTools(server, ctx);
   registerBudgetTools(server, ctx);
+
+  // Vague 3 — Workflows opérationnels (14 tools)
+  registerCaisseTools(server, ctx);
+  registerChequesTools(server, ctx);
+  registerDepotsEspecesTools(server, ctx);
+  registerAbandonTools(server, ctx);
+  registerRemboursementTools(server, ctx);
+  registerJustificatifTools(server, ctx);
 }
