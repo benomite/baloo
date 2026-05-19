@@ -11,7 +11,9 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['src/**/*.test.ts'],
+    // .test.ts (node par défaut) + .test.tsx (jsdom via `// @vitest-environment jsdom`
+    // en tête de chaque fichier UI — évite de payer le coût jsdom sur tous les tests).
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     environment: 'node',
   },
 });

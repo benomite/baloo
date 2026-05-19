@@ -16,6 +16,7 @@ import { jsonError, parseJsonBody, requireApiContext } from '@/lib/api/route-hel
 import { resolveStatusFilter } from './status-filter';
 import { ensureComptawebEnv } from '@/lib/comptaweb/env-loader';
 import { loadConfig } from '@/lib/comptaweb/auth';
+import { defaultCwScraper } from '@/lib/services/ecritures-create-cw-adapter';
 
 ensureComptawebEnv();
 
@@ -113,10 +114,11 @@ export async function POST(request: Request) {
     const result = await createEcritureAndPushToCw(getDb(), {
       payload,
       group_id: groupId,
-      // cwScraper non fourni : Task 8 fournira l'adapter Baloo → CW.
-      // En attendant, le service rétrograde l'écriture en `draft` et
-      // throw `CwPushFailedError` — capté ci-dessous pour renvoyer
-      // 502 avec ecriture_id.
+      // Adapter Baloo → CW (Task 8) : résout category_id → natureId,
+      // mode_paiement_id → modetransactionId, etc., puis appelle le
+      // scraper bas niveau `createEcriture`. Si un mapping CW manque,
+      // l'adapter throw → caller voit un 502 avec un message explicite.
+      cwScraper: defaultCwScraper,
       cwConfigLoader: loadConfig,
     });
     return Response.json({ ok: true, ecriture: result }, { status: 201 });
