@@ -1272,4 +1272,58 @@ Baloo cesse de dupliquer Comptaweb et devient son **companion**. Cinq points act
 
 ---
 
+## ADR-032 — Sync incrémentale Comptaweb client-piloté
+
+**Date** : 2026-05-19
+**Statut** : Acté
+**Contexte** : Phase 2 du pivot V1 ([`specs/2026-05-19-baloo-sync-incremental-design.md`](specs/2026-05-19-baloo-sync-incremental-design.md), livrée via [`plans/2026-05-19-baloo-sync-incremental-phase-2.md`](plans/2026-05-19-baloo-sync-incremental-phase-2.md)).
+
+### Décision
+
+Quatre points actés :
+
+1. **Pas de cron, pas de fire-and-forget : sync client-piloté.** Un composant client `<SyncStatusButton>` monté dans le footer sidebar (admins uniquement) prend la responsabilité de l'orchestration côté navigateur :
+   - Mount → GET `/api/sync/status`
+   - Si stale (>15 min) → POST `/api/sync/run` automatique
+   - Pendant un run en cours → poll status toutes les 2 s
+   - Run fini → `router.refresh()` pour re-render des server components
+   - Refetch au retour de focus de l'onglet (Visibility API)
+
+   Côté MCP, le tool `sync_run` est explicite : un agent qui veut une sync fraîche l'invoque. Le helper `withSyncFresh(groupId, fn)` est exporté mais **non câblé** par défaut sur les tools comptables (`list_ecritures`, `vue_ensemble`, `cw_list_rapprochement_bancaire`) : ajouter 5-15 s sur chaque appel MCP serait nuisible vs la valeur d'une donnée 100 % fraîche. Wrap automatique à réévaluer post-Phase 3 dogfood selon le ressenti.
+
+2. **`scrapeListeEcritures(/recettedepense?m=1)` est le canal de matching mirror** (option B retenue lors du design). On parse la liste complète CW visible (un mois en général) plutôt que de se limiter au rapprochement bancaire. Robustesse : on chope aussi les écritures déjà rapprochées côté CW, qui disparaissent de `listRapprochementBancaire`. Phase 1 stocke `cw_numero_piece = String(ecritureId)` (id interne CW, faute du vrai numéro de pièce) ; la promotion Phase 2 **enrichit** ce champ avec le vrai `numeroPiece` (ECR-YYYY-N) après match, rendant l'identifiant lisible côté UI.
+
+3. **Verrou + throttle par `group_id`**. Chaque groupe = ses propres credentials CW = sa propre fenêtre. La table `sync_runs` indexe `(group_id, started_at DESC)`. Throttle 15 min basé sur le dernier run `status='ok'.finished_at` (les `failed` et `skipped` ne réinitialisent pas la fenêtre, sinon un run cassé bloquerait tout). Verrou 60 s sur les runs `status='running'` (au-delà = zombie, on laisse passer). `force=true` bypass le throttle **mais pas le verrou** (sécurité concurrence).
+
+4. **Audit `sync_runs` à granularité par cycle**. Colonnes : `status` (running/ok/failed/skipped), `trigger` (client/mcp/manual), counts (`promoted_to_mirror`, `new_drafts`, `updated_drafts`, `divergent_detected`), `error_message`, `duration_ms`. Pas de CHECK SQL (validation côté code cf. AGENTS.md). Un warning stale `pending_sync > 1h` est stocké dans `error_message` sans marquer `failed` — c'est un signal, pas une erreur.
+
+### Alternatives écartées
+
+| Approche | Pourquoi écartée |
+|---|---|
+| Vercel Cron qui sync toutes les X min | Burn de quota inutile quand personne n'est connecté ; latence d'observation côté user (faut attendre que le cron tape). Le client-piloté aligne sync sur intention. |
+| `after()` server-side + signal SSE/poll → client | Complexité : 2 sources de vérité (serveur peut spawner, client peut spawner) + nécessite un mécanisme de signal. Le client-piloté supprime cette ambiguïté. |
+| Wrap automatique de tous les tools MCP comptables | Tools fréquents (`list_ecritures`) deviendraient lents 1/10 fois. Plus pragmatique : l'agent appelle `sync_run` quand il en a besoin, et `sync_status` pour vérifier la fraîcheur. |
+| Matching mirror sur rapprochement bancaire seulement (option A) | Une écriture rapprochée côté CW disparaît de `listRapprochementBancaire` → on rate la promotion → écriture bloquée en `pending_sync` indéfiniment. `scrapeListeEcritures` règle ça. |
+| Verrou global (pas par groupe) | Multi-tenant impose l'isolation. Mono-tenant en pratique aujourd'hui, mais préparé pour Phase 3. |
+
+### Conséquences
+
+- **Migration BDD prod au cold start** : `ensureSyncRunsSchema` ajoute la table + index. Idempotente (pattern `business-schema.ts`).
+- **API surface** : `POST /api/sync/run` (202/429/500), `GET /api/sync/status`, ADMIN_ROLES uniquement. Tools MCP `sync_run` + `sync_status` (total 59).
+- **Tests** : +55 tests vs Phase 1 (268 → 323). Couvre schema BDD, scraper liste CW (avec fixture locale gitignored + HTML inline synthétique pour CI), orchestrateur (throttle/verrou, promotion mirror, divergent, drafts orphelins, stale, isolation multi-groupes), tools MCP (sentinelles + withSyncFresh), composant client (auto-mount, force, 429, échec).
+- **Phase 3 prévue** : dogfood 2 semaines en MCP-only. Critères de friction à observer :
+  - Stale `pending_sync` durables (faudra peut-être réviser le matching) ?
+  - Tools MCP comptables sans sync auto : douloureux ou non ?
+  - Divergents détectés en masse ?
+- **Phase 4 prévue** : cartes dashboard `/` s'appuieront sur `sync_runs` (dernier sync, divergents à arbitrer, stale pending_sync).
+- **Limitations connues** :
+  - `scrapeListeEcritures` voit la "période active" CW, pas l'exercice complet. Une écriture vieille de plusieurs mois rapprochée et plus visible dans la liste = non promue. Acceptable pour les `pending_sync` créées récemment.
+  - Le scraper n'a pas été stress-testé sur les refontes UI CW. Mitigation : critère de détection robuste (signature `<th>` Dépense + Recette + pièce) + log explicite via journal d'erreurs si la table devient introuvable.
+  - La détection divergent ne tourne que sur les `pending_sync` matchés au cycle ; pas de balayage rétroactif des `mirror` historiques (à faire en Phase 4 si dérive observée).
+
+**Liens** : Commits Phase 2 sur `feat/phase-2-sync-incremental`, du commit `3edc8c7` (doc) au commit `e66605f` (UI). Code clé : `web/src/lib/services/sync-cycle.ts`, `web/src/lib/comptaweb/ecritures-list-scrape.ts`, `web/src/components/sync/sync-status-button.tsx`, `web/src/lib/mcp/tools/sync.ts`, `web/src/lib/db/business-schema.ts` (table `sync_runs`). Spec : [`specs/2026-05-19-baloo-sync-incremental-design.md`](specs/2026-05-19-baloo-sync-incremental-design.md). Plan : [`plans/2026-05-19-baloo-sync-incremental-phase-2.md`](plans/2026-05-19-baloo-sync-incremental-phase-2.md).
+
+---
+
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*

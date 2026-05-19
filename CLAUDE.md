@@ -55,6 +55,10 @@ Le MCP Baloo expose les outils suivants :
 **Client Comptaweb** :
 - `cw_list_rapprochement_bancaire` — lignes bancaires non rapprochées et écritures comptables non rapprochées, avec sous-lignes DSP2.
 
+**Sync incrémentale Comptaweb** (Phase 2 pivot miroir strict — ADR-032) :
+- `sync_run({force?})` — lance un cycle de sync : promeut les `pending_sync` en `mirror` par match `cw_numero_piece`, maintient les drafts depuis les lignes bancaires non rapprochées, détecte les divergents. Throttle 15 min par défaut (bypass via `force=true`). Verrou running < 60 s par groupe.
+- `sync_status()` — état courant : dernier run, is_running, stale, throttle_until. Utile pour décider si appeler `sync_run` avant un autre tool comptable.
+
 Les montants sont en centimes dans la base, affichés en format français (`42,50 €`). Quand tu passes un montant à un outil, utilise le format `"42,50"`.
 
 ## Échéances structurantes de l'année
