@@ -3,75 +3,13 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  BookOpen,
-  Calculator,
   CircleHelp,
-  Coins,
-  Gift,
-  HandCoins,
-  Home,
-  Inbox,
-  Mail,
-  Paperclip,
-  ShieldAlert,
-  TrendingUp,
   type LucideIcon,
 } from 'lucide-react';
 import { InstallButton } from '@/components/pwa/install-button';
 import { SyncStatusButton } from '@/components/sync/sync-status-button';
 import { cn } from '@/lib/utils';
-
-interface NavItem {
-  href: string;
-  label: string;
-  icon: LucideIcon;
-  roles?: string[];
-  // Identifiant logique pour brancher un compteur depuis l'extérieur
-  // (cf. `inboxCount` dans la prop du Sidebar).
-  badgeKey?: 'inbox';
-}
-
-interface NavSection {
-  title: string;
-  items: NavItem[];
-}
-
-const SECTIONS: NavSection[] = [
-  {
-    title: '',
-    items: [{ href: '/', label: 'Accueil', icon: Home }],
-  },
-  {
-    title: 'Comptabilité',
-    items: [
-      { href: '/inbox', label: 'Inbox', icon: Inbox, roles: ['tresorier', 'RG'], badgeKey: 'inbox' },
-      { href: '/ecritures', label: 'Écritures', icon: BookOpen },
-      { href: '/caisse', label: 'Caisse', icon: Coins, roles: ['tresorier', 'RG'] },
-      { href: '/synthese', label: 'Synthèse', icon: TrendingUp, roles: ['tresorier', 'RG', 'chef'] },
-      { href: '/budgets', label: 'Budget', icon: Calculator, roles: ['tresorier', 'RG'] },
-    ],
-  },
-  {
-    title: 'Demandes',
-    items: [
-      { href: '/remboursements', label: 'Remboursements', icon: HandCoins },
-      { href: '/abandons', label: 'Dons au groupe', icon: Gift, roles: ['tresorier', 'RG'] },
-    ],
-  },
-  {
-    title: 'Espace chef',
-    items: [
-      { href: '/depot', label: 'Déposer un justif', icon: Paperclip, roles: ['tresorier', 'RG', 'chef', 'equipier'] },
-    ],
-  },
-  {
-    title: 'Administration',
-    items: [
-      { href: '/admin/invitations', label: 'Membres', icon: Mail, roles: ['tresorier', 'RG'] },
-      { href: '/admin/errors', label: 'Journal d\'erreurs', icon: ShieldAlert, roles: ['tresorier', 'RG'] },
-    ],
-  },
-];
+import { DESKTOP_GROUPS, visibleItemsForRole } from './nav-config';
 
 interface SidebarProps {
   role: string;
@@ -80,7 +18,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ role, groupName, inboxCount = 0 }: SidebarProps) {
-  const counts: Record<NonNullable<NavItem['badgeKey']>, number> = {
+  const counts: Record<'inbox', number> = {
     inbox: inboxCount,
   };
 
@@ -116,21 +54,14 @@ export function Sidebar({ role, groupName, inboxCount = 0 }: SidebarProps) {
 
       {/* Sections */}
       <nav className="flex-1 overflow-y-auto px-2 pb-4 [scrollbar-gutter:stable]">
-        {SECTIONS.map((section, idx) => {
-          const items = section.items.filter((i) => !i.roles || i.roles.includes(role));
+        {DESKTOP_GROUPS.map((group) => {
+          const items = visibleItemsForRole(group.items, role);
           if (items.length === 0) return null;
-          // Section sans titre (Accueil) : pas de label muted ni d'espace.
-          const hasTitle = section.title.length > 0;
           return (
-            <div
-              key={section.title || `section-${idx}`}
-              className={cn(hasTitle ? 'mt-5 first:mt-1' : 'mt-1')}
-            >
-              {hasTitle && (
-                <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-subtle">
-                  {section.title}
-                </div>
-              )}
+            <div key={group.intent} className="mt-5 first:mt-1">
+              <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-subtle">
+                {group.title}
+              </div>
               <ul className="space-y-0.5">
                 {items.map((item) => (
                   <li key={item.href}>
