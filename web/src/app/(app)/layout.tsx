@@ -1,5 +1,5 @@
 import { Sidebar } from '@/components/layout/sidebar';
-import { MobileNav } from '@/components/layout/mobile-nav';
+import { MobileShell } from '@/components/layout/mobile-shell';
 import { HelpFooter } from '@/components/layout/help-footer';
 import { getCurrentContext } from '@/lib/context';
 import { countInboxItems } from '@/lib/queries/inbox';
@@ -24,11 +24,11 @@ export default async function AuthenticatedLayout({ children }: { children: Reac
     // main en dessous. `lg:flex-row` sur desktop : sidebar à gauche,
     // main à droite.
     <div className="flex flex-col lg:flex-row flex-1 min-w-0">
-      {/* Top-bar mobile + drawer (<lg). Sur lg+ ses éléments sont
+      {/* Top-bar mobile + drawer + bottom-nav (<lg). Sur lg+ ses éléments sont
           tous `lg:hidden` donc consomment 0 espace. */}
-      <MobileNav>
+      <MobileShell role={ctx.role}>
         <Sidebar role={ctx.role} inboxCount={inboxCount} />
-      </MobileNav>
+      </MobileShell>
 
       {/* Sidebar fixe desktop (lg+) */}
       <aside className="hidden lg:flex lg:flex-col lg:w-[260px] lg:shrink-0 border-r border-border bg-bg-sunken/60">
@@ -36,7 +36,7 @@ export default async function AuthenticatedLayout({ children }: { children: Reac
       </aside>
 
       {/* Contenu principal */}
-      <main className="flex-1 overflow-auto px-4 py-5 lg:px-8 lg:py-7 min-w-0">
+      <main className="flex-1 overflow-auto px-4 py-5 lg:px-8 lg:py-7 pb-20 lg:pb-7 min-w-0">
         {children}
         <div className="max-w-6xl mx-auto">
           <HelpFooter groupId={ctx.groupId} selfEmail={ctx.email} />

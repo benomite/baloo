@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -11,28 +11,25 @@ import { cn } from '@/lib/utils';
 // inline par le layout, sur mobile ce wrapper la masque dans un
 // drawer overlay.
 //
-// L'état "open" est local. Le drawer se ferme automatiquement au
-// changement de page (utile pour les liens de la sidebar).
+// L'état "open" est contrôlé par le parent via `open` / `onOpenChange`.
+// Le drawer se ferme automatiquement au changement de page (utile pour
+// les liens de la sidebar).
 
 interface MobileNavProps {
   /** Le `<Sidebar>` complet — on le rend dans le drawer. */
   children: React.ReactNode;
   /** Logo / titre dans la top-bar mobile (ex: "Baloo"). */
   brand?: React.ReactNode;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
 }
 
-export function MobileNav({ children, brand }: MobileNavProps) {
-  const [open, setOpen] = useState(false);
+export function MobileNav({ children, brand, open, onOpenChange }: MobileNavProps) {
   const pathname = usePathname();
 
-  // Fermer automatiquement au changement de route. Le linter
-  // (`react-hooks/set-state-in-effect`) signale ce pattern, mais ici
-  // c'est explicitement ce qu'on veut : un effet de bord côté UI sur
-  // la navigation, pas un setState pendant le rendu.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setOpen(false);
-  }, [pathname]);
+  // Fermer automatiquement au changement de route.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { onOpenChange(false); }, [pathname]);
 
   // Bloquer le scroll du body quand le drawer est ouvert.
   useEffect(() => {
@@ -48,11 +45,11 @@ export function MobileNav({ children, brand }: MobileNavProps) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') onOpenChange(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -67,7 +64,7 @@ export function MobileNav({ children, brand }: MobileNavProps) {
         <div className="flex h-12 items-center gap-3 px-4">
           <button
             type="button"
-            onClick={() => setOpen(true)}
+            onClick={() => onOpenChange(true)}
             aria-label="Ouvrir le menu"
             className="-ml-1.5 p-1.5 rounded-md text-fg-muted hover:text-fg hover:bg-fg/[0.05] transition-colors"
           >
@@ -90,7 +87,7 @@ export function MobileNav({ children, brand }: MobileNavProps) {
         {/* Overlay click-outside */}
         <div
           className="absolute inset-0 bg-fg/40 backdrop-blur-[2px]"
-          onClick={() => setOpen(false)}
+          onClick={() => onOpenChange(false)}
         />
 
         {/* Drawer slide-in */}
@@ -106,7 +103,7 @@ export function MobileNav({ children, brand }: MobileNavProps) {
           {/* Bouton fermer en haut à droite du drawer */}
           <button
             type="button"
-            onClick={() => setOpen(false)}
+            onClick={() => onOpenChange(false)}
             aria-label="Fermer le menu"
             className="absolute top-3 right-3 z-10 p-1.5 rounded-md text-fg-muted hover:text-fg hover:bg-fg/[0.05] transition-colors"
           >
