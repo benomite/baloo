@@ -35,7 +35,7 @@ export function BottomNav({ role, onOpenMore }: BottomNavProps) {
           return (
             <li key={tab.key} className="flex-1 text-center">
               {isPlus ? (
-                <button type="button" onClick={onOpenMore} aria-label="Plus d options" className="w-full">
+                <button type="button" onClick={onOpenMore} aria-label="Plus d'options" className="w-full">
                   {inner}
                 </button>
               ) : (

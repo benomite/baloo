@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { BottomNav } from './bottom-nav';
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/' }));
@@ -25,5 +25,12 @@ describe('<BottomNav>', () => {
   it('trésorier voit l onglet Plus', () => {
     render(<BottomNav role="tresorier" />);
     expect(screen.getByText('Plus')).toBeTruthy();
+  });
+
+  it('le clic sur Plus déclenche onOpenMore (ouvre le drawer)', () => {
+    const onOpenMore = vi.fn();
+    render(<BottomNav role="tresorier" onOpenMore={onOpenMore} />);
+    fireEvent.click(screen.getByLabelText("Plus d'options"));
+    expect(onOpenMore).toHaveBeenCalledTimes(1);
   });
 });
