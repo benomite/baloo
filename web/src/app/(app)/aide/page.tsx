@@ -90,7 +90,7 @@ export default async function AidePage() {
               </Step>
               <Step icon={Gift} title="Remplis ta demande sur Baloo">
                 Va sur{' '}
-                <CodeLink href="/moi/abandons/nouveau">/moi/abandons/nouveau</CodeLink>. Tu
+                <CodeLink href="/abandons/nouveau">/abandons/nouveau</CodeLink>. Tu
                 renseignes la nature, le montant total, la date. Tu joins le PDF signé et les
                 justificatifs.
               </Step>

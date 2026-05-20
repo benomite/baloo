@@ -95,19 +95,12 @@ export default async function AbandonsPage({
         }
         actions={
           <div className="flex flex-wrap gap-2">
-            <Link href="/moi/abandons/nouveau">
+            <Link href="/abandons/nouveau">
               <Button size="sm">
                 <Plus size={14} strokeWidth={2.25} className="mr-1" />
                 Nouveau don
               </Button>
             </Link>
-            {isAdmin && (
-              <Link href="/abandons/nouveau">
-                <Button size="sm" variant="outline">
-                  Saisir pour autrui
-                </Button>
-              </Link>
-            )}
           </div>
         }
       />
@@ -156,7 +149,7 @@ export default async function AbandonsPage({
                 : "Si tu as avancé des frais et que tu veux faire un don plutôt que te faire rembourser, déclare-le ici — tu recevras un reçu fiscal CERFA qui ouvre droit à une réduction d'impôt sur le revenu (art 200 CGI)."
             }
             action={
-              <Link href="/moi/abandons/nouveau">
+              <Link href="/abandons/nouveau">
                 <Button size="sm">Déclarer un abandon</Button>
               </Link>
             }

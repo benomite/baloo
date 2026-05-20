@@ -284,7 +284,7 @@ function QuickActions() {
       icon: HandCoins,
     },
     {
-      href: '/moi/abandons/nouveau',
+      href: '/abandons/nouveau',
       label: 'Faire un don au groupe',
       description: 'Renoncer au remboursement → reçu fiscal CERFA pour défiscaliser.',
       icon: Gift,

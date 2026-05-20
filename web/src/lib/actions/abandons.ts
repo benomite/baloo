@@ -77,150 +77,15 @@ async function attachFile(
   );
 }
 
-export async function createMyAbandon(formData: FormData): Promise<void> {
+// Saisie d'un abandon depuis le formulaire unifie /abandons/nouveau.
+// L'identite du donateur est lue dans le formData (champs prenom/nom/email),
+// prepopulee cote serveur avec le user connecte mais modifiable dans le form.
+// Roles autorises : tous sauf parent. Les fichiers (feuille + justifs) sont
+// optionnels — le cas admin (rattrapage d'historique) n'a pas toujours les docs.
+export async function createAbandon(formData: FormData): Promise<void> {
   const ctx = await getCurrentContext();
   if (ctx.role === 'parent') {
-    redirect('/?error=' + encodeURIComponent('Action non autorisée pour ton rôle.'));
-  }
-
-  // La feuille d'abandon signée (xlsx complété ou PDF scanné) est
-  // obligatoire — c'est le document que l'admin enverra au national.
-  const feuille = pickFile(formData, 'feuille');
-  if (!feuille) {
-    redirect(
-      '/moi/abandons/nouveau?error=' +
-        encodeURIComponent('Feuille d’abandon signée requise (xlsx ou PDF).'),
-    );
-  }
-  // Au moins un justificatif (tickets, factures, photos).
-  const justifs = pickFiles(formData, 'justifs');
-  if (justifs.length === 0) {
-    redirect(
-      '/moi/abandons/nouveau?error=' +
-        encodeURIComponent('Au moins un justificatif (ticket, facture) est requis.'),
-    );
-  }
-
-  // Validation des fichiers (taille / mime).
-  try {
-    validateJustifAttachment({
-      filename: feuille.name,
-      size: feuille.size,
-      mime_type: feuille.type || null,
-    });
-    for (const j of justifs) {
-      validateJustifAttachment({ filename: j.name, size: j.size, mime_type: j.type || null });
-    }
-  } catch (err) {
-    if (err instanceof JustificatifValidationError) {
-      redirect('/moi/abandons/nouveau?error=' + encodeURIComponent(err.message));
-    }
-    throw err;
-  }
-
-  const nature = ((formData.get('nature') as string | null)?.trim()) ?? '';
-  const dateDepense = (formData.get('date_depense') as string | null) ?? '';
-  const amountRaw = (formData.get('montant') as string | null)?.trim() ?? '';
-
-  if (!nature) {
-    redirect(
-      '/moi/abandons/nouveau?error=' + encodeURIComponent('Nature de la dépense requise.'),
-    );
-  }
-  if (!dateDepense) {
-    redirect('/moi/abandons/nouveau?error=' + encodeURIComponent('Date requise.'));
-  }
-  let amount_cents: number;
-  try {
-    amount_cents = parseAmount(amountRaw);
-  } catch {
-    redirect(
-      '/moi/abandons/nouveau?error=' +
-        encodeURIComponent(`Montant invalide : "${amountRaw}".`),
-    );
-  }
-
-  // Année fiscale = année de la date de la dépense (format YYYY).
-  const anneeFiscale = dateDepense.slice(0, 4);
-
-  // Le donateur est le user connecté. On garde le champ legacy
-  // `donateur` (concaténation prénom + nom) en plus des champs séparés
-  // pour ne pas casser les écrans qui n'ont pas encore migré.
-  const fullName = ctx.name ?? ctx.email;
-  const [firstFromName, ...restFromName] = fullName.split(/\s+/);
-  const prenom = firstFromName ?? null;
-  const nom = restFromName.length > 0 ? restFromName.join(' ') : null;
-
-  let created;
-  try {
-    created = await createAbandonService(
-      { groupId: ctx.groupId },
-      {
-        donateur: fullName,
-        prenom,
-        nom,
-        email: ctx.email,
-        amount_cents,
-        date_depense: dateDepense,
-        nature,
-        unite_id: ctx.scopeUniteId || (formData.get('unite_id') as string | null) || null,
-        annee_fiscale: anneeFiscale,
-        notes: (formData.get('notes') as string | null)?.trim() || null,
-        submitted_by_user_id: ctx.userId,
-      },
-    );
-  } catch (err) {
-    redirect(
-      '/moi/abandons/nouveau?error=' +
-        encodeURIComponent(err instanceof Error ? err.message : String(err)),
-    );
-  }
-
-  // Attache feuille (entity_type='abandon_feuille') + justifs
-  // (entity_type='abandon'). Si l'attache échoue on log mais on ne
-  // bloque pas — la demande est créée, l'admin pourra ajouter à la
-  // main depuis la page détail.
-  try {
-    await attachFile(ctx.groupId, 'abandon_feuille', created.id, feuille);
-    for (const j of justifs) {
-      await attachFile(ctx.groupId, 'abandon', created.id, j);
-    }
-  } catch (err) {
-    console.error('[abandons] Attache fichiers échouée :', err);
-  }
-
-  // Notif admins.
-  const admins = (await listAdminEmails(ctx.groupId)).filter((e) => e !== ctx.email);
-  if (admins.length > 0) {
-    try {
-      await sendAbandonCreatedEmail({
-        to: admins,
-        abandonId: created.id,
-        donateur: created.donateur,
-        natureDescription: created.nature,
-        amountCents: created.amount_cents,
-        dateDepense: created.date_depense,
-        appUrl: await deriveAppUrl(),
-      });
-    } catch (err) {
-      console.error('[abandons] Notif admins échouée :', err);
-    }
-  }
-
-  revalidatePath('/');
-  revalidatePath('/abandons');
-  redirect('/?abandon_created=' + encodeURIComponent(created.id));
-}
-
-// Saisie d'un abandon "pour autrui" par un admin (trésorier / RG).
-// Cas d'usage : rattrapage d'historique (demandes déjà signées sur
-// papier, pas encore en BDD), ou aide aux donateurs qui ne peuvent
-// pas se connecter eux-mêmes. Distinct de `createMyAbandon` qui lit
-// l'identité depuis la session du user connecté.
-export async function createAbandonForOther(formData: FormData): Promise<void> {
-  const ctx = await getCurrentContext();
-  if (!ADMIN_ROLES.includes(ctx.role)) {
-    redirect('/abandons?error=' + encodeURIComponent('Action réservée aux trésoriers / RG.'));
+    redirect('/abandons/nouveau?error=' + encodeURIComponent('Action non autorisee pour ton role.'));
   }
 
   const feuille = pickFile(formData, 'feuille');
@@ -256,10 +121,8 @@ export async function createAbandonForOther(formData: FormData): Promise<void> {
     );
   }
 
-  // Validation des fichiers (taille / mime). La feuille et les justifs
-  // sont optionnels en mode admin (rattrapage : on a parfois juste la
-  // photo de la fiche signée, parfois rien — on saisit pour ne pas
-  // perdre l'info, on attache après).
+  // Validation des fichiers (taille / mime). Feuille et justifs sont optionnels
+  // (rattrapage d'historique : on saisit pour ne pas perdre l'info, on attache apres).
   try {
     if (feuille) {
       validateJustifAttachment({
@@ -278,6 +141,7 @@ export async function createAbandonForOther(formData: FormData): Promise<void> {
     throw err;
   }
 
+  // Annee fiscale = annee de la date de la depense (format YYYY).
   const anneeFiscale = dateDepense.slice(0, 4);
   const fullName = `${prenom} ${nom}`;
 
@@ -293,12 +157,12 @@ export async function createAbandonForOther(formData: FormData): Promise<void> {
         amount_cents,
         date_depense: dateDepense,
         nature,
-        unite_id: (formData.get('unite_id') as string | null) || null,
+        unite_id: ctx.scopeUniteId || (formData.get('unite_id') as string | null) || null,
         annee_fiscale: anneeFiscale,
         notes: (formData.get('notes') as string | null)?.trim() || null,
-        // Pas de submitted_by_user_id : ce n'est pas le donateur qui
-        // a soumis, c'est l'admin qui a saisi pour lui.
-        submitted_by_user_id: null,
+        // Le user connecte a soumis la demande (meme si le donateur designe
+        // est une autre personne — cas admin saisie pour autrui).
+        submitted_by_user_id: ctx.userId,
       },
     );
   } catch (err) {
@@ -308,6 +172,9 @@ export async function createAbandonForOther(formData: FormData): Promise<void> {
     );
   }
 
+  // Attache feuille (entity_type='abandon_feuille') + justifs (entity_type='abandon').
+  // Si l'attache echoue on log mais on ne bloque pas — la demande est creee,
+  // l'admin pourra ajouter a la main depuis la page detail.
   try {
     if (feuille) {
       await attachFile(ctx.groupId, 'abandon_feuille', created.id, feuille);
@@ -316,11 +183,30 @@ export async function createAbandonForOther(formData: FormData): Promise<void> {
       await attachFile(ctx.groupId, 'abandon', created.id, j);
     }
   } catch (err) {
-    console.error('[abandons] Attache fichiers échouée :', err);
+    console.error('[abandons] Attache fichiers echouee :', err);
   }
 
+  // Notif admins (hors le declarant lui-meme s'il est deja admin).
+  const admins = (await listAdminEmails(ctx.groupId)).filter((e) => e !== ctx.email);
+  if (admins.length > 0) {
+    try {
+      await sendAbandonCreatedEmail({
+        to: admins,
+        abandonId: created.id,
+        donateur: created.donateur,
+        natureDescription: created.nature,
+        amountCents: created.amount_cents,
+        dateDepense: created.date_depense,
+        appUrl: await deriveAppUrl(),
+      });
+    } catch (err) {
+      console.error('[abandons] Notif admins echouee :', err);
+    }
+  }
+
+  revalidatePath('/');
   revalidatePath('/abandons');
-  redirect(`/abandons/${created.id}?updated=1`);
+  redirect('/?abandon_created=' + encodeURIComponent(created.id));
 }
 
 async function transitionAbandon(
