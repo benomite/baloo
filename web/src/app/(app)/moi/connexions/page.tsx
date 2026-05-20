@@ -16,19 +16,77 @@ export default async function ConnexionsPage() {
   return (
     <main className="mx-auto max-w-3xl p-6 space-y-8">
       <header>
-        <h1 className="text-2xl font-bold">Connexions externes</h1>
+        <h1 className="text-2xl font-bold">🤖 Pilote ta compta depuis Claude</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Apps autorisées à accéder à ton compte via OAuth (notamment Claude Desktop).
+          Connecte Baloo à Claude (web ou Desktop) pour piloter ta trésorerie en langage naturel —
+          par exemple : « quelles écritures manquent un justif ? », « lance une sync »,
+          « crée la dépense de 42 € carte BNP ».
         </p>
       </header>
 
-      <section className="rounded border p-4 space-y-2">
-        <h2 className="font-medium">Connecter Claude Desktop</h2>
+      <section className="rounded border border-amber-300 bg-amber-50 p-4 space-y-1 dark:border-amber-700 dark:bg-amber-950">
+        <h2 className="font-medium">Prérequis</h2>
         <p className="text-sm">
-          Dans Claude Desktop : Settings → Connectors → Add custom connector → colle
-          l&apos;URL ci-dessous. Tu seras renvoyé sur Baloo pour confirmer l&apos;autorisation.
+          Un compte Claude qui autorise les connecteurs personnalisés (Pro, Max ou Team).
         </p>
-        <code className="block bg-muted p-2 rounded font-mono text-sm select-all">{mcpUrl}</code>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="font-semibold">Installation en 4 étapes</h2>
+        <ol className="space-y-4">
+          <li className="flex gap-3 items-start">
+            <span className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center text-sm font-bold">
+              1
+            </span>
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Copier l&apos;URL du connecteur Baloo</p>
+              <code className="block bg-muted p-2 rounded font-mono text-sm select-all">
+                {mcpUrl}
+              </code>
+            </div>
+          </li>
+          <li className="flex gap-3 items-start">
+            <span className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center text-sm font-bold">
+              2
+            </span>
+            <div>
+              <p className="text-sm">
+                Dans Claude (web ou Desktop) : <strong>Réglages → Connecteurs → Ajouter un
+                connecteur personnalisé</strong>. Coller l&apos;URL.
+              </p>
+            </div>
+          </li>
+          <li className="flex gap-3 items-start">
+            <span className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center text-sm font-bold">
+              3
+            </span>
+            <div>
+              <p className="text-sm">
+                Claude te renvoie sur Baloo → autorise l&apos;accès (login OAuth).
+              </p>
+            </div>
+          </li>
+          <li className="flex gap-3 items-start">
+            <span className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center text-sm font-bold">
+              4
+            </span>
+            <div>
+              <p className="text-sm">
+                Teste : tape « Montre-moi la vue d&apos;ensemble de la trésorerie ». ✅
+              </p>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="font-semibold">Que demander à Claude</h2>
+        <ul className="space-y-2 text-sm text-muted-foreground list-disc list-inside">
+          <li>« Quelles écritures n&apos;ont pas encore de justificatif ? »</li>
+          <li>« Lance une synchronisation avec Comptaweb. »</li>
+          <li>« Montre-moi les remboursements en attente. »</li>
+          <li>« Crée une dépense de 42,50 € carte BNP pour les achats du week-end. »</li>
+        </ul>
       </section>
 
       <section className="space-y-3">
