@@ -85,7 +85,7 @@ async function attachFile(
 export async function createAbandon(formData: FormData): Promise<void> {
   const ctx = await getCurrentContext();
   if (ctx.role === 'parent') {
-    redirect('/abandons/nouveau?error=' + encodeURIComponent('Action non autorisee pour ton role.'));
+    redirect('/abandons/nouveau?error=' + encodeURIComponent('Action non autorisée pour ton rôle.'));
   }
 
   const feuille = pickFile(formData, 'feuille');
