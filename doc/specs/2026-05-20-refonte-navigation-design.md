@@ -122,7 +122,7 @@ Aujourd'hui deux formulaires dupliqués par rôle :
 
 Idem pour les abandons (`/abandons/nouveau` vs `/moi/abandons/nouveau`).
 
-**Cible** : un seul formulaire par type. Le champ « demandeur » est **prérempli avec l'utilisateur connecté** mais **modifiable par tous les rôles**. Les routes `/moi/remboursements/nouveau` et `/moi/abandons/nouveau` redirigent vers le formulaire unifié (ou sont supprimées si plus référencées).
+**Cible** : un seul formulaire par type. Le champ « demandeur » est **prérempli avec l'utilisateur connecté** mais **modifiable par tous les rôles**. Les routes `/moi/remboursements/nouveau` et `/moi/abandons/nouveau` sont **supprimées** ; tout passe par le formulaire unifié. Avant suppression, vérifier qu'aucun lien sortant (mails Resend, notifications) ne pointe vers `/moi/...` — sinon mettre à jour ces liens vers la route unifiée.
 
 **Décision assumée** : pas de gate de permission sur le champ demandeur — n'importe quel rôle peut saisir une demande au nom d'un autre. Simplicité prioritaire ; le périmètre de Baloo est un groupe de confiance.
 
@@ -157,7 +157,7 @@ web/src/components/layout/
 ## Migration / impact
 
 - **Pas de migration BDD** : refonte purement front + routes.
-- **Routes supprimées/redirigées** : `/moi/remboursements/nouveau`, `/moi/abandons/nouveau` → formulaire unifié.
+- **Routes supprimées** : `/moi/remboursements/nouveau`, `/moi/abandons/nouveau` (le formulaire unifié les remplace ; vérifier au préalable les liens dans les mails Resend).
 - **Routes sorties de la nav** (code conservé) : `/import`, `/cloture`.
 - **Tests** : RTL sur la bottom-nav (rendu par rôle, onglet Plus admin), sur le filtrage sidebar par rôle, et sur le formulaire unifié (préremplissage + modification du demandeur). Pas de test BDD.
 
