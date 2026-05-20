@@ -1,5 +1,5 @@
 import {
-  BookOpen, Calculator, Coins, Gift, HandCoins, Home, Inbox, Mail,
+  BookOpen, Calculator, Coins, Ellipsis, Gift, HandCoins, Home, Inbox, Mail,
   Package, Paperclip, ShieldAlert, TrendingUp, Link2, Bot, FileText,
   type LucideIcon,
 } from 'lucide-react';
@@ -36,7 +36,7 @@ export const DESKTOP_GROUPS: NavGroup[] = [
       { href: '/', label: 'Accueil', icon: Home, roles: ADMIN },
       { href: '/inbox', label: 'Inbox', icon: Inbox, roles: ADMIN, badgeKey: 'inbox' },
       { href: '/synthese', label: 'Synthèse', icon: TrendingUp, roles: COMPTA },
-      { href: '/budgets', label: 'Budget', icon: Calculator, roles: COMPTA },
+      { href: '/budgets', label: 'Budget', icon: Calculator, roles: ADMIN },
     ],
   },
   {
@@ -84,7 +84,7 @@ export const MOBILE_TABS: MobileTab[] = [
   { key: 'depot', href: '/depot', label: 'Déposer', icon: Paperclip, roles: ['tresorier', 'RG', 'chef', 'equipier'] },
   { key: 'recus', href: '/remboursements', label: 'Mes reçus', icon: FileText, roles: ['parent'] },
   { key: 'demandes', href: '/remboursements', label: 'Mes demandes', icon: HandCoins, roles: ['tresorier', 'RG', 'chef', 'equipier'] },
-  { key: 'plus', href: '#plus', label: 'Plus', icon: Mail, roles: ['tresorier', 'RG'] },
+  { key: 'plus', href: '#plus', label: 'Plus', icon: Ellipsis, roles: ['tresorier', 'RG'] },
 ];
 
 function roleAllowed(roles: Role[] | undefined, role: string): boolean {

@@ -7,10 +7,10 @@ describe('nav-config — desktop', () => {
     expect(groups.map((g) => g.intent)).toEqual(['piloter', 'saisir', 'demandes', 'gerer']);
   });
 
-  it('le chef ne voit que Synthèse et Budget (scopés) dans Piloter', () => {
+  it('le chef ne voit que Synthèse dans Piloter (Budget réservé aux admins)', () => {
     const piloter = DESKTOP_GROUPS.find((g) => g.intent === 'piloter')!;
     const items = visibleItemsForRole(piloter.items, 'chef').map((i) => i.href);
-    expect(items).toEqual(['/synthese', '/budgets']);
+    expect(items).toEqual(['/synthese']);
   });
 
   it('aucun item compta ne fuit vers equipier sur desktop', () => {
