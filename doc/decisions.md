@@ -1326,4 +1326,34 @@ Quatre points actés :
 
 ---
 
+## ADR-033 — Refonte navigation : deux expériences (pilotage / membre)
+
+**Date** : 2026-05-20
+**Statut** : Acté
+**Contexte** : sidebar devenue fouillis (5 sections par entité, items qui fuitent vers les non-trésoriers). Refonte cadrée en brainstorming ([`specs/2026-05-20-refonte-navigation-design.md`](specs/2026-05-20-refonte-navigation-design.md), plan [`plans/2026-05-20-refonte-navigation.md`](plans/2026-05-20-refonte-navigation.md)).
+
+### Décision
+
+Quatre points actés :
+
+1. **Le viewport décide l'expérience, le rôle décide le contenu** (responsive + rôle, un seul code, pas deux apps). Une source de vérité unique `web/src/components/layout/nav-config.ts` (`DESKTOP_GROUPS` + `MOBILE_TABS` + helpers de filtrage) est consommée par la sidebar desktop ET la bottom-nav mobile. Breakpoint `lg`.
+
+2. **Mobile = app membre pour tous** (trésorier compris) : bottom-nav (`bottom-nav.tsx`) à 3 onglets, « Déposer » au centre. Variantes par rôle : `parent` → « Mes reçus » au lieu de « Déposer » ; `tresorier`/`RG` → 4e onglet « Plus » qui ouvre la sidebar complète en drawer (`mobile-shell.tsx` détient l'état, `mobile-nav.tsx` passé en contrôlé `open`/`onOpenChange`).
+
+3. **Desktop = poste de pilotage trésorier rangé par intention** : 4 groupes `Piloter / Saisir / Demandes & dépôts / Gérer` (remplacent les 5 sections par entité). Groupes vides masqués selon le rôle. `/import` et `/cloture` sortis de la nav (accessibles par lien direct). Nouvelle entrée « Connexion Claude » dans Gérer : page `/moi/connexions` transformée en guide pas-à-pas (pitch, prérequis, 4 étapes, exemples de prompts) + apps connectées conservées.
+
+4. **Formulaires de demande unifiés** : un seul formulaire remboursement et un seul abandon. Le demandeur/donateur est prérempli avec l'utilisateur connecté mais **modifiable par tous** (sauf `parent`, exclu). Actions fusionnées : `createMyRemboursement` + `createForeignRemboursement` → `createRemboursement` ; `createMyAbandon` + `createAbandonForOther` → `createAbandon`. Routes `/moi/remboursements/` et `/moi/abandons/` supprimées. Composant `AbandonForm` extrait (les 2 formulaires abandon étaient des inline dupliqués). `RemboursementForm` perd son `identityMode` (toujours éditable prérempli).
+
+### Conséquences
+
+- **Pas de migration BDD** : refonte front + routes pures. Risque cold-start nul.
+- **Bug de visibilité corrigé** : avant, `/ecritures` et `/remboursements` n'avaient pas de filtre `roles` et fuitaient vers les non-trésoriers. Le filtrage centralisé de `nav-config` ferme ça.
+- **`submitted_by_user_id = ctx.userId`** désormais systématique sur remboursements ET abandons (avant : `null` côté saisie-pour-autrui admin). Conséquence assumée : un `chef` qui saisit pour autrui déclenche maintenant la notification admin, et la création atterrit sur le bandeau succès de la home (au lieu de la page détail pour l'ancien flux trésorier). Aucune donnée perdue.
+- **Validation abandon** : la feuille + le justificatif passent de requis (ancien flux membre) à optionnels (aligné sur l'ancien flux admin). Acceptable : le CERFA est émis par l'admin après validation, pas auto-généré à la saisie ; un abandon incomplet reste en statut `a_traiter`.
+- **Vue budget chef hors scope** : `/budgets` reste réservé aux admins dans la nav (le chef ne voit pas de lien mort). La vue budget d'unité du chef reste un chantier séparé.
+
+**Liens** : Commits sur `feat/refonte-navigation`, de `d6e42dc` (nav-config) à la clôture. Code clé : `web/src/components/layout/nav-config.ts`, `sidebar.tsx`, `bottom-nav.tsx`, `mobile-shell.tsx`, `web/src/components/abandons/abandon-form.tsx`, `web/src/lib/actions/remboursements/create.ts`, `web/src/lib/actions/abandons.ts`, `web/src/app/(app)/moi/connexions/page.tsx`. Spec : [`specs/2026-05-20-refonte-navigation-design.md`](specs/2026-05-20-refonte-navigation-design.md). Plan : [`plans/2026-05-20-refonte-navigation.md`](plans/2026-05-20-refonte-navigation.md).
+
+---
+
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*
