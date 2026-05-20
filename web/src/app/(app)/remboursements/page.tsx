@@ -49,7 +49,7 @@ export default async function RemboursementsPage({
   return (
     <div>
       <PageHeader title="Remboursements">
-        <Link href="/moi/remboursements/nouveau">
+        <Link href="/remboursements/nouveau">
           <Button>Nouvelle demande</Button>
         </Link>
       </PageHeader>
@@ -85,7 +85,7 @@ export default async function RemboursementsPage({
             title="Pas de remboursement à traiter"
             description="Personne n'a déposé de demande pour le moment. Tu peux en saisir une pour autrui."
             action={
-              <Link href="/moi/remboursements/nouveau">
+              <Link href="/remboursements/nouveau">
                 <Button size="sm">Nouvelle demande</Button>
               </Link>
             }

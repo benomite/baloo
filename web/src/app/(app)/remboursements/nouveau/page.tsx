@@ -1,50 +1,64 @@
-import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
 import { Alert } from '@/components/ui/alert';
 import { getCurrentContext } from '@/lib/context';
-import { requireNotParent } from '@/lib/auth/access';
+import { getDb } from '@/lib/db';
 import { listSelectableUnites } from '@/lib/queries/reference';
-import { createForeignRemboursement } from '@/lib/actions/remboursements';
+import { createRemboursement } from '@/lib/actions/remboursements';
 import { RemboursementForm } from '@/components/rembs/remboursement-form';
+
+// Récupère le RIB texte de la dernière demande non vide d'un user. Utile
+// pour pré-remplir le form lors de la 2e+ demande — le user n'a pas à
+// resaisir son IBAN à chaque fois.
+async function getLastRibForUser(
+  userId: string,
+  groupId: string,
+): Promise<string | null> {
+  const row = await getDb()
+    .prepare(
+      `SELECT rib_texte FROM remboursements
+       WHERE group_id = ? AND submitted_by_user_id = ? AND rib_texte IS NOT NULL AND rib_texte != ''
+       ORDER BY created_at DESC LIMIT 1`,
+    )
+    .get<{ rib_texte: string }>(groupId, userId);
+  return row?.rib_texte ?? null;
+}
+
+function splitName(full: string | null): { prenom: string; nom: string } {
+  if (!full) return { prenom: '', nom: '' };
+  const trimmed = full.trim();
+  if (!trimmed) return { prenom: '', nom: '' };
+  const idx = trimmed.indexOf(' ');
+  if (idx === -1) return { prenom: trimmed, nom: '' };
+  return { prenom: trimmed.slice(0, idx), nom: trimmed.slice(idx + 1) };
+}
 
 interface SearchParams {
   error?: string;
 }
 
-// Saisie d'une demande de remboursement **pour quelqu'un d'autre** (le
-// trésorier reçoit une demande à l'oral / sur papier / par mail). On
-// saisit les nom/prenom/email du bénéficiaire ; la demande ne pointe
-// pas sur l'espace personnel du saisissant (champ
-// `submitted_by_user_id` laissé NULL ou matché à un user existant).
-//
-// Pour faire sa propre demande, voir `/moi/remboursements/nouveau`.
-export default async function NouveauRemboursementForeignPage({
+export default async function NouveauRemboursementPage({
   searchParams,
 }: {
   searchParams: Promise<SearchParams>;
 }) {
   const ctx = await getCurrentContext();
-  requireNotParent(ctx.role);
+  if (ctx.role === 'parent') redirect('/');
 
-  const params = await searchParams;
-  const unites = await listSelectableUnites();
+  const [params, unites, lastRib] = await Promise.all([
+    searchParams,
+    listSelectableUnites(),
+    getLastRibForUser(ctx.userId, ctx.groupId),
+  ]);
   const today = new Date().toISOString().split('T')[0];
+  const { prenom, nom } = splitName(ctx.name);
 
   return (
     <div className="max-w-3xl mx-auto">
       <PageHeader
         eyebrow={{ label: 'Remboursements', href: '/remboursements' }}
-        title="Saisir pour quelqu'un d'autre"
-        subtitle={
-          <>
-            Cette page sert à enregistrer une demande reçue à l&apos;oral / sur papier / par mail
-            pour un autre bénévole. Pour faire ta propre demande, passe par{' '}
-            <Link href="/moi/remboursements/nouveau" className="text-brand underline-offset-2 hover:underline">
-              Mon espace
-            </Link>
-            .
-          </>
-        }
+        title="Demander un remboursement"
+        subtitle="Tu as avancé des frais pour le groupe ? Ajoute autant de lignes que de tickets, joins les justificatifs et tes coordonnées bancaires. Une feuille de remboursement PDF sera générée automatiquement."
       />
 
       {params.error && (
@@ -54,13 +68,12 @@ export default async function NouveauRemboursementForeignPage({
       )}
 
       <RemboursementForm
-        action={createForeignRemboursement}
+        action={createRemboursement}
         unites={unites}
         today={today}
-        identityMode="editable"
-        defaultIdentity={{ prenom: '', nom: '', email: '' }}
-        scopeUniteId={null}
-        submitLabel="Enregistrer la demande"
+        defaultIdentity={{ prenom, nom, email: ctx.email }}
+        scopeUniteId={ctx.scopeUniteId}
+        initialRibTexte={lastRib}
       />
     </div>
   );

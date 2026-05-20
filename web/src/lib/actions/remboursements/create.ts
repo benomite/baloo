@@ -9,7 +9,6 @@ import {
   addLigne,
 } from '../../services/remboursements';
 import { attachJustificatif } from '../../services/justificatifs';
-import { parseAmount } from '../../format';
 import { sendRemboursementCreatedEmail } from '../../email/remboursement';
 import { signAndRefreshRemboursementPdf } from '../../services/remboursement-signing';
 import { logError } from '../../log';
@@ -23,58 +22,7 @@ import {
   validateJustifFiles,
 } from './_helpers';
 
-// Ancienne action de création "monoligne" (sans `lignes`). Utilisée
-// uniquement par d'éventuels appelants legacy. Les nouveaux flux
-// passent par `createMyRemboursement` ou `createForeignRemboursement`.
-export async function createRemboursement(formData: FormData) {
-  const { groupId, scopeUniteId, userId, role, name, email } = await getCurrentContext();
-  const isAdmin = ADMIN_ROLES.includes(role);
-
-  const created = await createRemboursementService(
-    { groupId, scopeUniteId },
-    {
-      demandeur: formData.get('demandeur') as string,
-      amount_cents: parseAmount(formData.get('montant') as string),
-      date_depense: formData.get('date_depense') as string,
-      nature: formData.get('nature') as string,
-      unite_id: (formData.get('unite_id') as string) || null,
-      justificatif_status: ((formData.get('justificatif_status') as string) || 'en_attente') as
-        | 'oui'
-        | 'en_attente'
-        | 'non',
-      mode_paiement_id: (formData.get('mode_paiement_id') as string) || null,
-      notes: (formData.get('notes') as string) || null,
-      submitted_by_user_id: userId,
-    },
-  );
-
-  if (!isAdmin) {
-    const admins = (await listAdminEmails(groupId)).filter((e) => e !== email);
-    if (admins.length > 0) {
-      try {
-        await sendRemboursementCreatedEmail({
-          to: admins,
-          rbtId: created.id,
-          demandeur: created.demandeur || name || email,
-          natureDescription: created.nature ?? '(non précisé)',
-          amountCents: created.amount_cents,
-          dateDepense: created.date_depense ?? '',
-          appUrl: await deriveAppUrl(),
-        });
-      } catch (err) {
-        logError('remboursements', 'Notif admins échouée', err);
-      }
-    }
-  }
-
-  revalidatePath('/remboursements');
-  revalidatePath('/');
-  redirect(`/remboursements/${created.id}`);
-}
-
-// Helper interne partagé entre `createMyRemboursement` (self-service
-// par le demandeur) et `createForeignRemboursement` (saisie pour
-// autrui par un admin). Retourne l'id de la demande créée. En cas
+// Helper interne. Retourne les métadonnées de la demande créée. En cas
 // d'erreur de validation, redirect vers `backUrl?error=...` (lève donc
 // — never).
 async function createRemboursementFromForm(
@@ -229,9 +177,14 @@ async function createRemboursementFromForm(
   };
 }
 
-// Self-service côté demandeur (depuis /moi/remboursements/nouveau).
-// La demande sera visible sur la home (Mes demandes).
-export async function createMyRemboursement(formData: FormData): Promise<void> {
+// Formulaire unifié de création (depuis /remboursements/nouveau).
+// Accessible à tous les rôles authentifiés sauf parent.
+// Le demandeur (prenom/nom/email) est lu depuis formData — la page
+// préremplie les champs avec l'utilisateur connecté, mais chacun peut
+// les modifier.
+// La demande est rattachée au user connecté (submitted_by_user_id =
+// ctx.userId) pour apparaître dans « Mes demandes » sur la home.
+export async function createRemboursement(formData: FormData): Promise<void> {
   const ctx = await getCurrentContext();
   if (ctx.role === 'parent') {
     redirect('/?error=' + encodeURIComponent('Action non autorisée pour ton rôle.'));
@@ -241,7 +194,7 @@ export async function createMyRemboursement(formData: FormData): Promise<void> {
     formData,
     ctx,
     {
-      backUrl: '/moi/remboursements/nouveau?error=',
+      backUrl: '/remboursements/nouveau?error=',
       submittedByUserId: ctx.userId,
     },
   );
@@ -249,28 +202,4 @@ export async function createMyRemboursement(formData: FormData): Promise<void> {
   revalidatePath('/');
   revalidatePath('/remboursements');
   redirect('/?rbt_created=' + encodeURIComponent(result.rbtId));
-}
-
-// Saisie pour autrui par un admin (depuis /remboursements/nouveau).
-// La demande **n'apparaît PAS** dans l'espace perso du saisissant —
-// `submitted_by_user_id` est laissé NULL (le bénéficiaire identifié
-// par prenom/nom/email saisis ne correspond pas forcément à un user
-// Baloo).
-export async function createForeignRemboursement(formData: FormData): Promise<void> {
-  const ctx = await getCurrentContext();
-  if (!['tresorier', 'RG', 'chef'].includes(ctx.role)) {
-    redirect('/?error=' + encodeURIComponent('Accès réservé aux trésoriers / RG / chefs.'));
-  }
-
-  const result = await createRemboursementFromForm(
-    formData,
-    ctx,
-    {
-      backUrl: '/remboursements/nouveau?error=',
-      submittedByUserId: null,
-    },
-  );
-
-  revalidatePath('/remboursements');
-  redirect(`/remboursements/${result.rbtId}`);
 }

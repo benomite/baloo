@@ -278,7 +278,7 @@ function QuickActions() {
       icon: Paperclip,
     },
     {
-      href: '/moi/remboursements/nouveau',
+      href: '/remboursements/nouveau',
       label: 'Demander un remboursement',
       description: "Tu as avancé des frais ? Saisis ta demande et joins le justif.",
       icon: HandCoins,

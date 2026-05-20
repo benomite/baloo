@@ -56,7 +56,7 @@ export default async function AidePage() {
             <Steps>
               <Step icon={HandCoins} title="Va sur « Demander un remboursement »">
                 Depuis la home (bouton « Demander un remboursement ») ou directement{' '}
-                <CodeLink href="/moi/remboursements/nouveau">/moi/remboursements/nouveau</CodeLink>.
+                <CodeLink href="/remboursements/nouveau">/remboursements/nouveau</CodeLink>.
               </Step>
               <Step icon={Receipt} title="Remplis le détail des dépenses">
                 Une ligne par ticket / facture (date + nature + montant). Le total se met à jour

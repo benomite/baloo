@@ -82,7 +82,6 @@ export default async function EditRemboursementPage({
         action={action}
         unites={unites}
         today={today}
-        identityMode="editable"
         defaultIdentity={{
           prenom: r.prenom ?? '',
           nom: r.nom ?? '',

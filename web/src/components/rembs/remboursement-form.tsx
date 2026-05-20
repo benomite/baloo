@@ -33,10 +33,8 @@ interface Props {
   action: (formData: FormData) => Promise<void>;
   unites: UniteOption[];
   today: string;
-  // 'locked' = identité cachée (auto depuis user connecté, mode "ma demande")
-  // 'editable' = identité visible et modifiable (mode "saisie pour autrui" ou
-  // édition d'une demande existante).
-  identityMode: 'locked' | 'editable';
+  // Identité du bénéficiaire : préremplie avec l'utilisateur connecté
+  // mais toujours modifiable.
   defaultIdentity: Identity;
   scopeUniteId?: string | null;
   // Pré-remplissage en mode édition.
@@ -75,7 +73,6 @@ export function RemboursementForm({
   action,
   unites,
   today,
-  identityMode,
   defaultIdentity,
   scopeUniteId,
   initialLignes,
@@ -107,34 +104,25 @@ export function RemboursementForm({
     <form action={action} encType="multipart/form-data" className="space-y-6">
       {introNode}
 
-      {identityMode === 'editable' && (
-        <Section title="Bénéficiaire" subtitle="À qui le virement va.">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Prénom" htmlFor="prenom" required>
-              <Input id="prenom" name="prenom" defaultValue={defaultIdentity.prenom} required />
-            </Field>
-            <Field label="Nom" htmlFor="nom" required>
-              <Input id="nom" name="nom" defaultValue={defaultIdentity.nom} required />
-            </Field>
-          </div>
-          <Field label="Email" htmlFor="email" required hint="pour les notifications de validation">
-            <Input
-              id="email"
-              name="email"
-              type="email"
-              defaultValue={defaultIdentity.email}
-              required
-            />
+      <Section title="Bénéficiaire" subtitle="Prérempli avec ton compte — modifiable si tu saisis pour quelqu'un d'autre.">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Prénom" htmlFor="prenom" required>
+            <Input id="prenom" name="prenom" defaultValue={defaultIdentity.prenom} required />
           </Field>
-        </Section>
-      )}
-      {identityMode === 'locked' && (
-        <>
-          <input type="hidden" name="prenom" value={defaultIdentity.prenom} />
-          <input type="hidden" name="nom" value={defaultIdentity.nom} />
-          <input type="hidden" name="email" value={defaultIdentity.email} />
-        </>
-      )}
+          <Field label="Nom" htmlFor="nom" required>
+            <Input id="nom" name="nom" defaultValue={defaultIdentity.nom} required />
+          </Field>
+        </div>
+        <Field label="Email" htmlFor="email" required hint="pour les notifications de validation">
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            defaultValue={defaultIdentity.email}
+            required
+          />
+        </Field>
+      </Section>
 
       <Section
         title="Détail des dépenses"
