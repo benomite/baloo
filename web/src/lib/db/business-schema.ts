@@ -41,6 +41,12 @@ const ECRITURES_COLUMNS_DDL = `
   -- sémantiquement différent : l un est input/import, l autre est output
   -- direct du scraper. Index dédié : idx_ecritures_cw_numero_piece.
   cw_numero_piece TEXT,
+  -- Réconciliation (spec 2026-06-01) : hash stable des champs liste CW
+  -- (date, montant, type, intitulé, n°pièce, mode, catégorie tiers).
+  -- Permet l'enrichissement détail INCRÉMENTAL : on ne relit la page
+  -- détail CW (activité / branche) que si la signature a changé.
+  -- Nullable, renseignée par le cycle de réconciliation.
+  cw_signature TEXT,
   status TEXT NOT NULL DEFAULT 'draft',
   justif_attendu INTEGER NOT NULL DEFAULT 1,
   comptaweb_synced INTEGER NOT NULL DEFAULT 0,
@@ -72,6 +78,8 @@ const ECRITURES_COLUMNS_FOR_COPY = [
   'carte_id',
   'numero_piece',
   // status géré séparément via CASE WHEN pour le remap des valeurs
+  // NB: cw_numero_piece et cw_signature sont ajoutés par ALTER (ensure*)
+  // donc absents de l'ancienne table au moment d'une migration de statut.
   'justif_attendu',
   'comptaweb_synced',
   'ligne_bancaire_id',
@@ -701,6 +709,12 @@ export async function ensureBusinessSchema(): Promise<void> {
   // réussie via le scraper. Idempotent.
   await ensureEcrituresCwNumeroPiece(db);
 
+  // Réconciliation Comptaweb (spec 2026-06-01) : cw_signature, compteurs
+  // sync_runs, table cw_link_suggestions, backfill comptaweb_ecriture_id.
+  // APRÈS ensureSyncRunsSchema + ensureEcrituresCwNumeroPiece (dépend des
+  // colonnes/table créées plus haut).
+  await ensureReconcileSchema(db);
+
   ensured = true;
 }
 
@@ -757,6 +771,13 @@ export async function ensureSyncRunsSchema(db: DbWrapper): Promise<void> {
       new_drafts INTEGER NOT NULL DEFAULT 0,
       updated_drafts INTEGER NOT NULL DEFAULT 0,
       divergent_detected INTEGER NOT NULL DEFAULT 0,
+      -- Réconciliation (spec 2026-06-01) : compteurs du cycle miroir descendant.
+      updated_mirror INTEGER NOT NULL DEFAULT 0,
+      supprimee_cw_detected INTEGER NOT NULL DEFAULT 0,
+      imported_from_cw INTEGER NOT NULL DEFAULT 0,
+      link_suggestions_created INTEGER NOT NULL DEFAULT 0,
+      detail_fetches INTEGER NOT NULL DEFAULT 0,
+      scope TEXT,
       error_message TEXT,
       duration_ms INTEGER,
       created_at TEXT NOT NULL
@@ -764,4 +785,84 @@ export async function ensureSyncRunsSchema(db: DbWrapper): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_sync_runs_group_started
       ON sync_runs(group_id, started_at DESC);
   `);
+}
+
+/**
+ * Migration de réconciliation (spec doc/specs/2026-06-01-sync-reconciliation-design.md).
+ * Idempotente. Sur BDD existante :
+ *   - ajoute `ecritures.cw_signature` (ALTER, nullable) ;
+ *   - ajoute les compteurs + `scope` à `sync_runs` (ALTER, DEFAULT 0/NULL) ;
+ *   - crée la table `cw_link_suggestions` + index (group_id, status) ;
+ *   - backfill `comptaweb_ecriture_id` depuis `cw_numero_piece` numérique
+ *     (Phase 1 y stockait String(id)) — sans écraser un id déjà posé.
+ *
+ * Pattern AGENTS.md : ALTER ADD COLUMN après détection PRAGMA, CREATE INDEX
+ * après l'ALTER. Doit tourner APRÈS ensureSyncRunsSchema + ensureEcrituresCwNumeroPiece.
+ *
+ * Exporté pour les tests.
+ */
+export async function ensureReconcileSchema(db: DbWrapper): Promise<void> {
+  // 1. ecritures.cw_signature
+  const ecoCols = await db.prepare('PRAGMA table_info(ecritures)').all<{ name: string }>();
+  if (ecoCols.length > 0 && !ecoCols.some((c) => c.name === 'cw_signature')) {
+    await db.exec('ALTER TABLE ecritures ADD COLUMN cw_signature TEXT');
+  }
+
+  // 2. nouvelles colonnes sync_runs (la table existe : ensureSyncRunsSchema avant)
+  const srCols = await db.prepare('PRAGMA table_info(sync_runs)').all<{ name: string }>();
+  if (srCols.length > 0) {
+    const srHas = (n: string) => srCols.some((c) => c.name === n);
+    const intCols = [
+      'updated_mirror',
+      'supprimee_cw_detected',
+      'imported_from_cw',
+      'link_suggestions_created',
+      'detail_fetches',
+    ];
+    for (const col of intCols) {
+      if (!srHas(col)) {
+        // Nullable + backfill plutôt que NOT NULL DEFAULT (cf. AGENTS.md
+        // libsql remote refuse parfois NOT NULL DEFAULT en ALTER).
+        await db.exec(`ALTER TABLE sync_runs ADD COLUMN ${col} INTEGER DEFAULT 0`);
+        await db.exec(`UPDATE sync_runs SET ${col} = 0 WHERE ${col} IS NULL`);
+      }
+    }
+    if (!srHas('scope')) {
+      await db.exec('ALTER TABLE sync_runs ADD COLUMN scope TEXT');
+    }
+  }
+
+  // 3. table cw_link_suggestions + index
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS cw_link_suggestions (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      ecriture_id TEXT NOT NULL,
+      cw_ecriture_id INTEGER NOT NULL,
+      cw_numero_piece TEXT,
+      cw_montant_cents INTEGER,
+      cw_date TEXT,
+      cw_intitule TEXT,
+      status TEXT NOT NULL DEFAULT 'a_confirmer',
+      created_at TEXT NOT NULL,
+      resolved_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_cw_link_suggestions_group_status
+      ON cw_link_suggestions(group_id, status);
+  `);
+
+  // 4. backfill comptaweb_ecriture_id depuis cw_numero_piece numérique.
+  // GLOB '[0-9]*' = commence par un chiffre ; NOT GLOB '*[^0-9]*' = que des
+  // chiffres. COALESCE implicite via WHERE comptaweb_ecriture_id IS NULL :
+  // on ne touche jamais un id déjà renseigné.
+  if (ecoCols.length > 0) {
+    await db.exec(`
+      UPDATE ecritures
+      SET comptaweb_ecriture_id = CAST(cw_numero_piece AS INTEGER)
+      WHERE comptaweb_ecriture_id IS NULL
+        AND cw_numero_piece IS NOT NULL
+        AND cw_numero_piece GLOB '[0-9]*'
+        AND NOT cw_numero_piece GLOB '*[^0-9]*'
+    `);
+  }
 }
