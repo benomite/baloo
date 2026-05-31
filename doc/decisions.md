@@ -1275,7 +1275,7 @@ Baloo cesse de dupliquer Comptaweb et devient son **companion**. Cinq points act
 ## ADR-032 — Sync incrémentale Comptaweb client-piloté
 
 **Date** : 2026-05-19
-**Statut** : Acté
+**Statut** : Acté — **logique du cycle révisée par [ADR-035](#adr-035--réconciliation-comptaweb-miroir-descendant-continu)** (le cadre client-piloté, le throttle/verrou par groupe et la table `sync_runs` restent en vigueur ; seul le contenu de `runSyncCycle` change).
 **Contexte** : Phase 2 du pivot V1 ([`specs/2026-05-19-baloo-sync-incremental-design.md`](specs/2026-05-19-baloo-sync-incremental-design.md), livrée via [`plans/2026-05-19-baloo-sync-incremental-phase-2.md`](plans/2026-05-19-baloo-sync-incremental-phase-2.md)).
 
 ### Décision
@@ -1380,6 +1380,49 @@ Quatre points actés :
 - Vérifié : `tsc` clean, 351 tests verts, `next build` OK, `/synthese` absente des routes.
 
 **Liens** : Commits sur `feat/nav-process-first` (de `15fbf45` nav-config à `eac82ad` lien budget). Code clé : `web/src/components/layout/nav-config.ts`, `sidebar.tsx`, `bottom-nav.test.tsx`, `web/src/app/(app)/layout.tsx`, `web/src/app/(app)/page.tsx`, `web/src/lib/actions/remboursements/create.ts`, `web/src/lib/actions/abandons.ts`. Spec : [`specs/2026-05-31-nav-process-first-design.md`](specs/2026-05-31-nav-process-first-design.md). Plan : [`plans/2026-05-31-nav-process-first.md`](plans/2026-05-31-nav-process-first.md).
+
+---
+
+## ADR-035 — Réconciliation Comptaweb : miroir descendant continu
+
+**Date** : 2026-06-01
+**Statut** : Acté
+**Révise** : [ADR-032](#adr-032--sync-incrémentale-comptaweb-client-piloté) — réécrit la logique interne de `runSyncCycle`. Conserve le cadre client-piloté, le throttle 15 min + verrou 60 s par groupe, et la table `sync_runs`. Spec : [`specs/2026-06-01-sync-reconciliation-design.md`](specs/2026-06-01-sync-reconciliation-design.md). Plan : [`plans/2026-06-01-sync-reconciliation.md`](plans/2026-06-01-sync-reconciliation.md).
+
+### Contexte
+
+La sync Phase 2 (ADR-032) ne faisait qu'une promotion one-way `pending_sync → mirror`. Une écriture en `mirror` n'était plus jamais resynchronisée, et les suppressions côté CW n'étaient pas détectées. L'usage réel veut un miroir continu où Comptaweb est la source de vérité.
+
+### Décision
+
+Un cycle devient une **réconciliation** `reconcile(snapshotCW, écrituresBaloo)` sur une fenêtre, CW source de vérité. Cinq points actés :
+
+1. **Clé de jointure stable `comptaweb_ecriture_id`** (id interne CW, stable même si la date change) au lieu de `cw_numero_piece`. Backfill au cold start (depuis `cw_numero_piece` numérique) + « heal » par cycle (depuis le mapping numéroPièce→id du snapshot) pour les mirror legacy.
+
+2. **CW écrase les champs comptables** des écritures matchées (date, intitulé, montant, type, n°pièce). Les enrichissements Baloo (notes, justifs, liens dépôts/rembs) ne sont **jamais** touchés. Conséquence assumée : plus de statut `divergent` produit sur écart montant/type d'une écriture matchée par clé stable — l'identité étant garantie par l'id, CW gagne. `divergent` reste dans l'enum (legacy + usage manuel).
+
+3. **Détection des suppressions bornée par la plage couverte** : une écriture reliée n'est passée en `supprimee_cw` (nouveau statut, file d'arbitrage, jamais de DELETE auto) que si son `comptaweb_ecriture_id` ∈ `[minId, maxId]` du snapshot et absente. Hors plage = intouchée. Neutralise le faux positif d'un changement de date qui sortirait l'écriture de la fenêtre.
+
+4. **Import des écritures CW absentes** (création `mirror`) et **réconciliation des drafts locaux** par match contenu `(montant, type, date ± 3 j)` avec **garde-fou unicité** : auto-promotion `draft → mirror` seulement si 1↔1 ; sinon **suggestion de lien à confirmer** (table `cw_link_suggestions`), jamais d'auto-lien ni d'import doublon.
+
+5. **Enrichissement activité/branche incrémental** : `activite`/`brancheprojet` vivent sur la page détail CW (`/recettedepense/<id>/afficher`, nouveau scraper), pas dans la liste. On ne relit le détail que si la **signature liste** (`ecritures.cw_signature`) a changé, ou si activité/unité manquent, ou pour un import/promotion. Mapping : `activite` → `activite_id`, `brancheprojet` → `unite_id` (porte la couleur).
+
+### Périmètre et fenêtre
+
+- `scope='recent'` (défaut, cycles auto, `/recettedepense?m=1`) ou `scope='exercice'` (déclenché explicitement via `sync_run({scope:'exercice'})`).
+- Mapping catégorie/mode CW → `category_id`/`mode_paiement_id` **hors scope** de cette itération (la catégorie comptable vit dans la ventilation détail, pas dans la colonne « catégorie tiers » de la liste). Champs liste directs + activité/unité (détail) seulement. À étendre si besoin.
+
+### Conséquences
+
+- **Migration cold start** (`ensureReconcileSchema`, idempotente) : `ecritures.cw_signature`, compteurs `sync_runs` (`updated_mirror`, `supprimee_cw_detected`, `imported_from_cw`, `link_suggestions_created`, `detail_fetches`, `scope`), table `cw_link_suggestions`, backfill `comptaweb_ecriture_id`.
+- **Statut `supprimee_cw`** ajouté à l'enum (pas de CHECK SQL → aucune migration de table).
+- **UI `/ecritures`** : bandeau d'arbitrage (suppressions : restaurer/supprimer ; suggestions : confirmer/rejeter) + badge rouge « Supprimée dans CW ». Server actions `lib/actions/ecritures-arbitrage.ts`.
+- **Tool MCP `sync_run`** : param `scope`, counts enrichis dans la sortie.
+- **Modules purs testables** : `ecritures-sync-reconcile.ts` (diff), `ecritures-sync-transitions.ts` (guards). Détail scraper `ecriture-detail-scrape.ts` à confirmer sur capture réelle (matching par libellé, fallback null — ne bloque jamais la sync).
+- Vérifié : `tsc` clean, suite vitest verte (+ tests réconciliation/migration/arbitrage), `next build` OK.
+- **Limitations** : matching contenu des drafts faillible sur collision parfaite → traité par suggestion (jamais auto-lien). Sélecteurs du scraper détail à valider en prod. Mapping `brancheprojet`→unité = hypothèse (vs activité), sans impact architecture.
+
+**Liens** : Commits sur `feat/sync-reconciliation`. Code clé : `web/src/lib/services/{sync-cycle,ecritures-sync-reconcile,ecritures-sync-transitions,ecritures-arbitrage,cw-link-suggestions}.ts`, `web/src/lib/comptaweb/ecriture-detail-scrape.ts`, `web/src/lib/db/business-schema.ts` (`ensureReconcileSchema`), `web/src/components/ecritures/arbitrage-banner.tsx`.
 
 ---
 
