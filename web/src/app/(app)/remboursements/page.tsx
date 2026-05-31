@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { RemboursementStatusBadge } from '@/components/shared/status-badge';
 import { Amount } from '@/components/shared/amount';
 import { EmptyState } from '@/components/shared/empty-state';
+import { Alert } from '@/components/ui/alert';
 import { TabLink } from '@/components/shared/tab-link';
 import { listRemboursements } from '@/lib/queries/remboursements';
 import { getDb } from '@/lib/db';
@@ -48,6 +49,14 @@ export default async function RemboursementsPage({
 
   return (
     <div>
+      {params.rbt_created && (
+        <Alert variant="success" className="mb-6">
+          Demande <code className="font-mono text-[12.5px] font-medium">{params.rbt_created}</code> enregistrée. Tu recevras un mail à chaque étape.
+        </Alert>
+      )}
+      {params.error && (
+        <Alert variant="error" className="mb-6">{params.error}</Alert>
+      )}
       <PageHeader title="Remboursements">
         <Link href="/remboursements/nouveau">
           <Button>Nouvelle demande</Button>

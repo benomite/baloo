@@ -206,7 +206,7 @@ export async function createAbandon(formData: FormData): Promise<void> {
 
   revalidatePath('/');
   revalidatePath('/abandons');
-  redirect('/?abandon_created=' + encodeURIComponent(created.id));
+  redirect('/abandons?abandon_created=' + encodeURIComponent(created.id));
 }
 
 async function transitionAbandon(

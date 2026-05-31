@@ -26,6 +26,7 @@ const ADMIN_ROLES = ['tresorier', 'RG'];
 interface SearchParams {
   status?: string;
   error?: string;
+  abandon_created?: string;
 }
 
 const FILTERS: { key: AbandonStatus | 'all'; label: string }[] = [
@@ -86,6 +87,14 @@ export default async function AbandonsPage({
 
   return (
     <div>
+      {params.abandon_created && (
+        <Alert variant="success" className="mb-6">
+          Don <code className="font-mono text-[12.5px] font-medium">{params.abandon_created}</code> enregistré. Le CERFA arrivera par mail après validation.
+        </Alert>
+      )}
+      {params.error && (
+        <Alert variant="error" className="mb-6">{params.error}</Alert>
+      )}
       <PageHeader
         title={isAdmin ? 'Dons au groupe' : 'Mes dons au groupe'}
         subtitle={
@@ -104,12 +113,6 @@ export default async function AbandonsPage({
           </div>
         }
       />
-
-      {params.error && (
-        <Alert variant="error" className="mb-4">
-          {params.error}
-        </Alert>
-      )}
 
       <div className="mb-6 flex flex-wrap gap-6 border-b">
         {FILTERS.map((f) => {

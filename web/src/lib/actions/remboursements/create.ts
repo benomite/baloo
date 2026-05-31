@@ -187,7 +187,7 @@ async function createRemboursementFromForm(
 export async function createRemboursement(formData: FormData): Promise<void> {
   const ctx = await getCurrentContext();
   if (ctx.role === 'parent') {
-    redirect('/?error=' + encodeURIComponent('Action non autorisée pour ton rôle.'));
+    redirect('/remboursements/nouveau?error=' + encodeURIComponent('Action non autorisée pour ton rôle.'));
   }
 
   const result = await createRemboursementFromForm(
@@ -201,5 +201,5 @@ export async function createRemboursement(formData: FormData): Promise<void> {
 
   revalidatePath('/');
   revalidatePath('/remboursements');
-  redirect('/?rbt_created=' + encodeURIComponent(result.rbtId));
+  redirect('/remboursements?rbt_created=' + encodeURIComponent(result.rbtId));
 }
