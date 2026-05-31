@@ -9,6 +9,8 @@ import { listJustificatifsForEcriture } from '@/lib/queries/justificatifs';
 import { listDepots } from '@/lib/services/depots';
 import { EcritureFilters } from '@/components/ecritures/ecriture-filters';
 import { ScanDraftsButton } from '@/components/ecritures/scan-drafts-button';
+import { ArbitrageBanner } from '@/components/ecritures/arbitrage-banner';
+import { listSupprimeeCw, listLinkSuggestions } from '@/lib/queries/sync-arbitrage';
 import { EcrituresTable } from '@/components/ecritures/ecritures-table';
 import { EcritureDrawer } from '@/components/ecritures/ecriture-drawer';
 import { getCurrentContext } from '@/lib/context';
@@ -45,6 +47,8 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     detailEcriture,
     detailJustifs,
     detailPendingDepots,
+    supprimeesCw,
+    linkSuggestions,
   ] = await Promise.all([
     listEcritures(filters),
     listCategories(),
@@ -60,6 +64,8 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     detailId
       ? listDepots({ groupId: ctx.groupId }, { statut: 'a_traiter' })
       : Promise.resolve(null),
+    listSupprimeeCw(ctx.groupId),
+    listLinkSuggestions(ctx.groupId),
   ]);
 
   const presetQS = (preset: 'all' | 'incomplete' | 'from_bank' | 'sans_unite') => {
@@ -105,6 +111,8 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
           Sans unité
         </TabLink>
       </div>
+
+      <ArbitrageBanner supprimees={supprimeesCw} suggestions={linkSuggestions} />
 
       <EcritureFilters categories={categories} unites={unites} cartes={cartes} current={params} />
 

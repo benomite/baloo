@@ -74,6 +74,7 @@ const ECRITURE_STATUS_MAP: Record<string, { tone: StatusTone; label: string }> =
   pending_sync: { tone: 'progress', label: 'Envoyée à CW' },
   mirror: { tone: 'success', label: 'Miroir CW' },
   divergent: { tone: 'danger', label: 'Divergent CW' },
+  supprimee_cw: { tone: 'danger', label: 'Supprimée dans CW' },
 };
 
 export function EcritureStatusBadge({ status }: { status: string }) {

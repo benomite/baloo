@@ -28,6 +28,7 @@ export const ECRITURE_STATUSES = [
   'pending_sync',
   'mirror',
   'divergent',
+  'supprimee_cw',
 ] as const;
 export type EcritureStatus = (typeof ECRITURE_STATUSES)[number];
 
