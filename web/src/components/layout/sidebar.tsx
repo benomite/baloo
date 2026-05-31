@@ -1,33 +1,32 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-  CircleHelp,
-  type LucideIcon,
-} from 'lucide-react';
+import { ChevronDown, CircleHelp, type LucideIcon } from 'lucide-react';
 import { InstallButton } from '@/components/pwa/install-button';
 import { SyncStatusButton } from '@/components/sync/sync-status-button';
 import { cn } from '@/lib/utils';
-import { DESKTOP_GROUPS, visibleItemsForRole } from './nav-config';
+import {
+  DESKTOP_GROUPS,
+  resolveNavItem,
+  visibleItemsForRole,
+  type NavGroup,
+} from './nav-config';
 
 interface SidebarProps {
   role: string;
   groupName?: string | null;
-  inboxCount?: number;
 }
 
-export function Sidebar({ role, groupName, inboxCount = 0 }: SidebarProps) {
-  const counts: Record<'inbox', number> = {
-    inbox: inboxCount,
-  };
-
+export function Sidebar({ role, groupName }: SidebarProps) {
   const pathname = usePathname();
-  const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`));
+  const isActive = (href: string) =>
+    href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`);
 
   return (
     <div className="w-[260px] shrink-0 flex flex-col h-full">
-      {/* Wordmark : écusson dégradé brand + Baloo + groupe */}
+      {/* Wordmark */}
       <div className="px-5 pt-5 pb-4">
         <div className="flex items-center gap-2.5">
           <div
@@ -54,40 +53,16 @@ export function Sidebar({ role, groupName, inboxCount = 0 }: SidebarProps) {
 
       {/* Sections */}
       <nav className="flex-1 overflow-y-auto px-2 pb-4 [scrollbar-gutter:stable]">
-        {DESKTOP_GROUPS.map((group) => {
-          const items = visibleItemsForRole(group.items, role);
-          if (items.length === 0) return null;
-          return (
-            <div key={group.intent} className="mt-5 first:mt-1">
-              <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-subtle">
-                {group.title}
-              </div>
-              <ul className="space-y-0.5">
-                {items.map((item) => (
-                  <li key={item.href}>
-                    <NavLink
-                      href={item.href}
-                      icon={item.icon}
-                      active={isActive(item.href)}
-                      badge={item.badgeKey ? counts[item.badgeKey] : undefined}
-                    >
-                      {item.label}
-                    </NavLink>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          );
-        })}
+        {DESKTOP_GROUPS.map((g) => (
+          <NavSection key={g.key} group={g} role={role} isActive={isActive} />
+        ))}
       </nav>
 
-      {/* Footer : install PWA si proposable + Sync (admins) + Aide */}
+      {/* Footer */}
       <div className="border-t border-border-soft p-2 space-y-2">
         <div className="px-1">
           <InstallButton />
         </div>
-        {/* Sync incrémentale Comptaweb — admins uniquement (cf. Phase 2
-            pivot miroir strict). Mount = auto-check + auto-run si stale. */}
         {(role === 'tresorier' || role === 'RG') && (
           <div className="px-1">
             <SyncStatusButton />
@@ -101,25 +76,74 @@ export function Sidebar({ role, groupName, inboxCount = 0 }: SidebarProps) {
   );
 }
 
+function NavSection({
+  group,
+  role,
+  isActive,
+}: {
+  group: NavGroup;
+  role: string;
+  isActive: (href: string) => boolean;
+}) {
+  const items = visibleItemsForRole(group.items, role);
+  const [open, setOpen] = useState(!group.defaultCollapsed);
+  if (items.length === 0) return null;
+
+  const list = (
+    <ul className="space-y-0.5">
+      {items.map((item) => {
+        const resolved = resolveNavItem(item, role);
+        return (
+          <li key={resolved.href}>
+            <NavLink href={resolved.href} icon={resolved.icon} active={isActive(resolved.href)}>
+              {resolved.label}
+            </NavLink>
+          </li>
+        );
+      })}
+    </ul>
+  );
+
+  if (!group.collapsible) {
+    return (
+      <div className="mt-5 first:mt-1">
+        <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-subtle">
+          {group.title}
+        </div>
+        {list}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-5 first:mt-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="w-full px-3 mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-subtle hover:text-fg-muted transition-colors"
+      >
+        <ChevronDown
+          size={11}
+          strokeWidth={2.5}
+          className={cn('transition-transform', open ? '' : '-rotate-90')}
+        />
+        {group.title}
+      </button>
+      {open && list}
+    </div>
+  );
+}
+
 interface NavLinkProps {
   href: string;
   icon: LucideIcon;
   active: boolean;
   children: React.ReactNode;
   variant?: 'default' | 'subtle';
-  // Compteur optionnel rendu en pastille à droite (badge "12").
-  badge?: number;
 }
 
-function NavLink({
-  href,
-  icon: Icon,
-  active,
-  children,
-  variant = 'default',
-  badge,
-}: NavLinkProps) {
-  const showBadge = typeof badge === 'number' && badge > 0;
+function NavLink({ href, icon: Icon, active, children, variant = 'default' }: NavLinkProps) {
   return (
     <Link
       href={href}
@@ -145,20 +169,6 @@ function NavLink({
         )}
       />
       <span className="truncate flex-1">{children}</span>
-      {showBadge && (
-        <span
-          className={cn(
-            'ml-auto inline-flex shrink-0 items-center justify-center rounded-full',
-            'min-w-[18px] h-[18px] px-1.5 text-[10.5px] font-semibold tabular-nums',
-            active
-              ? 'bg-brand text-white'
-              : 'bg-brand-50 text-brand group-hover:bg-brand-100',
-          )}
-          aria-label={`${badge} à traiter`}
-        >
-          {badge > 99 ? '99+' : badge}
-        </span>
-      )}
     </Link>
   );
 }
