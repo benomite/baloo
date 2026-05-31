@@ -22,17 +22,22 @@ import {
 export function registerSyncTools(server: McpServer, ctx: McpContext) {
   server.tool(
     'sync_run',
-    "Lance un cycle de sync incrémentale avec Comptaweb pour le groupe courant : promeut les écritures pending_sync en mirror par matching cw_numero_piece, met à jour les drafts depuis les lignes bancaires non rapprochées, détecte les écritures divergentes. Respecte le throttle 15 min sauf si force=true. Le verrou de concurrence (60s) ne peut pas être bypassé.",
+    "Lance un cycle de réconciliation avec Comptaweb (source de vérité) pour le groupe courant : aligne les écritures mirror sur CW (CW écrase les champs comptables), promeut les drafts/pending_sync matchés, passe en 'supprimee_cw' les écritures disparues de CW (dans la plage couverte), importe les écritures CW absentes, et crée des suggestions de lien pour les matches ambigus. scope='recent' (défaut, écritures récentes) ou 'exercice' (tout l'exercice, plus lourd). Respecte le throttle 15 min sauf force=true ; le verrou de concurrence (60s) n'est jamais bypassé.",
     {
       force: z
         .boolean()
         .optional()
         .describe('Override du throttle 15 min (un sync ok récent). Le verrou running < 60s reste appliqué.'),
+      scope: z
+        .enum(['recent', 'exercice'])
+        .optional()
+        .describe("Étendue : 'recent' (défaut, période active CW) ou 'exercice' (tout l'exercice, plus lourd — réservé aux réconciliations explicites)."),
     },
-    async ({ force }) => {
+    async ({ force, scope }) => {
       const result = await runSyncCycle(getDb(), ctx.groupId, {
         trigger: 'mcp' as SyncTrigger,
         force: Boolean(force),
+        scope: scope ?? 'recent',
       });
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],

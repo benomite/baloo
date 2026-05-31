@@ -60,6 +60,33 @@ export interface ReconcileOptions {
   dateToleranceDays: number;
 }
 
+/**
+ * Signature stable des champs LISTE d'une écriture CW. Sert à décider de
+ * l'enrichissement détail incrémental : si la signature stockée
+ * (`ecritures.cw_signature`) diffère de celle recalculée, c'est que CW a
+ * changé un champ visible → on relit la page détail. Doit être déterministe
+ * et identique côté cycle (recalcul) et côté stockage (au moment de l'update).
+ */
+export function computeCwSignature(fields: {
+  date: string;
+  type: string;
+  montantCents: number;
+  intitule: string;
+  numeroPiece: string;
+  modeTransaction: string;
+  categorieTiers: string;
+}): string {
+  return [
+    fields.date,
+    fields.type,
+    String(fields.montantCents),
+    fields.intitule,
+    fields.numeroPiece,
+    fields.modeTransaction,
+    fields.categorieTiers,
+  ].join('|');
+}
+
 function daysBetween(a: string, b: string): number {
   const da = Date.parse(a + 'T00:00:00Z');
   const db = Date.parse(b + 'T00:00:00Z');

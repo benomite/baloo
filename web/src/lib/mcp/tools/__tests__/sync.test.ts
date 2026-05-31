@@ -71,6 +71,22 @@ describe('sync MCP tools (Phase 2 Task 5)', () => {
     );
   });
 
+  it('sync_run transmet scope (défaut recent)', async () => {
+    const mod = await import('@/lib/services/sync-cycle');
+    await tools.sync_run.handler({});
+    expect(mod.runSyncCycle).toHaveBeenCalledWith(
+      expect.anything(),
+      'g-test',
+      expect.objectContaining({ scope: 'recent' }),
+    );
+    await tools.sync_run.handler({ scope: 'exercice' });
+    expect(mod.runSyncCycle).toHaveBeenCalledWith(
+      expect.anything(),
+      'g-test',
+      expect.objectContaining({ scope: 'exercice' }),
+    );
+  });
+
   it('sync_run marque isError quand status=failed', async () => {
     const mod = await import('@/lib/services/sync-cycle');
     vi.mocked(mod.runSyncCycle).mockResolvedValueOnce({
@@ -80,6 +96,12 @@ describe('sync MCP tools (Phase 2 Task 5)', () => {
       new_drafts: 0,
       updated_drafts: 0,
       divergent_detected: 0,
+      updated_mirror: 0,
+      supprimee_cw_detected: 0,
+      imported_from_cw: 0,
+      link_suggestions_created: 0,
+      detail_fetches: 0,
+      scope: 'recent',
       duration_ms: 0,
       error_message: 'CW down',
     });

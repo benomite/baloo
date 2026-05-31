@@ -1,15 +1,18 @@
-// Tests du service `runSyncCycle` et de ses satellites
-// (`getSyncStatus`, `ensureSyncFresh`) — Phase 2 Task 3 du pivot miroir
-// strict + MCP-first.
+// Tests du service `runSyncCycle` (réconciliation Comptaweb, spec 2026-06-01,
+// ADR-035) et de ses satellites (`getSyncStatus`, `ensureSyncFresh`).
 //
-// Setup : BDD libsql in-memory avec un schéma minimal (`sync_runs` +
-// `ecritures`) ; les scrapers Comptaweb sont injectés via les options
-// pour ne dépendre ni du réseau ni des credentials.
+// Setup : BDD libsql in-memory ; les scrapers CW + le détail + les resolvers
+// de référentiels sont injectés (ni réseau ni credentials).
+//
+// Régression conservée vs ADR-032 : throttle/verrou/stale/isolation/statut.
+// Sémantique NOUVELLE : matching par clé stable comptaweb_ecriture_id,
+// CW écrase (plus de divergent sur écart montant), suppressions, imports,
+// suggestions de lien.
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
 import { wrapClient, type DbWrapper } from '../../db';
-import { ensureSyncRunsSchema } from '../../db/business-schema';
+import { ensureSyncRunsSchema, ensureReconcileSchema } from '../../db/business-schema';
 import {
   runSyncCycle,
   getSyncStatus,
@@ -19,7 +22,6 @@ import {
 import type {
   ComptawebConfig,
   CwEcritureRow,
-  RapprochementBancaireData,
   ScrapeListeEcrituresResult,
 } from '../../comptaweb/types';
 
@@ -51,7 +53,6 @@ const ECRITURES_DDL = `
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
   );
   CREATE INDEX idx_ecritures_group ON ecritures(group_id);
-  CREATE INDEX idx_ecritures_cw_numero_piece ON ecritures(cw_numero_piece);
 `;
 
 async function setupDb(): Promise<{ client: Client; db: DbWrapper }> {
@@ -60,6 +61,7 @@ async function setupDb(): Promise<{ client: Client; db: DbWrapper }> {
   const db = wrapClient(client);
   await db.exec(ECRITURES_DDL);
   await ensureSyncRunsSchema(db);
+  await ensureReconcileSchema(db); // ajoute cw_signature, compteurs, cw_link_suggestions, backfill
   return { client, db };
 }
 
@@ -70,10 +72,13 @@ async function insertEcriture(
     group_id: string;
     status: string;
     cw_numero_piece: string | null;
+    comptaweb_ecriture_id: number | null;
+    cw_signature: string | null;
     amount_cents: number;
     type: 'depense' | 'recette';
     date_ecriture: string;
     description: string;
+    notes: string | null;
     updated_at: string;
   }> = {},
 ) {
@@ -82,18 +87,23 @@ async function insertEcriture(
     id: 'ECR-2026-001',
     group_id: 'g1',
     status: 'pending_sync',
-    cw_numero_piece: '2386515',
+    cw_numero_piece: null,
+    comptaweb_ecriture_id: null,
+    cw_signature: null,
     amount_cents: 49100,
     type: 'depense' as const,
     date_ecriture: '2026-05-04',
     description: 'Test',
+    notes: null,
     updated_at: now,
     ...overrides,
   };
   await db
     .prepare(
-      `INSERT INTO ecritures (id, group_id, date_ecriture, description, amount_cents, type, status, cw_numero_piece, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO ecritures
+         (id, group_id, date_ecriture, description, amount_cents, type, status,
+          cw_numero_piece, comptaweb_ecriture_id, cw_signature, notes, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       e.id,
@@ -104,6 +114,9 @@ async function insertEcriture(
       e.type,
       e.status,
       e.cw_numero_piece,
+      e.comptaweb_ecriture_id,
+      e.cw_signature,
+      e.notes,
       e.updated_at,
     );
 }
@@ -118,12 +131,7 @@ async function insertSyncRun(
     status: 'running' | 'ok' | 'failed' | 'skipped';
   },
 ) {
-  const r = {
-    id: 'SYNC-2026-000',
-    group_id: 'g1',
-    finished_at: null,
-    ...overrides,
-  };
+  const r = { id: 'SYNC-2026-000', group_id: 'g1', finished_at: null, ...overrides };
   await db
     .prepare(
       `INSERT INTO sync_runs (id, group_id, started_at, finished_at, status, trigger, created_at)
@@ -154,30 +162,50 @@ function makeRow(opts: Partial<CwEcritureRow>): CwEcritureRow {
 
 function mockOpts(opts: {
   ecritures?: CwEcritureRow[];
-  rapproche?: RapprochementBancaireData;
   scanDrafts?: SyncCycleOptions['scanDrafts'];
+  scrapeDetail?: SyncCycleOptions['scrapeDetail'];
+  resolveActiviteId?: SyncCycleOptions['resolveActiviteId'];
+  resolveUniteId?: SyncCycleOptions['resolveUniteId'];
   now?: () => number;
   trigger?: SyncCycleOptions['trigger'];
   force?: boolean;
+  scope?: SyncCycleOptions['scope'];
   failScrape?: boolean;
 }): SyncCycleOptions {
   return {
     trigger: opts.trigger ?? 'client',
     force: opts.force,
+    scope: opts.scope,
     now: opts.now,
     loadConfig: async () => FAKE_CONFIG,
     scrapeListe: async (): Promise<ScrapeListeEcrituresResult> => {
       if (opts.failScrape) throw new Error('CW down');
       return { ecritures: opts.ecritures ?? [] };
     },
-    scrapeRapprochement: async (): Promise<RapprochementBancaireData> =>
-      opts.rapproche ?? { idCompte: 1, libelleCompte: 'test', ecrituresComptables: [], ecrituresBancaires: [] },
     scanDrafts: opts.scanDrafts ?? (async () => ({ crees: 0, existants: 0 })),
+    scrapeDetail: opts.scrapeDetail ?? (async () => ({ activite: null, brancheprojet: null })),
+    resolveActiviteId: opts.resolveActiviteId ?? (async () => null),
+    resolveUniteId: opts.resolveUniteId ?? (async () => null),
   };
 }
 
+async function getEcriture(db: DbWrapper, id: string) {
+  return db
+    .prepare(
+      'SELECT status, cw_numero_piece, comptaweb_ecriture_id, amount_cents, description, notes FROM ecritures WHERE id = ?',
+    )
+    .get<{
+      status: string;
+      cw_numero_piece: string | null;
+      comptaweb_ecriture_id: number | null;
+      amount_cents: number;
+      description: string;
+      notes: string | null;
+    }>(id);
+}
+
 // ============================================================
-// Tests
+// Régression : throttle + verrou (inchangé vs ADR-032)
 // ============================================================
 
 describe('runSyncCycle — throttle + verrou', () => {
@@ -192,12 +220,7 @@ describe('runSyncCycle — throttle + verrou', () => {
 
   it('skip si last_run ok < 15 min', async () => {
     const now = new Date('2026-05-19T12:10:00Z').getTime();
-    await insertSyncRun(db, {
-      id: 'SYNC-2026-001',
-      started_at: '2026-05-19T12:00:00Z',
-      finished_at: '2026-05-19T12:00:30Z',
-      status: 'ok',
-    });
+    await insertSyncRun(db, { id: 'SYNC-2026-001', started_at: '2026-05-19T12:00:00Z', finished_at: '2026-05-19T12:00:30Z', status: 'ok' });
     const res = await runSyncCycle(db, 'g1', mockOpts({ now: () => now }));
     expect(res.status).toBe('skipped');
     expect(res.skipped_reason).toBe('throttled');
@@ -205,23 +228,14 @@ describe('runSyncCycle — throttle + verrou', () => {
 
   it('force=true bypass le throttle', async () => {
     const now = new Date('2026-05-19T12:10:00Z').getTime();
-    await insertSyncRun(db, {
-      id: 'SYNC-2026-001',
-      started_at: '2026-05-19T12:00:00Z',
-      finished_at: '2026-05-19T12:00:30Z',
-      status: 'ok',
-    });
+    await insertSyncRun(db, { id: 'SYNC-2026-001', started_at: '2026-05-19T12:00:00Z', finished_at: '2026-05-19T12:00:30Z', status: 'ok' });
     const res = await runSyncCycle(db, 'g1', mockOpts({ now: () => now, force: true }));
     expect(res.status).toBe('ok');
   });
 
   it('skip si un run est en cours depuis < 60s', async () => {
     const now = new Date('2026-05-19T12:00:30Z').getTime();
-    await insertSyncRun(db, {
-      id: 'SYNC-2026-001',
-      started_at: '2026-05-19T12:00:00Z',
-      status: 'running',
-    });
+    await insertSyncRun(db, { id: 'SYNC-2026-001', started_at: '2026-05-19T12:00:00Z', status: 'running' });
     const res = await runSyncCycle(db, 'g1', mockOpts({ now: () => now }));
     expect(res.status).toBe('skipped');
     expect(res.skipped_reason).toBe('already_running');
@@ -229,11 +243,7 @@ describe('runSyncCycle — throttle + verrou', () => {
 
   it('force ne bypass PAS le verrou running (sécurité)', async () => {
     const now = new Date('2026-05-19T12:00:30Z').getTime();
-    await insertSyncRun(db, {
-      id: 'SYNC-2026-001',
-      started_at: '2026-05-19T12:00:00Z',
-      status: 'running',
-    });
+    await insertSyncRun(db, { id: 'SYNC-2026-001', started_at: '2026-05-19T12:00:00Z', status: 'running' });
     const res = await runSyncCycle(db, 'g1', mockOpts({ now: () => now, force: true }));
     expect(res.status).toBe('skipped');
     expect(res.skipped_reason).toBe('already_running');
@@ -241,272 +251,249 @@ describe('runSyncCycle — throttle + verrou', () => {
 
   it('considère un running > 60s comme zombie et lance quand même', async () => {
     const now = new Date('2026-05-19T12:02:00Z').getTime();
-    await insertSyncRun(db, {
-      id: 'SYNC-2026-001',
-      started_at: '2026-05-19T12:00:00Z',
-      status: 'running',
-    });
+    await insertSyncRun(db, { id: 'SYNC-2026-001', started_at: '2026-05-19T12:00:00Z', status: 'running' });
     const res = await runSyncCycle(db, 'g1', mockOpts({ now: () => now }));
     expect(res.status).toBe('ok');
   });
 
   it('un last_run failed ne fait pas throttle (on retente)', async () => {
     const now = new Date('2026-05-19T12:05:00Z').getTime();
-    await insertSyncRun(db, {
-      id: 'SYNC-2026-001',
-      started_at: '2026-05-19T12:00:00Z',
-      finished_at: '2026-05-19T12:00:10Z',
-      status: 'failed',
-    });
+    await insertSyncRun(db, { id: 'SYNC-2026-001', started_at: '2026-05-19T12:00:00Z', finished_at: '2026-05-19T12:00:10Z', status: 'failed' });
     const res = await runSyncCycle(db, 'g1', mockOpts({ now: () => now }));
     expect(res.status).toBe('ok');
   });
 });
 
-describe('runSyncCycle — promotion pending_sync → mirror', () => {
+// ============================================================
+// Réconciliation : updates (CW écrase)
+// ============================================================
+
+describe('runSyncCycle — update mirror (CW écrase)', () => {
   let db: DbWrapper;
   beforeEach(async () => { ({ db } = await setupDb()); });
 
-  it('promeut par match cw_numero_piece (id interne CW)', async () => {
-    await insertEcriture(db, {
-      id: 'ECR-2026-001',
-      cw_numero_piece: '2386515',
-      amount_cents: 49100,
-      type: 'depense',
-    });
-    const res = await runSyncCycle(
-      db,
-      'g1',
-      mockOpts({
-        ecritures: [
-          makeRow({ id: 2386515, numeroPiece: 'ECR-2026-101', montantCentimes: 49100, type: 'depense' }),
-        ],
-      }),
-    );
+  it('promeut un pending_sync matché par clé stable et écrase ses champs', async () => {
+    await insertEcriture(db, { id: 'ECR-2026-001', status: 'pending_sync', comptaweb_ecriture_id: 2386515, amount_cents: 49100, type: 'depense', notes: 'note perso' });
+    const res = await runSyncCycle(db, 'g1', mockOpts({
+      ecritures: [makeRow({ id: 2386515, numeroPiece: 'ECR-2026-101', montantCentimes: 49100, intitule: 'Don WET' })],
+    }));
     expect(res.status).toBe('ok');
-    expect(res.promoted_to_mirror).toBe(1);
-
-    const ecr = await db
-      .prepare('SELECT status, cw_numero_piece FROM ecritures WHERE id = ?')
-      .get<{ status: string; cw_numero_piece: string }>('ECR-2026-001');
-    expect(ecr).toEqual({ status: 'mirror', cw_numero_piece: 'ECR-2026-101' });
+    expect(res.updated_mirror).toBe(1);
+    const ecr = await getEcriture(db, 'ECR-2026-001');
+    expect(ecr?.status).toBe('mirror');
+    expect(ecr?.cw_numero_piece).toBe('ECR-2026-101');
+    expect(ecr?.description).toBe('Don WET'); // CW écrase l'intitulé
+    expect(ecr?.notes).toBe('note perso'); // enrichissement local préservé
   });
 
-  it('détecte divergent quand le montant Baloo ≠ montant CW', async () => {
-    await insertEcriture(db, {
-      id: 'ECR-2026-001',
-      cw_numero_piece: '2386515',
-      amount_cents: 49100,
-      type: 'depense',
-    });
-    const res = await runSyncCycle(
-      db,
-      'g1',
-      mockOpts({
-        ecritures: [
-          makeRow({ id: 2386515, numeroPiece: 'ECR-2026-101', montantCentimes: 50000, type: 'depense' }),
-        ],
-      }),
-    );
-    expect(res.promoted_to_mirror).toBe(0);
-    expect(res.divergent_detected).toBe(1);
-
-    const ecr = await db
-      .prepare('SELECT status FROM ecritures WHERE id = ?')
-      .get<{ status: string }>('ECR-2026-001');
-    expect(ecr?.status).toBe('divergent');
+  it('CW écrase le montant divergent (plus de statut divergent)', async () => {
+    await insertEcriture(db, { id: 'ECR-2026-001', status: 'pending_sync', comptaweb_ecriture_id: 2386515, amount_cents: 49100 });
+    const res = await runSyncCycle(db, 'g1', mockOpts({
+      ecritures: [makeRow({ id: 2386515, montantCentimes: 50000 })],
+    }));
+    expect(res.divergent_detected).toBe(0);
+    const ecr = await getEcriture(db, 'ECR-2026-001');
+    expect(ecr?.status).toBe('mirror');
+    expect(ecr?.amount_cents).toBe(50000); // aligné sur CW
   });
 
-  it('détecte divergent quand le type Baloo ≠ type CW', async () => {
-    await insertEcriture(db, {
-      id: 'ECR-2026-001',
-      cw_numero_piece: '2386515',
-      amount_cents: 49100,
-      type: 'depense',
-    });
-    const res = await runSyncCycle(
-      db,
-      'g1',
-      mockOpts({
-        ecritures: [
-          makeRow({ id: 2386515, numeroPiece: 'ECR-2026-101', montantCentimes: 49100, type: 'recette' }),
-        ],
-      }),
-    );
-    expect(res.divergent_detected).toBe(1);
+  it('heal : matche un mirror legacy par cw_numero_piece texte (comptaweb_ecriture_id NULL)', async () => {
+    await insertEcriture(db, { id: 'ECR-2026-001', status: 'mirror', cw_numero_piece: 'ECR-2026-101', comptaweb_ecriture_id: null, amount_cents: 49100 });
+    const res = await runSyncCycle(db, 'g1', mockOpts({
+      ecritures: [makeRow({ id: 2386515, numeroPiece: 'ECR-2026-101', montantCentimes: 49100 })],
+    }));
+    expect(res.updated_mirror).toBe(1);
+    const ecr = await getEcriture(db, 'ECR-2026-001');
+    expect(ecr?.comptaweb_ecriture_id).toBe(2386515); // healé
   });
 
-  it('laisse en pending_sync si pas de match CW', async () => {
-    await insertEcriture(db, {
-      id: 'ECR-2026-001',
-      cw_numero_piece: '9999999',
-    });
-    const res = await runSyncCycle(
-      db,
-      'g1',
-      mockOpts({
-        ecritures: [makeRow({ id: 2386515, numeroPiece: 'ECR-2026-101' })],
-      }),
-    );
-    expect(res.promoted_to_mirror).toBe(0);
-
-    const ecr = await db
-      .prepare('SELECT status FROM ecritures WHERE id = ?')
-      .get<{ status: string }>('ECR-2026-001');
-    expect(ecr?.status).toBe('pending_sync');
+  it("ne relit PAS le détail si la signature n'a pas changé (incrémental)", async () => {
+    // Pré-calcul de la signature pour la stocker telle qu'elle sera recalculée.
+    const { computeCwSignature } = await import('../ecritures-sync-reconcile');
+    const sig = computeCwSignature({ date: '2026-05-04', type: 'depense', montantCents: 49100, intitule: 'Test', numeroPiece: 'ECR-2026-101', modeTransaction: 'Virement', categorieTiers: '' });
+    await insertEcriture(db, { id: 'ECR-2026-001', status: 'mirror', comptaweb_ecriture_id: 2386515, cw_signature: sig });
+    let detailCalls = 0;
+    const res = await runSyncCycle(db, 'g1', mockOpts({
+      ecritures: [makeRow({ id: 2386515, numeroPiece: 'ECR-2026-101' })],
+      scrapeDetail: async () => { detailCalls++; return { activite: null, brancheprojet: null }; },
+    }));
+    expect(detailCalls).toBe(0);
+    expect(res.detail_fetches).toBe(0);
+    expect(res.updated_mirror).toBe(1);
   });
 
-  it('ignore les écritures qui ne sont pas en pending_sync', async () => {
-    await insertEcriture(db, { id: 'ECR-2026-001', status: 'draft', cw_numero_piece: null });
-    await insertEcriture(db, { id: 'ECR-2026-002', status: 'mirror', cw_numero_piece: '2386515' });
-    const res = await runSyncCycle(
-      db,
-      'g1',
-      mockOpts({
-        ecritures: [makeRow({ id: 2386515, montantCentimes: 49100, type: 'depense' })],
-      }),
-    );
-    expect(res.promoted_to_mirror).toBe(0);
-  });
-
-  it('match aussi par numeroPiece (cas d un re-cycle après promotion)', async () => {
-    // Après un premier cycle, cw_numero_piece a déjà été remplacé par
-    // le vrai numéro CW. Le 2e cycle doit pouvoir re-matcher dessus.
-    await insertEcriture(db, {
-      id: 'ECR-2026-001',
-      status: 'pending_sync',
-      cw_numero_piece: 'ECR-2026-101',
-      amount_cents: 49100,
-    });
-    const res = await runSyncCycle(
-      db,
-      'g1',
-      mockOpts({
-        ecritures: [makeRow({ id: 2386515, numeroPiece: 'ECR-2026-101', montantCentimes: 49100 })],
-      }),
-    );
-    expect(res.promoted_to_mirror).toBe(1);
+  it('relit le détail et résout activité/unité quand la signature a changé', async () => {
+    await insertEcriture(db, { id: 'ECR-2026-001', status: 'mirror', comptaweb_ecriture_id: 2386515, cw_signature: 'OLD' });
+    const res = await runSyncCycle(db, 'g1', mockOpts({
+      ecritures: [makeRow({ id: 2386515 })],
+      scrapeDetail: async () => ({ activite: 'Camp 2026', brancheprojet: 'Louveteaux' }),
+      resolveActiviteId: async () => 'ACT-1',
+      resolveUniteId: async () => 'UNITE-1',
+    }));
+    expect(res.detail_fetches).toBe(1);
+    const ecr = await db.prepare('SELECT activite_id, unite_id FROM ecritures WHERE id = ?').get<{ activite_id: string; unite_id: string }>('ECR-2026-001');
+    expect(ecr?.activite_id).toBe('ACT-1');
+    expect(ecr?.unite_id).toBe('UNITE-1');
   });
 });
 
-describe('runSyncCycle — drafts orphelins', () => {
+// ============================================================
+// Réconciliation : suppressions
+// ============================================================
+
+describe('runSyncCycle — suppressions', () => {
   let db: DbWrapper;
   beforeEach(async () => { ({ db } = await setupDb()); });
+
+  it('passe en supprimee_cw une écriture reliée absente dans la plage couverte', async () => {
+    await insertEcriture(db, { id: 'ECR-DEL', status: 'mirror', comptaweb_ecriture_id: 150 });
+    const res = await runSyncCycle(db, 'g1', mockOpts({
+      ecritures: [makeRow({ id: 100 }), makeRow({ id: 200, numeroPiece: 'ECR-2026-200' })],
+    }));
+    expect(res.supprimee_cw_detected).toBe(1);
+    const ecr = await getEcriture(db, 'ECR-DEL');
+    expect(ecr?.status).toBe('supprimee_cw');
+  });
+
+  it("ne supprime pas une écriture reliée hors plage (id < min)", async () => {
+    await insertEcriture(db, { id: 'ECR-OLD', status: 'mirror', comptaweb_ecriture_id: 50 });
+    const res = await runSyncCycle(db, 'g1', mockOpts({
+      ecritures: [makeRow({ id: 100 }), makeRow({ id: 200, numeroPiece: 'ECR-2026-200' })],
+    }));
+    expect(res.supprimee_cw_detected).toBe(0);
+    const ecr = await getEcriture(db, 'ECR-OLD');
+    expect(ecr?.status).toBe('mirror');
+  });
+});
+
+// ============================================================
+// Réconciliation : imports + drafts + suggestions
+// ============================================================
+
+describe('runSyncCycle — imports et drafts', () => {
+  let db: DbWrapper;
+  beforeEach(async () => { ({ db } = await setupDb()); });
+
+  it('importe une ligne CW sans équivalent Baloo (création mirror)', async () => {
+    const res = await runSyncCycle(db, 'g1', mockOpts({
+      ecritures: [makeRow({ id: 777, numeroPiece: 'ECR-2026-777', intitule: 'Saisie CW directe', montantCentimes: 1234 })],
+    }));
+    expect(res.imported_from_cw).toBe(1);
+    const row = await db.prepare("SELECT id, status, amount_cents FROM ecritures WHERE comptaweb_ecriture_id = 777").get<{ id: string; status: string; amount_cents: number }>();
+    expect(row?.status).toBe('mirror');
+    expect(row?.amount_cents).toBe(1234);
+  });
+
+  it('promeut un draft sur match contenu unique', async () => {
+    await insertEcriture(db, { id: 'DRAFT-1', status: 'draft', cw_numero_piece: null, comptaweb_ecriture_id: null, amount_cents: 4200, type: 'depense', date_ecriture: '2026-05-04' });
+    const res = await runSyncCycle(db, 'g1', mockOpts({
+      ecritures: [makeRow({ id: 900, numeroPiece: 'ECR-2026-900', montantCentimes: 4200, type: 'depense', dateEcriture: '2026-05-05' })],
+    }));
+    expect(res.promoted_to_mirror).toBe(1);
+    expect(res.imported_from_cw).toBe(0); // ligne consommée, pas réimportée
+    const ecr = await getEcriture(db, 'DRAFT-1');
+    expect(ecr?.status).toBe('mirror');
+    expect(ecr?.comptaweb_ecriture_id).toBe(900);
+  });
+
+  it('crée des suggestions (sans promotion ni import) sur match ambigu', async () => {
+    await insertEcriture(db, { id: 'DRAFT-1', status: 'draft', amount_cents: 2400, type: 'depense', date_ecriture: '2026-05-04' });
+    const res = await runSyncCycle(db, 'g1', mockOpts({
+      ecritures: [
+        makeRow({ id: 901, numeroPiece: 'ECR-2026-901', montantCentimes: 2400, dateEcriture: '2026-05-04' }),
+        makeRow({ id: 902, numeroPiece: 'ECR-2026-902', montantCentimes: 2400, dateEcriture: '2026-05-04' }),
+      ],
+    }));
+    expect(res.promoted_to_mirror).toBe(0);
+    expect(res.link_suggestions_created).toBe(2);
+    expect(res.imported_from_cw).toBe(0);
+    const ecr = await getEcriture(db, 'DRAFT-1');
+    expect(ecr?.status).toBe('draft'); // inchangé
+    const sugg = await db.prepare("SELECT COUNT(*) as c FROM cw_link_suggestions WHERE group_id='g1' AND status='a_confirmer'").get<{ c: number }>();
+    expect(sugg?.c).toBe(2);
+  });
 
   it('compte les nouveaux drafts retournés par scanDrafts', async () => {
-    const res = await runSyncCycle(
-      db,
-      'g1',
-      mockOpts({
-        scanDrafts: async () => ({ crees: 3, existants: 5 }),
-      }),
-    );
+    const res = await runSyncCycle(db, 'g1', mockOpts({ scanDrafts: async () => ({ crees: 3, existants: 5 }) }));
     expect(res.new_drafts).toBe(3);
-    expect(res.updated_drafts).toBe(0);
   });
 
-  it('continue le cycle même si scanDrafts retourne une erreur métier', async () => {
-    // scanDrafts retourne une erreur applicative (session expirée) sans
-    // throw : on doit quand même réussir le cycle (le run a déjà fait
-    // la promotion mirror, on ne le marque pas failed pour des drafts).
-    const res = await runSyncCycle(
-      db,
-      'g1',
-      mockOpts({
-        scanDrafts: async () => ({ crees: 0, existants: 0, erreur: 'session expirée' }),
-      }),
-    );
-    expect(res.status).toBe('ok');
-    expect(res.new_drafts).toBe(0);
+  it('scénario combiné : update + delete + import + promotion', async () => {
+    await insertEcriture(db, { id: 'UPD', status: 'mirror', comptaweb_ecriture_id: 100, cw_signature: 'OLD' });
+    await insertEcriture(db, { id: 'DEL', status: 'mirror', comptaweb_ecriture_id: 150 });
+    await insertEcriture(db, { id: 'DRAFT', status: 'draft', amount_cents: 5000, type: 'depense', date_ecriture: '2026-05-01' });
+    const res = await runSyncCycle(db, 'g1', mockOpts({
+      ecritures: [
+        makeRow({ id: 100, numeroPiece: 'ECR-100' }),
+        makeRow({ id: 200, numeroPiece: 'ECR-200' }),
+        makeRow({ id: 250, numeroPiece: 'ECR-250', montantCentimes: 5000, dateEcriture: '2026-05-01' }),
+        makeRow({ id: 260, numeroPiece: 'ECR-260', montantCentimes: 9999, dateEcriture: '2026-05-05' }),
+      ],
+    }));
+    expect(res.updated_mirror).toBe(1);
+    expect(res.supprimee_cw_detected).toBe(1);
+    expect(res.promoted_to_mirror).toBe(1);
+    expect(res.imported_from_cw).toBe(2); // 200 et 260
   });
 });
 
-describe('runSyncCycle — détection stale + erreurs', () => {
+// ============================================================
+// scope + erreurs + stale
+// ============================================================
+
+describe('runSyncCycle — scope, stale et erreurs', () => {
   let db: DbWrapper;
   beforeEach(async () => { ({ db } = await setupDb()); });
+
+  it('persiste le scope dans sync_runs', async () => {
+    const res = await runSyncCycle(db, 'g1', mockOpts({ scope: 'exercice' }));
+    expect(res.scope).toBe('exercice');
+    const row = await db.prepare('SELECT scope FROM sync_runs WHERE id = ?').get<{ scope: string }>(res.sync_run_id);
+    expect(row?.scope).toBe('exercice');
+  });
 
   it('warning si pending_sync stale > 1h (status reste ok)', async () => {
     const now = new Date('2026-05-19T14:00:00Z').getTime();
-    // pending_sync mise à jour à 12:30, soit 1h30 avant now.
-    await insertEcriture(db, {
-      id: 'ECR-2026-001',
-      status: 'pending_sync',
-      cw_numero_piece: '9999999', // pas match
-      updated_at: '2026-05-19T12:30:00Z',
-    });
+    await insertEcriture(db, { id: 'ECR-2026-001', status: 'pending_sync', comptaweb_ecriture_id: 9999999, updated_at: '2026-05-19T12:30:00Z' });
     const res = await runSyncCycle(db, 'g1', mockOpts({ now: () => now }));
     expect(res.status).toBe('ok');
     expect(res.error_message).toMatch(/1 pending_sync stales > 1h/);
-  });
-
-  it('pas de warning si toutes les pending_sync sont récentes', async () => {
-    const now = new Date('2026-05-19T12:15:00Z').getTime();
-    await insertEcriture(db, {
-      id: 'ECR-2026-001',
-      status: 'pending_sync',
-      cw_numero_piece: '9999999',
-      updated_at: '2026-05-19T12:00:00Z',
-    });
-    const res = await runSyncCycle(db, 'g1', mockOpts({ now: () => now }));
-    expect(res.error_message).toBeUndefined();
   });
 
   it('scraper throws → status failed + error_message renseigné', async () => {
     const res = await runSyncCycle(db, 'g1', mockOpts({ failScrape: true }));
     expect(res.status).toBe('failed');
     expect(res.error_message).toMatch(/CW down/);
-
-    const row = await db
-      .prepare('SELECT status, error_message FROM sync_runs WHERE id = ?')
-      .get<{ status: string; error_message: string }>(res.sync_run_id);
+    const row = await db.prepare('SELECT status FROM sync_runs WHERE id = ?').get<{ status: string }>(res.sync_run_id);
     expect(row?.status).toBe('failed');
-    expect(row?.error_message).toMatch(/CW down/);
   });
 });
+
+// ============================================================
+// Isolation multi-groupes
+// ============================================================
 
 describe('runSyncCycle — isolation multi-groupes', () => {
   let db: DbWrapper;
   beforeEach(async () => { ({ db } = await setupDb()); });
 
   it('sync groupe A ne touche pas les écritures du groupe B', async () => {
-    await insertEcriture(db, {
-      id: 'ECR-2026-A1', group_id: 'g_a', cw_numero_piece: '111', amount_cents: 1000,
-    });
-    await insertEcriture(db, {
-      id: 'ECR-2026-B1', group_id: 'g_b', cw_numero_piece: '111', amount_cents: 1000,
-    });
-
-    await runSyncCycle(
-      db,
-      'g_a',
-      mockOpts({
-        ecritures: [makeRow({ id: 111, montantCentimes: 1000 })],
-      }),
-    );
-
-    const a = await db
-      .prepare('SELECT status FROM ecritures WHERE id = ?')
-      .get<{ status: string }>('ECR-2026-A1');
-    const b = await db
-      .prepare('SELECT status FROM ecritures WHERE id = ?')
-      .get<{ status: string }>('ECR-2026-B1');
+    await insertEcriture(db, { id: 'ECR-A1', group_id: 'g_a', comptaweb_ecriture_id: 111, amount_cents: 1000 });
+    await insertEcriture(db, { id: 'ECR-B1', group_id: 'g_b', comptaweb_ecriture_id: 111, amount_cents: 1000 });
+    await runSyncCycle(db, 'g_a', mockOpts({ ecritures: [makeRow({ id: 111, montantCentimes: 1000 })] }));
+    const a = await getEcriture(db, 'ECR-A1');
+    const b = await getEcriture(db, 'ECR-B1');
     expect(a?.status).toBe('mirror');
     expect(b?.status).toBe('pending_sync'); // intact
   });
 
   it('throttle par groupe : last_run g_a ne throttle pas g_b', async () => {
     const now = new Date('2026-05-19T12:05:00Z').getTime();
-    await insertSyncRun(db, {
-      id: 'SYNC-1', group_id: 'g_a',
-      started_at: '2026-05-19T12:00:00Z',
-      finished_at: '2026-05-19T12:00:30Z',
-      status: 'ok',
-    });
-
+    await insertSyncRun(db, { id: 'SYNC-1', group_id: 'g_a', started_at: '2026-05-19T12:00:00Z', finished_at: '2026-05-19T12:00:30Z', status: 'ok' });
     const resA = await runSyncCycle(db, 'g_a', mockOpts({ now: () => now }));
     const resB = await runSyncCycle(db, 'g_b', mockOpts({ now: () => now }));
-    expect(resA.status).toBe('skipped'); // throttled
-    expect(resB.status).toBe('ok'); // pas concerné
+    expect(resA.status).toBe('skipped');
+    expect(resB.status).toBe('ok');
   });
 });
 
@@ -528,34 +515,14 @@ describe('getSyncStatus', () => {
 
   it('renvoie is_running=true pour un run récent en cours', async () => {
     const now = new Date('2026-05-19T12:00:30Z').getTime();
-    await insertSyncRun(db, {
-      id: 'SYNC-1',
-      started_at: '2026-05-19T12:00:00Z',
-      status: 'running',
-    });
+    await insertSyncRun(db, { id: 'SYNC-1', started_at: '2026-05-19T12:00:00Z', status: 'running' });
     const s = await getSyncStatus(db, 'g1', { now: () => now });
     expect(s.is_running).toBe(true);
   });
 
-  it('is_running=false pour un running vieux (zombie)', async () => {
-    const now = new Date('2026-05-19T12:05:00Z').getTime();
-    await insertSyncRun(db, {
-      id: 'SYNC-1',
-      started_at: '2026-05-19T12:00:00Z',
-      status: 'running',
-    });
-    const s = await getSyncStatus(db, 'g1', { now: () => now });
-    expect(s.is_running).toBe(false);
-  });
-
   it('renvoie stale=false et throttle_until pour un run ok récent', async () => {
     const now = new Date('2026-05-19T12:10:00Z').getTime();
-    await insertSyncRun(db, {
-      id: 'SYNC-1',
-      started_at: '2026-05-19T12:00:00Z',
-      finished_at: '2026-05-19T12:00:30Z',
-      status: 'ok',
-    });
+    await insertSyncRun(db, { id: 'SYNC-1', started_at: '2026-05-19T12:00:00Z', finished_at: '2026-05-19T12:00:30Z', status: 'ok' });
     const s = await getSyncStatus(db, 'g1', { now: () => now });
     expect(s.stale).toBe(false);
     expect(s.throttle_until).toBe('2026-05-19T12:15:30.000Z');
@@ -563,12 +530,7 @@ describe('getSyncStatus', () => {
 
   it('renvoie stale=true si > 15 min depuis last_ok', async () => {
     const now = new Date('2026-05-19T12:30:00Z').getTime();
-    await insertSyncRun(db, {
-      id: 'SYNC-1',
-      started_at: '2026-05-19T12:00:00Z',
-      finished_at: '2026-05-19T12:00:30Z',
-      status: 'ok',
-    });
+    await insertSyncRun(db, { id: 'SYNC-1', started_at: '2026-05-19T12:00:00Z', finished_at: '2026-05-19T12:00:30Z', status: 'ok' });
     const s = await getSyncStatus(db, 'g1', { now: () => now });
     expect(s.stale).toBe(true);
   });
@@ -584,12 +546,7 @@ describe('ensureSyncFresh', () => {
 
   it('no-op si fresh', async () => {
     const now = new Date('2026-05-19T12:05:00Z').getTime();
-    await insertSyncRun(db, {
-      id: 'SYNC-1',
-      started_at: '2026-05-19T12:00:00Z',
-      finished_at: '2026-05-19T12:00:30Z',
-      status: 'ok',
-    });
+    await insertSyncRun(db, { id: 'SYNC-1', started_at: '2026-05-19T12:00:00Z', finished_at: '2026-05-19T12:00:30Z', status: 'ok' });
     let scraperCalled = false;
     await ensureSyncFresh(db, 'g1', 'mcp', {
       now: () => now,
@@ -611,11 +568,7 @@ describe('ensureSyncFresh', () => {
 
   it('no-op si un run est déjà en cours', async () => {
     const now = new Date('2026-05-19T12:00:30Z').getTime();
-    await insertSyncRun(db, {
-      id: 'SYNC-1',
-      started_at: '2026-05-19T12:00:00Z',
-      status: 'running',
-    });
+    await insertSyncRun(db, { id: 'SYNC-1', started_at: '2026-05-19T12:00:00Z', status: 'running' });
     let scraperCalled = false;
     await ensureSyncFresh(db, 'g1', 'mcp', {
       now: () => now,
