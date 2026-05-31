@@ -17,6 +17,7 @@ import { listDepots } from '@/lib/services/depots';
 import { computeReadiness } from '@/lib/sync-readiness';
 import { sendRelance } from '@/lib/actions/relances';
 import { SyncDraftButton } from '@/components/ecritures/sync-draft-button';
+import { DeleteDraftButton } from '@/components/ecritures/delete-draft-button';
 import { Amount } from '@/components/shared/amount';
 import { Alert } from '@/components/ui/alert';
 import { Field } from '@/components/shared/field';
@@ -132,6 +133,9 @@ export default async function EcritureDetailPage({
                 </PendingButton>
               </form>
             )}
+            {/* Suppression réservée aux brouillons locaux (jamais envoyés à
+                Comptaweb). Garde-fous côté serveur : draft + aucune pièce. */}
+            {ecriture.status === 'draft' && <DeleteDraftButton ecritureId={id} />}
           </div>
         }
       />

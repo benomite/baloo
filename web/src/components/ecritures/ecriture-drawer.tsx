@@ -7,6 +7,7 @@ import { Drawer } from '@/components/ui/drawer';
 import { EcritureForm } from '@/components/ecritures/ecriture-form';
 import { JustificatifsCard } from '@/components/ecritures/justificatifs-card';
 import { SyncDraftButton } from '@/components/ecritures/sync-draft-button';
+import { DeleteDraftButton } from '@/components/ecritures/delete-draft-button';
 import { EcritureStatePair } from '@/components/shared/status-badge';
 import { Amount } from '@/components/shared/amount';
 import { PendingButton } from '@/components/shared/pending-button';
@@ -227,6 +228,12 @@ export function EcritureDrawer({
                 Repasser brouillon
               </PendingButton>
             </form>
+          )}
+          {/* Suppression réservée aux brouillons locaux. Garde-fous serveur. */}
+          {ecriture.status === 'draft' && (
+            <div className="ml-auto">
+              <DeleteDraftButton ecritureId={ecriture.id} />
+            </div>
           )}
         </div>
       </div>

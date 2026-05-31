@@ -1,4 +1,4 @@
-import { getDb } from '../db';
+import { getDb, type DbWrapper } from '../db';
 import { currentTimestamp } from '../ids';
 import { nullIfEmpty } from '../utils/form';
 import type { Ecriture, EcritureStatus } from '../types';
@@ -337,6 +337,53 @@ export async function updateEcritureField(
   const updated = await updateEcriture({ groupId }, id, patch);
   if (!updated) return { ok: false, reason: 'not_found' };
   return { ok: true, ecriture: updated };
+}
+
+export type DeleteDraftResult =
+  | { ok: true }
+  | { ok: false; reason: 'not_found' | 'not_draft' | 'has_attachments' };
+
+// Suppression d'un brouillon local. SEULE exception assumée à la règle
+// "JAMAIS de DELETE sur ecritures" (CLAUDE.md) : un draft est purement local,
+// jamais envoyé à Comptaweb, donc rien à désynchroniser. Garde-fous stricts,
+// dans l'esprit du re-check de `deleteCsvDuplicates` :
+//   - statut DOIT être 'draft' (jamais pending_cw/pending_sync/mirror/divergent) ;
+//   - aucune pièce attachée (justif, dépôt de justif, remboursement) ;
+//   - écriture du bon groupe (et dans le scope unité si chef).
+// Le re-check des liens juste avant le DELETE évite une race (justif uploadé
+// entre l'affichage du bouton et le clic). Le `AND status='draft'` du DELETE
+// referme la fenêtre côté SQL.
+export async function deleteDraftEcriture(
+  { groupId, scopeUniteId }: EcritureContext,
+  id: string,
+  db: DbWrapper = getDb(),
+): Promise<DeleteDraftResult> {
+  const conditions = ['id = ?', 'group_id = ?'];
+  const values: unknown[] = [id, groupId];
+  if (scopeUniteId) { conditions.push('unite_id = ?'); values.push(scopeUniteId); }
+  const current = await db
+    .prepare(`SELECT status FROM ecritures WHERE ${conditions.join(' AND ')}`)
+    .get<{ status: string }>(...values);
+  if (!current) return { ok: false, reason: 'not_found' };
+  if (current.status !== 'draft') return { ok: false, reason: 'not_draft' };
+
+  const justifs = await db
+    .prepare(`SELECT COUNT(*) as n FROM justificatifs WHERE entity_type = 'ecriture' AND entity_id = ?`)
+    .get<{ n: number }>(id);
+  const depots = await db
+    .prepare('SELECT COUNT(*) as n FROM depots_justificatifs WHERE ecriture_id = ?')
+    .get<{ n: number }>(id);
+  const rembs = await db
+    .prepare('SELECT COUNT(*) as n FROM remboursements WHERE ecriture_id = ?')
+    .get<{ n: number }>(id);
+  if ((justifs?.n ?? 0) + (depots?.n ?? 0) + (rembs?.n ?? 0) > 0) {
+    return { ok: false, reason: 'has_attachments' };
+  }
+
+  await db
+    .prepare(`DELETE FROM ecritures WHERE id = ? AND group_id = ? AND status = 'draft'`)
+    .run(id, groupId);
+  return { ok: true };
 }
 
 export interface BatchPatch {

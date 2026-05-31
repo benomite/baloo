@@ -162,7 +162,9 @@ Règles non négociables :
 
 **Pourquoi** : l'utilisateur enrichit en continu chaque écriture (notes, justifs uploadés, liens vers dépôts/remb, modifications d'imputation). Toute donnée perdue = saisie à refaire, contexte effacé. Coût utilisateur très élevé. Cas concret 2026-05-04 : le re-import CSV faisait `DELETE WHERE status='saisie_comptaweb' + INSERT` — aurait fait perdre tous les justifs uploadés et cassé les liens dépôts/rembs. Refonte en UPSERT.
 
-**Exception** : seules les tables de pur cache audit (`comptaweb_lignes` = trace brute du CSV importé, ré-écrasable) peuvent être DELETE+INSERT. À évaluer au cas par cas, jamais par défaut.
+**Exceptions** (à évaluer au cas par cas, jamais par défaut) :
+- Tables de pur cache audit (`comptaweb_lignes` = trace brute du CSV importé, ré-écrasable) : DELETE+INSERT toléré.
+- **Suppression d'un brouillon local** (`ecritures.status='draft'`) : une écriture en `draft` est purement locale, jamais envoyée à Comptaweb, donc rien à désynchroniser. `deleteDraftEcriture` (service `ecritures.ts`) la supprime sous garde-fous stricts : statut `draft` obligatoire + aucune pièce attachée (justif, dépôt de justif, remboursement). Tout autre statut (`pending_cw`/`pending_sync`/`mirror`/`divergent`) reste interdit au DELETE. Cas concret 2026-05-31 : draft orphelin doublon (somme d'écritures détail) à enlever — pas de chemin propre existant, d'où cette capacité user dédiée.
 
 ## Mode dev
 

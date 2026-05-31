@@ -7,6 +7,7 @@ import {
   updateEcritureStatus as updateEcritureStatusService,
   updateEcritureField as updateEcritureFieldService,
   batchUpdateEcritures as batchUpdateEcrituresService,
+  deleteDraftEcriture as deleteDraftEcritureService,
   type InlineField,
   type BatchPatch,
   type BatchResult,
@@ -87,6 +88,24 @@ export async function updateEcritureField(
   }
   revalidatePath('/ecritures');
   revalidatePath(`/ecritures/${id}`);
+  return { ok: true };
+}
+
+// Suppression d'un brouillon local (status='draft' uniquement, sans pièce
+// attachée). Seule exception assumée à la règle no-DELETE — cf. service.
+export async function deleteDraft(id: string): Promise<{ ok: boolean; message?: string }> {
+  const { groupId, scopeUniteId } = await getCurrentContext();
+  const res = await deleteDraftEcritureService({ groupId, scopeUniteId }, id);
+  if (!res.ok) {
+    const messages: Record<typeof res.reason, string> = {
+      not_found: `Brouillon ${id} introuvable.`,
+      not_draft: 'Seul un brouillon local (jamais envoyé à Comptaweb) peut être supprimé.',
+      has_attachments: 'Suppression refusée : ce brouillon a un justificatif, un dépôt ou un remboursement attaché.',
+    };
+    return { ok: false, message: messages[res.reason] };
+  }
+  revalidatePath('/ecritures');
+  revalidatePath('/');
   return { ok: true };
 }
 
