@@ -1,43 +1,85 @@
 import { describe, it, expect } from 'vitest';
-import { DESKTOP_GROUPS, MOBILE_TABS, visibleItemsForRole, visibleTabsForRole } from './nav-config';
+import {
+  DESKTOP_GROUPS,
+  MOBILE_TABS,
+  resolveNavItem,
+  visibleItemsForRole,
+  visibleTabsForRole,
+  type NavGroup,
+} from './nav-config';
 
-describe('nav-config — desktop', () => {
-  it('le trésorier voit les 4 groupes d intention', () => {
-    const groups = DESKTOP_GROUPS.filter((g) => visibleItemsForRole(g.items, 'tresorier').length > 0);
-    expect(groups.map((g) => g.intent)).toEqual(['piloter', 'saisir', 'demandes', 'gerer']);
+function group(key: 'process' | 'administration'): NavGroup {
+  const g = DESKTOP_GROUPS.find((x) => x.key === key);
+  if (!g) throw new Error(`groupe ${key} absent`);
+  return g;
+}
+
+describe('nav-config — structure des groupes', () => {
+  it('expose exactement deux groupes : process puis administration', () => {
+    expect(DESKTOP_GROUPS.map((g) => g.key)).toEqual(['process', 'administration']);
   });
 
-  it('le chef ne voit que Synthèse dans Piloter (Budget réservé aux admins)', () => {
-    const piloter = DESKTOP_GROUPS.find((g) => g.intent === 'piloter')!;
-    const items = visibleItemsForRole(piloter.items, 'chef').map((i) => i.href);
-    expect(items).toEqual(['/synthese']);
+  it('le bloc administration est repliable et replié par défaut', () => {
+    const admin = group('administration');
+    expect(admin.collapsible).toBe(true);
+    expect(admin.defaultCollapsed).toBe(true);
+  });
+});
+
+describe('nav-config — desktop, filtrage par rôle', () => {
+  it('le trésorier voit les 3 process + tout le bloc administration', () => {
+    const process = visibleItemsForRole(group('process').items, 'tresorier').map((i) => i.href);
+    expect(process).toEqual(['/depot', '/remboursements', '/abandons']);
+    const admin = visibleItemsForRole(group('administration').items, 'tresorier').map((i) => i.href);
+    expect(admin).toContain('/ecritures');
+    expect(admin).toContain('/caisse');
+    expect(admin).toContain('/import');
   });
 
-  it('aucun item compta ne fuit vers equipier sur desktop', () => {
-    const all = DESKTOP_GROUPS.flatMap((g) => visibleItemsForRole(g.items, 'equipier'));
-    expect(all.map((i) => i.href)).not.toContain('/ecritures');
-    expect(all.map((i) => i.href)).not.toContain('/caisse');
+  it('le chef ne voit aucun item du bloc administration', () => {
+    expect(visibleItemsForRole(group('administration').items, 'chef')).toHaveLength(0);
   });
 
-  it('Import et Clôture ne sont dans aucun groupe', () => {
-    const hrefs = DESKTOP_GROUPS.flatMap((g) => g.items).map((i) => i.href);
-    expect(hrefs).not.toContain('/import');
-    expect(hrefs).not.toContain('/cloture');
+  it('le parent ne voit que Remboursements dans process', () => {
+    const process = visibleItemsForRole(group('process').items, 'parent').map((i) => i.href);
+    expect(process).toEqual(['/remboursements']);
+    expect(visibleItemsForRole(group('administration').items, 'parent')).toHaveLength(0);
+  });
+});
+
+describe('nav-config — resolveNavItem (role-switch)', () => {
+  const depot = group('process').items.find((i) => i.href === '/depot')!;
+  const rembs = group('process').items.find((i) => i.href === '/remboursements')!;
+
+  it('Déposer pointe vers /depots avec le libellé "Dépôts" pour un admin', () => {
+    expect(resolveNavItem(depot, 'tresorier')).toMatchObject({ href: '/depots', label: 'Dépôts' });
+  });
+
+  it('Déposer pointe vers /depot avec le libellé "Déposer" pour un equipier', () => {
+    expect(resolveNavItem(depot, 'equipier')).toMatchObject({ href: '/depot', label: 'Déposer' });
+  });
+
+  it('Remboursements : "Remboursements" pour admin, "Mes demandes" pour equipier, "Mes reçus"→/ pour parent', () => {
+    expect(resolveNavItem(rembs, 'RG').label).toBe('Remboursements');
+    expect(resolveNavItem(rembs, 'equipier').label).toBe('Mes demandes');
+    expect(resolveNavItem(rembs, 'parent')).toMatchObject({ href: '/', label: 'Mes reçus' });
   });
 });
 
 describe('nav-config — mobile', () => {
-  it('equipier voit 3 onglets : accueil, depot, mes-demandes', () => {
-    expect(visibleTabsForRole('equipier').map((t) => t.key)).toEqual(['accueil', 'depot', 'demandes']);
+  it('le trésorier voit Déposer / Demandes / Abandons / Plus', () => {
+    expect(visibleTabsForRole('tresorier').map((t) => t.key)).toEqual([
+      'depot', 'demandes', 'abandons', 'plus',
+    ]);
   });
 
-  it('parent voit accueil + mes reçus (pas depot)', () => {
-    const keys = visibleTabsForRole('parent').map((t) => t.key);
-    expect(keys).toContain('recus');
-    expect(keys).not.toContain('depot');
+  it("l'equipier voit Déposer / Demandes / Abandons, sans Plus", () => {
+    expect(visibleTabsForRole('equipier').map((t) => t.key)).toEqual(['depot', 'demandes', 'abandons']);
   });
 
-  it('trésorier voit les 3 onglets membre + onglet plus', () => {
-    expect(visibleTabsForRole('tresorier').map((t) => t.key)).toEqual(['accueil', 'depot', 'demandes', 'plus']);
+  it('le parent voit seulement "Mes reçus" pointant vers /', () => {
+    const tabs = visibleTabsForRole('parent');
+    expect(tabs.map((t) => t.key)).toEqual(['recus']);
+    expect(tabs[0].href).toBe('/');
   });
 });

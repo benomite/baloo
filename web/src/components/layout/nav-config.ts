@@ -1,66 +1,75 @@
 import {
-  BookOpen, Calculator, Coins, Ellipsis, Gift, HandCoins, Home, Inbox, Mail,
-  Package, Paperclip, ShieldAlert, TrendingUp, Link2, Bot, FileText,
+  BookOpen, Bot, Coins, Ellipsis, FileText, Gift, HandCoins, Link2, Mail,
+  Paperclip, ShieldAlert,
   type LucideIcon,
 } from 'lucide-react';
 
 export type Role = 'tresorier' | 'RG' | 'chef' | 'equipier' | 'parent';
-export type Intent = 'piloter' | 'saisir' | 'demandes' | 'gerer';
+export type GroupKey = 'process' | 'administration';
+
+const ADMIN: Role[] = ['tresorier', 'RG'];
+const SUBMITTERS: Role[] = ['tresorier', 'RG', 'chef', 'equipier'];
+
+export function isAdminRole(role: string): boolean {
+  return role === 'tresorier' || role === 'RG';
+}
 
 export interface NavItem {
+  /** href par défaut (membre non-admin, non-parent). */
   href: string;
+  /** href admin (ex. Déposer → liste /depots). */
+  adminHref?: string;
+  /** href parent (ex. Mes reçus → /). */
+  parentHref?: string;
+  /** libellé par défaut. */
   label: string;
+  /** libellé admin. */
+  adminLabel?: string;
+  /** libellé parent. */
+  parentLabel?: string;
   icon: LucideIcon;
   /** Rôles autorisés. Absent = tous les rôles authentifiés. */
   roles?: Role[];
-  badgeKey?: 'inbox';
 }
 
 export interface NavGroup {
-  intent: Intent;
+  key: GroupKey;
   title: string;
+  /** Bloc repliable (Administration). */
+  collapsible?: boolean;
+  /** Replié par défaut. */
+  defaultCollapsed?: boolean;
   items: NavItem[];
 }
 
-const ADMIN: Role[] = ['tresorier', 'RG'];
-const COMPTA: Role[] = ['tresorier', 'RG', 'chef'];
+export interface ResolvedNavItem {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+}
 
-// Desktop : poste de pilotage trésorier, rangé par intention.
-// Import (/import) et Clôture (/cloture) sont VOLONTAIREMENT absents
-// (accessibles par lien direct, cf. spec).
+// Desktop : façade « process » (filtrée par rôle, items role-switched) + bloc
+// « Administration » repliable réservé aux admins. /cloture et /inbox restent
+// hors nav (accès par lien direct). Suite ADR-033 / spec 2026-05-31.
 export const DESKTOP_GROUPS: NavGroup[] = [
   {
-    intent: 'piloter',
-    title: 'Piloter',
+    key: 'process',
+    title: 'Process',
     items: [
-      { href: '/', label: 'Accueil', icon: Home, roles: ADMIN },
-      { href: '/inbox', label: 'Inbox', icon: Inbox, roles: ADMIN, badgeKey: 'inbox' },
-      { href: '/synthese', label: 'Synthèse', icon: TrendingUp, roles: COMPTA },
-      { href: '/budgets', label: 'Budget', icon: Calculator, roles: ADMIN },
+      { href: '/depot', adminHref: '/depots', label: 'Déposer', adminLabel: 'Dépôts', icon: Paperclip, roles: SUBMITTERS },
+      { href: '/remboursements', parentHref: '/', label: 'Mes demandes', adminLabel: 'Remboursements', parentLabel: 'Mes reçus', icon: HandCoins },
+      { href: '/abandons', label: 'Abandons', icon: Gift, roles: SUBMITTERS },
     ],
   },
   {
-    intent: 'saisir',
-    title: 'Saisir',
+    key: 'administration',
+    title: 'Administration',
+    collapsible: true,
+    defaultCollapsed: true,
     items: [
       { href: '/ecritures', label: 'Écritures', icon: BookOpen, roles: ADMIN },
       { href: '/caisse', label: 'Caisse', icon: Coins, roles: ADMIN },
-      { href: '/comptaweb/rapprochement', label: 'Rapprochement', icon: Link2, roles: ADMIN },
-    ],
-  },
-  {
-    intent: 'demandes',
-    title: 'Demandes & dépôts',
-    items: [
-      { href: '/remboursements', label: 'Remboursements', icon: HandCoins, roles: ADMIN },
-      { href: '/abandons', label: 'Dons au groupe', icon: Gift, roles: ADMIN },
-      { href: '/depots', label: 'Dépôts', icon: Package, roles: ADMIN },
-    ],
-  },
-  {
-    intent: 'gerer',
-    title: 'Gérer',
-    items: [
+      { href: '/import', label: 'Configs Comptaweb', icon: Link2, roles: ADMIN },
       { href: '/moi/connexions', label: 'Connexion Claude', icon: Bot, roles: ADMIN },
       { href: '/admin/invitations', label: 'Membres', icon: Mail, roles: ADMIN },
       { href: '/admin/errors', label: "Journal d'erreurs", icon: ShieldAlert, roles: ADMIN },
@@ -68,23 +77,37 @@ export const DESKTOP_GROUPS: NavGroup[] = [
   },
 ];
 
+/** Résout href + label d'un item selon le rôle (admin / parent / défaut). */
+export function resolveNavItem(item: NavItem, role: string): ResolvedNavItem {
+  const admin = isAdminRole(role);
+  let href = item.href;
+  if (role === 'parent' && item.parentHref) href = item.parentHref;
+  else if (admin && item.adminHref) href = item.adminHref;
+
+  let label = item.label;
+  if (role === 'parent' && item.parentLabel) label = item.parentLabel;
+  else if (admin && item.adminLabel) label = item.adminLabel;
+
+  return { href, label, icon: item.icon };
+}
+
 export interface MobileTab {
-  key: 'accueil' | 'depot' | 'demandes' | 'recus' | 'plus';
+  key: 'depot' | 'recus' | 'demandes' | 'abandons' | 'plus';
   href: string;
   label: string;
   icon: LucideIcon;
   roles?: Role[];
 }
 
-// Mobile : app membre pour tous. "Déposer" est l'action reine.
-// IMPORTANT: l'ordre du tableau = l'ordre d'affichage. 'recus' (parent)
-// doit venir avant 'demandes' pour que l'ordre parent soit [accueil, recus].
+// Mobile : process en bas + tiroir « Plus » (admins). L'ordre du tableau =
+// ordre d'affichage. 'recus' (parent, → /) placé avant 'demandes' pour que le
+// parent ait bien son onglet unique.
 export const MOBILE_TABS: MobileTab[] = [
-  { key: 'accueil', href: '/', label: 'Accueil', icon: Home },
-  { key: 'depot', href: '/depot', label: 'Déposer', icon: Paperclip, roles: ['tresorier', 'RG', 'chef', 'equipier'] },
-  { key: 'recus', href: '/remboursements', label: 'Mes reçus', icon: FileText, roles: ['parent'] },
-  { key: 'demandes', href: '/remboursements', label: 'Mes demandes', icon: HandCoins, roles: ['tresorier', 'RG', 'chef', 'equipier'] },
-  { key: 'plus', href: '#plus', label: 'Plus', icon: Ellipsis, roles: ['tresorier', 'RG'] },
+  { key: 'depot', href: '/depot', label: 'Déposer', icon: Paperclip, roles: SUBMITTERS },
+  { key: 'recus', href: '/', label: 'Mes reçus', icon: FileText, roles: ['parent'] },
+  { key: 'demandes', href: '/remboursements', label: 'Demandes', icon: HandCoins, roles: SUBMITTERS },
+  { key: 'abandons', href: '/abandons', label: 'Abandons', icon: Gift, roles: SUBMITTERS },
+  { key: 'plus', href: '#plus', label: 'Plus', icon: Ellipsis, roles: ADMIN },
 ];
 
 function roleAllowed(roles: Role[] | undefined, role: string): boolean {
