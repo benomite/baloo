@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   DESKTOP_GROUPS,
-  MOBILE_TABS,
   resolveNavItem,
   visibleItemsForRole,
   visibleTabsForRole,

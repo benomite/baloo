@@ -17,7 +17,6 @@ import {
   AbandonStatusBadge,
   RemboursementStatusBadge,
 } from '@/components/shared/status-badge';
-import { Alert } from '@/components/ui/alert';
 import { PendingButton } from '@/components/shared/pending-button';
 import { getCurrentContext } from '@/lib/context';
 import { listRemboursements } from '@/lib/services/remboursements';
@@ -38,12 +37,6 @@ const ROLE_LABEL: Record<string, string> = {
   parent: 'parent',
 };
 
-interface SearchParams {
-  error?: string;
-  rbt_created?: string;
-  abandon_created?: string;
-}
-
 const ADMIN_ROLES = ['tresorier', 'RG'];
 const SUBMIT_ROLES = ['tresorier', 'RG', 'chef', 'equipier'];
 
@@ -61,14 +54,9 @@ function firstName(fullName: string | null | undefined, email: string): string {
   return email.split('@')[0];
 }
 
-export default async function HomePage({
-  searchParams,
-}: {
-  searchParams: Promise<SearchParams>;
-}) {
-  const [ctx, sp, welcomeDismissed] = await Promise.all([
+export default async function HomePage() {
+  const [ctx, welcomeDismissed] = await Promise.all([
     getCurrentContext(),
-    searchParams,
     isWelcomeBannerDismissed(),
   ]);
 
@@ -104,24 +92,6 @@ export default async function HomePage({
         title={hello}
         subtitle="Tes demandes et tes raccourcis pour faire avancer la compta du groupe."
       />
-
-      {sp.error && (
-        <Alert variant="error" className="mb-4">
-          {sp.error}
-        </Alert>
-      )}
-      {sp.rbt_created && (
-        <Alert variant="success" className="mb-4">
-          Demande <code className="font-mono text-[12.5px] font-medium">{sp.rbt_created}</code>{' '}
-          envoyée. Tu recevras un email à chaque étape.
-        </Alert>
-      )}
-      {sp.abandon_created && (
-        <Alert variant="success" className="mb-4">
-          Don <code className="font-mono text-[12.5px] font-medium">{sp.abandon_created}</code>{' '}
-          enregistré. Le trésorier émettra le reçu fiscal.
-        </Alert>
-      )}
 
       {!welcomeDismissed && (
         <WelcomeBanner roleLabel={ROLE_LABEL[ctx.role] ?? ctx.role} canSubmit={canSubmit} />

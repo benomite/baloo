@@ -25,7 +25,6 @@ export default function robots(): MetadataRoute.Robots {
           '/depots/',
           '/depot/',
           '/inbox/',
-          '/synthese/',
           '/budgets/',
           '/comptaweb/',
           '/cloture/',
