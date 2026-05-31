@@ -8,21 +8,22 @@ vi.mock('next/navigation', () => ({ usePathname: () => '/' }));
 afterEach(cleanup);
 
 describe('<BottomNav>', () => {
-  it('equipier voit Accueil / Déposer / Mes demandes', () => {
+  it("l'equipier voit Déposer / Demandes / Abandons, sans Plus", () => {
     render(<BottomNav role="equipier" />);
-    expect(screen.getByText('Accueil')).toBeTruthy();
     expect(screen.getByText('Déposer')).toBeTruthy();
-    expect(screen.getByText('Mes demandes')).toBeTruthy();
+    expect(screen.getByText('Demandes')).toBeTruthy();
+    expect(screen.getByText('Abandons')).toBeTruthy();
     expect(screen.queryByText('Plus')).toBeNull();
   });
 
-  it('parent voit Mes reçus, pas Déposer', () => {
+  it('le parent voit seulement Mes reçus', () => {
     render(<BottomNav role="parent" />);
     expect(screen.getByText('Mes reçus')).toBeTruthy();
     expect(screen.queryByText('Déposer')).toBeNull();
+    expect(screen.queryByText('Abandons')).toBeNull();
   });
 
-  it('trésorier voit l onglet Plus', () => {
+  it("le trésorier voit l'onglet Plus", () => {
     render(<BottomNav role="tresorier" />);
     expect(screen.getByText('Plus')).toBeTruthy();
   });
