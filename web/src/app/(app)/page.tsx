@@ -3,14 +3,10 @@ import { redirect } from 'next/navigation';
 import {
   ArrowRight,
   CircleHelp,
-  Coins,
   Gift,
   HandCoins,
-  Inbox,
   Paperclip,
   Sparkles,
-  TrendingUp,
-  Unlink,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -24,10 +20,8 @@ import {
 import { Alert } from '@/components/ui/alert';
 import { PendingButton } from '@/components/shared/pending-button';
 import { getCurrentContext } from '@/lib/context';
-import { getDb } from '@/lib/db';
 import { listRemboursements } from '@/lib/services/remboursements';
 import { listAbandons } from '@/lib/services/abandons';
-import { ensureDepotsSchema } from '@/lib/services/depots';
 import {
   describeAbandonStatus,
   describeRembsStatus,
@@ -59,81 +53,6 @@ const SUBMIT_ROLES = ['tresorier', 'RG', 'chef', 'equipier'];
 // statically because it used `headers`".
 export const dynamic = 'force-dynamic';
 
-interface AdminCounts {
-  rembsAValider: number;
-  abandonsAValider: number;
-  rembsARattacher: number;
-  // Inbox = écritures sans justif (dépenses justif_attendu=1) + dépôts
-  // a_traiter. On les expose séparément pour l'UI mais le CTA pointe
-  // sur /inbox.
-  ecrituresSansJustif: number;
-  justifsOrphelins: number;
-  caisseSoldeCents: number;
-}
-
-async function getAdminCounts(groupId: string): Promise<AdminCounts> {
-  // Le service depots crée sa table en lazy-init (ensureDepotsSchema).
-  // On le déclenche ici aussi puisque cette fonction tape la table en
-  // direct sans passer par les helpers du service.
-  await ensureDepotsSchema();
-  const db = getDb();
-  const [rembs, abandons, depots, unlinked, ecrSansJustif, soldeCaisse] =
-    await Promise.all([
-      db
-        .prepare(
-          `SELECT COUNT(*) AS n FROM remboursements
-           WHERE group_id = ? AND status IN ('a_traiter', 'valide_tresorier')`,
-        )
-        .get<{ n: number }>(groupId),
-      db
-        .prepare(
-          `SELECT COUNT(*) AS n FROM abandons_frais
-           WHERE group_id = ? AND status IN ('a_traiter', 'valide')`,
-        )
-        .get<{ n: number }>(groupId),
-      db
-        .prepare(
-          `SELECT COUNT(*) AS n FROM depots_justificatifs
-           WHERE group_id = ? AND statut = 'a_traiter'`,
-        )
-        .get<{ n: number }>(groupId),
-      db
-        .prepare(
-          `SELECT COUNT(*) AS n FROM remboursements
-           WHERE group_id = ? AND ecriture_id IS NULL
-             AND status IN ('virement_effectue', 'termine')`,
-        )
-        .get<{ n: number }>(groupId),
-      db
-        .prepare(
-          `SELECT COUNT(*) AS n FROM ecritures e
-           WHERE e.group_id = ?
-             AND e.type = 'depense'
-             AND e.justif_attendu = 1
-             AND NOT EXISTS (
-               SELECT 1 FROM justificatifs j
-               WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id
-             )`,
-        )
-        .get<{ n: number }>(groupId),
-      db
-        .prepare(
-          `SELECT COALESCE(SUM(amount_cents), 0) AS total
-           FROM mouvements_caisse
-           WHERE group_id = ? AND archived_at IS NULL`,
-        )
-        .get<{ total: number }>(groupId),
-    ]);
-  return {
-    rembsAValider: rembs?.n ?? 0,
-    abandonsAValider: abandons?.n ?? 0,
-    rembsARattacher: unlinked?.n ?? 0,
-    ecrituresSansJustif: ecrSansJustif?.n ?? 0,
-    justifsOrphelins: depots?.n ?? 0,
-    caisseSoldeCents: soldeCaisse?.total ?? 0,
-  };
-}
-
 function firstName(fullName: string | null | undefined, email: string): string {
   if (fullName) {
     const trimmed = fullName.trim();
@@ -159,10 +78,9 @@ export default async function HomePage({
   if (ADMIN_ROLES.includes(ctx.role)) redirect('/ecritures');
   if (ctx.role !== 'parent') redirect('/depot');
 
-  const isAdmin = ADMIN_ROLES.includes(ctx.role);
   const canSubmit = SUBMIT_ROLES.includes(ctx.role);
 
-  const [myRbts, myAbandons, adminCounts] = await Promise.all([
+  const [myRbts, myAbandons] = await Promise.all([
     canSubmit
       ? listRemboursements(
           { groupId: ctx.groupId, submittedByUserId: ctx.userId },
@@ -175,7 +93,6 @@ export default async function HomePage({
           { limit: 5 },
         )
       : Promise.resolve([]),
-    isAdmin ? getAdminCounts(ctx.groupId) : Promise.resolve(null),
   ]);
 
   const hello = `Bonjour ${firstName(ctx.name, ctx.email)}`;
@@ -216,10 +133,6 @@ export default async function HomePage({
         {canSubmit && (
           <MyDemandsSection rbts={myRbts} abandons={myAbandons} hasAny={hasMyDemands} />
         )}
-
-        {isAdmin && adminCounts && <AdminTodoSection counts={adminCounts} />}
-
-        {isAdmin && <SyntheseLink />}
       </div>
     </div>
   );
@@ -494,259 +407,4 @@ function MyDemandsSection({
   );
 }
 
-function AdminTodoSection({ counts }: { counts: AdminCounts }) {
-  const inboxTotal = counts.ecrituresSansJustif + counts.justifsOrphelins;
-  const totalToDo =
-    inboxTotal +
-    counts.rembsAValider +
-    counts.abandonsAValider +
-    counts.rembsARattacher;
-
-  const secondary: {
-    href: string;
-    label: string;
-    count: number;
-    icon: LucideIcon;
-    accent: 'brand' | 'amber' | 'red';
-  }[] = [
-    {
-      href: '/remboursements?status=a_traiter',
-      label: 'Remb. à valider',
-      count: counts.rembsAValider,
-      icon: HandCoins,
-      accent: 'amber',
-    },
-    {
-      href: '/abandons?status=a_traiter',
-      label: 'Dons à valider',
-      count: counts.abandonsAValider,
-      icon: Gift,
-      accent: 'amber',
-    },
-    {
-      href: '/remboursements?unlinked=1',
-      label: 'Remb. à rattacher',
-      count: counts.rembsARattacher,
-      icon: Unlink,
-      accent: 'red',
-    },
-  ];
-
-  return (
-    <div>
-      <SectionHeader
-        title="À traiter pour le groupe"
-        subtitle={
-          totalToDo === 0
-            ? 'Tout est à jour. Tu peux clôturer le mois.'
-            : 'Ta to-do de trésorier — chaque chiffre est cliquable.'
-        }
-        action={
-          totalToDo === 0 ? (
-            <Link
-              href="/cloture"
-              className="inline-flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-brand/90 transition-colors"
-            >
-              Clôturer le mois
-              <ArrowRight size={13} strokeWidth={2} />
-            </Link>
-          ) : undefined
-        }
-      />
-
-      <InboxHeroCard
-        ecrituresCount={counts.ecrituresSansJustif}
-        justifsCount={counts.justifsOrphelins}
-      />
-
-      <div className="mt-3 grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <CaisseCard soldeCents={counts.caisseSoldeCents} />
-        {secondary.map((it) => (
-          <TodoCard key={it.href} {...it} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function InboxHeroCard({
-  ecrituresCount,
-  justifsCount,
-}: {
-  ecrituresCount: number;
-  justifsCount: number;
-}) {
-  const total = ecrituresCount + justifsCount;
-  const isEmpty = total === 0;
-  return (
-    <Link
-      href="/inbox"
-      className={cn(
-        'group flex items-center gap-4 rounded-xl border p-5 transition-colors',
-        isEmpty
-          ? 'border-border bg-bg-elevated opacity-70 hover:opacity-100'
-          : 'border-brand-100 bg-brand-50/40 hover:bg-brand-50',
-      )}
-    >
-      <span
-        className={cn(
-          'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl',
-          isEmpty ? 'bg-bg-sunken text-fg-subtle' : 'bg-brand text-white',
-        )}
-      >
-        <Inbox size={22} strokeWidth={1.75} />
-      </span>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-2">
-          <span className="text-display-sm tabular-nums leading-none text-fg">
-            {total}
-          </span>
-          <span className="text-[13px] font-medium text-fg">
-            {isEmpty ? 'Inbox vide' : 'à lier dans l’inbox'}
-          </span>
-        </div>
-        {!isEmpty && (
-          <div className="mt-1 text-[12px] text-fg-muted">
-            {ecrituresCount} écriture{ecrituresCount > 1 ? 's' : ''} sans justif
-            {' · '}
-            {justifsCount} justif{justifsCount > 1 ? 's' : ''} orphelin
-            {justifsCount > 1 ? 's' : ''}
-          </div>
-        )}
-      </div>
-      <ArrowRight
-        size={18}
-        strokeWidth={2}
-        className={cn(
-          'shrink-0 transition-colors',
-          isEmpty ? 'text-fg-subtle' : 'text-brand',
-        )}
-      />
-    </Link>
-  );
-}
-
-function CaisseCard({ soldeCents }: { soldeCents: number }) {
-  const isZero = soldeCents === 0;
-  const hint =
-    soldeCents > 5000_00
-      ? 'À déposer rapidement'
-      : soldeCents > 0
-        ? 'À déposer à l’occasion'
-        : 'Vide';
-  return (
-    <Link
-      href="/caisse"
-      className={cn(
-        'group flex flex-col gap-2 rounded-xl border border-border bg-bg-elevated p-4 transition-colors',
-        isZero
-          ? 'opacity-60 hover:opacity-100'
-          : 'hover:border-brand-100 hover:bg-brand-50/40',
-      )}
-    >
-      <div className="flex items-center justify-between">
-        <span
-          className={cn(
-            'flex h-8 w-8 items-center justify-center rounded-lg',
-            isZero ? 'bg-bg-sunken text-fg-subtle' : 'bg-brand-50 text-brand',
-          )}
-        >
-          <Coins size={16} strokeWidth={1.75} />
-        </span>
-        <ArrowRight
-          size={14}
-          strokeWidth={2}
-          className="text-fg-subtle transition-colors group-hover:text-brand"
-        />
-      </div>
-      <div>
-        <div className="text-display-sm tabular-nums leading-none text-fg">
-          <Amount cents={soldeCents} />
-        </div>
-        <div className="mt-1 text-[12.5px] text-fg-muted">Caisse · {hint}</div>
-      </div>
-    </Link>
-  );
-}
-
-function TodoCard({
-  href,
-  label,
-  count,
-  icon: Icon,
-  accent,
-}: {
-  href: string;
-  label: string;
-  count: number;
-  icon: LucideIcon;
-  accent: 'brand' | 'amber' | 'red';
-}) {
-  const accentClasses = {
-    brand: 'bg-brand-50 text-brand',
-    amber:
-      'bg-amber-50 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200',
-    red: 'bg-red-50 text-red-800 dark:bg-red-950/30 dark:text-red-200',
-  };
-  const isZero = count === 0;
-  return (
-    <Link
-      href={href}
-      className={cn(
-        'group flex flex-col gap-2 rounded-xl border border-border bg-bg-elevated p-4 transition-colors',
-        isZero
-          ? 'opacity-60 hover:opacity-100'
-          : 'hover:border-brand-100 hover:bg-brand-50/40',
-      )}
-    >
-      <div className="flex items-center justify-between">
-        <span
-          className={cn(
-            'flex h-8 w-8 items-center justify-center rounded-lg',
-            isZero ? 'bg-bg-sunken text-fg-subtle' : accentClasses[accent],
-          )}
-        >
-          <Icon size={16} strokeWidth={1.75} />
-        </span>
-        <ArrowRight
-          size={14}
-          strokeWidth={2}
-          className="text-fg-subtle transition-colors group-hover:text-brand"
-        />
-      </div>
-      <div>
-        <div className="text-display-sm tabular-nums leading-none text-fg">{count}</div>
-        <div className="mt-1 text-[12.5px] text-fg-muted">{label}</div>
-      </div>
-    </Link>
-  );
-}
-
-function SyntheseLink() {
-  return (
-    <Link
-      href="/synthese"
-      className="group flex items-center justify-between rounded-xl border border-border bg-bg-elevated px-4 py-3.5 hover:border-brand-100 hover:bg-brand-50/40 transition-colors"
-    >
-      <div className="flex items-center gap-3">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand transition-colors group-hover:bg-brand group-hover:text-bg-elevated">
-          <TrendingUp size={16} strokeWidth={1.75} />
-        </span>
-        <div>
-          <div className="text-[13.5px] font-medium text-fg leading-tight">
-            Synthèse trésorerie
-          </div>
-          <div className="text-[12px] text-fg-muted leading-relaxed">
-            KPIs, répartition par unité, dernier import Comptaweb.
-          </div>
-        </div>
-      </div>
-      <ArrowRight
-        size={14}
-        strokeWidth={2}
-        className="text-fg-subtle transition-colors group-hover:text-brand"
-      />
-    </Link>
-  );
-}
 
