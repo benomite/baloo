@@ -42,11 +42,21 @@ PROCESS                              (filtré par rôle)
 ADMINISTRATION ▾                     (admin only, repliée par défaut)
   📖 Écritures   (+ rapprochement, suggestions inbox intégrées, lien Budget dans le header)
   🪙 Caisse
+  🔗 Configs Comptaweb  → /import (sync référentiels + import CSV en repli)
   ───────────
   🤖 Connexion Claude
   ✉️ Membres
   🛡️ Journal d'erreurs
 ```
+
+> **Note** `/import` (titre interne « Import Comptaweb ») héberge la
+> synchronisation des référentiels Comptaweb (branches, projets, natures,
+> modes de paiement, cartes — bloc `SyncReferentielsButton`), l'aperçu des
+> unités par branche, l'historique des imports + outils de cleanup, et
+> l'import CSV ponctuel (replié). L'ADR-033 l'avait sortie de la nav ; on la
+> remet dans Administration car la sync des configs est un usage récurrent.
+> Page existante, **rien à reconstruire** — seulement ré-exposer en nav, avec
+> un libellé « Configs Comptaweb » centré sur l'usage réel.
 
 - **Process** = entrées *role-switched* : le membre arrive sur son
   formulaire / sa liste perso, l'admin sur la liste de suivi à traiter. La
@@ -84,7 +94,9 @@ saisie pour autrui ; abandon ouvert aux membres non-parent.)
 - **`/budgets`** : route **conservée**, **hors nav**. Accès via un **lien dans
   le header de `/ecritures`**. Le chantier budgets par unité (PR #9-11) n'est
   pas touché ; on y reviendra plus tard.
-- `/import` et `/cloture` : inchangés (déjà hors nav, accès par lien direct).
+- `/import` : **ré-exposé dans Administration** sous le libellé « Configs
+  Comptaweb » (sync référentiels). Page existante, non modifiée.
+- `/cloture` : inchangé (hors nav, accès par lien direct).
 
 ### 4. Bottom-nav mobile
 
