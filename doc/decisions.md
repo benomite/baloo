@@ -1356,4 +1356,31 @@ Quatre points actés :
 
 ---
 
+## ADR-034 — Refonte navigation v2 : façade « process » + Administration repliée
+
+**Date** : 2026-05-31
+**Statut** : Acté
+**Révise partiellement** : [ADR-033](#adr-033--refonte-navigation--deux-expériences-pilotage--membre) — le découpage desktop par *intention* (Piloter / Saisir / Demandes / Gérer) n'a pas survécu à l'usage et est remplacé. Le principe « viewport décide l'expérience, rôle décide le contenu » et la source unique `nav-config.ts` sont conservés.
+
+**Contexte** : à l'usage, la vraie ligne de fracture n'est pas l'intention mais **process vs gestion courante**. Brainstorm + plan : [`specs/2026-05-31-nav-process-first-design.md`](specs/2026-05-31-nav-process-first-design.md), [`plans/2026-05-31-nav-process-first.md`](plans/2026-05-31-nav-process-first.md).
+
+### Décision
+
+1. **Façade « process »** (filtrée par rôle, items *role-switched* via `resolveNavItem`) : Déposer / Remboursements / Abandons. Chaque entrée sert la demande (membre) ET la liste de suivi (admin) — ex. Déposer → `/depot` (membre) ou `/depots` (admin).
+2. **Bloc « Administration » repliable** (replié par défaut, admins only) : la gestion courante (Écritures, Caisse) + le système (Configs Comptaweb `/import`, Connexion Claude, Membres, Journal d'erreurs). `/import` (sync des référentiels Comptaweb) est **ré-exposée** ici sous le libellé « Configs Comptaweb » (l'ADR-033 l'avait sortie de la nav).
+3. **Home `/` = redirection par rôle** : admin → `/ecritures`, chef/equipier → `/depot`, parent → reste sur `/` (rendu « Mes reçus » existant, réduit au bandeau de bienvenue). Le dashboard d'accueil est supprimé.
+4. **Suppressions** : `/synthese` + `/synthese/unite/[id]` + `components/synthese/*` supprimées pour de bon. `/inbox` retirée de la nav mais **conservée** (joignable par URL) — son intégration en suggestions de rapprochement dans `/ecritures` est un chantier séparé. `/budgets` conservée hors nav, atteignable par un lien dans le header de `/ecritures`.
+5. **Mobile** : bottom-nav = Déposer / Demandes / Abandons / Plus (tiroir Plus = Administration, admins) ; parent = onglet unique « Mes reçus » → `/`.
+
+### Conséquences
+
+- **Pas de migration BDD** : refonte front + routes pures. Risque cold-start nul.
+- **Écart assumé vs spec** : la spec envisageait « parent → /remboursements ». Le plan route le parent vers `/` (sa page existante) pour éviter une boucle de redirection avec `requireNotParent` et une refonte de la vue parent hors scope. Même résultat utilisateur, moins de risque.
+- **Feedback de création relocalisé** : la home redirigeant les créateurs, les bandeaux succès/erreur (`rbt_created`, `abandon_created`) passent sur `/remboursements` et `/abandons` (cibles des `redirect` dans `create.ts` / `abandons.ts`).
+- Vérifié : `tsc` clean, 351 tests verts, `next build` OK, `/synthese` absente des routes.
+
+**Liens** : Commits sur `feat/nav-process-first` (de `15fbf45` nav-config à `eac82ad` lien budget). Code clé : `web/src/components/layout/nav-config.ts`, `sidebar.tsx`, `bottom-nav.test.tsx`, `web/src/app/(app)/layout.tsx`, `web/src/app/(app)/page.tsx`, `web/src/lib/actions/remboursements/create.ts`, `web/src/lib/actions/abandons.ts`. Spec : [`specs/2026-05-31-nav-process-first-design.md`](specs/2026-05-31-nav-process-first-design.md). Plan : [`plans/2026-05-31-nav-process-first.md`](plans/2026-05-31-nav-process-first.md).
+
+---
+
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*
