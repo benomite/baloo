@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import {
   ArrowRight,
   CircleHelp,
@@ -151,6 +152,12 @@ export default async function HomePage({
     searchParams,
     isWelcomeBannerDismissed(),
   ]);
+
+  // La home n'est plus un dashboard : redirection par rôle (spec 2026-05-31).
+  // Le parent garde cette page comme « Mes reçus » (rendu plus bas). On
+  // redirige avant les requêtes coûteuses pour ne pas les payer inutilement.
+  if (ADMIN_ROLES.includes(ctx.role)) redirect('/ecritures');
+  if (ctx.role !== 'parent') redirect('/depot');
 
   const isAdmin = ADMIN_ROLES.includes(ctx.role);
   const canSubmit = SUBMIT_ROLES.includes(ctx.role);
