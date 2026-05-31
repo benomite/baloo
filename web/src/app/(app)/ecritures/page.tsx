@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Calculator } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/page-header';
 import { TabLink } from '@/components/shared/tab-link';
@@ -71,7 +72,18 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
 
   return (
     <div>
-      <PageHeader title="Écritures">
+      <PageHeader
+        title="Écritures"
+        meta={
+          <Link
+            href="/budgets"
+            className="text-[12.5px] font-medium text-fg-muted hover:text-brand transition-colors inline-flex items-center gap-1"
+          >
+            <Calculator size={13} strokeWidth={2} />
+            Budget
+          </Link>
+        }
+      >
         <ScanDraftsButton />
         <Link href="/ecritures/nouveau"><Button>Nouvelle écriture</Button></Link>
       </PageHeader>
