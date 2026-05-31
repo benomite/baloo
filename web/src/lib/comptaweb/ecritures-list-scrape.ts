@@ -208,19 +208,28 @@ export function parseListeEcrituresHtml(html: string): ScrapeListeEcrituresResul
   return { ecritures };
 }
 
+/** Étendue de la fenêtre scrapée (cf. spec réconciliation 2026-06-01). */
+export type SyncScope = 'recent' | 'exercice';
+
 /**
- * Récupère la liste des écritures Comptaweb pour la période courante
- * (telle que filtrée serveur). Pas de pagination observée : tout est
- * dans le HTML.
+ * Récupère la liste des écritures Comptaweb. Pas de pagination observée :
+ * tout est dans le HTML.
  *
- * NB : la page sert un mois ou l'exercice complet selon le filtre.
- * L'option `exerciceId` pour forcer un exercice spécifique n'est pas
- * implémentée V1 — la sync incrémentale tape la période courante, ce
- * qui suffit pour matcher les écritures `pending_sync` récentes.
+ * - `scope='recent'` (défaut) → `/recettedepense?m=1` : période active CW
+ *   (en pratique le mois / les écritures récentes). Utilisé par les cycles
+ *   automatiques.
+ * - `scope='exercice'` → `/recettedepense` sans filtre `m` : l'exercice
+ *   complet tel que servi par CW. Plus lourd, déclenché explicitement.
+ *
+ * ⚠️ Le mapping exact `exercice` → URL est l'hypothèse retenue (absence du
+ * filtre `m=1`). À confirmer sur l'instance CW ; le parser, lui, est
+ * identique quel que soit le volume retourné.
  */
 export async function scrapeListeEcritures(
   config: ComptawebConfig,
+  scope: SyncScope = 'recent',
 ): Promise<ScrapeListeEcrituresResult> {
-  const html = await fetchHtml(config, '/recettedepense?m=1');
+  const path = scope === 'exercice' ? '/recettedepense' : '/recettedepense?m=1';
+  const html = await fetchHtml(config, path);
   return parseListeEcrituresHtml(html);
 }

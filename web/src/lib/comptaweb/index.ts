@@ -5,6 +5,12 @@ export {
   scrapeListeEcritures,
   parseListeEcrituresHtml,
 } from './ecritures-list-scrape';
+export type { SyncScope } from './ecritures-list-scrape';
+export {
+  scrapeEcritureDetail,
+  parseEcritureDetailHtml,
+} from './ecriture-detail-scrape';
+export type { EcritureDetail } from './ecriture-detail-scrape';
 export { fetchReferentielsCreer, createEcriture } from './ecritures-write';
 export { applyReferentielsSync } from './sync-referentiels-logic';
 export { fetchCartesProcurement, fetchCartesBancaires, fetchAllCartes } from './cartes-scrape';
