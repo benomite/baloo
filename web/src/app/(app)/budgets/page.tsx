@@ -33,7 +33,7 @@ export default async function BudgetsPage({
 }) {
   const ctx = await getCurrentContext();
   if (!ADMIN_ROLES.includes(ctx.role)) {
-    redirect('/synthese');
+    redirect('/');
   }
   const sp = await searchParams;
   const saison = sp.saison ?? currentExercice();

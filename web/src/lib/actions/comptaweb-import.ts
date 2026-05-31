@@ -123,7 +123,6 @@ export async function deleteEcritureDuplicates(
     const result = await deleteCsvDuplicatesService({ groupId: ctx.groupId }, ids);
     revalidatePath('/import');
     revalidatePath('/ecritures');
-    revalidatePath('/synthese');
     return { ok: true, ...result };
   } catch (err) {
     logError('dedup-ecritures', 'Suppression doublons échouée', err);
@@ -164,7 +163,6 @@ export async function deleteOrphansWithoutCategory(
     const result = await deleteOrphansService({ groupId: ctx.groupId }, ids);
     revalidatePath('/import');
     revalidatePath('/ecritures');
-    revalidatePath('/synthese');
     return { ok: true, ...result };
   } catch (err) {
     logError('orphans-no-category', 'Suppression orphelins échouée', err);
@@ -203,7 +201,6 @@ export async function deleteInternalTransfers(
     const result = await deleteTransfertsService({ groupId: ctx.groupId }, ids);
     revalidatePath('/import');
     revalidatePath('/ecritures');
-    revalidatePath('/synthese');
     return { ok: true, ...result };
   } catch (err) {
     logError('cleanup-transferts', 'Suppression transferts échouée', err);
