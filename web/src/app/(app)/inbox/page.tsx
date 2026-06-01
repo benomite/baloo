@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, Link2, Paperclip, X } from 'lucide-react';
+import { ArrowRight, Link2, Paperclip, Wallet, X } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Alert } from '@/components/ui/alert';
 import { Amount } from '@/components/shared/amount';
@@ -14,8 +14,13 @@ import {
   type InboxJustif,
   type InboxPeriod,
   type InboxSuggestion,
+  type RembSuggestion,
 } from '@/lib/queries/inbox';
-import { lierEcritureJustif, rejeterSuggestionInbox } from '@/lib/actions/inbox';
+import {
+  lierEcritureJustif,
+  lierEcritureRemboursement,
+  rejeterSuggestionInbox,
+} from '@/lib/actions/inbox';
 import { applyAutoLinks } from '@/lib/services/inbox-auto';
 import { InboxBoard } from './inbox-board.client';
 import { cn } from '@/lib/utils';
@@ -29,6 +34,7 @@ interface SearchParams {
   dismissed?: string;
   rejected?: string;
   suggestion_rejetee?: string;
+  rbt_linked?: string;
   period?: string;
   recettes?: string;
 }
@@ -67,6 +73,7 @@ export default async function InboxPage({
 
   const totalRemaining =
     inbox.suggestions.length +
+    inbox.rembSuggestions.length +
     inbox.ecrituresOrphelines.length +
     inbox.justifsOrphelins.length;
 
@@ -130,6 +137,13 @@ export default async function InboxPage({
           éléments restent dans l’inbox pour un autre rapprochement.
         </Alert>
       )}
+      {params.rbt_linked && (
+        <Alert variant="success" className="mb-4">
+          Remboursement{" "}
+          <code className="font-mono text-[12.5px] font-medium">{params.rbt_linked}</code>{" "}
+          relié à son écriture de virement. Le process est bouclé.
+        </Alert>
+      )}
 
       {totalRemaining === 0 ? (
         <EmptyState
@@ -139,9 +153,10 @@ export default async function InboxPage({
         />
       ) : (
         <div className="space-y-8">
-          {inbox.suggestions.length > 0 && (
+          {(inbox.suggestions.length > 0 || inbox.rembSuggestions.length > 0) && (
             <SuggestionsSection
               suggestions={inbox.suggestions}
+              rembSuggestions={inbox.rembSuggestions}
               period={period}
               includeRecettes={includeRecettes}
             />
@@ -247,47 +262,86 @@ function FilterBar({
 
 function SuggestionsSection({
   suggestions,
+  rembSuggestions,
   period,
   includeRecettes,
 }: {
   suggestions: InboxSuggestion[];
+  rembSuggestions: RembSuggestion[];
   period: InboxPeriod;
   includeRecettes: boolean;
 }) {
+  const total = suggestions.length + rembSuggestions.length;
   return (
     <section>
       <SectionTitle
         icon="✨"
-        label={`Suggestions automatiques (${suggestions.length})`}
+        label={`Suggestions automatiques (${total})`}
         sub="Montant et date concordent. Un clic pour valider."
       />
       <ul className="space-y-2">
-        {suggestions.map((s) => (
+        {rembSuggestions.map((s) => (
           <li
-            key={`${s.ecriture.id}-${s.justif.id}`}
+            key={`remb-${s.ecriture.id}-${s.remboursement.id}`}
             className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-lg border border-border-soft bg-bg-elevated p-3"
           >
             <div className="flex-1 min-w-0">
               <EcritureSummary ecriture={s.ecriture} compact />
             </div>
-            <ArrowRight
-              size={16}
-              className="hidden sm:block text-fg-subtle shrink-0"
-              strokeWidth={2}
-            />
+            <ArrowRight size={16} className="hidden sm:block text-fg-subtle shrink-0" strokeWidth={2} />
+            <div className="flex-1 min-w-0">
+              <RembSummary remboursement={s.remboursement} />
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <form action={rejeterSuggestionInbox}>
+                <input type="hidden" name="ecriture_id" value={s.ecriture.id} />
+                <input type="hidden" name="target_kind" value="remboursement" />
+                <input type="hidden" name="target_id" value={s.remboursement.id} />
+                <input type="hidden" name="return_period" value={period} />
+                <input type="hidden" name="return_recettes" value={includeRecettes ? '1' : '0'} />
+                <PendingButton
+                  variant="ghost"
+                  size="sm"
+                  pendingLabel="…"
+                  title="Pas ça — ne plus proposer cette paire"
+                  className="text-fg-subtle hover:text-destructive"
+                >
+                  <X size={12} strokeWidth={2} className="mr-1" />
+                  Pas ça
+                </PendingButton>
+              </form>
+              <form action={lierEcritureRemboursement}>
+                <input type="hidden" name="ecriture_id" value={s.ecriture.id} />
+                <input type="hidden" name="remboursement_id" value={s.remboursement.id} />
+                <input type="hidden" name="return_period" value={period} />
+                <input type="hidden" name="return_recettes" value={includeRecettes ? '1' : '0'} />
+                <PendingButton size="sm">
+                  <Link2 size={12} strokeWidth={2} className="mr-1" />
+                  Lier
+                </PendingButton>
+              </form>
+            </div>
+          </li>
+        ))}
+        {suggestions.map((s) => (
+          <li
+            key={`depot-${s.ecriture.id}-${s.justif.id}`}
+            className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-lg border border-border-soft bg-bg-elevated p-3"
+          >
+            <div className="flex-1 min-w-0">
+              <EcritureSummary ecriture={s.ecriture} compact />
+            </div>
+            <ArrowRight size={16} className="hidden sm:block text-fg-subtle shrink-0" strokeWidth={2} />
             <div className="flex-1 min-w-0">
               <JustifSummary justif={s.justif} compact />
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
               <form action={rejeterSuggestionInbox}>
                 <input type="hidden" name="ecriture_id" value={s.ecriture.id} />
-                <input type="hidden" name="depot_id" value={s.justif.id} />
+                <input type="hidden" name="target_kind" value="depot" />
+                <input type="hidden" name="target_id" value={s.justif.id} />
                 <input type="hidden" name="return_period" value={period} />
-                <input
-                  type="hidden"
-                  name="return_recettes"
-                  value={includeRecettes ? '1' : '0'}
-                />
+                <input type="hidden" name="return_recettes" value={includeRecettes ? '1' : '0'} />
                 <PendingButton
                   variant="ghost"
                   size="sm"
@@ -303,11 +357,7 @@ function SuggestionsSection({
                 <input type="hidden" name="ecriture_id" value={s.ecriture.id} />
                 <input type="hidden" name="depot_id" value={s.justif.id} />
                 <input type="hidden" name="return_period" value={period} />
-                <input
-                  type="hidden"
-                  name="return_recettes"
-                  value={includeRecettes ? '1' : '0'}
-                />
+                <input type="hidden" name="return_recettes" value={includeRecettes ? '1' : '0'} />
                 <PendingButton size="sm">
                   <Link2 size={12} strokeWidth={2} className="mr-1" />
                   Lier
@@ -379,6 +429,38 @@ function EcritureSummary({
           tone={ecriture.type === 'depense' ? 'negative' : 'positive'}
         />
       </span>
+    </div>
+  );
+}
+
+function RembSummary({ remboursement }: { remboursement: RembSuggestion['remboursement'] }) {
+  const refDate = remboursement.date_paiement ?? remboursement.date_depense;
+  return (
+    <div className="min-w-0">
+      <div className="flex items-baseline gap-2 min-w-0">
+        <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10.5px] font-medium text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 inline-flex items-center gap-1">
+          <Wallet size={10} strokeWidth={2} />
+          Remboursement
+        </span>
+        <Link
+          href={`/remboursements/${remboursement.id}`}
+          className="flex-1 min-w-0 truncate text-[13px] font-medium text-brand hover:underline"
+        >
+          {remboursement.demandeur}
+        </Link>
+        <span className="tabular-nums font-semibold text-[13.5px] shrink-0">
+          <Amount cents={remboursement.amount_cents} tone="negative" />
+        </span>
+      </div>
+      <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-fg-subtle">
+        <span className="font-mono">{remboursement.id}</span>
+        {refDate && <span className="tabular-nums">· virement {refDate}</span>}
+        {remboursement.unite_code && (
+          <span className="rounded bg-brand-50 px-1.5 py-0.5 font-medium text-brand">
+            {remboursement.unite_code}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
