@@ -5,15 +5,24 @@ import { loadRejectedPairKeys } from '../services/inbox-rejets';
 import { pendingStatuses } from '../services/ecritures-status';
 import {
   computeAutoSuggestions,
+  computeRembSuggestions,
   type InboxEcriture,
   type InboxJustif,
   type InboxSuggestion,
+  type RembCandidate,
+  type RembSuggestion,
 } from './inbox-matching';
 import type { EcritureStatus } from '../types';
 
 // Types de matching ré-exportés depuis le module pur pour ne pas casser
 // les imports existants (`@/lib/queries/inbox`).
-export type { InboxEcriture, InboxJustif, InboxSuggestion } from './inbox-matching';
+export type {
+  InboxEcriture,
+  InboxJustif,
+  InboxSuggestion,
+  RembCandidate,
+  RembSuggestion,
+} from './inbox-matching';
 
 // Inbox du trésorier : tout ce qui attend d'être lié.
 //
@@ -38,6 +47,7 @@ export type { InboxEcriture, InboxJustif, InboxSuggestion } from './inbox-matchi
 
 export interface InboxData {
   suggestions: InboxSuggestion[];
+  rembSuggestions: RembSuggestion[];
   ecrituresOrphelines: InboxEcriture[];
   justifsOrphelins: InboxJustif[];
   totalCount: number;
@@ -81,6 +91,10 @@ export async function listInboxItems(
     `NOT EXISTS (
        SELECT 1 FROM justificatifs j
        WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id
+     )`,
+    `NOT EXISTS (
+       SELECT 1 FROM remboursements r
+       WHERE r.ecriture_id = e.id
      )`,
   ];
   const values: unknown[] = [groupId];
@@ -129,13 +143,41 @@ export async function listInboxItems(
       .all<InboxJustif>(groupId),
   ]);
 
+  const rembsARattacher = await db
+    .prepare(
+      `SELECT r.id, r.demandeur, r.amount_cents, r.date_paiement, r.date_depense,
+              r.status, un.code AS unite_code
+       FROM remboursements r
+       LEFT JOIN unites un ON un.id = r.unite_id
+       WHERE r.group_id = ?
+         AND r.ecriture_id IS NULL
+         AND r.status IN ('virement_effectue', 'termine')
+       ORDER BY r.date_paiement DESC, r.date_depense DESC`,
+    )
+    .all<RembCandidate>(groupId);
+
   const rejectedPairs = await loadRejectedPairKeys(groupId);
-  const suggestions = computeAutoSuggestions(
+
+  // 1) Suggestions remboursement (montant exact) sur toutes les orphelines.
+  const rembSuggestions = computeRembSuggestions(
     ecrituresAll,
+    rembsARattacher,
+    rejectedPairs,
+  );
+  const usedEcrByRemb = new Set(rembSuggestions.map((s) => s.ecriture.id));
+
+  // 2) Suggestions dépôt sur les écritures restantes (évite qu'une même
+  //    écriture soit proposée des deux côtés).
+  const suggestions = computeAutoSuggestions(
+    ecrituresAll.filter((e) => !usedEcrByRemb.has(e.id)),
     justifsOrphelins,
     rejectedPairs,
   );
-  const usedEcr = new Set(suggestions.map((s) => s.ecriture.id));
+
+  const usedEcr = new Set<string>([
+    ...suggestions.map((s) => s.ecriture.id),
+    ...usedEcrByRemb,
+  ]);
   const usedJustif = new Set(suggestions.map((s) => s.justif.id));
 
   const remainingEcrituresAll = ecrituresAll.filter((e) => !usedEcr.has(e.id));
@@ -151,6 +193,7 @@ export async function listInboxItems(
 
   return {
     suggestions,
+    rembSuggestions,
     ecrituresOrphelines: remainingEcritures,
     justifsOrphelins: remainingJustifs,
     totalCount: ecrituresAll.length + justifsOrphelins.length,
@@ -177,6 +220,9 @@ export async function countInboxItems(groupId: string): Promise<number> {
            AND NOT EXISTS (
              SELECT 1 FROM justificatifs j
              WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM remboursements r WHERE r.ecriture_id = e.id
            )`,
       )
       .get<{ n: number }>(groupId),
