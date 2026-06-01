@@ -529,6 +529,20 @@ describe('resyncEcritureDetail', () => {
     expect(ecr).toEqual({ activite_id: 'ACT-WET', unite_id: 'UNITE-GR', category_id: 'CAT-FLUX', comptaweb_synced: 1, status: 'mirror' });
   });
 
+  it('résilience : un resolver qui throw n’efface pas les autres imputations', async () => {
+    await insertEcriture(db, { id: 'ECR-2026-224', status: 'mirror', comptaweb_ecriture_id: 2390826 });
+    const res = await resyncEcritureDetail(db, 'g1', 'ECR-2026-224', {
+      ...inj,
+      // simule l'ancien bug categories.group_id (LibsqlError)
+      resolveCategoryId: async () => { throw new Error('no such column: group_id'); },
+    });
+    expect(res.ok).toBe(true);
+    const ecr = await db.prepare('SELECT activite_id, unite_id, category_id FROM ecritures WHERE id = ?').get<{ activite_id: string; unite_id: string; category_id: string | null }>('ECR-2026-224');
+    expect(ecr?.activite_id).toBe('ACT-WET'); // préservé malgré l'échec catégorie
+    expect(ecr?.unite_id).toBe('UNITE-GR');
+    expect(ecr?.category_id ?? null).toBeNull();
+  });
+
   it('refuse une écriture non reliée (pas d’id CW)', async () => {
     await insertEcriture(db, { id: 'D1', status: 'draft', comptaweb_ecriture_id: null });
     const res = await resyncEcritureDetail(db, 'g1', 'D1', inj);

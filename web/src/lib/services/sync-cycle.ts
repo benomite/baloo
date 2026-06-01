@@ -305,17 +305,36 @@ async function fetchDetailIds(
   cwId: number,
   r: Resolvers,
 ): Promise<ResolvedIds & { fetched: number }> {
+  let detail: EcritureDetail;
   try {
-    const detail = await r.scrapeDetail(cwId);
-    const activiteId = detail.activite ? await r.resolveActiviteId(detail.activite) : null;
-    const uniteId = detail.brancheprojet ? await r.resolveUniteId(detail.brancheprojet) : null;
-    const categoryId = detail.nature ? await r.resolveCategoryId(detail.nature) : null;
-    return { activiteId, uniteId, categoryId, fetched: 1 };
+    detail = await r.scrapeDetail(cwId);
   } catch (err) {
-    // Le détail ne doit jamais bloquer la sync.
+    // Échec du fetch/parse du détail (ex. session expirée) → on n'enrichit
+    // pas, mais on ne casse jamais la sync.
     logError('sync-cycle', 'scrapeEcritureDetail failed', err, { cwId });
     return { activiteId: null, uniteId: null, categoryId: null, fetched: 0 };
   }
+
+  // Chaque résolution est INDÉPENDANTE : l'échec d'un référentiel (ex.
+  // colonne absente) ne doit pas faire perdre les autres imputations.
+  const resolve = async (
+    label: string,
+    value: string | null,
+    fn: (v: string) => Promise<string | null>,
+  ): Promise<string | null> => {
+    if (!value) return null;
+    try {
+      return await fn(value);
+    } catch (err) {
+      logError('sync-cycle', `resolve ${label} failed`, err, { cwId, value });
+      return null;
+    }
+  };
+
+  const activiteId = await resolve('activite', detail.activite, r.resolveActiviteId);
+  const uniteId = await resolve('unite', detail.brancheprojet, r.resolveUniteId);
+  const categoryId = await resolve('category', detail.nature, r.resolveCategoryId);
+  return { activiteId, uniteId, categoryId, fetched: 1 };
 }
 
 /**
@@ -399,15 +418,14 @@ function defaultResolveUniteId(db: DbWrapper, groupId: string) {
   };
 }
 
-function defaultResolveCategoryId(db: DbWrapper, groupId: string) {
+function defaultResolveCategoryId(db: DbWrapper) {
   return async (nature: string): Promise<string | null> => {
+    // `categories` est un référentiel NATIONAL partagé → PAS de group_id.
     // Priorité au libellé exact `comptaweb_nature` (100 % fiable), fallback
     // sur `name`. Cf. AGENTS.md « Mapping nature CSV → category_id ».
     const row = await db
-      .prepare(
-        `SELECT id FROM categories WHERE group_id = ? AND (comptaweb_nature = ? OR name = ?) LIMIT 1`,
-      )
-      .get<{ id: string }>(groupId, nature, nature);
+      .prepare(`SELECT id FROM categories WHERE comptaweb_nature = ? OR name = ? LIMIT 1`)
+      .get<{ id: string }>(nature, nature);
     return row?.id ?? null;
   };
 }
@@ -447,7 +465,7 @@ export async function resyncEcritureDetail(
     scrapeDetail: opts.scrapeDetail ?? ((cwId: number) => defaultScrapeDetail(config, cwId)),
     resolveActiviteId: opts.resolveActiviteId ?? defaultResolveActiviteId(db, groupId),
     resolveUniteId: opts.resolveUniteId ?? defaultResolveUniteId(db, groupId),
-    resolveCategoryId: opts.resolveCategoryId ?? defaultResolveCategoryId(db, groupId),
+    resolveCategoryId: opts.resolveCategoryId ?? defaultResolveCategoryId(db),
   };
 
   const r = await fetchDetailIds(ecr.comptaweb_ecriture_id, resolvers);
@@ -522,7 +540,7 @@ export async function runSyncCycle(
       scrapeDetail: opts.scrapeDetail ?? ((cwId: number) => defaultScrapeDetail(config, cwId)),
       resolveActiviteId: opts.resolveActiviteId ?? defaultResolveActiviteId(db, groupId),
       resolveUniteId: opts.resolveUniteId ?? defaultResolveUniteId(db, groupId),
-      resolveCategoryId: opts.resolveCategoryId ?? defaultResolveCategoryId(db, groupId),
+      resolveCategoryId: opts.resolveCategoryId ?? defaultResolveCategoryId(db),
     };
 
     // 3. Drafts depuis lignes bancaires non rapprochées (avant reconcile :
