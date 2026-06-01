@@ -13,7 +13,11 @@ export interface TransitionGuard {
 export const REMBOURSEMENTS_TRANSITIONS: Record<string, TransitionGuard> = {
   valide_tresorier: { from: ['a_traiter'], allowedRoles: ['tresorier'] },
   valide_rg: { from: ['valide_tresorier'], allowedRoles: ['RG'] },
-  virement_effectue: { from: ['valide_rg'], allowedRoles: ['tresorier', 'RG'] },
+  // `virement_effectue` accepte aussi `valide_tresorier` en source : le
+  // trésorier peut enregistrer le virement sans attendre la validation
+  // RG (souvent en décalé). La signature RG manquante est alors signalée
+  // dans le bloc Signatures de la fiche.
+  virement_effectue: { from: ['valide_tresorier', 'valide_rg'], allowedRoles: ['tresorier', 'RG'] },
   termine: { from: ['virement_effectue'], allowedRoles: ['tresorier', 'RG'] },
   refuse: {
     from: ['a_traiter', 'valide_tresorier', 'valide_rg', 'virement_effectue'],

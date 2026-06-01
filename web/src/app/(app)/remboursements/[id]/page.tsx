@@ -80,6 +80,10 @@ export default async function RemboursementDetailPage({
   if (!r) notFound();
 
   const currentIdx = stepIndex(r.status);
+  // Rôles ayant effectivement signé : sert à distinguer une étape de
+  // validation franchie d'une étape sautée (ex. virement enregistré sans
+  // validation RG).
+  const signedRoles = new Set(signatures.map((s) => s.signer_role));
   const isAdmin = ctx.role === 'tresorier' || ctx.role === 'RG';
   const isTresorier = ctx.role === 'tresorier';
   const isRG = ctx.role === 'RG';
@@ -151,7 +155,7 @@ export default async function RemboursementDetailPage({
       )}
 
       {r.status !== 'refuse' ? (
-        <StatusTimeline currentIdx={currentIdx} />
+        <StatusTimeline currentIdx={currentIdx} signedRoles={signedRoles} />
       ) : (
         <Alert variant="error" icon={XCircle} className="mb-6">
           Demande refusée{r.motif_refus ? ` — motif : ${r.motif_refus}` : ''}.
@@ -325,7 +329,7 @@ export default async function RemboursementDetailPage({
             )}
           </Section>
 
-          <SignaturesCard signatures={signatures} chainOk={chain.ok} />
+          <SignaturesCard signatures={signatures} chainOk={chain.ok} status={r.status} />
 
           <Section title={`Justificatifs (${justificatifs.length})`}>
             {justificatifs.length === 0 ? (
@@ -375,25 +379,56 @@ export default async function RemboursementDetailPage({
   );
 }
 
-function StatusTimeline({ currentIdx }: { currentIdx: number }) {
+// Étape de validation → rôle dont la signature atteste le franchissement.
+const STEP_SIGNER_ROLE: Record<string, string> = {
+  valide_tresorier: 'tresorier',
+  valide_rg: 'RG',
+};
+
+function StatusTimeline({
+  currentIdx,
+  signedRoles,
+}: {
+  currentIdx: number;
+  signedRoles: Set<string>;
+}) {
   return (
     <div className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-2 text-[12.5px]">
       {STEPS.map((s, i) => {
         const isActive = i <= currentIdx;
         const isCurrent = i === currentIdx;
+        // Étape de validation dépassée mais sans signature = sautée
+        // (ex. virement enregistré sans validation RG). On la distingue
+        // visuellement pour ne pas laisser croire qu'elle a eu lieu.
+        const expectedRole = STEP_SIGNER_ROLE[s.key];
+        const isSkipped = isActive && !!expectedRole && !signedRoles.has(expectedRole);
         return (
           <div key={s.key} className="flex items-center gap-2">
             <div
               className={cn(
                 'flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-mono text-[11px] font-semibold transition-colors',
-                isActive ? 'bg-brand text-bg-elevated' : 'bg-bg-sunken text-fg-subtle',
-                isCurrent && 'ring-2 ring-brand/25 ring-offset-2 ring-offset-bg',
+                isSkipped
+                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
+                  : isActive
+                    ? 'bg-brand text-bg-elevated'
+                    : 'bg-bg-sunken text-fg-subtle',
+                isCurrent && !isSkipped && 'ring-2 ring-brand/25 ring-offset-2 ring-offset-bg',
+              )}
+              title={isSkipped ? 'Étape sautée — sans signature' : undefined}
+            >
+              {isSkipped ? '–' : i + 1}
+            </div>
+            <span
+              className={cn(
+                isSkipped
+                  ? 'font-medium text-amber-700 dark:text-amber-400'
+                  : isActive
+                    ? 'font-medium text-fg'
+                    : 'text-fg-muted',
               )}
             >
-              {i + 1}
-            </div>
-            <span className={cn(isActive ? 'font-medium text-fg' : 'text-fg-muted')}>
               {s.label}
+              {isSkipped && ' (sautée)'}
             </span>
             {i < STEPS.length - 1 && (
               <span
@@ -425,7 +460,7 @@ function AdminActions({
 }) {
   const hasNextAction =
     (status === 'a_traiter' && isTresorier) ||
-    (status === 'valide_tresorier' && isRG) ||
+    status === 'valide_tresorier' ||
     status === 'valide_rg' ||
     status === 'virement_effectue';
 
@@ -446,6 +481,16 @@ function AdminActions({
             <form action={updateRemboursementStatus.bind(null, id, 'valide_rg')}>
               <PendingButton size="sm" pendingLabel="Validation…">
                 Valider (RG)
+              </PendingButton>
+            </form>
+          )}
+          {status === 'valide_tresorier' && (
+            // Saut de l'étape RG : le trésorier enregistre le virement
+            // sans attendre la validation RG. Variante visuelle distincte
+            // pour éviter un clic réflexe à la place de « Valider (RG) ».
+            <form action={updateRemboursementStatus.bind(null, id, 'virement_effectue')}>
+              <PendingButton variant="outline" size="sm">
+                Virement effectué (sans validation RG)
               </PendingButton>
             </form>
           )}
@@ -503,13 +548,40 @@ interface SignatureRow {
   chain_hash: string;
 }
 
+const STAGE_ORDER = [
+  'a_traiter',
+  'valide_tresorier',
+  'valide_rg',
+  'virement_effectue',
+  'termine',
+];
+
+const SIGNER_ROLE_LABEL: Record<string, string> = {
+  tresorier: 'Trésorier',
+  RG: 'RG',
+};
+
 function SignaturesCard({
   signatures,
   chainOk,
+  status,
 }: {
   signatures: SignatureRow[];
   chainOk: boolean;
+  status: string;
 }) {
+  // Une fois le virement enregistré, les deux validations (Trésorier puis
+  // RG) sont normalement signées. Si l'une manque, c'est qu'on a sauté
+  // l'étape — on le signale explicitement plutôt que de laisser un trou
+  // silencieux dans la chaîne.
+  const reachedPayment =
+    status !== 'refuse' &&
+    STAGE_ORDER.indexOf(status) >= STAGE_ORDER.indexOf('virement_effectue');
+  const present = new Set(signatures.map((s) => s.signer_role));
+  const missingValidations = reachedPayment
+    ? (['tresorier', 'RG'] as const).filter((role) => !present.has(role))
+    : [];
+
   return (
     <Section
       title={`Signatures (${signatures.length})`}
@@ -540,6 +612,16 @@ function SignaturesCard({
         ) : undefined
       }
     >
+      {missingValidations.length > 0 && (
+        <div className="mb-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[12px] text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+          <ShieldAlert size={13} strokeWidth={2} className="mt-0.5 shrink-0" />
+          <span>
+            Virement enregistré sans validation{' '}
+            {missingValidations.map((r) => SIGNER_ROLE_LABEL[r]).join(' ni ')} — signature{' '}
+            {missingValidations.length > 1 ? 'absentes' : 'absente'}.
+          </span>
+        </div>
+      )}
       {signatures.length === 0 ? (
         <p className="text-[12.5px] text-fg-muted italic">Aucune signature.</p>
       ) : (

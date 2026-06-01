@@ -28,6 +28,12 @@ describe('isAllowedRembsTransition', () => {
       expect(isAllowedRembsTransition('valide_rg', 'virement_effectue', 'RG'))
         .toEqual({ ok: true });
     });
+    it('valide_tresorier → virement_effectue (saut validation RG) par tresorier ou RG : OK', () => {
+      expect(isAllowedRembsTransition('valide_tresorier', 'virement_effectue', 'tresorier'))
+        .toEqual({ ok: true });
+      expect(isAllowedRembsTransition('valide_tresorier', 'virement_effectue', 'RG'))
+        .toEqual({ ok: true });
+    });
     it('virement_effectue → termine par tresorier ou RG : OK', () => {
       expect(isAllowedRembsTransition('virement_effectue', 'termine', 'tresorier'))
         .toEqual({ ok: true });
