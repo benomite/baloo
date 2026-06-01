@@ -762,6 +762,33 @@ export async function runSyncCycle(
     //     les écritures CSV non reliées, ou créera les ventilations).
     for (const cw of plan.imports) toProcess.add(cw.cwId);
 
+    // 7c-bis. Agrégats legacy : un cwId déjà relié+imputé (donc needsDetail
+    //   faux) mais dont des « ventilations détachées » (écritures non reliées
+    //   de même pièce, ou même date+type+intitulé) traînent encore. Sans ça,
+    //   un agrégat créé par l'ancienne sync écriture-grain ne serait jamais
+    //   résorbé (il a l'air complet). On force le traitement ventilation ;
+    //   une fois les ventilations reliées, plus de détachées → plus de
+    //   retraitement (convergence).
+    for (const row of snapshot) {
+      if (toProcess.has(row.cwId)) continue;
+      const piece = row.numeroPiece.trim();
+      const loose = piece
+        ? await db
+            .prepare(
+              `SELECT 1 FROM ecritures WHERE group_id = ? AND comptaweb_ecriture_id IS NULL
+                 AND numero_piece = ? AND status IN ('draft','pending_sync','mirror','divergent') LIMIT 1`,
+            )
+            .get(groupId, piece)
+        : await db
+            .prepare(
+              `SELECT 1 FROM ecritures WHERE group_id = ? AND comptaweb_ecriture_id IS NULL
+                 AND date_ecriture = ? AND type = ? AND description = ?
+                 AND status IN ('draft','pending_sync','mirror','divergent') LIMIT 1`,
+            )
+            .get(groupId, row.date, row.type, row.intitule);
+      if (loose) toProcess.add(row.cwId);
+    }
+
     // 7d. Traitement ventilation de chaque cwId retenu.
     for (const cwId of toProcess) {
       const row = snapByCwId.get(cwId);

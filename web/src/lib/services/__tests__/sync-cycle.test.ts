@@ -500,6 +500,29 @@ describe('runSyncCycle — imports et drafts', () => {
     const agg = await db.prepare("SELECT status FROM ecritures WHERE id='AGG'").get<{ status: string }>();
     expect(agg?.status).toBe('agrege_remplace'); // PAS supprimee_cw
   });
+
+  it('résorbe un agrégat legacy DÉJÀ imputé+synced grâce aux ventilations détachées', async () => {
+    // L'agrégat a une imputation ET une signature à jour → needsDetail faux.
+    // Sans la détection des ventilations détachées, il ne serait jamais traité.
+    const { computeCwSignature } = await import('../ecritures-sync-reconcile');
+    const sig = computeCwSignature({ date: '2026-05-04', type: 'depense', montantCents: 49100, intitule: 'Regroupement', numeroPiece: '', modeTransaction: 'Virement', categorieTiers: '' });
+    await insertEcriture(db, { id: 'AGG', status: 'mirror', comptaweb_ecriture_id: 555, amount_cents: 49100, type: 'depense', date_ecriture: '2026-05-04', description: 'Regroupement', cw_signature: sig });
+    await db.prepare("UPDATE ecritures SET activite_id='ACT-X', unite_id='U-LJ' WHERE id='AGG'").run(); // imputé
+    await insertEcriture(db, { id: 'CSV-481', status: 'mirror', comptaweb_ecriture_id: null, amount_cents: 48100, type: 'depense', date_ecriture: '2026-05-04', description: 'Regroupement' });
+    await insertEcriture(db, { id: 'CSV-10', status: 'mirror', comptaweb_ecriture_id: null, amount_cents: 1000, type: 'depense', date_ecriture: '2026-05-04', description: 'Regroupement' });
+    const res = await runSyncCycle(db, 'g1', mockOpts({
+      ecritures: [makeRow({ id: 555, numeroPiece: '', montantCentimes: 49100, type: 'depense', dateEcriture: '2026-05-04', intitule: 'Regroupement' })],
+      scrapeDetail: async () => ({ ventilations: [
+        { montantCents: 48100, nature: 'Formation', activite: 'Formation', brancheprojet: 'Louveteaux-Jeannettes' },
+        { montantCents: 1000, nature: 'Cotisations SGDF', activite: 'Fonctionnement', brancheprojet: 'Pionniers-Caravelles' },
+      ] }),
+    }));
+    const agg = await db.prepare("SELECT status FROM ecritures WHERE id='AGG'").get<{ status: string }>();
+    expect(agg?.status).toBe('agrege_remplace'); // résorbé malgré imputation+signature OK
+    // les 2 CSV reliées au cwId
+    const linked = await db.prepare("SELECT COUNT(*) c FROM ecritures WHERE comptaweb_ecriture_id=555 AND id LIKE 'CSV-%'").get<{ c: number }>();
+    expect(linked?.c).toBe(2);
+  });
 });
 
 // ============================================================
