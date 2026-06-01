@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { CheckCircle2, Circle, Clock, Landmark, Paperclip, MinusCircle } from 'lucide-react';
+import { CheckCircle2, Circle, Clock, Landmark, Layers, Paperclip, MinusCircle } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { EcritureStatePair } from '@/components/shared/status-badge';
 import { UniteBadge } from '@/components/shared/unite-badge';
@@ -30,39 +30,60 @@ function parseIntituleParent(notes: string | null): string | null {
   return m ? m[1].trim().replace(/\s*\.\.\.$/, '') : null;
 }
 
-interface GroupInfo {
-  intitule: string;
+// Deux familles de regroupement, disjointes en pratique :
+//   - 'bank' : sous-lignes d'un même paiement bancaire (ligne_bancaire_id) —
+//     typiquement des brouillons issus du rapprochement, sans id Comptaweb.
+//   - 'cw'   : ventilations d'une même écriture Comptaweb (comptaweb_ecriture_id) —
+//     une écriture CW « 1171 € » éclatée en plusieurs lignes (568 Formation,
+//     431 Participation, …), chacune une écriture Baloo distincte (grain
+//     ventilation, cf. ADR-035).
+type GroupKind = 'bank' | 'cw';
+
+interface Group {
+  kind: GroupKind;
+  id: number;
+  label: string;
+  sublabel: string;
   totalCents: number; // signé (dépenses négatives, recettes positives)
   count: number;
 }
 
-function buildGroupInfo(entries: Ecriture[]): GroupInfo {
-  const intitule = parseIntituleParent(entries[0].notes) ?? `Ligne bancaire #${entries[0].ligne_bancaire_id ?? ''}`;
-  const totalCents = entries.reduce(
-    (sum, e) => sum + (e.type === 'depense' ? -e.amount_cents : e.amount_cents),
-    0,
-  );
-  return { intitule, totalCents, count: entries.length };
+const groupKey = (kind: GroupKind, id: number) => `${kind}-${id}`;
+
+function signedTotal(entries: Ecriture[]): number {
+  return entries.reduce((sum, e) => sum + (e.type === 'depense' ? -e.amount_cents : e.amount_cents), 0);
 }
 
+// Accent visuel par famille de groupe (rail du header + teinte). Le rail des
+// LIGNES, lui, reste piloté par la couleur d'unité (lecture branche au scroll).
+const GROUP_STYLE: Record<GroupKind, { rail: string; headerBg: string; rowBg: string; rowRail: string }> = {
+  bank: {
+    rail: 'rgb(148 163 184 / 0.55)', // slate
+    headerBg: 'bg-muted/40 hover:bg-muted/60',
+    rowBg: 'bg-slate-50/70 dark:bg-slate-900/30',
+    rowRail: 'rgb(148 163 184 / 0.55)',
+  },
+  cw: {
+    rail: 'rgb(79 70 229 / 0.62)', // indigo — « regroupé par écriture Comptaweb »
+    headerBg: 'bg-indigo-50/60 hover:bg-indigo-100/60 dark:bg-indigo-950/25 dark:hover:bg-indigo-950/40',
+    rowBg: 'bg-indigo-50/35 dark:bg-indigo-950/15',
+    rowRail: 'rgb(99 102 241 / 0.5)',
+  },
+};
+
 type Item =
-  | { kind: 'header'; key: string; ligneBancaireId: number; info: GroupInfo }
-  | { kind: 'row'; key: string; ecriture: Ecriture; index: number; inGroup: boolean };
+  | { kind: 'header'; key: string; group: Group }
+  | { kind: 'row'; key: string; ecriture: Ecriture; index: number; group: Group | null };
 
 export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  // Préserve les filtres courants (?type=, ?incomplete=…) en ajoutant
-  // ?detail= pour ouvrir le drawer sur cette écriture.
   const detailHref = (id: string) => {
     const sp = new URLSearchParams(searchParams.toString());
     sp.set('detail', id);
     return `${pathname}?${sp.toString()}`;
   };
-  // Clic sur la ligne entière → ouvre le drawer. Cmd/Ctrl+clic =
-  // nouvel onglet (page complète) pour l'usage rare où on veut
-  // travailler sur 2 écritures côte à côte.
   const onRowClick = (id: string) => (ev: React.MouseEvent) => {
     if (ev.metaKey || ev.ctrlKey || ev.button === 1) {
       window.open(`/ecritures/${id}`, '_blank');
@@ -70,65 +91,79 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
     }
     router.push(detailHref(id), { scroll: false });
   };
-  // Empêche le clic sur les zones interactives de déclencher l'ouverture
-  // du drawer (checkbox, selects inline).
   const stop = (ev: React.MouseEvent | React.PointerEvent) => ev.stopPropagation();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [anchorIndex, setAnchorIndex] = useState<number | null>(null);
-  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  // Non éditable = écriture déjà côté CW (mirror) ou en écart détecté
-  // (divergent). La résolution d'un divergent passe par la sync, pas
-  // par une édition locale.
   const isEditable = (e: Ecriture) => e.status !== 'mirror' && e.status !== 'divergent';
-  const editableIds = useMemo(
-    () => ecritures.filter(isEditable).map((e) => e.id),
-    [ecritures],
-  );
+  const editableIds = useMemo(() => ecritures.filter(isEditable).map((e) => e.id), [ecritures]);
   const allEditableSelected = editableIds.length > 0 && editableIds.every((id) => selected.has(id));
 
-  // Pré-calcul des groupes par ligne bancaire + items rendus (header + rows).
-  // Un groupe est rendu comme tel dès qu'il y a >=2 entrées visibles pour la
-  // même ligne bancaire, OU 1 entrée avec sous_index (= c'est bien une
-  // sous-ligne DSP2 d'un paiement multi-commerçants).
-  const { items, groupsById } = useMemo(() => {
-    const buckets = new Map<number, Ecriture[]>();
+  // Pré-calcul des deux familles de groupes + items rendus (header + rows).
+  const items = useMemo<Item[]>(() => {
+    const byBank = new Map<number, Ecriture[]>();
+    const byCw = new Map<number, Ecriture[]>();
     for (const e of ecritures) {
       if (e.ligne_bancaire_id) {
-        if (!buckets.has(e.ligne_bancaire_id)) buckets.set(e.ligne_bancaire_id, []);
-        buckets.get(e.ligne_bancaire_id)!.push(e);
+        (byBank.get(e.ligne_bancaire_id) ?? byBank.set(e.ligne_bancaire_id, []).get(e.ligne_bancaire_id)!).push(e);
+      }
+      if (e.comptaweb_ecriture_id != null) {
+        (byCw.get(e.comptaweb_ecriture_id) ?? byCw.set(e.comptaweb_ecriture_id, []).get(e.comptaweb_ecriture_id)!).push(e);
       }
     }
-    const groupsById = new Map<number, GroupInfo>();
-    const isGrouped = (id: number): boolean => {
-      const b = buckets.get(id) ?? [];
+    const isBankGrouped = (id: number): boolean => {
+      const b = byBank.get(id) ?? [];
       return b.length > 1 || (b.length === 1 && b[0].ligne_bancaire_sous_index !== null);
     };
+    const isCwGrouped = (id: number): boolean => (byCw.get(id)?.length ?? 0) >= 2;
 
-    const seen = new Set<number>();
+    const groupFor = (e: Ecriture): Group | null => {
+      if (e.ligne_bancaire_id && isBankGrouped(e.ligne_bancaire_id)) {
+        const entries = byBank.get(e.ligne_bancaire_id)!;
+        return {
+          kind: 'bank',
+          id: e.ligne_bancaire_id,
+          label: parseIntituleParent(entries[0].notes) ?? `Ligne bancaire #${e.ligne_bancaire_id}`,
+          sublabel: `#${e.ligne_bancaire_id}`,
+          totalCents: signedTotal(entries),
+          count: entries.length,
+        };
+      }
+      if (e.comptaweb_ecriture_id != null && isCwGrouped(e.comptaweb_ecriture_id)) {
+        const entries = byCw.get(e.comptaweb_ecriture_id)!;
+        return {
+          kind: 'cw',
+          id: e.comptaweb_ecriture_id,
+          label: entries[0].description,
+          sublabel: entries[0].numero_piece ? `pièce ${entries[0].numero_piece}` : `écriture CW #${e.comptaweb_ecriture_id}`,
+          totalCents: signedTotal(entries),
+          count: entries.length,
+        };
+      }
+      return null;
+    };
+
+    const seen = new Set<string>();
     const out: Item[] = [];
     for (let i = 0; i < ecritures.length; i++) {
       const e = ecritures[i];
-      const id = e.ligne_bancaire_id;
-      if (id && isGrouped(id)) {
-        if (!seen.has(id)) {
-          seen.add(id);
-          const info = buildGroupInfo(buckets.get(id)!);
-          groupsById.set(id, info);
-          out.push({ kind: 'header', key: `h-${id}`, ligneBancaireId: id, info });
+      const group = groupFor(e);
+      if (group) {
+        const gk = groupKey(group.kind, group.id);
+        if (!seen.has(gk)) {
+          seen.add(gk);
+          out.push({ kind: 'header', key: `h-${gk}`, group });
         }
-        out.push({ kind: 'row', key: e.id, ecriture: e, index: i, inGroup: true });
-      } else {
-        out.push({ kind: 'row', key: e.id, ecriture: e, index: i, inGroup: false });
       }
+      out.push({ kind: 'row', key: e.id, ecriture: e, index: i, group });
     }
-    return { items: out, groupsById };
+    return out;
   }, [ecritures]);
 
   const toggleRow = (index: number, shift: boolean) => {
     const row = ecritures[index];
     if (!row || !isEditable(row)) return;
-
     if (shift && anchorIndex !== null && anchorIndex !== index) {
       const start = Math.min(anchorIndex, index);
       const end = Math.max(anchorIndex, index);
@@ -142,7 +177,6 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
       });
       return;
     }
-
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(row.id)) next.delete(row.id); else next.add(row.id);
@@ -158,16 +192,21 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
 
   const clear = () => { setSelected(new Set()); setAnchorIndex(null); };
 
-  const toggleGroup = (id: number) => {
+  const toggleGroup = (g: Group) => {
+    const gk = groupKey(g.kind, g.id);
     setCollapsed((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(gk)) next.delete(gk); else next.add(gk);
       return next;
     });
   };
 
-  const selectGroup = (id: number) => {
-    const bucket = ecritures.filter((e) => e.ligne_bancaire_id === id && isEditable(e));
+  const groupEntries = (g: Group): Ecriture[] =>
+    ecritures.filter((e) => (g.kind === 'bank' ? e.ligne_bancaire_id === g.id : e.comptaweb_ecriture_id === g.id));
+
+  const selectGroup = (g: Group) => {
+    const bucket = groupEntries(g).filter(isEditable);
+    if (bucket.length === 0) return;
     setSelected((prev) => {
       const next = new Set(prev);
       const allAlready = bucket.every((e) => next.has(e.id));
@@ -204,44 +243,60 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
         <TableBody>
           {items.map((item) => {
             if (item.kind === 'header') {
-              const isCollapsed = collapsed.has(item.ligneBancaireId);
-              const signed = item.info.totalCents;
+              const g = item.group;
+              const gk = groupKey(g.kind, g.id);
+              const isCollapsed = collapsed.has(gk);
+              const style = GROUP_STYLE[g.kind];
+              const editableInGroup = groupEntries(g).filter(isEditable);
               return (
                 <TableRow
                   key={item.key}
-                  className="bg-muted/40 hover:bg-muted/60 cursor-pointer"
-                  onClick={() => toggleGroup(item.ligneBancaireId)}
+                  className={`${style.headerBg} cursor-pointer`}
+                  onClick={() => toggleGroup(g)}
                 >
                   <TableCell
                     onClick={(e) => e.stopPropagation()}
-                    style={isCollapsed ? undefined : { boxShadow: 'inset 3px 0 0 0 rgb(148 163 184 / 0.55)' }}
+                    style={isCollapsed ? undefined : { boxShadow: `inset 3px 0 0 0 ${style.rail}` }}
                   >
-                    <input
-                      type="checkbox"
-                      aria-label={`Sélectionner le groupe ${item.ligneBancaireId}`}
-                      onChange={() => selectGroup(item.ligneBancaireId)}
-                      checked={(() => {
-                        const bucket = ecritures.filter((x) => x.ligne_bancaire_id === item.ligneBancaireId && isEditable(x));
-                        return bucket.length > 0 && bucket.every((x) => selected.has(x.id));
-                      })()}
-                    />
+                    {editableInGroup.length > 0 ? (
+                      <input
+                        type="checkbox"
+                        aria-label={`Sélectionner le groupe ${gk}`}
+                        onChange={() => selectGroup(g)}
+                        checked={editableInGroup.every((x) => selected.has(x.id))}
+                      />
+                    ) : null}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-xs text-muted-foreground" colSpan={2}>
                     <span className="inline-flex items-center gap-1.5">
                       <span className="text-xs">{isCollapsed ? '▶' : '▼'}</span>
-                      <Landmark size={13} className="text-muted-foreground" />
-                      <span>Ligne bancaire <code>#{item.ligneBancaireId}</code></span>
+                      {g.kind === 'bank' ? (
+                        <Landmark size={13} className="text-muted-foreground" />
+                      ) : (
+                        <Layers size={13} className="text-indigo-500 dark:text-indigo-400" />
+                      )}
+                      <span className="font-medium">
+                        {g.kind === 'bank' ? 'Ligne bancaire' : 'Écriture Comptaweb'}
+                      </span>
+                      <code className="text-[11px]">{g.sublabel}</code>
                       <span className="text-muted-foreground">·</span>
-                      <span className="truncate max-w-md font-medium">{item.info.intitule}</span>
+                      <span className="truncate max-w-md">{g.label}</span>
                       <span className="text-muted-foreground">·</span>
-                      <span>{item.info.count} sous-ligne{item.info.count > 1 ? 's' : ''}</span>
+                      <span>
+                        {g.count} {g.kind === 'bank' ? 'sous-ligne' : 'ventilation'}
+                        {g.count > 1 ? 's' : ''}
+                      </span>
                     </span>
                   </TableCell>
                   <TableCell className="text-right font-semibold">
-                    <Amount cents={signed} tone="signed" />
+                    <Amount cents={g.totalCents} tone="signed" />
                   </TableCell>
                   <TableCell colSpan={5} className="text-xs text-muted-foreground whitespace-nowrap">
-                    {isCollapsed ? 'cliquer pour déplier' : 'total des sous-lignes visibles'}
+                    {isCollapsed
+                      ? 'cliquer pour déplier'
+                      : g.kind === 'bank'
+                        ? 'total des sous-lignes visibles'
+                        : 'une écriture Comptaweb éclatée par ventilation'}
                   </TableCell>
                 </TableRow>
               );
@@ -250,23 +305,16 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
             const e = item.ecriture;
             const editable = isEditable(e);
             const isSelected = selected.has(e.id);
-            const groupInfo = e.ligne_bancaire_id ? groupsById.get(e.ligne_bancaire_id) : undefined;
-            if (groupInfo && collapsed.has(e.ligne_bancaire_id!)) return null;
+            const group = item.group;
+            if (group && collapsed.has(groupKey(group.kind, group.id))) return null;
 
-            // Les sous-lignes d'un même paiement bancaire partagent un fond
-            // légèrement teinté et un rail vertical (box-shadow inset sur la
-            // première cellule) pour donner un groupement visible sans ajouter
-            // d'icône parasite devant la description.
-            const rowBg = isSelected
-              ? 'bg-primary/5'
-              : item.inGroup ? 'bg-slate-50/70 dark:bg-slate-900/30' : '';
-            // Rail vertical 3px à gauche : couleur de l'unité
-            // (lecture par unité instantanée au scroll). Fallback gris
-            // pour les sous-lignes bancaires sans unité, sinon rien.
-            const railColor = e.unite_couleur || (item.inGroup ? 'rgb(148 163 184 / 0.55)' : null);
-            const railShadow = railColor
-              ? { boxShadow: `inset 3px 0 0 0 ${railColor}` }
-              : undefined;
+            // Fond teinté selon la famille de groupe ; rail vertical 3px à
+            // gauche = couleur d'unité (lecture branche instantanée), avec
+            // fallback sur l'accent du groupe pour les lignes sans unité.
+            const style = group ? GROUP_STYLE[group.kind] : null;
+            const rowBg = isSelected ? 'bg-primary/5' : style ? style.rowBg : '';
+            const railColor = e.unite_couleur || (style ? style.rowRail : null);
+            const railShadow = railColor ? { boxShadow: `inset 3px 0 0 0 ${railColor}` } : undefined;
             return (
               <TableRow
                 key={item.key}
@@ -338,61 +386,29 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                 </TableCell>
                 <TableCell className="text-center whitespace-nowrap">
                   <span className="inline-flex items-center gap-2">
-                    {/* Comptaweb sync */}
                     {e.comptaweb_synced ? (
-                      <CheckCircle2
-                        size={14}
-                        strokeWidth={2}
-                        className="text-emerald-600"
-                        aria-label="Synchronisée Comptaweb"
-                      >
+                      <CheckCircle2 size={14} strokeWidth={2} className="text-emerald-600" aria-label="Synchronisée Comptaweb">
                         <title>Synchronisée Comptaweb</title>
                       </CheckCircle2>
                     ) : (
-                      <Circle
-                        size={14}
-                        strokeWidth={1.75}
-                        className="text-fg-subtle/40"
-                        aria-label="Non synchronisée"
-                      >
+                      <Circle size={14} strokeWidth={1.75} className="text-fg-subtle/40" aria-label="Non synchronisée">
                         <title>Non synchronisée Comptaweb</title>
                       </Circle>
                     )}
-                    {/* Justificatif */}
                     {e.has_justificatif ? (
-                      <Paperclip
-                        size={14}
-                        strokeWidth={2}
-                        className="text-emerald-600"
-                        aria-label="Justificatif rattaché"
-                      >
+                      <Paperclip size={14} strokeWidth={2} className="text-emerald-600" aria-label="Justificatif rattaché">
                         <title>Justificatif rattaché</title>
                       </Paperclip>
                     ) : e.justif_attendu === 0 ? (
-                      <MinusCircle
-                        size={14}
-                        strokeWidth={1.75}
-                        className="text-fg-subtle/40"
-                        aria-label="Justif non attendu"
-                      >
+                      <MinusCircle size={14} strokeWidth={1.75} className="text-fg-subtle/40" aria-label="Justif non attendu">
                         <title>Justif non attendu (prélèvement / flux territoire)</title>
                       </MinusCircle>
                     ) : e.numero_piece ? (
-                      <Clock
-                        size={14}
-                        strokeWidth={2}
-                        className="text-amber-600"
-                        aria-label="En attente"
-                      >
+                      <Clock size={14} strokeWidth={2} className="text-amber-600" aria-label="En attente">
                         <title>{`En attente — code Comptaweb ${e.numero_piece}`}</title>
                       </Clock>
                     ) : (
-                      <Paperclip
-                        size={14}
-                        strokeWidth={1.75}
-                        className="text-fg-subtle/40"
-                        aria-label="Justif manquant"
-                      >
+                      <Paperclip size={14} strokeWidth={1.75} className="text-fg-subtle/40" aria-label="Justif manquant">
                         <title>Justif manquant</title>
                       </Paperclip>
                     )}

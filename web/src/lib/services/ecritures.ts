@@ -180,6 +180,10 @@ export async function listEcritures(
        -- d'un même paiement multi-commerçants restent ensemble, peu
        -- importe leur status (draft / pending_sync / mirror / divergent).
        e.ligne_bancaire_id DESC,
+       -- Puis groupe les ventilations sœurs d'une même écriture Comptaweb
+       -- (même comptaweb_ecriture_id) pour qu'elles soient contiguës dans le
+       -- tableau (rendu en groupe replié, cf. EcrituresTable).
+       e.comptaweb_ecriture_id,
        COALESCE(e.ligne_bancaire_sous_index, 0) ASC,
        e.created_at DESC
      LIMIT ? OFFSET ?`,

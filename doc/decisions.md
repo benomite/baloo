@@ -1448,6 +1448,7 @@ Le dogfood prod immédiat a révélé 4 bugs, tous corrigés (commits `8ef950f`,
    - **Statut distinct `agrege_remplace`** (≠ `supprimee_cw`) : un agrégat orphelin lors du split en ventilations n'est PAS une suppression CW (l'écriture existe toujours dans CW) → libellé non anxiogène « ligne total remplacée par le détail ». Le bandeau d'arbitrage classe par un critère robuste (cwId encore partagé par des écritures vivantes = agrégat ; cwId disparu = vraie suppression), ce qui reclasse aussi les écritures legacy taguées `supprimee_cw`.
    - Match candidat **par n° de pièce** quand l'écriture CW en a un (les adhésions ont des montants qui se télescopent entre pièces), fallback date+type sinon.
    - Bug annexe corrigé : le `COUNT(*)` de `listEcritures` n'avait pas les JOIN → `no such column: u.name` dès qu'on filtrait par recherche (MCP `list_ecritures` + filtre UI).
+   - **UI `/ecritures` — regroupement visuel des ventilations** : les écritures partageant un `comptaweb_ecriture_id` (≥2) sont rendues comme un **groupe repliable** (header « Écriture Comptaweb · pièce N · k ventilations » + total, accent indigo), réutilisant le pattern existant des groupes « ligne bancaire » (accent slate). Tri serveur complété par `comptaweb_ecriture_id` pour la contiguïté. On distingue ainsi d'un coup d'œil les lignes sœurs d'une même écriture CW.
 
 ---
 
