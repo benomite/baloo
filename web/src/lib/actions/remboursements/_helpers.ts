@@ -13,6 +13,38 @@ import {
 
 export const ADMIN_ROLES = ['tresorier', 'RG'];
 
+// État retourné par les server actions de form au format `useActionState`.
+// `null` = pas encore soumis / succès (le succès redirige et ne retourne
+// donc jamais cette valeur).
+export type RembFormState = { error: string } | null;
+
+// Levée par les helpers `fail()` quand une validation échoue. Capturée au
+// niveau de la server action, qui la convertit en `{ error }` retourné à
+// `useActionState` — SANS redirect, pour que le formulaire ne soit pas
+// vidé. Toute autre erreur (et le NEXT_REDIRECT du succès) se propage.
+export class FormValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'FormValidationError';
+  }
+}
+
+// Exécute le corps d'une server action de form et convertit une
+// `FormValidationError` en état d'erreur retourné. Le `redirect()` de
+// succès lève NEXT_REDIRECT, qui n'est pas une FormValidationError et se
+// propage donc normalement (navigation).
+export async function runFormAction(
+  body: () => Promise<void>,
+): Promise<RembFormState> {
+  try {
+    await body();
+    return null;
+  } catch (err) {
+    if (err instanceof FormValidationError) return { error: err.message };
+    throw err;
+  }
+}
+
 export async function deriveAppUrl(): Promise<string> {
   const explicit = process.env.AUTH_URL || process.env.NEXTAUTH_URL;
   if (explicit) return explicit;

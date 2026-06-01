@@ -1,15 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useActionState, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Alert } from '@/components/ui/alert';
 import { FileMultiUploader } from '@/components/ui/file-multi-uploader';
 import { Field } from '@/components/shared/field';
 import { Section } from '@/components/shared/section';
 import { NativeSelect } from '@/components/ui/native-select';
 import { PendingButton } from '@/components/shared/pending-button';
+import { validateClientFile } from '@/lib/justif-allowed';
+
+// État renvoyé par les server actions du form en cas d'échec de
+// validation. `null` = pas encore soumis / succès (le succès redirige).
+export type RembFormState = { error: string } | null;
 
 interface UniteOption {
   id: string;
@@ -30,7 +36,10 @@ interface InitialLigne {
 }
 
 interface Props {
-  action: (formData: FormData) => Promise<void>;
+  // Server action au format `useActionState` : en cas d'erreur de
+  // validation elle retourne `{ error }` (affiché inline, sans recharger
+  // la page → le form n'est pas vidé) ; en cas de succès elle redirige.
+  action: (state: RembFormState, formData: FormData) => Promise<RembFormState>;
   unites: UniteOption[];
   today: string;
   // Identité du bénéficiaire : préremplie avec l'utilisateur connecté
@@ -83,6 +92,21 @@ export function RemboursementForm({
   submitLabel = 'Envoyer la demande',
   introNode,
 }: Props) {
+  const [state, formAction] = useActionState(action, null);
+  const [ribFileError, setRibFileError] = useState<string | null>(null);
+
+  // Champs contrôlés : React réinitialise les inputs NON contrôlés d'un
+  // `<form action>` après l'exécution de l'action (y compris sur erreur).
+  // En les contrôlant, leur valeur survit à un retour `{ error }` → le
+  // formulaire n'est jamais vidé.
+  const [prenom, setPrenom] = useState(defaultIdentity.prenom);
+  const [nom, setNom] = useState(defaultIdentity.nom);
+  const [email, setEmail] = useState(defaultIdentity.email);
+  const [ribTexte, setRibTexte] = useState(initialRibTexte ?? '');
+  const [notes, setNotes] = useState(initialNotes ?? '');
+  const [uniteId, setUniteId] = useState(initialUniteId ?? '');
+  const [certif, setCertif] = useState(false);
+
   const [lignes, setLignes] = useState<Ligne[]>(() => {
     if (initialLignes && initialLignes.length > 0) return initialLignes.map((l) => newRow(today, l));
     return [newRow(today)];
@@ -101,16 +125,32 @@ export function RemboursementForm({
   };
 
   return (
-    <form action={action} encType="multipart/form-data" className="space-y-6">
+    <form action={formAction} encType="multipart/form-data" className="space-y-6">
       {introNode}
+
+      {state?.error && (
+        <Alert variant="error">{state.error}</Alert>
+      )}
 
       <Section title="Bénéficiaire" subtitle="Prérempli avec ton compte — modifiable si tu saisis pour quelqu'un d'autre.">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Prénom" htmlFor="prenom" required>
-            <Input id="prenom" name="prenom" defaultValue={defaultIdentity.prenom} required />
+            <Input
+              id="prenom"
+              name="prenom"
+              value={prenom}
+              onChange={(e) => setPrenom(e.target.value)}
+              required
+            />
           </Field>
           <Field label="Nom" htmlFor="nom" required>
-            <Input id="nom" name="nom" defaultValue={defaultIdentity.nom} required />
+            <Input
+              id="nom"
+              name="nom"
+              value={nom}
+              onChange={(e) => setNom(e.target.value)}
+              required
+            />
           </Field>
         </div>
         <Field label="Email" htmlFor="email" required hint="pour les notifications de validation">
@@ -118,7 +158,8 @@ export function RemboursementForm({
             id="email"
             name="email"
             type="email"
-            defaultValue={defaultIdentity.email}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             required
           />
         </Field>
@@ -231,7 +272,8 @@ export function RemboursementForm({
             name="rib_texte"
             rows={2}
             placeholder="FR76 ... · BIC ... · Banque ..."
-            defaultValue={initialRibTexte ?? ''}
+            value={ribTexte}
+            onChange={(e) => setRibTexte(e.target.value)}
           />
         </Field>
         <Field label="RIB (fichier)" htmlFor="rib_file" hint="optionnel si IBAN renseigné">
@@ -240,8 +282,23 @@ export function RemboursementForm({
             name="rib_file"
             type="file"
             accept="image/*,application/pdf"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              const err = f ? validateClientFile(f) : null;
+              if (err) {
+                // Refus immédiat : on vide l'input pour qu'un fichier
+                // invalide ne parte jamais au serveur.
+                e.target.value = '';
+                setRibFileError(err);
+              } else {
+                setRibFileError(null);
+              }
+            }}
             className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-brand-50 file:text-brand file:font-medium file:text-[13px] file:cursor-pointer hover:file:bg-brand-100 file:transition-colors"
           />
+          {ribFileError && (
+            <p className="mt-1.5 text-xs text-destructive">{ribFileError}</p>
+          )}
         </Field>
       </Section>
 
@@ -251,7 +308,8 @@ export function RemboursementForm({
             <NativeSelect
               id="unite_id"
               name="unite_id"
-              defaultValue={initialUniteId ?? ''}
+              value={uniteId}
+              onChange={(e) => setUniteId(e.target.value)}
             >
               <option value="">— Aucune / groupe —</option>
               {unites.map((u) => (
@@ -268,7 +326,8 @@ export function RemboursementForm({
             name="notes"
             rows={2}
             placeholder="Précisions libres"
-            defaultValue={initialNotes ?? ''}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
           />
         </Field>
       </Section>
@@ -279,6 +338,8 @@ export function RemboursementForm({
             type="checkbox"
             name="certif"
             required
+            checked={certif}
+            onChange={(e) => setCertif(e.target.checked)}
             className="mt-0.5 h-4 w-4 rounded border-border-strong text-brand focus-visible:ring-2 focus-visible:ring-brand/30"
           />
           <span className="text-[13px] text-fg-muted leading-relaxed">

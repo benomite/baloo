@@ -2,32 +2,19 @@ import { getDb } from '../db';
 import { nextId, currentTimestamp } from '../ids';
 import { getStorage, guessMime } from '../storage';
 import type { Justificatif } from '../types';
+import {
+  ALLOWED_EXTENSIONS,
+  ALLOWED_LABEL,
+  ALLOWED_MIME_TYPES,
+  MAX_FILE_SIZE_BYTES,
+  extOf,
+} from '../justif-allowed';
 
 // Whitelist double (extension + MIME) sur les justificatifs uploadés.
 // Un attaquant peut renommer un fichier (extension) OU mentir sur le
-// Content-Type (MIME) — on contrôle les deux. La taille max double
-// celle de bodySizeLimit Next (10 MB) pour matcher.
-//
-// HEIC ajouté pour les photos iOS prises directement depuis l'app.
-const ALLOWED_EXTENSIONS = new Set([
-  'pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif',
-  'csv', 'xlsx', 'xls',
-]);
-
-const ALLOWED_MIME_TYPES = new Set([
-  'application/pdf',
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'image/heic',
-  'image/heif',
-  'text/csv',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-excel',
-]);
-
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+// Content-Type (MIME) — on contrôle les deux. La whitelist et la taille
+// max vivent dans `lib/justif-allowed.ts` (module pur partagé serveur /
+// client).
 
 // Erreur dédiée pour que les call-sites puissent distinguer une
 // validation refusée d'une vraie panne (storage HS, BDD KO, etc.) et
@@ -150,11 +137,11 @@ export function validateJustifAttachment(opts: {
     );
   }
 
-  const ext = opts.filename.split('.').pop()?.toLowerCase() ?? '';
+  const ext = extOf(opts.filename);
   if (!ALLOWED_EXTENSIONS.has(ext)) {
     throw new JustificatifValidationError(
       `Type de fichier non autorisé : .${ext || '(sans extension)'}. ` +
-        `Autorisés : PDF, JPG, PNG, GIF, WEBP, HEIC, CSV, XLS(X).`,
+        `Autorisés : ${ALLOWED_LABEL}.`,
     );
   }
 

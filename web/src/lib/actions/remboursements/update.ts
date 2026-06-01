@@ -11,9 +11,12 @@ import { logError } from '../../log';
 import {
   ADMIN_ROLES,
   captureClientMeta,
+  FormValidationError,
   parseIdentiteFromForm,
   parseLignesFromForm,
+  runFormAction,
   validateJustifFiles,
+  type RembFormState,
 } from './_helpers';
 
 // Édition full d'une demande : identité + lignes + justifs + RIB.
@@ -25,10 +28,19 @@ import {
 //
 // Pour l'édition limitée post-validation (notes + RIB), voir
 // `patchNotesAndRib`.
-export async function updateMyRemboursement(id: string, formData: FormData): Promise<void> {
+export async function updateMyRemboursement(
+  id: string,
+  _prevState: RembFormState,
+  formData: FormData,
+): Promise<RembFormState> {
+  return runFormAction(() => updateMyRemboursementBody(id, formData));
+}
+
+async function updateMyRemboursementBody(id: string, formData: FormData): Promise<void> {
   const ctx = await getCurrentContext();
-  const back = `/remboursements/${id}/edit?error=`;
-  const fail = (msg: string): never => redirect(back + encodeURIComponent(msg));
+  const fail = (msg: string): never => {
+    throw new FormValidationError(msg);
+  };
 
   const rbt = await getRemboursement({ groupId: ctx.groupId }, id);
   if (!rbt) fail('Demande introuvable.');

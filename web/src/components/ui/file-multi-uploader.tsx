@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { validateClientFile } from '@/lib/justif-allowed';
 
 interface FileItem {
   id: number;
@@ -24,19 +25,40 @@ export function FileMultiUploader({
   helpText,
 }: Props) {
   const [items, setItems] = useState<FileItem[]>([]);
+  const [rejected, setRejected] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const realInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const captureInputRef = useRef<HTMLInputElement>(null);
+  // Ref miroir des items pour les ré-appliquer depuis un handler natif
+  // (event `reset`) sans recréer le listener à chaque changement.
+  const itemsRef = useRef<FileItem[]>(items);
+
+  const syncInput = useCallback(() => {
+    if (!realInputRef.current) return;
+    const dt = new DataTransfer();
+    for (const it of itemsRef.current) dt.items.add(it.file);
+    realInputRef.current.files = dt.files;
+  }, []);
 
   // Synchronise l'input file natif (caché) avec notre liste interne :
   // c'est lui qui sera embarqué dans le FormData au submit du <form>.
   useEffect(() => {
-    if (!realInputRef.current) return;
-    const dt = new DataTransfer();
-    for (const it of items) dt.items.add(it.file);
-    realInputRef.current.files = dt.files;
-  }, [items]);
+    itemsRef.current = items;
+    syncInput();
+  }, [items, syncInput]);
+
+  // React réinitialise le `<form action>` après chaque exécution de
+  // l'action (y compris sur erreur), ce qui vide cet input file. On
+  // ré-applique nos fichiers après le reset pour qu'un renvoi ne les
+  // perde pas silencieusement (l'UI, elle, garde l'état `items`).
+  useEffect(() => {
+    const form = realInputRef.current?.form;
+    if (!form) return;
+    const onReset = () => queueMicrotask(syncInput);
+    form.addEventListener('reset', onReset);
+    return () => form.removeEventListener('reset', onReset);
+  }, [syncInput]);
 
   // Cleanup des object URLs quand le component démonte ou que les items changent.
   useEffect(() => {
@@ -49,16 +71,26 @@ export function FileMultiUploader({
   const addFiles = (fileList: FileList | null | undefined) => {
     if (!fileList || fileList.length === 0) return;
     const newOnes: FileItem[] = [];
+    const errors: string[] = [];
     for (const file of Array.from(fileList)) {
       // Filtre minimal pour éviter les doublons exacts (même nom + taille).
       const dup = items.some((it) => it.file.name === file.name && it.file.size === file.size);
       if (dup) continue;
+      // Validation type / taille AVANT submit : un fichier refusé n'est
+      // jamais ajouté, donc il ne peut pas déclencher un aller-retour
+      // serveur qui viderait le formulaire.
+      const err = validateClientFile(file);
+      if (err) {
+        errors.push(err);
+        continue;
+      }
       newOnes.push({
         id: ++_seq,
         file,
         previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
       });
     }
+    setRejected(errors);
     if (newOnes.length > 0) setItems((prev) => [...prev, ...newOnes]);
   };
 
@@ -157,6 +189,14 @@ export function FileMultiUploader({
           {helpText && <p className="text-xs text-muted-foreground/70">{helpText}</p>}
         </div>
       </div>
+
+      {rejected.length > 0 && (
+        <ul className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive space-y-0.5">
+          {rejected.map((msg, i) => (
+            <li key={i}>{msg}</li>
+          ))}
+        </ul>
+      )}
 
       {items.length > 0 && (
         <div className="space-y-1">

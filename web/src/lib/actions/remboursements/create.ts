@@ -16,15 +16,18 @@ import {
   ADMIN_ROLES,
   captureClientMeta,
   deriveAppUrl,
+  FormValidationError,
   listAdminEmails,
   parseIdentiteFromForm,
   parseLignesFromForm,
+  runFormAction,
   validateJustifFiles,
+  type RembFormState,
 } from './_helpers';
 
 // Helper interne. Retourne les métadonnées de la demande créée. En cas
-// d'erreur de validation, redirect vers `backUrl?error=...` (lève donc
-// — never).
+// d'erreur de validation, lève `FormValidationError` (capturée par la
+// server action, convertie en `{ error }` sans recharger la page).
 async function createRemboursementFromForm(
   formData: FormData,
   ctx: {
@@ -36,12 +39,13 @@ async function createRemboursementFromForm(
     role: string;
   },
   options: {
-    backUrl: string;
     /** null en mode foreign (saisie pour autrui), userId en mode self. */
     submittedByUserId: string | null;
   },
 ): Promise<{ rbtId: string; fullName: string; email: string; totalEstime: number; firstDate: string; firstNature: string }> {
-  const fail = (msg: string): never => redirect(options.backUrl + encodeURIComponent(msg));
+  const fail = (msg: string): never => {
+    throw new FormValidationError(msg);
+  };
 
   const { prenom, nom, email } = parseIdentiteFromForm(formData, fail);
   const lignes = parseLignesFromForm(formData, fail);
@@ -184,22 +188,22 @@ async function createRemboursementFromForm(
 // les modifier.
 // La demande est rattachée au user connecté (submitted_by_user_id =
 // ctx.userId) pour apparaître dans « Mes demandes » sur la home.
-export async function createRemboursement(formData: FormData): Promise<void> {
-  const ctx = await getCurrentContext();
-  if (ctx.role === 'parent') {
-    redirect('/remboursements/nouveau?error=' + encodeURIComponent('Action non autorisée pour ton rôle.'));
-  }
+export async function createRemboursement(
+  _prevState: RembFormState,
+  formData: FormData,
+): Promise<RembFormState> {
+  return runFormAction(async () => {
+    const ctx = await getCurrentContext();
+    if (ctx.role === 'parent') {
+      throw new FormValidationError('Action non autorisée pour ton rôle.');
+    }
 
-  const result = await createRemboursementFromForm(
-    formData,
-    ctx,
-    {
-      backUrl: '/remboursements/nouveau?error=',
+    const result = await createRemboursementFromForm(formData, ctx, {
       submittedByUserId: ctx.userId,
-    },
-  );
+    });
 
-  revalidatePath('/');
-  revalidatePath('/remboursements');
-  redirect('/remboursements?rbt_created=' + encodeURIComponent(result.rbtId));
+    revalidatePath('/');
+    revalidatePath('/remboursements');
+    redirect('/remboursements?rbt_created=' + encodeURIComponent(result.rbtId));
+  });
 }
