@@ -58,6 +58,7 @@ export function computeMissingFields(e: {
   numero_piece: string | null;
   justif_attendu: number;
   has_justificatif?: boolean;
+  remboursement_id?: string | null;
 }): string[] {
   const missing: string[] = [];
   // Tant que l'écriture n'est pas dans CW (mirror/divergent), elle est
@@ -69,7 +70,12 @@ export function computeMissingFields(e: {
     if (!e.unite_id) missing.push('unité');
     if (!e.mode_paiement_id) missing.push('mode');
   }
-  if (e.type === 'depense' && e.justif_attendu === 1 && !e.has_justificatif) {
+  if (
+    e.type === 'depense' &&
+    e.justif_attendu === 1 &&
+    !e.has_justificatif &&
+    !e.remboursement_id
+  ) {
     missing.push('justif');
   }
   return missing;
@@ -153,6 +159,9 @@ export async function listEcritures(
           AND NOT EXISTS (
             SELECT 1 FROM justificatifs j
             WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM remboursements r WHERE r.ecriture_id = e.id
           ))
     )`);
     values.push(...pending);
@@ -166,7 +175,8 @@ export async function listEcritures(
     `SELECT e.*, u.code as unite_code, u.name as unite_name, u.couleur as unite_couleur,
        c.name as category_name, m.name as mode_paiement_name, a.name as activite_name,
        ca.porteur as carte_porteur, ca.type as carte_type,
-       EXISTS(SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id) as has_justificatif
+       EXISTS(SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id) as has_justificatif,
+       (SELECT r.id FROM remboursements r WHERE r.ecriture_id = e.id LIMIT 1) as remboursement_id
      FROM ecritures e
      LEFT JOIN unites u ON u.id = e.unite_id
      LEFT JOIN categories c ON c.id = e.category_id
@@ -221,7 +231,8 @@ export async function getEcriture({ groupId, scopeUniteId }: EcritureContext, id
   return await getDb().prepare(
     `SELECT e.*, u.code as unite_code, u.name as unite_name, u.couleur as unite_couleur,
        c.name as category_name, m.name as mode_paiement_name, a.name as activite_name,
-       ca.porteur as carte_porteur, ca.type as carte_type
+       ca.porteur as carte_porteur, ca.type as carte_type,
+       (SELECT r.id FROM remboursements r WHERE r.ecriture_id = e.id LIMIT 1) as remboursement_id
      FROM ecritures e
      LEFT JOIN unites u ON u.id = e.unite_id
      LEFT JOIN categories c ON c.id = e.category_id

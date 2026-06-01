@@ -87,6 +87,9 @@ export interface Ecriture {
   carte_porteur?: string | null;
   carte_type?: 'cb' | 'procurement' | null;
   has_justificatif?: boolean;
+  // Renseigné (lecture) si un remboursement pointe cette écriture
+  // (remboursements.ecriture_id) — son justif est la feuille de rembt.
+  remboursement_id?: string | null;
   // Calculated fields (listing only)
   missing_fields?: string[];
 }

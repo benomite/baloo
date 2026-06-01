@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, Info, Landmark, Lock, Mail } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
@@ -79,7 +80,8 @@ export default async function EcritureDetailPage({
   const justifMissing =
     ecriture.type === 'depense' &&
     ecriture.justif_attendu === 1 &&
-    totalJustifs === 0;
+    totalJustifs === 0 &&
+    !ecriture.remboursement_id;
   const readiness = computeReadiness(ecriture, {
     categories,
     unites,
@@ -168,6 +170,17 @@ export default async function EcritureDetailPage({
       )}
 
       <ReadinessBanner readiness={readiness} justifMissing={justifMissing} />
+
+      {ecriture.remboursement_id && (
+        <div className="mb-6">
+          <Link
+            href={`/remboursements/${ecriture.remboursement_id}`}
+            className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11.5px] font-medium text-emerald-900 hover:underline dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
+          >
+            Justifiée par le remboursement {ecriture.remboursement_id}
+          </Link>
+        </div>
+      )}
 
       <CwAssistInfoBanner status={ecriture.status} />
 
