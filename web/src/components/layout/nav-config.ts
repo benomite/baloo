@@ -1,11 +1,11 @@
 import {
-  BookOpen, Bot, Coins, Ellipsis, FileText, Gift, HandCoins, Link2, Mail,
+  BookOpen, Bot, Coins, Combine, Ellipsis, FileText, Gift, HandCoins, Link2, Mail,
   Paperclip, ShieldAlert,
   type LucideIcon,
 } from 'lucide-react';
 
 export type Role = 'tresorier' | 'RG' | 'chef' | 'equipier' | 'parent';
-export type GroupKey = 'process' | 'administration';
+export type GroupKey = 'process' | 'comptabilite' | 'administration';
 
 const ADMIN: Role[] = ['tresorier', 'RG'];
 const SUBMITTERS: Role[] = ['tresorier', 'RG', 'chef', 'equipier'];
@@ -48,9 +48,10 @@ export interface ResolvedNavItem {
   icon: LucideIcon;
 }
 
-// Desktop : façade « process » (filtrée par rôle, items role-switched) + bloc
-// « Administration » repliable réservé aux admins. /cloture et /inbox restent
-// hors nav (accès par lien direct). Suite ADR-033 / spec 2026-05-31.
+// Desktop : façade « process » (filtrée par rôle, items role-switched) +
+// groupe « Comptabilité » (admins) + bloc « Administration » repliable
+// (système). /cloture reste hors nav (accès par lien direct).
+// Suite ADR-033 / 034, puis réintroduction du groupe Comptabilité + /inbox.
 export const DESKTOP_GROUPS: NavGroup[] = [
   {
     key: 'process',
@@ -62,13 +63,20 @@ export const DESKTOP_GROUPS: NavGroup[] = [
     ],
   },
   {
+    key: 'comptabilite',
+    title: 'Comptabilité',
+    items: [
+      { href: '/ecritures', label: 'Écritures', icon: BookOpen, roles: ADMIN },
+      { href: '/caisse', label: 'Caisse', icon: Coins, roles: ADMIN },
+      { href: '/inbox', label: 'Rapprochement', icon: Combine, roles: ADMIN },
+    ],
+  },
+  {
     key: 'administration',
     title: 'Administration',
     collapsible: true,
     defaultCollapsed: true,
     items: [
-      { href: '/ecritures', label: 'Écritures', icon: BookOpen, roles: ADMIN },
-      { href: '/caisse', label: 'Caisse', icon: Coins, roles: ADMIN },
       { href: '/import', label: 'Configs Comptaweb', icon: Link2, roles: ADMIN },
       { href: '/moi/connexions', label: 'Connexion Claude', icon: Bot, roles: ADMIN },
       { href: '/admin/invitations', label: 'Membres', icon: Mail, roles: ADMIN },

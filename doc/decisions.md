@@ -1452,4 +1452,23 @@ Le dogfood prod immédiat a révélé 4 bugs, tous corrigés (commits `8ef950f`,
 
 ---
 
+## ADR-036 — Nav : groupe « Comptabilité » + réexposition du rapprochement
+
+**Date** : 2026-06-01
+**Statut** : Acté
+**Révise** : [ADR-034](#adr-034--refonte-navigation-v2--façade-process--administration) (place d'Écritures/Caisse et sortie de `/inbox` de la nav).
+
+### Décision
+
+À l'usage, regrouper Écritures + Caisse sous « Administration » (système, replié) les enterrait. On ajoute un **3ᵉ groupe desktop « Comptabilité »** (non repliable, admins) : **Écritures · Caisse · Rapprochement** (`/inbox`). Le bloc « Administration » repliable ne garde que le **système** (Configs Comptaweb, Connexion Claude, Membres, Journal d'erreurs). `/inbox` (rapprochement des justificatifs/dépôts orphelins ↔ écritures), que l'ADR-034 avait sorti de la nav, est **réexposé** ici sous le libellé « Rapprochement » (son intégration dans `/ecritures` reste un chantier séparé, non fait).
+
+### Conséquences
+
+- `nav-config.ts` : `GroupKey` gagne `'comptabilite'` ; `DESKTOP_GROUPS` = `process` → `comptabilite` → `administration`. La sidebar masque déjà les groupes vides (un `chef` ne voit ni Comptabilité ni Administration). `MOBILE_TABS` inchangés (le groupe apparaît dans le tiroir « Plus », admins).
+- Pas de migration BDD ni de route nouvelle (toutes les pages existaient déjà). Tests `nav-config`/`sidebar` mis à jour.
+
+**Liens** : `web/src/components/layout/nav-config.ts`, `sidebar.tsx`.
+
+---
+
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*

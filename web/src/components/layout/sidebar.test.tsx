@@ -26,23 +26,29 @@ beforeAll(() => {
   });
 });
 
-describe('<Sidebar> — bloc Administration repliable', () => {
-  it('un admin voit le bouton Administration, items masqués par défaut', () => {
+describe('<Sidebar> — groupe Comptabilité + bloc Administration repliable', () => {
+  it('un admin voit Écritures (groupe Comptabilité, toujours visible)', () => {
     render(<Sidebar role="tresorier" />);
-    expect(screen.getByRole('button', { name: /administration/i })).toBeTruthy();
-    // Replié par défaut : l'item Écritures n'est pas rendu.
-    expect(screen.queryByText('Écritures')).toBeNull();
+    expect(screen.getByText('Écritures')).toBeTruthy();
+    expect(screen.getByText('Rapprochement')).toBeTruthy();
   });
 
-  it('cliquer sur Administration déplie les items', () => {
+  it('le bloc Administration (système) est replié par défaut', () => {
+    render(<Sidebar role="tresorier" />);
+    expect(screen.getByRole('button', { name: /administration/i })).toBeTruthy();
+    // Replié par défaut : Configs Comptaweb n'est pas rendu.
+    expect(screen.queryByText('Configs Comptaweb')).toBeNull();
+  });
+
+  it('cliquer sur Administration déplie les items système', () => {
     render(<Sidebar role="tresorier" />);
     fireEvent.click(screen.getByRole('button', { name: /administration/i }));
-    expect(screen.getByText('Écritures')).toBeTruthy();
     expect(screen.getByText('Configs Comptaweb')).toBeTruthy();
   });
 
-  it("un chef ne voit pas le bloc Administration", () => {
+  it("un chef ne voit ni Comptabilité ni Administration", () => {
     render(<Sidebar role="chef" />);
+    expect(screen.queryByText('Écritures')).toBeNull();
     expect(screen.queryByRole('button', { name: /administration/i })).toBeNull();
   });
 });

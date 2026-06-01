@@ -7,15 +7,19 @@ import {
   type NavGroup,
 } from './nav-config';
 
-function group(key: 'process' | 'administration'): NavGroup {
+function group(key: 'process' | 'comptabilite' | 'administration'): NavGroup {
   const g = DESKTOP_GROUPS.find((x) => x.key === key);
   if (!g) throw new Error(`groupe ${key} absent`);
   return g;
 }
 
 describe('nav-config — structure des groupes', () => {
-  it('expose exactement deux groupes : process puis administration', () => {
-    expect(DESKTOP_GROUPS.map((g) => g.key)).toEqual(['process', 'administration']);
+  it('expose trois groupes : process, comptabilite, administration', () => {
+    expect(DESKTOP_GROUPS.map((g) => g.key)).toEqual(['process', 'comptabilite', 'administration']);
+  });
+
+  it('le groupe comptabilité contient Écritures, Caisse, Rapprochement', () => {
+    expect(group('comptabilite').items.map((i) => i.href)).toEqual(['/ecritures', '/caisse', '/inbox']);
   });
 
   it('le bloc administration est repliable et replié par défaut', () => {
@@ -26,22 +30,24 @@ describe('nav-config — structure des groupes', () => {
 });
 
 describe('nav-config — desktop, filtrage par rôle', () => {
-  it('le trésorier voit les 3 process + tout le bloc administration', () => {
+  it('le trésorier voit les 3 process + comptabilité + administration (système)', () => {
     const process = visibleItemsForRole(group('process').items, 'tresorier').map((i) => i.href);
     expect(process).toEqual(['/depot', '/remboursements', '/abandons']);
+    const compta = visibleItemsForRole(group('comptabilite').items, 'tresorier').map((i) => i.href);
+    expect(compta).toEqual(['/ecritures', '/caisse', '/inbox']);
     const admin = visibleItemsForRole(group('administration').items, 'tresorier').map((i) => i.href);
-    expect(admin).toContain('/ecritures');
-    expect(admin).toContain('/caisse');
     expect(admin).toContain('/import');
   });
 
-  it('le chef ne voit aucun item du bloc administration', () => {
+  it('le chef ne voit aucun item de comptabilité ni d’administration', () => {
+    expect(visibleItemsForRole(group('comptabilite').items, 'chef')).toHaveLength(0);
     expect(visibleItemsForRole(group('administration').items, 'chef')).toHaveLength(0);
   });
 
   it('le parent ne voit que Remboursements dans process', () => {
     const process = visibleItemsForRole(group('process').items, 'parent').map((i) => i.href);
     expect(process).toEqual(['/remboursements']);
+    expect(visibleItemsForRole(group('comptabilite').items, 'parent')).toHaveLength(0);
     expect(visibleItemsForRole(group('administration').items, 'parent')).toHaveLength(0);
   });
 });
