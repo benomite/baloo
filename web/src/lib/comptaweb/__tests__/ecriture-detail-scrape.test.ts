@@ -1,45 +1,57 @@
 import { describe, it, expect } from 'vitest';
 import { parseEcritureDetailHtml } from '../ecriture-detail-scrape';
 
-// Layout 1 : definition list (dl/dt/dd).
-const HTML_DL = `
+// Structure réelle captée sur sgdf.production.sirom.net (écriture 2390826,
+// 2026-06-01) : tableau de ventilation thead colonnes / tbody valeurs.
+const HTML_REAL = `
 <html><body>
-  <dl class="dl-horizontal">
-    <dt>Intitulé</dt><dd>Don WET</dd>
-    <dt>Activité</dt><dd>Camp été 2026</dd>
-    <dt>Branche / projet</dt><dd>Louveteaux-Jeannettes</dd>
-  </dl>
+  <table class="table table-striped table-hover table-bordered">
+    <thead><tr>
+      <th>Montant</th><th>Nature</th><th>Activité</th><th>Branche / Pôle</th>
+    </tr></thead>
+    <tbody><tr>
+      <td>1000.00</td>
+      <td>Flux financiers entre structures ( SAUF la participation aux activités)</td>
+      <td>WET</td>
+      <td>Groupe</td>
+    </tr></tbody>
+  </table>
 </body></html>`;
 
-// Layout 2 : tableau th/td.
-const HTML_TABLE = `
+// Plusieurs ventilations : on prend la première ligne.
+const HTML_MULTI = `
 <html><body>
-  <table><tbody>
-    <tr><th>Date</th><td>04/05/2026</td></tr>
-    <tr><th>Activité</th><td>Week-end Pionniers</td></tr>
-    <tr><th>Projet</th><td>Pionniers-Caravelles</td></tr>
-  </tbody></table>
+  <table class="table table-bordered">
+    <thead><tr><th>Montant</th><th>Nature</th><th>Activité</th><th>Branche / Pôle</th></tr></thead>
+    <tbody>
+      <tr><td>600,00</td><td>Cotisations</td><td>Camp été</td><td>Louveteaux</td></tr>
+      <tr><td>400,00</td><td>Dons</td><td>Week-end</td><td>Pionniers</td></tr>
+    </tbody>
+  </table>
 </body></html>`;
 
-// Layout 3 : champs absents.
-const HTML_EMPTY = `<html><body><p>Rien d'utile ici</p></body></html>`;
+// Pas de table de ventilation.
+const HTML_EMPTY = `<html><body><table><tr><th>Catégorie tiers</th><td>Mon Territoire</td></tr></table></body></html>`;
 
 describe('parseEcritureDetailHtml', () => {
-  it('extrait activité + branche depuis un dl', () => {
-    const d = parseEcritureDetailHtml(HTML_DL);
-    expect(d.activite).toBe('Camp été 2026');
-    expect(d.brancheprojet).toBe('Louveteaux-Jeannettes');
+  it('extrait nature / activité / branche depuis le tableau de ventilation réel', () => {
+    const d = parseEcritureDetailHtml(HTML_REAL);
+    expect(d.nature).toBe('Flux financiers entre structures ( SAUF la participation aux activités)');
+    expect(d.activite).toBe('WET');
+    expect(d.brancheprojet).toBe('Groupe');
   });
 
-  it('extrait activité + branche depuis un tableau th/td', () => {
-    const d = parseEcritureDetailHtml(HTML_TABLE);
-    expect(d.activite).toBe('Week-end Pionniers');
-    expect(d.brancheprojet).toBe('Pionniers-Caravelles');
+  it('prend la première ligne de ventilation en cas de multi-ventilation', () => {
+    const d = parseEcritureDetailHtml(HTML_MULTI);
+    expect(d.nature).toBe('Cotisations');
+    expect(d.activite).toBe('Camp été');
+    expect(d.brancheprojet).toBe('Louveteaux');
   });
 
-  it('renvoie null quand les champs sont absents', () => {
+  it('renvoie null quand il n’y a pas de table de ventilation', () => {
     const d = parseEcritureDetailHtml(HTML_EMPTY);
     expect(d.activite).toBeNull();
     expect(d.brancheprojet).toBeNull();
+    expect(d.nature).toBeNull();
   });
 });
