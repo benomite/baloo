@@ -9,6 +9,7 @@ import { listJustificatifsForEcriture } from '@/lib/queries/justificatifs';
 import { listDepots } from '@/lib/services/depots';
 import { EcritureFilters } from '@/components/ecritures/ecriture-filters';
 import { ScanDraftsButton } from '@/components/ecritures/scan-drafts-button';
+import { FullResyncButton } from '@/components/ecritures/full-resync-button';
 import { ArbitrageBanner } from '@/components/ecritures/arbitrage-banner';
 import { listSupprimeeCw, listLinkSuggestions } from '@/lib/queries/sync-arbitrage';
 import { EcrituresTable } from '@/components/ecritures/ecritures-table';
@@ -90,6 +91,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
           </Link>
         }
       >
+        <FullResyncButton />
         <ScanDraftsButton />
         <Link href="/ecritures/nouveau"><Button>Nouvelle écriture</Button></Link>
       </PageHeader>

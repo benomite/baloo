@@ -17,6 +17,10 @@ import { ADMIN_ROLES } from '@/lib/auth/access';
 import { getDb } from '@/lib/db';
 import { runSyncCycle } from '@/lib/services/sync-cycle';
 
+// La réconciliation scope='exercice' relit le détail des écritures non
+// enrichies (1 requête CW chacune) → peut dépasser le défaut serverless.
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
@@ -26,10 +30,12 @@ export async function POST(request: Request) {
 
   const url = new URL(request.url);
   const force = url.searchParams.get('force') === '1';
+  const scope = url.searchParams.get('scope') === 'exercice' ? 'exercice' : 'recent';
 
   const result = await runSyncCycle(getDb(), ctxR.ctx.groupId, {
     trigger: 'client',
     force,
+    scope,
   });
 
   if (result.status === 'skipped') {

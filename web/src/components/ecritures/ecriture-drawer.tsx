@@ -7,6 +7,7 @@ import { Drawer } from '@/components/ui/drawer';
 import { EcritureForm } from '@/components/ecritures/ecriture-form';
 import { JustificatifsCard } from '@/components/ecritures/justificatifs-card';
 import { SyncDraftButton } from '@/components/ecritures/sync-draft-button';
+import { ResyncEcritureButton } from '@/components/ecritures/resync-ecriture-button';
 import { DeleteDraftButton } from '@/components/ecritures/delete-draft-button';
 import { EcritureStatePair } from '@/components/shared/status-badge';
 import { Amount } from '@/components/shared/amount';
@@ -219,6 +220,9 @@ export function EcritureDrawer({
             </form>
           )}
           {!ecriture.comptaweb_ecriture_id && <SyncDraftButton ecritureId={ecriture.id} />}
+          {ecriture.comptaweb_ecriture_id != null && (
+            <ResyncEcritureButton ecritureId={ecriture.id} />
+          )}
           {ecriture.status !== 'draft' && !ecriture.comptaweb_ecriture_id && (
             <form
               action={updateEcritureStatus.bind(null, ecriture.id, 'draft')}

@@ -413,6 +413,60 @@ function defaultResolveCategoryId(db: DbWrapper, groupId: string) {
 }
 
 // ============================================================================
+// resyncEcritureDetail — resync ciblé d'une écriture (bouton drawer)
+// ============================================================================
+
+export type ResyncResult =
+  | { ok: true; activiteId: string | null; uniteId: string | null; categoryId: string | null }
+  | { ok: false; reason: 'not_found' | 'not_linked' };
+
+/**
+ * Re-synchronise UNE écriture depuis CW (action manuelle, hors cycle) :
+ * relit sa page détail, résout activité/unité/catégorie, et pose
+ * `comptaweb_synced = 1` + `status = 'mirror'`. N'écrase jamais une
+ * imputation par NULL (COALESCE) ni les enrichissements locaux.
+ *
+ * Utile pour réparer une écriture précise sans lancer un cycle complet
+ * (notamment une écriture ancienne hors de la fenêtre `recent`).
+ */
+export async function resyncEcritureDetail(
+  db: DbWrapper,
+  groupId: string,
+  ecritureId: string,
+  opts: Pick<SyncCycleOptions, 'loadConfig' | 'scrapeDetail' | 'resolveActiviteId' | 'resolveUniteId' | 'resolveCategoryId'> = {},
+): Promise<ResyncResult> {
+  const ecr = await db
+    .prepare('SELECT comptaweb_ecriture_id FROM ecritures WHERE id = ? AND group_id = ?')
+    .get<{ comptaweb_ecriture_id: number | null }>(ecritureId, groupId);
+  if (!ecr) return { ok: false, reason: 'not_found' };
+  if (ecr.comptaweb_ecriture_id == null) return { ok: false, reason: 'not_linked' };
+
+  const loadConfig = opts.loadConfig ?? defaultLoadConfig;
+  const config = await loadConfig();
+  const resolvers: Resolvers = {
+    scrapeDetail: opts.scrapeDetail ?? ((cwId: number) => defaultScrapeDetail(config, cwId)),
+    resolveActiviteId: opts.resolveActiviteId ?? defaultResolveActiviteId(db, groupId),
+    resolveUniteId: opts.resolveUniteId ?? defaultResolveUniteId(db, groupId),
+    resolveCategoryId: opts.resolveCategoryId ?? defaultResolveCategoryId(db, groupId),
+  };
+
+  const r = await fetchDetailIds(ecr.comptaweb_ecriture_id, resolvers);
+  await db
+    .prepare(
+      `UPDATE ecritures SET
+         status = 'mirror', comptaweb_synced = 1,
+         activite_id = COALESCE(?, activite_id),
+         unite_id = COALESCE(?, unite_id),
+         category_id = COALESCE(?, category_id),
+         updated_at = ?
+       WHERE id = ? AND group_id = ?`,
+    )
+    .run(r.activiteId, r.uniteId, r.categoryId, currentTimestamp(), ecritureId, groupId);
+
+  return { ok: true, activiteId: r.activiteId, uniteId: r.uniteId, categoryId: r.categoryId };
+}
+
+// ============================================================================
 // runSyncCycle
 // ============================================================================
 

@@ -14,6 +14,8 @@ import {
 } from '../services/ecritures';
 import { ECRITURE_STATUSES, type EcritureStatus } from '../types';
 import { parseAmount } from '../format';
+import { getDb } from '../db';
+import { resyncEcritureDetail } from '../services/sync-cycle';
 
 // Note Task 8 (pivot miroir strict) : la server action `createEcriture`
 // a été retirée. La page /ecritures/nouveau passe désormais par le
@@ -93,6 +95,29 @@ export async function updateEcritureField(
 
 // Suppression d'un brouillon local (status='draft' uniquement, sans pièce
 // attachée). Seule exception assumée à la règle no-DELETE — cf. service.
+/**
+ * Re-synchronise une écriture depuis Comptaweb (action manuelle du drawer) :
+ * relit sa page détail, réaligne activité/unité/catégorie + comptaweb_synced.
+ * Pratique pour réparer une écriture précise sans lancer un cycle complet.
+ */
+export async function resyncEcritureDepuisCw(
+  id: string,
+): Promise<{ ok: boolean; message?: string }> {
+  const { groupId } = await getCurrentContext();
+  const res = await resyncEcritureDetail(getDb(), groupId, id);
+  if (!res.ok) {
+    return {
+      ok: false,
+      message:
+        res.reason === 'not_linked'
+          ? "Cette écriture n'est pas reliée à Comptaweb (pas d'id CW)."
+          : 'Écriture introuvable.',
+    };
+  }
+  revalidatePath('/ecritures');
+  return { ok: true };
+}
+
 export async function deleteDraft(id: string): Promise<{ ok: boolean; message?: string }> {
   const { groupId, scopeUniteId } = await getCurrentContext();
   const res = await deleteDraftEcritureService({ groupId, scopeUniteId }, id);

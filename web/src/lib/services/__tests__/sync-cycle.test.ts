@@ -17,6 +17,7 @@ import {
   runSyncCycle,
   getSyncStatus,
   ensureSyncFresh,
+  resyncEcritureDetail,
   type SyncCycleOptions,
 } from '../sync-cycle';
 import type {
@@ -501,6 +502,42 @@ describe('runSyncCycle — isolation multi-groupes', () => {
     const resB = await runSyncCycle(db, 'g_b', mockOpts({ now: () => now }));
     expect(resA.status).toBe('skipped');
     expect(resB.status).toBe('ok');
+  });
+});
+
+// ============================================================
+// resyncEcritureDetail — resync ciblé
+// ============================================================
+
+describe('resyncEcritureDetail', () => {
+  let db: DbWrapper;
+  beforeEach(async () => { ({ db } = await setupDb()); });
+
+  const inj = {
+    loadConfig: async () => FAKE_CONFIG,
+    scrapeDetail: async () => ({ activite: 'WET', brancheprojet: 'Groupe', nature: 'Flux' }),
+    resolveActiviteId: async () => 'ACT-WET',
+    resolveUniteId: async () => 'UNITE-GR',
+    resolveCategoryId: async () => 'CAT-FLUX',
+  };
+
+  it('réaligne imputation + comptaweb_synced sur une écriture reliée', async () => {
+    await insertEcriture(db, { id: 'ECR-2026-224', status: 'mirror', comptaweb_ecriture_id: 2390826 });
+    const res = await resyncEcritureDetail(db, 'g1', 'ECR-2026-224', inj);
+    expect(res.ok).toBe(true);
+    const ecr = await db.prepare('SELECT activite_id, unite_id, category_id, comptaweb_synced, status FROM ecritures WHERE id = ?').get<{ activite_id: string; unite_id: string; category_id: string; comptaweb_synced: number; status: string }>('ECR-2026-224');
+    expect(ecr).toEqual({ activite_id: 'ACT-WET', unite_id: 'UNITE-GR', category_id: 'CAT-FLUX', comptaweb_synced: 1, status: 'mirror' });
+  });
+
+  it('refuse une écriture non reliée (pas d’id CW)', async () => {
+    await insertEcriture(db, { id: 'D1', status: 'draft', comptaweb_ecriture_id: null });
+    const res = await resyncEcritureDetail(db, 'g1', 'D1', inj);
+    expect(res).toEqual({ ok: false, reason: 'not_linked' });
+  });
+
+  it('introuvable → not_found', async () => {
+    const res = await resyncEcritureDetail(db, 'g1', 'NOPE', inj);
+    expect(res).toEqual({ ok: false, reason: 'not_found' });
   });
 });
 
