@@ -12,10 +12,23 @@ import {
   type BatchPatch,
   type BatchResult,
 } from '../services/ecritures';
-import { ECRITURE_STATUSES, type EcritureStatus } from '../types';
+import { ECRITURE_STATUSES, type EcritureStatus, type Ecriture } from '../types';
 import { parseAmount } from '../format';
 import { getDb } from '../db';
 import { resyncEcritureDetail } from '../services/sync-cycle';
+import { listEcritures, type EcritureFilters } from '../queries/ecritures';
+
+/**
+ * Pagination des écritures (chargement progressif côté client). Renvoie la
+ * page demandée avec les MÊMES filtres que la page serveur (le contexte
+ * groupe/scope est résolu côté serveur par `listEcritures`).
+ */
+export async function fetchEcrituresPage(
+  filters: EcritureFilters,
+  offset: number,
+): Promise<{ ecritures: Ecriture[]; total: number }> {
+  return listEcritures({ ...filters, offset });
+}
 
 // Note Task 8 (pivot miroir strict) : la server action `createEcriture`
 // a été retirée. La page /ecritures/nouveau passe désormais par le

@@ -12,10 +12,14 @@ import { ScanDraftsButton } from '@/components/ecritures/scan-drafts-button';
 import { FullResyncButton } from '@/components/ecritures/full-resync-button';
 import { ArbitrageBanner } from '@/components/ecritures/arbitrage-banner';
 import { listSupprimeeCw, listAgregesRemplaces, listLinkSuggestions } from '@/lib/queries/sync-arbitrage';
-import { EcrituresTable } from '@/components/ecritures/ecritures-table';
+import { EcrituresInfiniteList } from '@/components/ecritures/ecritures-infinite-list';
 import { EcritureDrawer } from '@/components/ecritures/ecriture-drawer';
 import { getCurrentContext } from '@/lib/context';
 import { requireNotParent } from '@/lib/auth/access';
+
+// Taille de page du chargement progressif (infinite scroll). La première
+// page est servie côté serveur ; les suivantes via la server action.
+const PAGE_SIZE = 100;
 
 export default async function EcrituresPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const ctx = await getCurrentContext();
@@ -32,7 +36,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     incomplete: params.incomplete === '1',
     from_bank: params.from_bank === '1',
     sans_unite: params.sans_unite === '1',
-    limit: 200,
+    limit: PAGE_SIZE,
   };
   // Toutes ces queries sont indépendantes : on les parallélise pour
   // ne payer que le RTT le plus long (au lieu de la somme).
@@ -122,8 +126,12 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
 
       <p className="text-sm text-muted-foreground mb-4">{total} écriture{total > 1 ? 's' : ''}</p>
 
-      <EcrituresTable
-        ecritures={ecritures}
+      <EcrituresInfiniteList
+        key={JSON.stringify(filters)}
+        initialEcritures={ecritures}
+        total={total}
+        pageSize={PAGE_SIZE}
+        filters={filters}
         categories={categories}
         unites={unites}
         modesPaiement={modesPaiement}
