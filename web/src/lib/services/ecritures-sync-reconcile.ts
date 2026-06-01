@@ -94,6 +94,92 @@ export function computeCwSignature(fields: {
   ].join('|');
 }
 
+// ============================================================================
+// Réconciliation au grain VENTILATION (ADR-035, correctifs granularité)
+// ============================================================================
+//
+// Une écriture CW porte N ventilations ; côté Baloo le grain est la
+// ventilation (1 écriture Baloo = 1 ventilation). `reconcileVentilations`
+// aligne les ventilations CW d'UNE écriture sur les écritures Baloo
+// candidates (déjà reliées à ce cwId, + écritures non reliées matchées par
+// contenu, ex. issues de l'import CSV).
+
+export interface ResolvedVentilation {
+  montantCents: number;
+  categoryId: string | null;
+  activiteId: string | null;
+  uniteId: string | null;
+}
+
+export interface VentCandidate {
+  id: string;
+  amountCents: number;
+  /** true si l'écriture est déjà reliée à CE cwId (comptaweb_ecriture_id == cwId). */
+  linkedToThisCw: boolean;
+}
+
+export interface VentilationPlan {
+  /** ventilation existante côté Baloo → mettre à jour (lier + imputation). */
+  updates: { ecritureId: string; vent: ResolvedVentilation }[];
+  /** ventilation sans équivalent Baloo → créer. */
+  creates: ResolvedVentilation[];
+  /** écriture reliée à ce cwId ne correspondant à AUCUNE ventilation
+   *  (ex. agrégat erroné, ou ventilation supprimée dans CW) → supprimee_cw. */
+  orphans: string[];
+}
+
+/**
+ * Apparie les ventilations CW d'une écriture aux écritures Baloo candidates,
+ * par montant (clé naturelle : au sein d'une écriture les ventilations ont
+ * des montants généralement distincts). Une écriture non reliée non
+ * appariée n'est PAS touchée (ce n'était pas une ventilation de ce cwId).
+ */
+export function reconcileVentilations(
+  ventilations: ResolvedVentilation[],
+  candidates: VentCandidate[],
+): VentilationPlan {
+  const plan: VentilationPlan = { updates: [], creates: [], orphans: [] };
+  const consumed = new Set<string>();
+  const unmatched: ResolvedVentilation[] = [];
+
+  // Passe 1 — appariement par MONTANT (priorité à un candidat déjà relié à
+  // ce cwId, pour ne pas re-piocher une écriture CSV non reliée si une
+  // version reliée existe).
+  for (const v of ventilations) {
+    const free = candidates.filter((c) => !consumed.has(c.id) && c.amountCents === v.montantCents);
+    const pick = free.find((c) => c.linkedToThisCw) ?? free[0];
+    if (pick) {
+      consumed.add(pick.id);
+      plan.updates.push({ ecritureId: pick.id, vent: v });
+    } else {
+      unmatched.push(v);
+    }
+  }
+
+  // Passe 2 — appariement AGNOSTIQUE au montant, uniquement entre les
+  // ventilations restantes et les candidats déjà RELIÉS non consommés. Gère
+  // un changement de montant côté CW (sinon : faux delete+create). On reste
+  // prudent : on ne pioche pas d'écriture non reliée à l'aveugle.
+  const freeLinked = candidates.filter((c) => c.linkedToThisCw && !consumed.has(c.id));
+  for (const v of unmatched) {
+    const pick = freeLinked.find((c) => !consumed.has(c.id));
+    if (pick) {
+      consumed.add(pick.id);
+      plan.updates.push({ ecritureId: pick.id, vent: v });
+    } else {
+      plan.creates.push(v);
+    }
+  }
+
+  // Candidats reliés à ce cwId mais non consommés = orphelins (agrégat, ou
+  // ventilation disparue de CW). Les non-reliés non consommés sont ignorés.
+  for (const c of candidates) {
+    if (c.linkedToThisCw && !consumed.has(c.id)) plan.orphans.push(c.id);
+  }
+
+  return plan;
+}
+
 function daysBetween(a: string, b: string): number {
   const da = Date.parse(a + 'T00:00:00Z');
   const db = Date.parse(b + 'T00:00:00Z');

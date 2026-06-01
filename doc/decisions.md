@@ -1440,6 +1440,13 @@ Le dogfood prod immédiat a révélé 4 bugs, tous corrigés (commits `8ef950f`,
 - Bouton **« Tout resynchroniser »** (`/ecritures`) → `POST /api/sync/run?scope=exercice&force=1` (`maxDuration=60`).
 - Bouton **« Resync Comptaweb »** par écriture (drawer) → `resyncEcritureDetail` (relit le détail + réaligne imputation + `comptaweb_synced`), pratique pour une écriture ancienne hors fenêtre `recent`.
 
+5. **Grain VENTILATION** (correction de conception, post-test) : une écriture CW porte **N ventilations** (ex. un regroupement de prélèvements : 491 € = 481 Formation/LJ + 10 Cotisations/PC). L'import CSV historique crée **une écriture Baloo par ventilation** (nécessaire pour les budgets : catégories/unités distinctes). Or la réconciliation importait au grain **écriture CW** (la liste `?m=1` montre le total 491) → elle créait un **agrégat en doublon** des ventilations (double comptage). Refonte : la réconciliation opère désormais au **grain ventilation**.
+   - Nouveau `parseEcritureDetailHtml` → **toutes** les ventilations (montant + nature/activité/branche), pas la première seulement.
+   - Fonction pure `reconcileVentilations(ventilations, candidates)` : apparie chaque ventilation à une écriture Baloo candidate par **montant** (passe 1), puis appariement agnostique au montant entre ventilations et candidats déjà reliés restants (passe 2, gère un changement de montant), sinon création. Candidats reliés non appariés (= agrégat erroné, ou ventilation disparue) → `supprimee_cw`.
+   - `processCwEcriture` (orchestrateur) : par écriture CW à traiter, lit le détail, charge les candidats (reliés par `comptaweb_ecriture_id`, **+ non reliés matchés par date+type+montant** pour absorber les écritures CSV existantes), exécute updates/creates/orphans. **Plus jamais d'agrégat créé.**
+   - `resyncEcritureDetail` re-traite tout le cwId de l'écriture au grain ventilation.
+   - Les agrégats déjà créés en prod basculent en `supprimee_cw` au cycle suivant (l'utilisateur les retire via le bandeau d'arbitrage). Détail technique dans `web/AGENTS.md`.
+
 ---
 
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*

@@ -264,6 +264,19 @@ La page **`/modifier`** renvoie une **500** (`Variable
 "ecritures_comptables_enfants" does not exist`) pour certaines écritures →
 ne pas s'y fier, rester sur `/afficher`.
 
+### Grain canonique d'une écriture Baloo = la VENTILATION
+
+Une écriture Comptaweb peut avoir **plusieurs ventilations** (regroupement :
+491 € = 481 Formation/LJ + 10 Cotisations/PC). L'import CSV crée **une
+écriture Baloo par ventilation** (catégories/unités distinctes → indispensable
+aux budgets). Toute synchro doit respecter ce grain : **ne jamais créer
+d'écriture agrégée** au niveau « écriture CW » (sinon doublon = double
+comptage). La liste `?m=1` ne montre que le total → il faut lire le **détail**
+(`parseEcritureDetailHtml` renvoie toutes les ventilations) et réconcilier au
+grain ventilation (`reconcileVentilations` / `processCwEcriture` dans
+`sync-cycle.ts`). L'appariement ventilation ↔ écriture Baloo se fait par
+**montant** (+ absorption des écritures CSV non reliées via date+type+montant).
+
 ### Scrape CW server-side : `fetchHtml` lève `ComptawebSessionExpiredError`
 
 `fetchHtml` (redirect manuel) **throw** `ComptawebSessionExpiredError` sur une

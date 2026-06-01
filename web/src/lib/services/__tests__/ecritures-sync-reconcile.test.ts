@@ -185,3 +185,76 @@ describe('reconcile — scénario combiné', () => {
     expect(plan.imports.map((i) => i.cwId)).toEqual([200, 260]);
   });
 });
+
+import { reconcileVentilations } from '../ecritures-sync-reconcile';
+
+describe('reconcileVentilations (grain ventilation)', () => {
+  const vent = (montantCents: number, categoryId: string | null = null) => ({ montantCents, categoryId, activiteId: null, uniteId: null });
+
+  it('apparie 2 ventilations à 2 écritures CSV existantes (par montant)', () => {
+    const plan = reconcileVentilations(
+      [vent(48100), vent(1000)],
+      [
+        { id: 'CSV-481', amountCents: 48100, linkedToThisCw: false },
+        { id: 'CSV-10', amountCents: 1000, linkedToThisCw: false },
+      ],
+    );
+    expect(plan.updates.map((u) => u.ecritureId).sort()).toEqual(['CSV-10', 'CSV-481']);
+    expect(plan.creates).toHaveLength(0);
+    expect(plan.orphans).toHaveLength(0);
+  });
+
+  it('marque orphelin l’agrégat relié non apparié (491 vs 481+10)', () => {
+    const plan = reconcileVentilations(
+      [vent(48100), vent(1000)],
+      [
+        { id: 'AGG-491', amountCents: 49100, linkedToThisCw: true }, // agrégat erroné
+        { id: 'CSV-481', amountCents: 48100, linkedToThisCw: false },
+        { id: 'CSV-10', amountCents: 1000, linkedToThisCw: false },
+      ],
+    );
+    expect(plan.updates.map((u) => u.ecritureId).sort()).toEqual(['CSV-10', 'CSV-481']);
+    expect(plan.orphans).toEqual(['AGG-491']);
+  });
+
+  it('crée les ventilations sans candidat', () => {
+    const plan = reconcileVentilations([vent(48100), vent(1000)], []);
+    expect(plan.creates).toHaveLength(2);
+    expect(plan.updates).toHaveLength(0);
+  });
+
+  it('mono-ventilation reliée → simple update, pas d’orphelin', () => {
+    const plan = reconcileVentilations(
+      [vent(100000)],
+      [{ id: 'E1', amountCents: 100000, linkedToThisCw: true }],
+    );
+    expect(plan.updates).toEqual([{ ecritureId: 'E1', vent: vent(100000) }]);
+    expect(plan.orphans).toHaveLength(0);
+  });
+
+  it('ne touche pas un candidat non relié non apparié', () => {
+    const plan = reconcileVentilations(
+      [vent(48100)],
+      [
+        { id: 'CSV-481', amountCents: 48100, linkedToThisCw: false },
+        { id: 'AUTRE-999', amountCents: 99900, linkedToThisCw: false },
+      ],
+    );
+    expect(plan.updates).toEqual([{ ecritureId: 'CSV-481', vent: vent(48100) }]);
+    expect(plan.orphans).toHaveLength(0);
+    expect(plan.creates).toHaveLength(0);
+  });
+});
+
+describe('reconcileVentilations — changement de montant (passe 2)', () => {
+  const vent = (montantCents: number) => ({ montantCents, categoryId: null, activiteId: null, uniteId: null });
+  it('mono-ventilation dont le montant a changé → update du candidat relié (pas orphan+create)', () => {
+    const plan = reconcileVentilations(
+      [vent(50000)],
+      [{ id: 'E1', amountCents: 48000, linkedToThisCw: true }],
+    );
+    expect(plan.updates).toEqual([{ ecritureId: 'E1', vent: vent(50000) }]);
+    expect(plan.orphans).toHaveLength(0);
+    expect(plan.creates).toHaveLength(0);
+  });
+});

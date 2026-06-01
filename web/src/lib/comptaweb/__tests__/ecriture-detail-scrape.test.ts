@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { parseEcritureDetailHtml } from '../ecriture-detail-scrape';
 
-// Structure réelle captée sur sgdf.production.sirom.net (écriture 2390826,
-// 2026-06-01) : tableau de ventilation thead colonnes / tbody valeurs.
-const HTML_REAL = `
+// Structure réelle captée sur sgdf.production.sirom.net : tableau de
+// ventilation thead colonnes / tbody une ligne par ventilation.
+const HTML_MONO = `
 <html><body>
   <table class="table table-striped table-hover table-bordered">
     <thead><tr>
@@ -18,40 +18,41 @@ const HTML_REAL = `
   </table>
 </body></html>`;
 
-// Plusieurs ventilations : on prend la première ligne.
+// Multi-ventilation réel : 481 Formation/LJ + 10 Cotisations/PC = 491.
 const HTML_MULTI = `
 <html><body>
   <table class="table table-bordered">
     <thead><tr><th>Montant</th><th>Nature</th><th>Activité</th><th>Branche / Pôle</th></tr></thead>
     <tbody>
-      <tr><td>600,00</td><td>Cotisations</td><td>Camp été</td><td>Louveteaux</td></tr>
-      <tr><td>400,00</td><td>Dons</td><td>Week-end</td><td>Pionniers</td></tr>
+      <tr><td>481.00</td><td>Formation</td><td>Formation</td><td>Louveteaux-Jeannettes</td></tr>
+      <tr><td>10.00</td><td>Cotisations SGDF</td><td>Fonctionnement</td><td>Pionniers-Caravelles</td></tr>
     </tbody>
   </table>
 </body></html>`;
 
-// Pas de table de ventilation.
 const HTML_EMPTY = `<html><body><table><tr><th>Catégorie tiers</th><td>Mon Territoire</td></tr></table></body></html>`;
 
 describe('parseEcritureDetailHtml', () => {
-  it('extrait nature / activité / branche depuis le tableau de ventilation réel', () => {
-    const d = parseEcritureDetailHtml(HTML_REAL);
-    expect(d.nature).toBe('Flux financiers entre structures ( SAUF la participation aux activités)');
-    expect(d.activite).toBe('WET');
-    expect(d.brancheprojet).toBe('Groupe');
+  it('mono-ventilation : une ventilation avec montant + imputation', () => {
+    const d = parseEcritureDetailHtml(HTML_MONO);
+    expect(d.ventilations).toHaveLength(1);
+    expect(d.ventilations[0]).toEqual({
+      montantCents: 100000,
+      nature: 'Flux financiers entre structures ( SAUF la participation aux activités)',
+      activite: 'WET',
+      brancheprojet: 'Groupe',
+    });
   });
 
-  it('prend la première ligne de ventilation en cas de multi-ventilation', () => {
+  it('multi-ventilation : une entrée par ligne, montants en centimes', () => {
     const d = parseEcritureDetailHtml(HTML_MULTI);
-    expect(d.nature).toBe('Cotisations');
-    expect(d.activite).toBe('Camp été');
-    expect(d.brancheprojet).toBe('Louveteaux');
+    expect(d.ventilations).toHaveLength(2);
+    expect(d.ventilations[0]).toEqual({ montantCents: 48100, nature: 'Formation', activite: 'Formation', brancheprojet: 'Louveteaux-Jeannettes' });
+    expect(d.ventilations[1]).toEqual({ montantCents: 1000, nature: 'Cotisations SGDF', activite: 'Fonctionnement', brancheprojet: 'Pionniers-Caravelles' });
   });
 
-  it('renvoie null quand il n’y a pas de table de ventilation', () => {
+  it('renvoie ventilations vide quand pas de table de ventilation', () => {
     const d = parseEcritureDetailHtml(HTML_EMPTY);
-    expect(d.activite).toBeNull();
-    expect(d.brancheprojet).toBeNull();
-    expect(d.nature).toBeNull();
+    expect(d.ventilations).toHaveLength(0);
   });
 });

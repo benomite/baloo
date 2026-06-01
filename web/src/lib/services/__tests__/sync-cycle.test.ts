@@ -185,7 +185,18 @@ function mockOpts(opts: {
       return { ecritures: opts.ecritures ?? [] };
     },
     scanDrafts: opts.scanDrafts ?? (async () => ({ crees: 0, existants: 0 })),
-    scrapeDetail: opts.scrapeDetail ?? (async () => ({ activite: null, brancheprojet: null, nature: null })),
+    // Détail par défaut : mono-ventilation = le montant total de la ligne CW
+    // (cas courant). Les tests multi-ventilation injectent leur propre scrapeDetail.
+    scrapeDetail:
+      opts.scrapeDetail ??
+      (async (cwId: number) => {
+        const row = (opts.ecritures ?? []).find((e) => e.id === cwId);
+        return {
+          ventilations: row
+            ? [{ montantCents: row.montantCentimes, nature: null, activite: null, brancheprojet: null }]
+            : [],
+        };
+      }),
     resolveActiviteId: opts.resolveActiviteId ?? (async () => null),
     resolveUniteId: opts.resolveUniteId ?? (async () => null),
     resolveCategoryId: opts.resolveCategoryId ?? (async () => null),
@@ -320,18 +331,19 @@ describe('runSyncCycle — update mirror (CW écrase)', () => {
     let detailCalls = 0;
     const res = await runSyncCycle(db, 'g1', mockOpts({
       ecritures: [makeRow({ id: 2386515, numeroPiece: 'ECR-2026-101' })],
-      scrapeDetail: async () => { detailCalls++; return { activite: null, brancheprojet: null, nature: null }; },
+      scrapeDetail: async () => { detailCalls++; return { ventilations: [] }; },
     }));
     expect(detailCalls).toBe(0);
     expect(res.detail_fetches).toBe(0);
-    expect(res.updated_mirror).toBe(1);
+    // Rien à enrichir (signature inchangée + imputation présente) → pas de traitement.
+    expect(res.updated_mirror).toBe(0);
   });
 
   it('relit le détail et résout activité/unité/catégorie quand la signature a changé', async () => {
     await insertEcriture(db, { id: 'ECR-2026-001', status: 'mirror', comptaweb_ecriture_id: 2386515, cw_signature: 'OLD' });
     const res = await runSyncCycle(db, 'g1', mockOpts({
       ecritures: [makeRow({ id: 2386515 })],
-      scrapeDetail: async () => ({ activite: 'Camp 2026', brancheprojet: 'Louveteaux', nature: 'Dons' }),
+      scrapeDetail: async () => ({ ventilations: [{ montantCents: 49100, nature: 'Dons', activite: 'Camp 2026', brancheprojet: 'Louveteaux' }] }),
       resolveActiviteId: async () => 'ACT-1',
       resolveUniteId: async () => 'UNITE-1',
       resolveCategoryId: async () => 'CAT-1',
@@ -438,10 +450,38 @@ describe('runSyncCycle — imports et drafts', () => {
         makeRow({ id: 260, numeroPiece: 'ECR-260', montantCentimes: 9999, dateEcriture: '2026-05-05' }),
       ],
     }));
-    expect(res.updated_mirror).toBe(1);
+    // UPD (cwId 100) + le draft promu (cwId 250) sont tous deux réécrits au
+    // grain ventilation → 2 ventilations mises à jour.
+    expect(res.updated_mirror).toBe(2);
     expect(res.supprimee_cw_detected).toBe(1);
     expect(res.promoted_to_mirror).toBe(1);
     expect(res.imported_from_cw).toBe(2); // 200 et 260
+  });
+
+  it('multi-ventilation : 491 CW (481+10) absorbe 2 écritures CSV, pas d’agrégat', async () => {
+    // 2 écritures « CSV » non reliées (grain ventilation), à la même date/type.
+    await insertEcriture(db, { id: 'CSV-481', status: 'mirror', comptaweb_ecriture_id: null, amount_cents: 48100, type: 'depense', date_ecriture: '2026-05-04' });
+    await insertEcriture(db, { id: 'CSV-10', status: 'mirror', comptaweb_ecriture_id: null, amount_cents: 1000, type: 'depense', date_ecriture: '2026-05-04' });
+    const res = await runSyncCycle(db, 'g1', mockOpts({
+      ecritures: [makeRow({ id: 555, numeroPiece: 'ECR-555', montantCentimes: 49100, type: 'depense', dateEcriture: '2026-05-04', intitule: 'Regroupement' })],
+      scrapeDetail: async () => ({ ventilations: [
+        { montantCents: 48100, nature: 'Formation', activite: 'Formation', brancheprojet: 'Louveteaux-Jeannettes' },
+        { montantCents: 1000, nature: 'Cotisations SGDF', activite: 'Fonctionnement', brancheprojet: 'Pionniers-Caravelles' },
+      ] }),
+      resolveCategoryId: async (n) => (n === 'Formation' ? 'CAT-FORM' : 'CAT-COTIS'),
+    }));
+    expect(res.updated_mirror).toBe(2); // les 2 CSV reliées
+    expect(res.imported_from_cw).toBe(0); // rien créé : les CSV ont absorbé
+    // les 2 écritures sont reliées au cwId, montants préservés, catégories posées
+    const e481 = await getEcriture(db, 'CSV-481');
+    const e10 = await getEcriture(db, 'CSV-10');
+    expect(e481?.comptaweb_ecriture_id).toBe(555);
+    expect(e10?.comptaweb_ecriture_id).toBe(555);
+    expect(e481?.amount_cents).toBe(48100);
+    expect(e10?.amount_cents).toBe(1000);
+    // pas d'agrégat 49100 créé
+    const agg = await db.prepare("SELECT COUNT(*) as c FROM ecritures WHERE group_id='g1' AND amount_cents=49100").get<{ c: number }>();
+    expect(agg?.c).toBe(0);
   });
 });
 
@@ -515,7 +555,9 @@ describe('resyncEcritureDetail', () => {
 
   const inj = {
     loadConfig: async () => FAKE_CONFIG,
-    scrapeDetail: async () => ({ activite: 'WET', brancheprojet: 'Groupe', nature: 'Flux' }),
+    // insertEcriture pose amount_cents=49100 par défaut → la ventilation doit
+    // avoir le même montant pour s'apparier à l'écriture candidate.
+    scrapeDetail: async () => ({ ventilations: [{ montantCents: 49100, nature: 'Flux', activite: 'WET', brancheprojet: 'Groupe' }] }),
     resolveActiviteId: async () => 'ACT-WET',
     resolveUniteId: async () => 'UNITE-GR',
     resolveCategoryId: async () => 'CAT-FLUX',

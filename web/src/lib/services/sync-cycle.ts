@@ -36,9 +36,12 @@ import type {
 import { scanDraftsFromComptaweb } from './drafts';
 import {
   reconcile,
+  reconcileVentilations,
   computeCwSignature,
   type CwSnapshotRow,
   type BalooRow,
+  type ResolvedVentilation,
+  type VentCandidate,
 } from './ecritures-sync-reconcile';
 import { upsertSuggestion } from './cw-link-suggestions';
 
@@ -291,33 +294,49 @@ interface Resolvers {
   resolveCategoryId: (nature: string) => Promise<string | null>;
 }
 
-interface ResolvedIds {
-  activiteId: string | null;
-  uniteId: string | null;
-  categoryId: string | null;
+/**
+ * Métadonnées d'une écriture CW (partagées par toutes ses ventilations).
+ * `signature` = signature liste (stockée sur chaque écriture-ventilation).
+ */
+interface CwEcritureMeta {
+  cwId: number;
+  date: string;
+  type: 'depense' | 'recette';
+  intitule: string;
+  numeroPiece: string;
+  signature: string;
+}
+
+function metaFromSnapshot(cw: CwSnapshotRow): CwEcritureMeta {
+  return {
+    cwId: cw.cwId,
+    date: cw.date,
+    type: cw.type,
+    intitule: cw.intitule,
+    numeroPiece: cw.numeroPiece,
+    signature: cw.signature,
+  };
 }
 
 /**
- * Lit le détail CW et résout activite_id / unite_id / category_id. Renvoie
- * aussi le nombre de fetch effectués (0 ou 1) pour le compteur.
+ * Lit le détail CW d'une écriture et résout l'imputation de CHAQUE
+ * ventilation (nature→catégorie, activité, branche→unité). Chaque résolution
+ * est indépendante : l'échec d'un référentiel n'efface pas les autres.
+ * Renvoie le nombre de fetch (0/1) pour le compteur.
  */
-async function fetchDetailIds(
+async function resolveVentilations(
   cwId: number,
   r: Resolvers,
-): Promise<ResolvedIds & { fetched: number }> {
+): Promise<{ ventilations: ResolvedVentilation[]; fetched: number }> {
   let detail: EcritureDetail;
   try {
     detail = await r.scrapeDetail(cwId);
   } catch (err) {
-    // Échec du fetch/parse du détail (ex. session expirée) → on n'enrichit
-    // pas, mais on ne casse jamais la sync.
     logError('sync-cycle', 'scrapeEcritureDetail failed', err, { cwId });
-    return { activiteId: null, uniteId: null, categoryId: null, fetched: 0 };
+    return { ventilations: [], fetched: 0 };
   }
 
-  // Chaque résolution est INDÉPENDANTE : l'échec d'un référentiel (ex.
-  // colonne absente) ne doit pas faire perdre les autres imputations.
-  const resolve = async (
+  const resolveOne = async (
     label: string,
     value: string | null,
     fn: (v: string) => Promise<string | null>,
@@ -331,23 +350,67 @@ async function fetchDetailIds(
     }
   };
 
-  const activiteId = await resolve('activite', detail.activite, r.resolveActiviteId);
-  const uniteId = await resolve('unite', detail.brancheprojet, r.resolveUniteId);
-  const categoryId = await resolve('category', detail.nature, r.resolveCategoryId);
-  return { activiteId, uniteId, categoryId, fetched: 1 };
+  const ventilations: ResolvedVentilation[] = [];
+  for (const v of detail.ventilations) {
+    ventilations.push({
+      montantCents: v.montantCents,
+      categoryId: await resolveOne('category', v.nature, r.resolveCategoryId),
+      activiteId: await resolveOne('activite', v.activite, r.resolveActiviteId),
+      uniteId: await resolveOne('unite', v.brancheprojet, r.resolveUniteId),
+    });
+  }
+  return { ventilations, fetched: 1 };
 }
 
 /**
- * Pose sur une écriture les champs comptables venus de CW (CW écrase) + le
- * statut mirror. N'écrase jamais activite_id/unite_id par NULL : on ne pose
- * que les valeurs résolues (évite de perdre une imputation quand le mapping
- * de référentiel échoue). Notes/justifs/liens jamais touchés.
+ * Charge les écritures Baloo candidates pour une écriture CW : celles déjà
+ * reliées (`comptaweb_ecriture_id = cwId`) + celles non reliées matchables
+ * par contenu (même date/type, montant ∈ montants des ventilations) — ce
+ * qui absorbe les écritures issues de l'import CSV (grain ventilation, sans
+ * `comptaweb_ecriture_id`).
  */
-async function writeCwFields(
+async function loadVentCandidates(
   db: DbWrapper,
+  groupId: string,
+  meta: CwEcritureMeta,
+  ventAmounts: number[],
+): Promise<VentCandidate[]> {
+  const linked = await db
+    .prepare(
+      `SELECT id, amount_cents FROM ecritures WHERE group_id = ? AND comptaweb_ecriture_id = ?`,
+    )
+    .all<{ id: string; amount_cents: number }>(groupId, meta.cwId);
+  const candidates: VentCandidate[] = linked.map((row) => ({
+    id: row.id,
+    amountCents: row.amount_cents,
+    linkedToThisCw: true,
+  }));
+
+  if (ventAmounts.length > 0) {
+    const placeholders = ventAmounts.map(() => '?').join(',');
+    const unlinked = await db
+      .prepare(
+        `SELECT id, amount_cents FROM ecritures
+         WHERE group_id = ? AND comptaweb_ecriture_id IS NULL
+           AND date_ecriture = ? AND type = ?
+           AND amount_cents IN (${placeholders})
+           AND status IN ('draft','pending_sync','mirror','divergent')`,
+      )
+      .all<{ id: string; amount_cents: number }>(groupId, meta.date, meta.type, ...ventAmounts);
+    for (const u of unlinked) {
+      candidates.push({ id: u.id, amountCents: u.amount_cents, linkedToThisCw: false });
+    }
+  }
+  return candidates;
+}
+
+/** Pose les champs CW d'une ventilation sur une écriture (CW écrase). */
+async function writeVentilation(
+  db: DbWrapper,
+  groupId: string,
   ecritureId: string,
-  cw: CwSnapshotRow,
-  ids: { activiteId: string | null; uniteId: string | null; categoryId: string | null },
+  meta: CwEcritureMeta,
+  vent: ResolvedVentilation,
   now: string,
 ): Promise<void> {
   await db
@@ -360,23 +423,99 @@ async function writeCwFields(
          unite_id = COALESCE(?, unite_id),
          category_id = COALESCE(?, category_id),
          updated_at = ?
-       WHERE id = ?`,
+       WHERE id = ? AND group_id = ?`,
     )
     .run(
-      cw.date,
-      cw.intitule,
-      cw.montantCents,
-      cw.type,
-      cw.numeroPiece,
-      cw.numeroPiece,
-      cw.cwId,
-      cw.signature,
-      ids.activiteId,
-      ids.uniteId,
-      ids.categoryId,
+      meta.date,
+      meta.intitule,
+      vent.montantCents,
+      meta.type,
+      meta.numeroPiece,
+      meta.numeroPiece,
+      meta.cwId,
+      meta.signature,
+      vent.activiteId,
+      vent.uniteId,
+      vent.categoryId,
       now,
       ecritureId,
+      groupId,
     );
+}
+
+interface ProcessCounts {
+  updated: number;
+  created: number;
+  orphaned: number;
+  detailFetched: number;
+}
+
+/**
+ * Traite UNE écriture CW au grain VENTILATION : lit le détail, résout les
+ * ventilations, les réconcilie contre les écritures Baloo candidates, puis
+ * exécute updates / creates / orphans (agrégat ou ventilation disparue →
+ * supprimee_cw). C'est le cœur du grain « 1 écriture Baloo = 1 ventilation ».
+ */
+async function processCwEcriture(
+  db: DbWrapper,
+  groupId: string,
+  meta: CwEcritureMeta,
+  r: Resolvers,
+  now: string,
+): Promise<ProcessCounts> {
+  const { ventilations, fetched } = await resolveVentilations(meta.cwId, r);
+  const counts: ProcessCounts = { updated: 0, created: 0, orphaned: 0, detailFetched: fetched };
+
+  // Pas de détail exploitable (échec scrape, ou écriture sans ventilation) :
+  // on NE crée pas d'agrégat et on ne touche à rien — un cycle ultérieur
+  // (ou un resync manuel) réessaiera.
+  if (ventilations.length === 0) return counts;
+
+  const ventAmounts = [...new Set(ventilations.map((v) => v.montantCents))];
+  const candidates = await loadVentCandidates(db, groupId, meta, ventAmounts);
+  const vplan = reconcileVentilations(ventilations, candidates);
+
+  for (const u of vplan.updates) {
+    await writeVentilation(db, groupId, u.ecritureId, meta, u.vent, now);
+    counts.updated++;
+  }
+  for (const v of vplan.creates) {
+    const newId = await nextIdOn(db, 'ECR', { tables: ['ecritures'] });
+    await db
+      .prepare(
+        `INSERT INTO ecritures
+           (id, group_id, date_ecriture, description, amount_cents, type,
+            numero_piece, cw_numero_piece, comptaweb_ecriture_id, cw_signature,
+            status, comptaweb_synced, activite_id, unite_id, category_id,
+            justif_attendu, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'mirror', 1, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(
+        newId,
+        groupId,
+        meta.date,
+        meta.intitule,
+        v.montantCents,
+        meta.type,
+        meta.numeroPiece,
+        meta.numeroPiece,
+        meta.cwId,
+        meta.signature,
+        v.activiteId,
+        v.uniteId,
+        v.categoryId,
+        now,
+        now,
+      );
+    counts.created++;
+  }
+  for (const orphanId of vplan.orphans) {
+    await db
+      .prepare(`UPDATE ecritures SET status = 'supprimee_cw', updated_at = ? WHERE id = ?`)
+      .run(now, orphanId);
+    counts.orphaned++;
+  }
+  return counts;
 }
 
 // ============================================================================
@@ -435,14 +574,15 @@ function defaultResolveCategoryId(db: DbWrapper) {
 // ============================================================================
 
 export type ResyncResult =
-  | { ok: true; activiteId: string | null; uniteId: string | null; categoryId: string | null }
+  | { ok: true; updated: number; created: number; orphaned: number }
   | { ok: false; reason: 'not_found' | 'not_linked' };
 
 /**
- * Re-synchronise UNE écriture depuis CW (action manuelle, hors cycle) :
- * relit sa page détail, résout activité/unité/catégorie, et pose
- * `comptaweb_synced = 1` + `status = 'mirror'`. N'écrase jamais une
- * imputation par NULL (COALESCE) ni les enrichissements locaux.
+ * Re-synchronise UNE écriture depuis CW (action manuelle, hors cycle) au
+ * grain VENTILATION : relit le détail de l'écriture CW liée et réaligne
+ * toutes ses ventilations (crée les manquantes, met à jour les présentes,
+ * passe un agrégat erroné en supprimee_cw). N'écrase jamais une imputation
+ * par NULL ni les enrichissements locaux.
  *
  * Utile pour réparer une écriture précise sans lancer un cycle complet
  * (notamment une écriture ancienne hors de la fenêtre `recent`).
@@ -454,8 +594,19 @@ export async function resyncEcritureDetail(
   opts: Pick<SyncCycleOptions, 'loadConfig' | 'scrapeDetail' | 'resolveActiviteId' | 'resolveUniteId' | 'resolveCategoryId'> = {},
 ): Promise<ResyncResult> {
   const ecr = await db
-    .prepare('SELECT comptaweb_ecriture_id FROM ecritures WHERE id = ? AND group_id = ?')
-    .get<{ comptaweb_ecriture_id: number | null }>(ecritureId, groupId);
+    .prepare(
+      `SELECT comptaweb_ecriture_id, date_ecriture, type, description, numero_piece, cw_numero_piece, cw_signature
+       FROM ecritures WHERE id = ? AND group_id = ?`,
+    )
+    .get<{
+      comptaweb_ecriture_id: number | null;
+      date_ecriture: string;
+      type: 'depense' | 'recette';
+      description: string;
+      numero_piece: string | null;
+      cw_numero_piece: string | null;
+      cw_signature: string | null;
+    }>(ecritureId, groupId);
   if (!ecr) return { ok: false, reason: 'not_found' };
   if (ecr.comptaweb_ecriture_id == null) return { ok: false, reason: 'not_linked' };
 
@@ -468,20 +619,16 @@ export async function resyncEcritureDetail(
     resolveCategoryId: opts.resolveCategoryId ?? defaultResolveCategoryId(db),
   };
 
-  const r = await fetchDetailIds(ecr.comptaweb_ecriture_id, resolvers);
-  await db
-    .prepare(
-      `UPDATE ecritures SET
-         status = 'mirror', comptaweb_synced = 1,
-         activite_id = COALESCE(?, activite_id),
-         unite_id = COALESCE(?, unite_id),
-         category_id = COALESCE(?, category_id),
-         updated_at = ?
-       WHERE id = ? AND group_id = ?`,
-    )
-    .run(r.activiteId, r.uniteId, r.categoryId, currentTimestamp(), ecritureId, groupId);
-
-  return { ok: true, activiteId: r.activiteId, uniteId: r.uniteId, categoryId: r.categoryId };
+  const meta: CwEcritureMeta = {
+    cwId: ecr.comptaweb_ecriture_id,
+    date: ecr.date_ecriture,
+    type: ecr.type,
+    intitule: ecr.description,
+    numeroPiece: ecr.cw_numero_piece ?? ecr.numero_piece ?? '',
+    signature: ecr.cw_signature ?? '',
+  };
+  const counts = await processCwEcriture(db, groupId, meta, resolvers, currentTimestamp());
+  return { ok: true, updated: counts.updated, created: counts.created, orphaned: counts.orphaned };
 }
 
 // ============================================================================
@@ -567,72 +714,54 @@ export async function runSyncCycle(
     let suggestionsCreated = 0;
     let detailFetches = 0;
 
-    // 7a. Updates (mirror/pending_sync reliés) — CW écrase.
-    for (const u of plan.updates) {
-      let ids: ResolvedIds = { activiteId: null, uniteId: null, categoryId: null };
-      if (u.needsDetail) {
-        const r = await fetchDetailIds(u.cw.cwId, resolvers);
-        detailFetches += r.fetched;
-        ids = { activiteId: r.activiteId, uniteId: r.uniteId, categoryId: r.categoryId };
-      }
-      await writeCwFields(db, u.ecritureId, u.cw, ids, now);
-      updatedMirror++;
-    }
+    // Le traitement est au grain VENTILATION : pour chaque écriture CW à
+    // (re)traiter, on lit son détail et on aligne N écritures Baloo (une par
+    // ventilation). On collecte d'abord l'ensemble des cwId à traiter.
+    const snapByCwId = new Map<number, CwSnapshotRow>();
+    for (const row of snapshot) snapByCwId.set(row.cwId, row);
+    const toProcess = new Set<number>();
 
-    // 7b. Promotions (draft → mirror, match contenu confiant) — détail systématique.
+    // 7a. Promotions (draft reconnu dans CW par match contenu) : on relie le
+    //     draft au cwId (status mirror provisoire) puis on traite le cwId au
+    //     grain ventilation (mono → update du draft ; multi → le draft
+    //     agrégat devient orphelin et les ventilations sont créées).
     for (const p of plan.promotions) {
-      const r = await fetchDetailIds(p.cw.cwId, resolvers);
-      detailFetches += r.fetched;
-      await writeCwFields(
-        db,
-        p.ecritureId,
-        p.cw,
-        { activiteId: r.activiteId, uniteId: r.uniteId, categoryId: r.categoryId },
-        now,
-      );
+      await db
+        .prepare(
+          `UPDATE ecritures SET comptaweb_ecriture_id = ?, status = 'mirror', comptaweb_synced = 1, updated_at = ? WHERE id = ?`,
+        )
+        .run(p.cw.cwId, now, p.ecritureId);
+      toProcess.add(p.cw.cwId);
       promoted++;
     }
 
-    // 7c. Deletions → supprimee_cw (jamais de DELETE).
+    // 7b. Updates : seules les écritures à enrichir (signature changée ou
+    //     imputation vide) déclenchent un traitement de leur cwId.
+    for (const u of plan.updates) {
+      if (u.needsDetail) toProcess.add(u.cw.cwId);
+    }
+
+    // 7c. Imports : cwId sans écriture Baloo reliée → à traiter (absorbera
+    //     les écritures CSV non reliées, ou créera les ventilations).
+    for (const cw of plan.imports) toProcess.add(cw.cwId);
+
+    // 7d. Traitement ventilation de chaque cwId retenu.
+    for (const cwId of toProcess) {
+      const row = snapByCwId.get(cwId);
+      if (!row) continue;
+      const counts = await processCwEcriture(db, groupId, metaFromSnapshot(row), resolvers, now);
+      detailFetches += counts.detailFetched;
+      updatedMirror += counts.updated;
+      imported += counts.created;
+      supprimeeCw += counts.orphaned;
+    }
+
+    // 7e. Deletions (cwId disparu de CW, dans la plage) → supprimee_cw.
     for (const ecritureId of plan.deletions) {
       await db
         .prepare(`UPDATE ecritures SET status = 'supprimee_cw', updated_at = ? WHERE id = ?`)
         .run(now, ecritureId);
       supprimeeCw++;
-    }
-
-    // 7d. Imports (lignes CW absentes) → création mirror + détail.
-    for (const cw of plan.imports) {
-      const r = await fetchDetailIds(cw.cwId, resolvers);
-      detailFetches += r.fetched;
-      const newId = await nextIdOn(db, 'ECR', { tables: ['ecritures'] });
-      await db
-        .prepare(
-          `INSERT INTO ecritures
-             (id, group_id, date_ecriture, description, amount_cents, type,
-              numero_piece, cw_numero_piece, comptaweb_ecriture_id, cw_signature,
-              status, comptaweb_synced, activite_id, unite_id, category_id,
-              justif_attendu, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'mirror', 1, ?, ?, ?, 1, ?, ?)`,
-        )
-        .run(
-          newId,
-          groupId,
-          cw.date,
-          cw.intitule,
-          cw.montantCents,
-          cw.type,
-          cw.numeroPiece,
-          cw.numeroPiece,
-          cw.cwId,
-          cw.signature,
-          r.activiteId,
-          r.uniteId,
-          r.categoryId,
-          now,
-          now,
-        );
-      imported++;
     }
 
     // 7e. Suggestions de lien (match contenu ambigu).
