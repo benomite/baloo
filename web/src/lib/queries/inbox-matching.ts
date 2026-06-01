@@ -107,3 +107,54 @@ function daysBetween(a: string, b: string): number {
   const ms = Math.abs(new Date(a).getTime() - new Date(b).getTime());
   return Math.round(ms / (1000 * 60 * 60 * 24));
 }
+
+export interface RembCandidate {
+  id: string;
+  demandeur: string;
+  amount_cents: number;
+  date_paiement: string | null;
+  date_depense: string | null;
+  status: string;
+  unite_code: string | null;
+}
+
+export interface RembSuggestion {
+  ecriture: InboxEcriture;
+  remboursement: RembCandidate;
+  date_diff_days: number;
+}
+
+const REMB_DATE_TOLERANCE_DAYS = 15;
+
+// Apparie les écritures de virement (dépense) avec les remboursements à
+// rattacher : montant EXACT + date (date_paiement, sinon date_depense)
+// ≤ 15 j. Glouton 1:1. Les paires rejetées ('remboursement') sont exclues.
+export function computeRembSuggestions(
+  ecritures: InboxEcriture[],
+  rembs: RembCandidate[],
+  rejectedPairs: Set<string> = new Set(),
+): RembSuggestion[] {
+  const out: RembSuggestion[] = [];
+  const usedRembs = new Set<string>();
+
+  for (const ecr of ecritures) {
+    if (ecr.type !== 'depense') continue;
+    const eAmount = Math.abs(ecr.amount_cents);
+    let best: { remb: RembCandidate; dateDiff: number } | null = null;
+    for (const r of rembs) {
+      if (usedRembs.has(r.id)) continue;
+      if (rejectedPairs.has(rejetPairKey(ecr.id, 'remboursement', r.id))) continue;
+      if (Math.abs(r.amount_cents) !== eAmount) continue;
+      const refDate = r.date_paiement ?? r.date_depense;
+      if (!refDate) continue;
+      const dateDiff = daysBetween(ecr.date_ecriture, refDate);
+      if (dateDiff > REMB_DATE_TOLERANCE_DAYS) continue;
+      if (best === null || dateDiff < best.dateDiff) best = { remb: r, dateDiff };
+    }
+    if (best) {
+      usedRembs.add(best.remb.id);
+      out.push({ ecriture: ecr, remboursement: best.remb, date_diff_days: best.dateDiff });
+    }
+  }
+  return out;
+}
