@@ -11,7 +11,8 @@ export type EcritureStatus =
   | 'pending_sync'
   | 'mirror'
   | 'divergent'
-  | 'supprimee_cw';
+  | 'supprimee_cw'
+  | 'agrege_remplace';
 
 export const ECRITURE_STATUSES: readonly EcritureStatus[] = [
   'draft',
@@ -20,6 +21,7 @@ export const ECRITURE_STATUSES: readonly EcritureStatus[] = [
   'mirror',
   'divergent',
   'supprimee_cw',
+  'agrege_remplace',
 ] as const;
 
 // Transitions provoquées par la sync ou l'arbitrage utilisateur. Les
@@ -29,9 +31,10 @@ const ALLOWED: Record<EcritureStatus, EcritureStatus[]> = {
   draft: ['mirror'], // promotion par match contenu confiant (ou confirmation de lien)
   pending_cw: [],
   pending_sync: ['mirror', 'divergent', 'supprimee_cw'],
-  mirror: ['supprimee_cw'], // disparue de CW
+  mirror: ['supprimee_cw', 'agrege_remplace'], // disparue de CW / agrégat remplacé par ses ventilations
   divergent: ['mirror', 'supprimee_cw'],
   supprimee_cw: ['draft'], // arbitrage : restaurer en brouillon local
+  agrege_remplace: ['draft'], // arbitrage : restaurer si fausse détection
 };
 
 /**
@@ -52,5 +55,5 @@ export function isAllowedSyncTransition(from: EcritureStatus, to: EcritureStatus
  */
 export function canHardDelete(status: EcritureStatus, hasAttachments: boolean): boolean {
   if (hasAttachments) return false;
-  return status === 'draft' || status === 'supprimee_cw';
+  return status === 'draft' || status === 'supprimee_cw' || status === 'agrege_remplace';
 }

@@ -42,7 +42,9 @@ export async function restoreSupprimeeToDraft(
     .prepare('SELECT status FROM ecritures WHERE id = ? AND group_id = ?')
     .get<{ status: EcritureStatus }>(id, groupId);
   if (!cur) return { ok: false, reason: 'not_found' };
-  if (cur.status !== 'supprimee_cw') return { ok: false, reason: 'wrong_status' };
+  if (cur.status !== 'supprimee_cw' && cur.status !== 'agrege_remplace') {
+    return { ok: false, reason: 'wrong_status' };
+  }
   await db
     .prepare(`UPDATE ecritures SET status = 'draft', comptaweb_ecriture_id = NULL, updated_at = ? WHERE id = ? AND group_id = ?`)
     .run(currentTimestamp(), id, groupId);
@@ -63,13 +65,17 @@ export async function deleteArbitratedEcriture(
     .prepare('SELECT status FROM ecritures WHERE id = ? AND group_id = ?')
     .get<{ status: EcritureStatus }>(id, groupId);
   if (!cur) return { ok: false, reason: 'not_found' };
-  if (cur.status !== 'supprimee_cw') return { ok: false, reason: 'wrong_status' };
+  if (cur.status !== 'supprimee_cw' && cur.status !== 'agrege_remplace') {
+    return { ok: false, reason: 'wrong_status' };
+  }
   const attachments = await countAttachments(db, id);
   if (!canHardDelete(cur.status, attachments > 0)) {
     return { ok: false, reason: 'has_attachments' };
   }
   await db
-    .prepare(`DELETE FROM ecritures WHERE id = ? AND group_id = ? AND status = 'supprimee_cw'`)
+    .prepare(
+      `DELETE FROM ecritures WHERE id = ? AND group_id = ? AND status IN ('supprimee_cw','agrege_remplace')`,
+    )
     .run(id, groupId);
   return { ok: true };
 }

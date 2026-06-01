@@ -75,6 +75,7 @@ const ECRITURE_STATUS_MAP: Record<string, { tone: StatusTone; label: string }> =
   mirror: { tone: 'success', label: 'Miroir CW' },
   divergent: { tone: 'danger', label: 'Divergent CW' },
   supprimee_cw: { tone: 'danger', label: 'Supprimée dans CW' },
+  agrege_remplace: { tone: 'pending', label: 'Agrégat (doublon)' },
 };
 
 export function EcritureStatusBadge({ status }: { status: string }) {

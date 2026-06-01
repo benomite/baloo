@@ -16,14 +16,15 @@ import type { SupprimeeCwRow, LinkSuggestionView } from '@/lib/queries/sync-arbi
 
 interface Props {
   supprimees: SupprimeeCwRow[];
+  agregesRemplaces?: SupprimeeCwRow[];
   suggestions: LinkSuggestionView[];
 }
 
-export function ArbitrageBanner({ supprimees, suggestions }: Props) {
+export function ArbitrageBanner({ supprimees, agregesRemplaces = [], suggestions }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  if (supprimees.length === 0 && suggestions.length === 0) return null;
+  if (supprimees.length === 0 && agregesRemplaces.length === 0 && suggestions.length === 0) return null;
 
   function run(action: () => Promise<{ ok: boolean; message?: string }>, okMsg: string) {
     startTransition(async () => {
@@ -71,6 +72,48 @@ export function ArbitrageBanner({ supprimees, suggestions }: Props) {
                     onClick={() => run(() => supprimerDefinitivement(e.id), 'Supprimée définitivement.')}
                   >
                     <Trash2 size={13} className="mr-1" /> Supprimer
+                  </Button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {agregesRemplaces.length > 0 && (
+        <section className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900/40 dark:bg-amber-950/20">
+          <h3 className="mb-1 text-sm font-semibold text-amber-900 dark:text-amber-200">
+            {agregesRemplaces.length} ligne{agregesRemplaces.length > 1 ? 's' : ''} « total » remplacée{agregesRemplaces.length > 1 ? 's' : ''} par le détail des ventilations — à supprimer
+          </h3>
+          <p className="mb-2 text-[11.5px] text-amber-800/80 dark:text-amber-300/70">
+            Ces lignes existent toujours dans Comptaweb : ce sont d&apos;anciens agrégats (le montant total) qui font doublon avec les lignes par ventilation. Tu peux les supprimer sans risque — le détail est conservé.
+          </p>
+          <ul className="space-y-1.5">
+            {agregesRemplaces.map((e) => (
+              <li
+                key={e.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-background/60 px-3 py-2 text-sm"
+              >
+                <span className="min-w-0 flex-1 truncate">
+                  <span className="text-muted-foreground tabular-nums">{e.date_ecriture}</span>{' '}
+                  {e.description}{' '}
+                  <Amount cents={e.amount_cents} tone={e.type === 'depense' ? 'negative' : 'positive'} className="text-xs" />
+                </span>
+                <span className="flex shrink-0 gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={pending}
+                    onClick={() => run(() => restaurerEnDraft(e.id), 'Restaurée en brouillon.')}
+                  >
+                    <RotateCcw size={13} className="mr-1" /> Restaurer
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={pending}
+                    onClick={() => run(() => supprimerDefinitivement(e.id), 'Doublon supprimé.')}
+                  >
+                    <Trash2 size={13} className="mr-1" /> Supprimer le doublon
                   </Button>
                 </span>
               </li>

@@ -1445,7 +1445,9 @@ Le dogfood prod immédiat a révélé 4 bugs, tous corrigés (commits `8ef950f`,
    - Fonction pure `reconcileVentilations(ventilations, candidates)` : apparie chaque ventilation à une écriture Baloo candidate par **montant** (passe 1), puis appariement agnostique au montant entre ventilations et candidats déjà reliés restants (passe 2, gère un changement de montant), sinon création. Candidats reliés non appariés (= agrégat erroné, ou ventilation disparue) → `supprimee_cw`.
    - `processCwEcriture` (orchestrateur) : par écriture CW à traiter, lit le détail, charge les candidats (reliés par `comptaweb_ecriture_id`, **+ non reliés matchés par date+type+montant** pour absorber les écritures CSV existantes), exécute updates/creates/orphans. **Plus jamais d'agrégat créé.**
    - `resyncEcritureDetail` re-traite tout le cwId de l'écriture au grain ventilation.
-   - Les agrégats déjà créés en prod basculent en `supprimee_cw` au cycle suivant (l'utilisateur les retire via le bandeau d'arbitrage). Détail technique dans `web/AGENTS.md`.
+   - **Statut distinct `agrege_remplace`** (≠ `supprimee_cw`) : un agrégat orphelin lors du split en ventilations n'est PAS une suppression CW (l'écriture existe toujours dans CW) → libellé non anxiogène « ligne total remplacée par le détail ». Le bandeau d'arbitrage classe par un critère robuste (cwId encore partagé par des écritures vivantes = agrégat ; cwId disparu = vraie suppression), ce qui reclasse aussi les écritures legacy taguées `supprimee_cw`.
+   - Match candidat **par n° de pièce** quand l'écriture CW en a un (les adhésions ont des montants qui se télescopent entre pièces), fallback date+type sinon.
+   - Bug annexe corrigé : le `COUNT(*)` de `listEcritures` n'avait pas les JOIN → `no such column: u.name` dès qu'on filtrait par recherche (MCP `list_ecritures` + filtre UI).
 
 ---
 

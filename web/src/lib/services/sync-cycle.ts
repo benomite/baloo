@@ -388,15 +388,28 @@ async function loadVentCandidates(
 
   if (ventAmounts.length > 0) {
     const placeholders = ventAmounts.map(() => '?').join(',');
-    const unlinked = await db
-      .prepare(
-        `SELECT id, amount_cents FROM ecritures
-         WHERE group_id = ? AND comptaweb_ecriture_id IS NULL
-           AND date_ecriture = ? AND type = ?
-           AND amount_cents IN (${placeholders})
-           AND status IN ('draft','pending_sync','mirror','divergent')`,
-      )
-      .all<{ id: string; amount_cents: number }>(groupId, meta.date, meta.type, ...ventAmounts);
+    // Sécurité anti-collision (cf. AGENTS.md « Matching cascade UPSERT ») :
+    // si l'écriture CW a un n° de pièce, on restreint le match aux écritures
+    // de MÊME pièce (les adhésions ont des montants qui se télescopent d'une
+    // pièce à l'autre). Sinon (pièce vide), on retombe sur date+type.
+    const piece = meta.numeroPiece.trim();
+    const unlinked = piece
+      ? await db
+          .prepare(
+            `SELECT id, amount_cents FROM ecritures
+             WHERE group_id = ? AND comptaweb_ecriture_id IS NULL
+               AND numero_piece = ? AND amount_cents IN (${placeholders})
+               AND status IN ('draft','pending_sync','mirror','divergent')`,
+          )
+          .all<{ id: string; amount_cents: number }>(groupId, piece, ...ventAmounts)
+      : await db
+          .prepare(
+            `SELECT id, amount_cents FROM ecritures
+             WHERE group_id = ? AND comptaweb_ecriture_id IS NULL
+               AND date_ecriture = ? AND type = ? AND amount_cents IN (${placeholders})
+               AND status IN ('draft','pending_sync','mirror','divergent')`,
+          )
+          .all<{ id: string; amount_cents: number }>(groupId, meta.date, meta.type, ...ventAmounts);
     for (const u of unlinked) {
       candidates.push({ id: u.id, amountCents: u.amount_cents, linkedToThisCw: false });
     }
@@ -510,8 +523,12 @@ async function processCwEcriture(
     counts.created++;
   }
   for (const orphanId of vplan.orphans) {
+    // L'écriture CW EXISTE toujours (on traite ses ventilations) : un
+    // candidat relié non apparié est un AGRÉGAT remplacé par le détail des
+    // ventilations (souvent un doublon créé par une ancienne sync), PAS une
+    // suppression côté CW. Statut dédié → label non anxiogène.
     await db
-      .prepare(`UPDATE ecritures SET status = 'supprimee_cw', updated_at = ? WHERE id = ?`)
+      .prepare(`UPDATE ecritures SET status = 'agrege_remplace', updated_at = ? WHERE id = ?`)
       .run(now, orphanId);
     counts.orphaned++;
   }

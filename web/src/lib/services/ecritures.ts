@@ -190,8 +190,20 @@ export async function listEcritures(
     ? ecritures.filter((e) => (e.missing_fields ?? []).length > 0)
     : ecritures;
 
+  // Les mêmes JOIN que la requête principale : le `where` de recherche peut
+  // référencer u/c/m/a/ca (unité, catégorie, mode, activité, carte). Sans
+  // ces JOIN le COUNT plante (`no such column: u.name`) dès qu'on filtre par
+  // `search`.
   const countRow = await getDb()
-    .prepare(`SELECT COUNT(*) as total FROM ecritures e ${where}`)
+    .prepare(
+      `SELECT COUNT(*) as total FROM ecritures e
+       LEFT JOIN unites u ON u.id = e.unite_id
+       LEFT JOIN categories c ON c.id = e.category_id
+       LEFT JOIN modes_paiement m ON m.id = e.mode_paiement_id
+       LEFT JOIN activites a ON a.id = e.activite_id
+       LEFT JOIN cartes ca ON ca.id = e.carte_id
+       ${where}`,
+    )
     .get<{ total: number }>(...values);
   const total = filters.incomplete ? filtered.length : (countRow?.total ?? 0);
 

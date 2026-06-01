@@ -29,6 +29,7 @@ export const ECRITURE_STATUSES = [
   'mirror',
   'divergent',
   'supprimee_cw',
+  'agrege_remplace',
 ] as const;
 export type EcritureStatus = (typeof ECRITURE_STATUSES)[number];
 

@@ -11,7 +11,7 @@ import { EcritureFilters } from '@/components/ecritures/ecriture-filters';
 import { ScanDraftsButton } from '@/components/ecritures/scan-drafts-button';
 import { FullResyncButton } from '@/components/ecritures/full-resync-button';
 import { ArbitrageBanner } from '@/components/ecritures/arbitrage-banner';
-import { listSupprimeeCw, listLinkSuggestions } from '@/lib/queries/sync-arbitrage';
+import { listSupprimeeCw, listAgregesRemplaces, listLinkSuggestions } from '@/lib/queries/sync-arbitrage';
 import { EcrituresTable } from '@/components/ecritures/ecritures-table';
 import { EcritureDrawer } from '@/components/ecritures/ecriture-drawer';
 import { getCurrentContext } from '@/lib/context';
@@ -49,6 +49,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     detailJustifs,
     detailPendingDepots,
     supprimeesCw,
+    agregesRemplaces,
     linkSuggestions,
   ] = await Promise.all([
     listEcritures(filters),
@@ -66,6 +67,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
       ? listDepots({ groupId: ctx.groupId }, { statut: 'a_traiter' })
       : Promise.resolve(null),
     listSupprimeeCw(ctx.groupId),
+    listAgregesRemplaces(ctx.groupId),
     listLinkSuggestions(ctx.groupId),
   ]);
 
@@ -114,7 +116,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
         </TabLink>
       </div>
 
-      <ArbitrageBanner supprimees={supprimeesCw} suggestions={linkSuggestions} />
+      <ArbitrageBanner supprimees={supprimeesCw} agregesRemplaces={agregesRemplaces} suggestions={linkSuggestions} />
 
       <EcritureFilters categories={categories} unites={unites} cartes={cartes} current={params} />
 

@@ -15,7 +15,7 @@ import { ECRITURE_STATUSES, type EcritureStatus } from './types';
 describe('ECRITURE_STATUSES', () => {
   it('contient exactement les statuts cibles (pivot + réconciliation supprimee_cw)', () => {
     expect([...ECRITURE_STATUSES].sort()).toEqual(
-      ['divergent', 'draft', 'mirror', 'pending_cw', 'pending_sync', 'supprimee_cw'],
+      ['agrege_remplace', 'divergent', 'draft', 'mirror', 'pending_cw', 'pending_sync', 'supprimee_cw'],
     );
   });
 
