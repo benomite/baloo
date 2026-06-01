@@ -1,5 +1,5 @@
 import {
-  BookOpen, Bot, Coins, Combine, Ellipsis, FileText, Gift, HandCoins, Link2, Mail,
+  BookOpen, Bot, Coins, Ellipsis, FileText, Files, Gift, HandCoins, Link2, Mail,
   Paperclip, ShieldAlert,
   type LucideIcon,
 } from 'lucide-react';
@@ -68,7 +68,7 @@ export const DESKTOP_GROUPS: NavGroup[] = [
     items: [
       { href: '/ecritures', label: 'Écritures', icon: BookOpen, roles: ADMIN },
       { href: '/caisse', label: 'Caisse', icon: Coins, roles: ADMIN },
-      { href: '/inbox', label: 'Rapprochement', icon: Combine, roles: ADMIN },
+      { href: '/inbox', label: 'Justificatifs', icon: Files, roles: ADMIN },
     ],
   },
   {

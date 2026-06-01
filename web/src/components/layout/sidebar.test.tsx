@@ -30,7 +30,7 @@ describe('<Sidebar> — groupe Comptabilité + bloc Administration repliable', (
   it('un admin voit Écritures (groupe Comptabilité, toujours visible)', () => {
     render(<Sidebar role="tresorier" />);
     expect(screen.getByText('Écritures')).toBeTruthy();
-    expect(screen.getByText('Rapprochement')).toBeTruthy();
+    expect(screen.getByText('Justificatifs')).toBeTruthy();
   });
 
   it('le bloc Administration (système) est replié par défaut', () => {

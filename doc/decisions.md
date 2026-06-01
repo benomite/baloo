@@ -1460,7 +1460,7 @@ Le dogfood prod immédiat a révélé 4 bugs, tous corrigés (commits `8ef950f`,
 
 ### Décision
 
-À l'usage, regrouper Écritures + Caisse sous « Administration » (système, replié) les enterrait. On ajoute un **3ᵉ groupe desktop « Comptabilité »** (non repliable, admins) : **Écritures · Caisse · Rapprochement** (`/inbox`). Le bloc « Administration » repliable ne garde que le **système** (Configs Comptaweb, Connexion Claude, Membres, Journal d'erreurs). `/inbox` (rapprochement des justificatifs/dépôts orphelins ↔ écritures), que l'ADR-034 avait sorti de la nav, est **réexposé** ici sous le libellé « Rapprochement » (son intégration dans `/ecritures` reste un chantier séparé, non fait).
+À l'usage, regrouper Écritures + Caisse sous « Administration » (système, replié) les enterrait. On ajoute un **3ᵉ groupe desktop « Comptabilité »** (non repliable, admins) : **Écritures · Caisse · Justificatifs** (`/inbox`). Le bloc « Administration » repliable ne garde que le **système** (Configs Comptaweb, Connexion Claude, Membres, Journal d'erreurs). `/inbox` (gestion des justificatifs — dépôts, remboursements — et rattachement aux écritures), que l'ADR-034 avait sorti de la nav, est **réexposé** ici sous le libellé **« Justificatifs »** (et non « Rapprochement », qui prêtait à confusion avec le rapprochement bancaire Comptaweb). Son intégration dans `/ecritures` reste un chantier séparé, non fait.
 
 ### Conséquences
 
