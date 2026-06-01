@@ -41,10 +41,15 @@ const AUTO_AMOUNT_TOLERANCE_RATIO = 0.02; // 2 %
 const AUTO_AMOUNT_TOLERANCE_FLOOR_CENTS = 100; // 1 €
 const AUTO_DATE_TOLERANCE_DAYS = 3;
 
-// Clé stable d'une paire (écriture, dépôt) pour les Set en mémoire —
-// notamment les paires rejetées par le trésorier.
-export function rejetPairKey(ecritureId: string, depotId: string): string {
-  return `${ecritureId}::${depotId}`;
+export type SuggestionTargetKind = 'depot' | 'remboursement';
+
+// Clé stable d'une paire (écriture, cible) pour les Set en mémoire.
+export function rejetPairKey(
+  ecritureId: string,
+  targetKind: SuggestionTargetKind,
+  targetId: string,
+): string {
+  return `${ecritureId}::${targetKind}:${targetId}`;
 }
 
 // Heuristique gloutonne : pour chaque écriture, on prend le justif libre
@@ -70,7 +75,7 @@ export function computeAutoSuggestions(
       if (used.has(j.id)) continue;
       // Paire explicitement rejetée par le trésorier : on ne la
       // re-propose plus jamais.
-      if (rejectedPairs.has(rejetPairKey(ecr.id, j.id))) continue;
+      if (rejectedPairs.has(rejetPairKey(ecr.id, 'depot', j.id))) continue;
       if (j.amount_cents == null || j.date_estimee == null) continue;
       const jAmount = Math.abs(j.amount_cents);
       const amountDiff = Math.abs(eAmount - jAmount);

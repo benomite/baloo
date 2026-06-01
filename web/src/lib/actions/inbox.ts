@@ -101,15 +101,22 @@ export async function rejeterSuggestionInbox(formData: FormData): Promise<void> 
     redirect(buildInboxRedirect(formData, { error: 'Action réservée aux trésoriers / RG.' }));
   }
   const ecritureId = formData.get('ecriture_id') as string | null;
-  const depotId = formData.get('depot_id') as string | null;
-  if (!ecritureId || !depotId) {
-    redirect(buildInboxRedirect(formData, { error: 'Écriture et justif requis.' }));
+  const targetKind =
+    ((formData.get('target_kind') as string | null) ?? 'depot') as
+      | 'depot'
+      | 'remboursement';
+  const targetId =
+    (formData.get('target_id') as string | null) ??
+    (formData.get('depot_id') as string | null);
+  if (!ecritureId || !targetId) {
+    redirect(buildInboxRedirect(formData, { error: 'Écriture et cible requises.' }));
   }
   try {
     await rejectSuggestionService(
       { groupId: ctx.groupId, userId: ctx.userId },
       ecritureId!,
-      depotId!,
+      targetKind,
+      targetId!,
     );
   } catch (err) {
     redirect(

@@ -48,7 +48,7 @@ describe('computeAutoSuggestions — filtrage des paires rejetées', () => {
   });
 
   it('ne propose plus une paire explicitement rejetée', () => {
-    const rejected = new Set([rejetPairKey('E1', 'J1')]);
+    const rejected = new Set([rejetPairKey('E1', 'depot', 'J1')]);
     const out = computeAutoSuggestions(
       [ecr('E1', -1700, '2026-03-16')],
       [jus('J1', 1676, '2026-03-15')],
@@ -58,7 +58,7 @@ describe('computeAutoSuggestions — filtrage des paires rejetées', () => {
   });
 
   it('le rejet ne bloque QUE la paire visée : un autre justif reste suggéré', () => {
-    const rejected = new Set([rejetPairKey('E1', 'J1')]);
+    const rejected = new Set([rejetPairKey('E1', 'depot', 'J1')]);
     const out = computeAutoSuggestions(
       [ecr('E1', -1700, '2026-03-16')],
       [
@@ -72,7 +72,7 @@ describe('computeAutoSuggestions — filtrage des paires rejetées', () => {
   });
 
   it('un rejet sur une paire ne gêne pas une autre écriture', () => {
-    const rejected = new Set([rejetPairKey('E1', 'J1')]);
+    const rejected = new Set([rejetPairKey('E1', 'depot', 'J1')]);
     const out = computeAutoSuggestions(
       [ecr('E2', -1700, '2026-03-16')],
       [jus('J1', 1700, '2026-03-16')],

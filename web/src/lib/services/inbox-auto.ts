@@ -79,7 +79,7 @@ export async function applyAutoLinks(groupId: string): Promise<AutoLinkResult> {
   for (const e of ecritures) {
     const eAmount = Math.abs(e.amount_cents);
     for (const j of justifs) {
-      if (rejectedPairs.has(rejetPairKey(e.id, j.id))) continue;
+      if (rejectedPairs.has(rejetPairKey(e.id, 'depot', j.id))) continue;
       const jAmount = Math.abs(j.amount_cents);
       if (eAmount !== jAmount) continue;
       const dateDiff = daysBetween(e.date_ecriture, j.date_estimee);
