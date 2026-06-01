@@ -103,7 +103,7 @@ export async function confirmLink(
          amount_cents = COALESCE(?, amount_cents),
          date_ecriture = COALESCE(?, date_ecriture),
          description = COALESCE(?, description),
-         cw_signature = NULL, status = 'mirror', updated_at = ?
+         cw_signature = NULL, status = 'mirror', comptaweb_synced = 1, updated_at = ?
        WHERE id = ? AND group_id = ?`,
     )
     .run(

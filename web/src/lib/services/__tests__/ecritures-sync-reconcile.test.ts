@@ -27,6 +27,7 @@ function baloo(over: Partial<BalooRow> & { id: string }): BalooRow {
     type: 'depense',
     dateEcriture: '2026-03-10',
     cwSignature: null,
+    hasImputation: true,
     ...over,
   };
 }
@@ -46,14 +47,23 @@ describe('reconcile — clé stable', () => {
     expect(plan.imports).toHaveLength(0);
   });
 
-  it('update sans needsDetail quand la signature est identique', () => {
+  it('update sans needsDetail quand la signature est identique et l’imputation présente', () => {
     const plan = reconcile(
       [cw({ cwId: 100, signature: 'SAME' })],
-      [baloo({ id: 'E1', comptawebEcritureId: 100, cwSignature: 'SAME' })],
+      [baloo({ id: 'E1', comptawebEcritureId: 100, cwSignature: 'SAME', hasImputation: true })],
       OPTS,
     );
     expect(plan.updates).toHaveLength(1);
     expect(plan.updates[0].needsDetail).toBe(false);
+  });
+
+  it('needsDetail même à signature identique si l’imputation est vide (répare le legacy)', () => {
+    const plan = reconcile(
+      [cw({ cwId: 100, signature: 'SAME' })],
+      [baloo({ id: 'E1', comptawebEcritureId: 100, cwSignature: 'SAME', hasImputation: false })],
+      OPTS,
+    );
+    expect(plan.updates[0].needsDetail).toBe(true);
   });
 });
 

@@ -20,6 +20,8 @@ import type { ComptawebConfig } from './types';
 export interface EcritureDetail {
   activite: string | null;
   brancheprojet: string | null;
+  /** Libellé de la nature comptable (→ category_id via comptaweb_nature). */
+  nature: string | null;
 }
 
 function clean(s: string): string {
@@ -92,7 +94,10 @@ export function parseEcritureDetailHtml(html: string): EcritureDetail {
     (t) => t.includes('projet'),
   ]);
 
-  return { activite, brancheprojet };
+  // « Nature » (= catégorie comptable côté Baloo via comptaweb_nature).
+  const nature = findFieldValue($, [(t) => t.includes('nature')]);
+
+  return { activite, brancheprojet, nature };
 }
 
 export async function scrapeEcritureDetail(

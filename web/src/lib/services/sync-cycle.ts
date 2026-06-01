@@ -72,6 +72,8 @@ export interface SyncCycleOptions {
   resolveActiviteId?: (name: string) => Promise<string | null>;
   /** Injection pour tests : résout une branche/projet CW → unite_id Baloo. */
   resolveUniteId?: (branche: string) => Promise<string | null>;
+  /** Injection pour tests : résout une nature CW → category_id Baloo. */
+  resolveCategoryId?: (nature: string) => Promise<string | null>;
   /** Injection pour tests : maintenant (ms epoch). Sinon Date.now(). */
   now?: () => number;
 }
@@ -251,7 +253,8 @@ async function healComptawebIds(
 async function loadBalooRows(db: DbWrapper, groupId: string): Promise<BalooRow[]> {
   return db
     .prepare(
-      `SELECT id, status, comptaweb_ecriture_id, amount_cents, type, date_ecriture, cw_signature
+      `SELECT id, status, comptaweb_ecriture_id, amount_cents, type, date_ecriture,
+              cw_signature, activite_id, unite_id, category_id
        FROM ecritures
        WHERE group_id = ? AND status IN ('mirror','pending_sync','divergent','draft')`,
     )
@@ -263,6 +266,9 @@ async function loadBalooRows(db: DbWrapper, groupId: string): Promise<BalooRow[]
       type: 'depense' | 'recette';
       date_ecriture: string;
       cw_signature: string | null;
+      activite_id: string | null;
+      unite_id: string | null;
+      category_id: string | null;
     }>(groupId)
     .then((rows) =>
       rows.map((r) => ({
@@ -273,6 +279,7 @@ async function loadBalooRows(db: DbWrapper, groupId: string): Promise<BalooRow[]
         type: r.type,
         dateEcriture: r.date_ecriture,
         cwSignature: r.cw_signature,
+        hasImputation: r.activite_id != null || r.unite_id != null || r.category_id != null,
       })),
     );
 }
@@ -281,25 +288,33 @@ interface Resolvers {
   scrapeDetail: (cwId: number) => Promise<EcritureDetail>;
   resolveActiviteId: (name: string) => Promise<string | null>;
   resolveUniteId: (branche: string) => Promise<string | null>;
+  resolveCategoryId: (nature: string) => Promise<string | null>;
+}
+
+interface ResolvedIds {
+  activiteId: string | null;
+  uniteId: string | null;
+  categoryId: string | null;
 }
 
 /**
- * Lit le détail CW et résout activite_id / unite_id. Renvoie aussi le
- * nombre de fetch effectués (0 ou 1) pour le compteur.
+ * Lit le détail CW et résout activite_id / unite_id / category_id. Renvoie
+ * aussi le nombre de fetch effectués (0 ou 1) pour le compteur.
  */
 async function fetchDetailIds(
   cwId: number,
   r: Resolvers,
-): Promise<{ activiteId: string | null; uniteId: string | null; fetched: number }> {
+): Promise<ResolvedIds & { fetched: number }> {
   try {
     const detail = await r.scrapeDetail(cwId);
     const activiteId = detail.activite ? await r.resolveActiviteId(detail.activite) : null;
     const uniteId = detail.brancheprojet ? await r.resolveUniteId(detail.brancheprojet) : null;
-    return { activiteId, uniteId, fetched: 1 };
+    const categoryId = detail.nature ? await r.resolveCategoryId(detail.nature) : null;
+    return { activiteId, uniteId, categoryId, fetched: 1 };
   } catch (err) {
     // Le détail ne doit jamais bloquer la sync.
     logError('sync-cycle', 'scrapeEcritureDetail failed', err, { cwId });
-    return { activiteId: null, uniteId: null, fetched: 0 };
+    return { activiteId: null, uniteId: null, categoryId: null, fetched: 0 };
   }
 }
 
@@ -313,7 +328,7 @@ async function writeCwFields(
   db: DbWrapper,
   ecritureId: string,
   cw: CwSnapshotRow,
-  ids: { activiteId: string | null; uniteId: string | null },
+  ids: { activiteId: string | null; uniteId: string | null; categoryId: string | null },
   now: string,
 ): Promise<void> {
   await db
@@ -321,9 +336,10 @@ async function writeCwFields(
       `UPDATE ecritures SET
          date_ecriture = ?, description = ?, amount_cents = ?, type = ?,
          numero_piece = ?, cw_numero_piece = ?, comptaweb_ecriture_id = ?,
-         cw_signature = ?, status = 'mirror',
+         cw_signature = ?, status = 'mirror', comptaweb_synced = 1,
          activite_id = COALESCE(?, activite_id),
          unite_id = COALESCE(?, unite_id),
+         category_id = COALESCE(?, category_id),
          updated_at = ?
        WHERE id = ?`,
     )
@@ -338,6 +354,7 @@ async function writeCwFields(
       cw.signature,
       ids.activiteId,
       ids.uniteId,
+      ids.categoryId,
       now,
       ecritureId,
     );
@@ -378,6 +395,19 @@ function defaultResolveUniteId(db: DbWrapper, groupId: string) {
         `SELECT id FROM unites WHERE group_id = ? AND (name = ? OR branche = ? OR code = ?) LIMIT 1`,
       )
       .get<{ id: string }>(groupId, branche, branche, branche);
+    return row?.id ?? null;
+  };
+}
+
+function defaultResolveCategoryId(db: DbWrapper, groupId: string) {
+  return async (nature: string): Promise<string | null> => {
+    // Priorité au libellé exact `comptaweb_nature` (100 % fiable), fallback
+    // sur `name`. Cf. AGENTS.md « Mapping nature CSV → category_id ».
+    const row = await db
+      .prepare(
+        `SELECT id FROM categories WHERE group_id = ? AND (comptaweb_nature = ? OR name = ?) LIMIT 1`,
+      )
+      .get<{ id: string }>(groupId, nature, nature);
     return row?.id ?? null;
   };
 }
@@ -438,6 +468,7 @@ export async function runSyncCycle(
       scrapeDetail: opts.scrapeDetail ?? ((cwId: number) => defaultScrapeDetail(config, cwId)),
       resolveActiviteId: opts.resolveActiviteId ?? defaultResolveActiviteId(db, groupId),
       resolveUniteId: opts.resolveUniteId ?? defaultResolveUniteId(db, groupId),
+      resolveCategoryId: opts.resolveCategoryId ?? defaultResolveCategoryId(db, groupId),
     };
 
     // 3. Drafts depuis lignes bancaires non rapprochées (avant reconcile :
@@ -466,11 +497,11 @@ export async function runSyncCycle(
 
     // 7a. Updates (mirror/pending_sync reliés) — CW écrase.
     for (const u of plan.updates) {
-      let ids = { activiteId: null as string | null, uniteId: null as string | null };
+      let ids: ResolvedIds = { activiteId: null, uniteId: null, categoryId: null };
       if (u.needsDetail) {
         const r = await fetchDetailIds(u.cw.cwId, resolvers);
         detailFetches += r.fetched;
-        ids = { activiteId: r.activiteId, uniteId: r.uniteId };
+        ids = { activiteId: r.activiteId, uniteId: r.uniteId, categoryId: r.categoryId };
       }
       await writeCwFields(db, u.ecritureId, u.cw, ids, now);
       updatedMirror++;
@@ -480,7 +511,13 @@ export async function runSyncCycle(
     for (const p of plan.promotions) {
       const r = await fetchDetailIds(p.cw.cwId, resolvers);
       detailFetches += r.fetched;
-      await writeCwFields(db, p.ecritureId, p.cw, { activiteId: r.activiteId, uniteId: r.uniteId }, now);
+      await writeCwFields(
+        db,
+        p.ecritureId,
+        p.cw,
+        { activiteId: r.activiteId, uniteId: r.uniteId, categoryId: r.categoryId },
+        now,
+      );
       promoted++;
     }
 
@@ -502,8 +539,9 @@ export async function runSyncCycle(
           `INSERT INTO ecritures
              (id, group_id, date_ecriture, description, amount_cents, type,
               numero_piece, cw_numero_piece, comptaweb_ecriture_id, cw_signature,
-              status, activite_id, unite_id, justif_attendu, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'mirror', ?, ?, 1, ?, ?)`,
+              status, comptaweb_synced, activite_id, unite_id, category_id,
+              justif_attendu, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'mirror', 1, ?, ?, ?, 1, ?, ?)`,
         )
         .run(
           newId,
@@ -518,6 +556,7 @@ export async function runSyncCycle(
           cw.signature,
           r.activiteId,
           r.uniteId,
+          r.categoryId,
           now,
           now,
         );
@@ -631,6 +670,7 @@ export async function ensureSyncFresh(
     | 'scrapeDetail'
     | 'resolveActiviteId'
     | 'resolveUniteId'
+    | 'resolveCategoryId'
     | 'scope'
     | 'now'
   > = {},

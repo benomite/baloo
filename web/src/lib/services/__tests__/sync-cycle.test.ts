@@ -166,6 +166,7 @@ function mockOpts(opts: {
   scrapeDetail?: SyncCycleOptions['scrapeDetail'];
   resolveActiviteId?: SyncCycleOptions['resolveActiviteId'];
   resolveUniteId?: SyncCycleOptions['resolveUniteId'];
+  resolveCategoryId?: SyncCycleOptions['resolveCategoryId'];
   now?: () => number;
   trigger?: SyncCycleOptions['trigger'];
   force?: boolean;
@@ -183,9 +184,10 @@ function mockOpts(opts: {
       return { ecritures: opts.ecritures ?? [] };
     },
     scanDrafts: opts.scanDrafts ?? (async () => ({ crees: 0, existants: 0 })),
-    scrapeDetail: opts.scrapeDetail ?? (async () => ({ activite: null, brancheprojet: null })),
+    scrapeDetail: opts.scrapeDetail ?? (async () => ({ activite: null, brancheprojet: null, nature: null })),
     resolveActiviteId: opts.resolveActiviteId ?? (async () => null),
     resolveUniteId: opts.resolveUniteId ?? (async () => null),
+    resolveCategoryId: opts.resolveCategoryId ?? (async () => null),
   };
 }
 
@@ -312,28 +314,33 @@ describe('runSyncCycle — update mirror (CW écrase)', () => {
     const { computeCwSignature } = await import('../ecritures-sync-reconcile');
     const sig = computeCwSignature({ date: '2026-05-04', type: 'depense', montantCents: 49100, intitule: 'Test', numeroPiece: 'ECR-2026-101', modeTransaction: 'Virement', categorieTiers: '' });
     await insertEcriture(db, { id: 'ECR-2026-001', status: 'mirror', comptaweb_ecriture_id: 2386515, cw_signature: sig });
+    // Imputation déjà présente → pas de raison de relire le détail.
+    await db.prepare("UPDATE ecritures SET activite_id = 'ACT-X' WHERE id = 'ECR-2026-001'").run();
     let detailCalls = 0;
     const res = await runSyncCycle(db, 'g1', mockOpts({
       ecritures: [makeRow({ id: 2386515, numeroPiece: 'ECR-2026-101' })],
-      scrapeDetail: async () => { detailCalls++; return { activite: null, brancheprojet: null }; },
+      scrapeDetail: async () => { detailCalls++; return { activite: null, brancheprojet: null, nature: null }; },
     }));
     expect(detailCalls).toBe(0);
     expect(res.detail_fetches).toBe(0);
     expect(res.updated_mirror).toBe(1);
   });
 
-  it('relit le détail et résout activité/unité quand la signature a changé', async () => {
+  it('relit le détail et résout activité/unité/catégorie quand la signature a changé', async () => {
     await insertEcriture(db, { id: 'ECR-2026-001', status: 'mirror', comptaweb_ecriture_id: 2386515, cw_signature: 'OLD' });
     const res = await runSyncCycle(db, 'g1', mockOpts({
       ecritures: [makeRow({ id: 2386515 })],
-      scrapeDetail: async () => ({ activite: 'Camp 2026', brancheprojet: 'Louveteaux' }),
+      scrapeDetail: async () => ({ activite: 'Camp 2026', brancheprojet: 'Louveteaux', nature: 'Dons' }),
       resolveActiviteId: async () => 'ACT-1',
       resolveUniteId: async () => 'UNITE-1',
+      resolveCategoryId: async () => 'CAT-1',
     }));
     expect(res.detail_fetches).toBe(1);
-    const ecr = await db.prepare('SELECT activite_id, unite_id FROM ecritures WHERE id = ?').get<{ activite_id: string; unite_id: string }>('ECR-2026-001');
+    const ecr = await db.prepare('SELECT activite_id, unite_id, category_id, comptaweb_synced FROM ecritures WHERE id = ?').get<{ activite_id: string; unite_id: string; category_id: string; comptaweb_synced: number }>('ECR-2026-001');
     expect(ecr?.activite_id).toBe('ACT-1');
     expect(ecr?.unite_id).toBe('UNITE-1');
+    expect(ecr?.category_id).toBe('CAT-1');
+    expect(ecr?.comptaweb_synced).toBe(1); // flag synced posé (badge "Synchro CW")
   });
 });
 

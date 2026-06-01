@@ -40,6 +40,13 @@ export interface BalooRow {
   type: EcritureType;
   dateEcriture: string; // ISO YYYY-MM-DD
   cwSignature: string | null;
+  /**
+   * Vrai si l'écriture a au moins une imputation posée (activité, unité ou
+   * catégorie). Si false, on force la relecture du détail même à signature
+   * inchangée — sinon une écriture jamais enrichie (ou enrichie par un
+   * scraper cassé) resterait définitivement sans imputation.
+   */
+  hasImputation: boolean;
 }
 
 export interface ReconcilePlan {
@@ -139,7 +146,7 @@ export function reconcile(
       plan.updates.push({
         ecritureId: row.id,
         cw,
-        needsDetail: row.cwSignature !== cw.signature,
+        needsDetail: row.cwSignature !== cw.signature || !row.hasImputation,
       });
     } else if (hasRange && row.comptawebEcritureId >= minId && row.comptawebEcritureId <= maxId) {
       // Reliée, dans la plage couverte, absente → vraie suppression.

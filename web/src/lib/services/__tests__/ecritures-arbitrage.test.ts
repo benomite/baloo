@@ -19,6 +19,7 @@ async function setupDb(): Promise<DbWrapper> {
       id TEXT PRIMARY KEY, group_id TEXT NOT NULL, date_ecriture TEXT NOT NULL,
       description TEXT NOT NULL, amount_cents INTEGER NOT NULL, type TEXT NOT NULL,
       cw_numero_piece TEXT, comptaweb_ecriture_id INTEGER, cw_signature TEXT,
+      comptaweb_synced INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'draft', updated_at TEXT
     );
     CREATE TABLE justificatifs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT);
