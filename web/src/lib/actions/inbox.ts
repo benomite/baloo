@@ -8,6 +8,7 @@ import {
   rejectDepot as rejectDepotService,
 } from '../services/depots';
 import { rejectSuggestion as rejectSuggestionService } from '../services/inbox-rejets';
+import { setRembsEcritureLink } from '../services/remboursement-ecriture-link';
 import { updateEcriture } from '../services/ecritures';
 
 const ADMIN_ROLES = ['tresorier', 'RG'] as const;
@@ -58,6 +59,31 @@ export async function lierEcritureJustif(formData: FormData): Promise<void> {
   revalidatePath('/depots');
   revalidatePath(`/ecritures/${ecritureId}`);
   redirect(buildInboxRedirect(formData, { linked: depotId! }));
+}
+
+// Lie une écriture de virement orpheline à son remboursement. Pose
+// `remboursements.ecriture_id` via le service partagé (garde-fous :
+// écriture introuvable / déjà liée à un autre rembt). Le lien logique
+// fait disparaître l'écriture des orphelines au rendu suivant.
+export async function lierEcritureRemboursement(formData: FormData): Promise<void> {
+  const ctx = await getCurrentContext();
+  if (!isAdminRole(ctx.role)) {
+    redirect(buildInboxRedirect(formData, { error: 'Action réservée aux trésoriers / RG.' }));
+  }
+  const ecritureId = formData.get('ecriture_id') as string | null;
+  const remboursementId = formData.get('remboursement_id') as string | null;
+  if (!ecritureId || !remboursementId) {
+    redirect(buildInboxRedirect(formData, { error: 'Écriture et remboursement requis.' }));
+  }
+  const result = await setRembsEcritureLink(ctx.groupId, remboursementId!, ecritureId!);
+  if (!result.ok) {
+    redirect(buildInboxRedirect(formData, { error: result.error }));
+  }
+  revalidatePath('/inbox');
+  revalidatePath('/remboursements');
+  revalidatePath(`/remboursements/${remboursementId}`);
+  revalidatePath(`/ecritures/${ecritureId}`);
+  redirect(buildInboxRedirect(formData, { rbt_linked: remboursementId! }));
 }
 
 // Pendant symétrique de markerJustifNonAttendu : marque un dépôt
