@@ -7,6 +7,7 @@ import {
   attachDepotToEcriture as attachDepotToEcritureService,
   rejectDepot as rejectDepotService,
 } from '../services/depots';
+import { rejectSuggestion as rejectSuggestionService } from '../services/inbox-rejets';
 import { updateEcriture } from '../services/ecritures';
 
 const ADMIN_ROLES = ['tresorier', 'RG'] as const;
@@ -88,6 +89,37 @@ export async function rejeterDepotInbox(formData: FormData): Promise<void> {
   revalidatePath('/inbox');
   revalidatePath('/depots');
   redirect(buildInboxRedirect(formData, { rejected: depotId! }));
+}
+
+// Rejette une suggestion automatique (paire écriture ↔ dépôt) que le
+// trésorier sait fausse : on mémorise la paire pour ne plus la
+// re-proposer. Les deux éléments restent orphelins et matchables
+// manuellement avec autre chose — on ne touche qu'au couple suggéré.
+export async function rejeterSuggestionInbox(formData: FormData): Promise<void> {
+  const ctx = await getCurrentContext();
+  if (!isAdminRole(ctx.role)) {
+    redirect(buildInboxRedirect(formData, { error: 'Action réservée aux trésoriers / RG.' }));
+  }
+  const ecritureId = formData.get('ecriture_id') as string | null;
+  const depotId = formData.get('depot_id') as string | null;
+  if (!ecritureId || !depotId) {
+    redirect(buildInboxRedirect(formData, { error: 'Écriture et justif requis.' }));
+  }
+  try {
+    await rejectSuggestionService(
+      { groupId: ctx.groupId, userId: ctx.userId },
+      ecritureId!,
+      depotId!,
+    );
+  } catch (err) {
+    redirect(
+      buildInboxRedirect(formData, {
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
+  revalidatePath('/inbox');
+  redirect(buildInboxRedirect(formData, { suggestion_rejetee: '1' }));
 }
 
 // Marque l'écriture comme "pas de justif attendu" (justif_attendu = 0).

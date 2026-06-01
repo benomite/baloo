@@ -1,8 +1,19 @@
 import { getCurrentContext } from '../context';
 import { getDb } from '../db';
 import { ensureDepotsSchema } from '../services/depots';
+import { loadRejectedPairKeys } from '../services/inbox-rejets';
 import { pendingStatuses } from '../services/ecritures-status';
+import {
+  computeAutoSuggestions,
+  type InboxEcriture,
+  type InboxJustif,
+  type InboxSuggestion,
+} from './inbox-matching';
 import type { EcritureStatus } from '../types';
+
+// Types de matching ré-exportés depuis le module pur pour ne pas casser
+// les imports existants (`@/lib/queries/inbox`).
+export type { InboxEcriture, InboxJustif, InboxSuggestion } from './inbox-matching';
 
 // Inbox du trésorier : tout ce qui attend d'être lié.
 //
@@ -25,37 +36,6 @@ import type { EcritureStatus } from '../types';
 //
 // - `justifsOrphelins` : tous les dépôts en statut `a_traiter`. Idem.
 
-export interface InboxEcriture {
-  id: string;
-  date_ecriture: string;
-  description: string;
-  amount_cents: number;
-  type: 'depense' | 'recette';
-  unite_code: string | null;
-  comptaweb_synced: 0 | 1;
-}
-
-export interface InboxJustif {
-  id: string;
-  titre: string;
-  description: string | null;
-  amount_cents: number | null;
-  date_estimee: string | null;
-  unite_code: string | null;
-  category_name: string | null;
-  submitter_name: string | null;
-  submitter_email: string;
-  justif_path: string | null;
-  created_at: string;
-}
-
-export interface InboxSuggestion {
-  ecriture: InboxEcriture;
-  justif: InboxJustif;
-  date_diff_days: number;
-  amount_diff_cents: number;
-}
-
 export interface InboxData {
   suggestions: InboxSuggestion[];
   ecrituresOrphelines: InboxEcriture[];
@@ -65,13 +45,6 @@ export interface InboxData {
   // afficher un compteur "+N plus anciennes"). 0 si tout passe.
   ecrituresTruncated: number;
 }
-
-// Seuils des suggestions auto (doivent rester serrés pour éviter les
-// faux positifs : un seul mauvais auto-match coûte plus cher en perte
-// de confiance qu'un manuel évité).
-const AUTO_AMOUNT_TOLERANCE_RATIO = 0.02; // 2 %
-const AUTO_AMOUNT_TOLERANCE_FLOOR_CENTS = 100; // 1 €
-const AUTO_DATE_TOLERANCE_DAYS = 3;
 
 // Limite dure pour éviter de rendre 1000 lignes : au-delà, on tronque
 // et on affiche un compteur. Le user peut élargir la période ou
@@ -156,7 +129,12 @@ export async function listInboxItems(
       .all<InboxJustif>(groupId),
   ]);
 
-  const suggestions = computeAutoSuggestions(ecrituresAll, justifsOrphelins);
+  const rejectedPairs = await loadRejectedPairKeys(groupId);
+  const suggestions = computeAutoSuggestions(
+    ecrituresAll,
+    justifsOrphelins,
+    rejectedPairs,
+  );
   const usedEcr = new Set(suggestions.map((s) => s.ecriture.id));
   const usedJustif = new Set(suggestions.map((s) => s.justif.id));
 
@@ -248,6 +226,7 @@ export async function findSuggestionsForEcriture(
 
   if (!ecriture) return [];
 
+  const rejectedPairs = await loadRejectedPairKeys(ctx.groupId);
   const justifs = await db
     .prepare(
       `SELECT d.id, d.titre, d.description, d.amount_cents, d.date_estimee,
@@ -269,7 +248,7 @@ export async function findSuggestionsForEcriture(
     )
     .all<InboxJustif>(ctx.groupId);
 
-  return computeAutoSuggestions([ecriture], justifs);
+  return computeAutoSuggestions([ecriture], justifs, rejectedPairs);
 }
 
 export async function findSuggestionsForDepot(
@@ -301,6 +280,7 @@ export async function findSuggestionsForDepot(
 
   if (!depot) return [];
 
+  const rejectedPairs = await loadRejectedPairKeys(ctx.groupId);
   const ecritures = await db
     .prepare(
       `SELECT e.id, e.date_ecriture, e.description, e.amount_cents, e.type,
@@ -318,60 +298,7 @@ export async function findSuggestionsForDepot(
     )
     .all<InboxEcriture>(ctx.groupId);
 
-  return computeAutoSuggestions(ecritures, [depot]);
-}
-
-// ─── Heuristique de suggestions auto ─────────────────────────────────────────
-
-// Heuristique gloutonne : pour chaque écriture, on prend le 1er justif
-// libre qui matche. Pas de scoring sophistiqué, juste un seuil serré.
-// L'ordre de scan suit l'ordre des deux listes (chronologique inverse).
-function computeAutoSuggestions(
-  ecritures: InboxEcriture[],
-  justifs: InboxJustif[],
-): InboxSuggestion[] {
-  const out: InboxSuggestion[] = [];
-  const used = new Set<string>();
-
-  for (const ecr of ecritures) {
-    const eAmount = Math.abs(ecr.amount_cents);
-    const tol = Math.max(
-      AUTO_AMOUNT_TOLERANCE_FLOOR_CENTS,
-      Math.round(eAmount * AUTO_AMOUNT_TOLERANCE_RATIO),
-    );
-    let best: { justif: InboxJustif; amountDiff: number; dateDiff: number } | null = null;
-    for (const j of justifs) {
-      if (used.has(j.id)) continue;
-      if (j.amount_cents == null || j.date_estimee == null) continue;
-      const jAmount = Math.abs(j.amount_cents);
-      const amountDiff = Math.abs(eAmount - jAmount);
-      if (amountDiff > tol) continue;
-      const dateDiff = daysBetween(ecr.date_ecriture, j.date_estimee);
-      if (dateDiff > AUTO_DATE_TOLERANCE_DAYS) continue;
-      if (
-        best === null ||
-        amountDiff < best.amountDiff ||
-        (amountDiff === best.amountDiff && dateDiff < best.dateDiff)
-      ) {
-        best = { justif: j, amountDiff, dateDiff };
-      }
-    }
-    if (best) {
-      used.add(best.justif.id);
-      out.push({
-        ecriture: ecr,
-        justif: best.justif,
-        amount_diff_cents: best.amountDiff,
-        date_diff_days: best.dateDiff,
-      });
-    }
-  }
-  return out;
-}
-
-function daysBetween(a: string, b: string): number {
-  const ms = Math.abs(new Date(a).getTime() - new Date(b).getTime());
-  return Math.round(ms / (1000 * 60 * 60 * 24));
+  return computeAutoSuggestions(ecritures, [depot], rejectedPairs);
 }
 
 // ─── Inbox des écritures pending ─────────────────────────────────────────

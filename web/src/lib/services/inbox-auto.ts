@@ -1,5 +1,6 @@
 import { getDb } from '../db';
 import { ensureDepotsSchema, attachDepotToEcriture } from './depots';
+import { loadRejectedPairKeys, rejetPairKey } from './inbox-rejets';
 import { logError } from '../log';
 
 // Auto-rapprochement : appelé au chargement de /inbox. Lie en silence
@@ -67,6 +68,9 @@ export async function applyAutoLinks(groupId: string): Promise<AutoLinkResult> {
 
   if (justifs.length === 0) return { applied: 0, pairs: [] };
 
+  // Paires explicitement rejetées par le trésorier : jamais d'auto-link.
+  const rejectedPairs = await loadRejectedPairKeys(groupId);
+
   // Construction des candidats : pour chaque écriture, la liste des
   // justifs qui matchent strictement, et symétriquement.
   const justifCandidatesByEcr = new Map<string, string[]>();
@@ -75,6 +79,7 @@ export async function applyAutoLinks(groupId: string): Promise<AutoLinkResult> {
   for (const e of ecritures) {
     const eAmount = Math.abs(e.amount_cents);
     for (const j of justifs) {
+      if (rejectedPairs.has(rejetPairKey(e.id, j.id))) continue;
       const jAmount = Math.abs(j.amount_cents);
       if (eAmount !== jAmount) continue;
       const dateDiff = daysBetween(e.date_ecriture, j.date_estimee);

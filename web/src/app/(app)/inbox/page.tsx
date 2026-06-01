@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, Link2, Paperclip } from 'lucide-react';
+import { ArrowRight, Link2, Paperclip, X } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Alert } from '@/components/ui/alert';
 import { Amount } from '@/components/shared/amount';
@@ -15,7 +15,7 @@ import {
   type InboxPeriod,
   type InboxSuggestion,
 } from '@/lib/queries/inbox';
-import { lierEcritureJustif } from '@/lib/actions/inbox';
+import { lierEcritureJustif, rejeterSuggestionInbox } from '@/lib/actions/inbox';
 import { applyAutoLinks } from '@/lib/services/inbox-auto';
 import { InboxBoard } from './inbox-board.client';
 import { cn } from '@/lib/utils';
@@ -28,6 +28,7 @@ interface SearchParams {
   linked?: string;
   dismissed?: string;
   rejected?: string;
+  suggestion_rejetee?: string;
   period?: string;
   recettes?: string;
 }
@@ -121,6 +122,12 @@ export default async function InboxPage({
             {params.rejected}
           </code>{' '}
           marqué comme non pertinent.
+        </Alert>
+      )}
+      {params.suggestion_rejetee && (
+        <Alert variant="success" className="mb-4">
+          Suggestion écartée — cette paire ne sera plus proposée. Les deux
+          éléments restent dans l’inbox pour un autre rapprochement.
         </Alert>
       )}
 
@@ -271,20 +278,42 @@ function SuggestionsSection({
             <div className="flex-1 min-w-0">
               <JustifSummary justif={s.justif} compact />
             </div>
-            <form action={lierEcritureJustif} className="shrink-0">
-              <input type="hidden" name="ecriture_id" value={s.ecriture.id} />
-              <input type="hidden" name="depot_id" value={s.justif.id} />
-              <input type="hidden" name="return_period" value={period} />
-              <input
-                type="hidden"
-                name="return_recettes"
-                value={includeRecettes ? '1' : '0'}
-              />
-              <PendingButton size="sm">
-                <Link2 size={12} strokeWidth={2} className="mr-1" />
-                Lier
-              </PendingButton>
-            </form>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <form action={rejeterSuggestionInbox}>
+                <input type="hidden" name="ecriture_id" value={s.ecriture.id} />
+                <input type="hidden" name="depot_id" value={s.justif.id} />
+                <input type="hidden" name="return_period" value={period} />
+                <input
+                  type="hidden"
+                  name="return_recettes"
+                  value={includeRecettes ? '1' : '0'}
+                />
+                <PendingButton
+                  variant="ghost"
+                  size="sm"
+                  pendingLabel="…"
+                  title="Pas ça — ne plus proposer cette paire"
+                  className="text-fg-subtle hover:text-destructive"
+                >
+                  <X size={12} strokeWidth={2} className="mr-1" />
+                  Pas ça
+                </PendingButton>
+              </form>
+              <form action={lierEcritureJustif}>
+                <input type="hidden" name="ecriture_id" value={s.ecriture.id} />
+                <input type="hidden" name="depot_id" value={s.justif.id} />
+                <input type="hidden" name="return_period" value={period} />
+                <input
+                  type="hidden"
+                  name="return_recettes"
+                  value={includeRecettes ? '1' : '0'}
+                />
+                <PendingButton size="sm">
+                  <Link2 size={12} strokeWidth={2} className="mr-1" />
+                  Lier
+                </PendingButton>
+              </form>
+            </div>
           </li>
         ))}
       </ul>
