@@ -1,8 +1,14 @@
 # Spec — Réconciliation Comptaweb (sync miroir bidirectionnel descendant)
 
 **Date** : 2026-06-01
-**Statut** : design validé, prêt à plan d'impl
+**Statut** : **livré + déployé prod** (2026-06-01). Décision : [ADR-035](../decisions.md#adr-035--réconciliation-comptaweb--miroir-descendant-continu). Plan : [`../plans/2026-06-01-sync-reconciliation.md`](../plans/2026-06-01-sync-reconciliation.md).
 **Révise** : [ADR-032](../decisions.md#adr-032--sync-incrémentale-comptaweb-client-piloté) (Phase 2 sync incrémentale). Le cadre client-piloté, le throttle/verrou par groupe et la table `sync_runs` sont **conservés** ; la logique interne du cycle (`runSyncCycle`) est **réécrite**.
+
+> **Écarts vs ce design (dogfood prod, voir « Correctifs post-mise en prod » dans ADR-035)** :
+> - La **catégorie** (nature → `category_id`), notée « hors scope » plus bas, a finalement été **incluse** (lue dans la ventilation détail).
+> - Le scraper détail ne fait **pas** du matching libellé/valeur mais parse le **tableau de ventilation en colonnes** de `/recettedepense/<id>/afficher`. `/modifier` est inexploitable (500).
+> - `needsDetail` se déclenche aussi quand l'**imputation est vide** (pas seulement au changement de signature), pour réparer le legacy.
+> - 4 bugs corrigés (flag `comptaweb_synced`, `categories` sans `group_id`, résilience des résolveurs, scraper) + 2 boutons front (« Tout resynchroniser » exercice, « Resync Comptaweb » par écriture).
 
 ---
 

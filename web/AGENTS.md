@@ -215,6 +215,64 @@ diagnostic du parser sans appel BDD.
 pnpm tsx scripts/audit-csv-totals.ts <chemin-csv>
 ```
 
+## Réconciliation Comptaweb (sync miroir descendant, ADR-035)
+
+Pièges rencontrés au dogfood prod du 2026-06-01 (la sync descendante : CW
+écrase, suppressions, imports, enrichissement détail). Voir
+`lib/services/sync-cycle.ts` + `lib/comptaweb/ecriture-detail-scrape.ts`.
+
+### `categories` est un référentiel NATIONAL — pas de `group_id`
+
+Contrairement à `unites` / `activites` (par groupe, avec `group_id`), la
+table `categories` est partagée entre tous les groupes : **elle n'a pas de
+colonne `group_id`**. Toute requête `SELECT ... FROM categories WHERE
+group_id = ?` lève `LibsqlError: no such column: group_id`.
+
+Mapping nature CW → catégorie : `WHERE comptaweb_nature = ? OR name = ?`
+(sans group_id). Cf. aussi la cascade de matching `comptaweb_nature` >
+`name` documentée plus haut (« Import CSV »).
+
+Vu le bug : le résolveur catégorie de la sync filtrait sur `group_id` → SQL
+error → le throw remontait et **effaçait toute l'imputation** (activité +
+unité comprises) de l'écriture. D'où la règle suivante.
+
+### Enrichissement multi-référentiels : résoudre chaque champ indépendamment
+
+Quand on résout plusieurs ids depuis un scrape (activité, unité, catégorie),
+**isoler chaque résolution dans son propre try/catch**. Sinon l'échec d'un
+seul référentiel (colonne absente, table vide) fait perdre **tous** les
+autres champs déjà résolus. Pattern dans `fetchDetailIds` (`sync-cycle.ts`).
+
+### `comptaweb_synced` est un flag SÉPARÉ de `status`
+
+Le badge UI « Local » / « Synchro CW » (`EcritureStatePair`,
+`comptaweb_synced === 1`) ne lit **pas** `status`. Une écriture peut être
+`status='mirror'` ET `comptaweb_synced=0` → affichée « Local » à tort. Toute
+transition vers l'état miroir doit poser **les deux** (`status='mirror'` +
+`comptaweb_synced=1`). Idem `deleteDraft`/promotion existants.
+
+### Page détail CW `/recettedepense/<id>/afficher` : ventilation en colonnes
+
+L'imputation (nature / activité / branche-pôle) n'est PAS une liste de
+paires libellé/valeur : c'est un **tableau de ventilation** avec un `<thead>`
+colonnes `Montant | Nature | Activité | Branche / Pôle` et une (ou plusieurs)
+ligne(s) `<tbody><tr><td>` de valeurs. Parser = repérer la table dont le
+thead contient « Nature » ET « Activité », mémoriser l'index de colonne, lire
+la 1ʳᵉ ligne de données. (`parseEcritureDetailHtml`.)
+
+La page **`/modifier`** renvoie une **500** (`Variable
+"ecritures_comptables_enfants" does not exist`) pour certaines écritures →
+ne pas s'y fier, rester sur `/afficher`.
+
+### Scrape CW server-side : `fetchHtml` lève `ComptawebSessionExpiredError`
+
+`fetchHtml` (redirect manuel) **throw** `ComptawebSessionExpiredError` sur une
+redirection vers login/Keycloak. Pour un scrape qui doit survivre à une
+session stockée expirée, wrapper dans `withAutoReLogin` (re-login auto via
+`COMPTAWEB_USERNAME/PASSWORD`). Diagnostic : un scrape qui « ne ramène rien »
+sans erreur évidente → vérifier `/admin/errors` (le type d'erreur, ex.
+`LibsqlError` vs `ComptawebSessionExpiredError`, oriente vite la cause).
+
 ## Git / déploiement
 
 ### Pas de push sans accord explicite

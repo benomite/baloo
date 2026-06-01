@@ -1405,12 +1405,12 @@ Un cycle devient une **réconciliation** `reconcile(snapshotCW, écrituresBaloo)
 
 4. **Import des écritures CW absentes** (création `mirror`) et **réconciliation des drafts locaux** par match contenu `(montant, type, date ± 3 j)` avec **garde-fou unicité** : auto-promotion `draft → mirror` seulement si 1↔1 ; sinon **suggestion de lien à confirmer** (table `cw_link_suggestions`), jamais d'auto-lien ni d'import doublon.
 
-5. **Enrichissement activité/branche incrémental** : `activite`/`brancheprojet` vivent sur la page détail CW (`/recettedepense/<id>/afficher`, nouveau scraper), pas dans la liste. On ne relit le détail que si la **signature liste** (`ecritures.cw_signature`) a changé, ou si activité/unité manquent, ou pour un import/promotion. Mapping : `activite` → `activite_id`, `brancheprojet` → `unite_id` (porte la couleur).
+5. **Enrichissement imputation incrémental** : nature / activité / branche-pôle vivent sur la page détail CW (`/recettedepense/<id>/afficher`), pas dans la liste. On ne relit le détail que si la **signature liste** (`ecritures.cw_signature`) a changé, **ou si l'imputation est vide** (aucun de activité/unité/catégorie posé — répare le legacy), ou pour un import/promotion. Mapping : `nature` → `category_id` (via `comptaweb_nature`), `activite` → `activite_id`, `branche/pôle` → `unite_id` (porte la couleur).
 
 ### Périmètre et fenêtre
 
-- `scope='recent'` (défaut, cycles auto, `/recettedepense?m=1`) ou `scope='exercice'` (déclenché explicitement via `sync_run({scope:'exercice'})`).
-- Mapping catégorie/mode CW → `category_id`/`mode_paiement_id` **hors scope** de cette itération (la catégorie comptable vit dans la ventilation détail, pas dans la colonne « catégorie tiers » de la liste). Champs liste directs + activité/unité (détail) seulement. À étendre si besoin.
+- `scope='recent'` (défaut, cycles auto, `/recettedepense?m=1`) ou `scope='exercice'` (déclenché explicitement via `sync_run({scope:'exercice'})` ou le bouton « Tout resynchroniser »).
+- **Catégorie incluse** (corrigé post-test, cf. correctifs) : la nature comptable est lue dans la ventilation détail → `category_id`. Le **mode de paiement** reste hors scope (mappable plus tard).
 
 ### Conséquences
 
@@ -1418,11 +1418,27 @@ Un cycle devient une **réconciliation** `reconcile(snapshotCW, écrituresBaloo)
 - **Statut `supprimee_cw`** ajouté à l'enum (pas de CHECK SQL → aucune migration de table).
 - **UI `/ecritures`** : bandeau d'arbitrage (suppressions : restaurer/supprimer ; suggestions : confirmer/rejeter) + badge rouge « Supprimée dans CW ». Server actions `lib/actions/ecritures-arbitrage.ts`.
 - **Tool MCP `sync_run`** : param `scope`, counts enrichis dans la sortie.
-- **Modules purs testables** : `ecritures-sync-reconcile.ts` (diff), `ecritures-sync-transitions.ts` (guards). Détail scraper `ecriture-detail-scrape.ts` à confirmer sur capture réelle (matching par libellé, fallback null — ne bloque jamais la sync).
-- Vérifié : `tsc` clean, suite vitest verte (+ tests réconciliation/migration/arbitrage), `next build` OK.
-- **Limitations** : matching contenu des drafts faillible sur collision parfaite → traité par suggestion (jamais auto-lien). Sélecteurs du scraper détail à valider en prod. Mapping `brancheprojet`→unité = hypothèse (vs activité), sans impact architecture.
+- **Modules purs testables** : `ecritures-sync-reconcile.ts` (diff), `ecritures-sync-transitions.ts` (guards).
+- Vérifié : `tsc` clean, suite vitest verte (400 tests : réconciliation/migration/arbitrage/scraper/resync), `next build` OK.
+- **Limitations** : matching contenu des drafts faillible sur collision parfaite → traité par suggestion (jamais auto-lien). Le mode de paiement n'est pas encore mappé depuis CW.
 
-**Liens** : Commits sur `feat/sync-reconciliation`. Code clé : `web/src/lib/services/{sync-cycle,ecritures-sync-reconcile,ecritures-sync-transitions,ecritures-arbitrage,cw-link-suggestions}.ts`, `web/src/lib/comptaweb/ecriture-detail-scrape.ts`, `web/src/lib/db/business-schema.ts` (`ensureReconcileSchema`), `web/src/components/ecritures/arbitrage-banner.tsx`.
+**Liens** : Branche `feat/sync-reconciliation` puis correctifs directs sur `main` (hot-fix). Code clé : `web/src/lib/services/{sync-cycle,ecritures-sync-reconcile,ecritures-sync-transitions,ecritures-arbitrage,cw-link-suggestions}.ts`, `web/src/lib/comptaweb/ecriture-detail-scrape.ts`, `web/src/lib/db/business-schema.ts` (`ensureReconcileSchema`), `web/src/components/ecritures/{arbitrage-banner,full-resync-button,resync-ecriture-button}.tsx`.
+
+### Correctifs post-mise en prod (2026-06-01)
+
+Le dogfood prod immédiat a révélé 4 bugs, tous corrigés (commits `8ef950f`, `4a999ed`, `de2c1dc`). Détails techniques reportés dans [`web/AGENTS.md`](../web/AGENTS.md).
+
+1. **Flag `comptaweb_synced` jamais posé** : la réconciliation passait `status='mirror'` mais le badge « Local »/« Synchro CW » lit le flag **séparé** `comptaweb_synced`. → `writeCwFields` / import / `confirmLink` / `resyncEcritureDetail` posent désormais `comptaweb_synced = 1`.
+
+2. **`needsDetail` ne se déclenchait qu'au changement de signature** : une écriture déjà `mirror` à signature figée et imputation vide ne relisait **jamais** son détail. → `BalooRow.hasImputation` ; `needsDetail = signature changée || imputation vide`.
+
+3. **Scraper détail à côté de la plaque** : la page `/afficher` n'a pas de paires libellé/valeur mais un **tableau de ventilation en colonnes** (`Montant | Nature | Activité | Branche / Pôle`). Réécrit pour cibler ce tableau (validé sur structure réelle écriture 2390826). La page `/modifier` renvoie une **500** pour certaines écritures → on reste sur `/afficher`.
+
+4. **`categories` filtré par `group_id` inexistant** : `categories` est un référentiel **national partagé** (pas de `group_id`). Le résolveur catégorie levait `LibsqlError`, et comme le throw remontait, il **effaçait toute l'imputation** (activité/unité comprises). → résolveur catégorie sans `group_id` + `fetchDetailIds` rendu **résilient** (l'échec d'un référentiel n'efface plus les autres).
+
+**Ajouts UI/UX livrés au passage** :
+- Bouton **« Tout resynchroniser »** (`/ecritures`) → `POST /api/sync/run?scope=exercice&force=1` (`maxDuration=60`).
+- Bouton **« Resync Comptaweb »** par écriture (drawer) → `resyncEcritureDetail` (relit le détail + réaligne imputation + `comptaweb_synced`), pratique pour une écriture ancienne hors fenêtre `recent`.
 
 ---
 
