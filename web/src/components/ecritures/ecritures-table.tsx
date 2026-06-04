@@ -3,9 +3,8 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { CheckCircle2, Circle, Clock, Landmark, Layers, Paperclip, MinusCircle } from 'lucide-react';
+import { Landmark, Layers } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { EcritureStatePair } from '@/components/shared/status-badge';
 import { UniteBadge } from '@/components/shared/unite-badge';
 import { InlineSelect } from '@/components/shared/inline-select';
 import { Amount } from '@/components/shared/amount';
@@ -239,9 +238,6 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
             <TableHead className="w-[92px] text-right whitespace-nowrap">Montant</TableHead>
             <TableHead className="w-[76px] whitespace-nowrap">Unité</TableHead>
             <TableHead className="w-[150px]">Catégorie</TableHead>
-            <TableHead className="w-[108px] whitespace-nowrap">Statut</TableHead>
-            <TableHead className="w-[44px] text-center whitespace-nowrap" title="Champs manquants">⚠</TableHead>
-            <TableHead className="w-[64px] text-center whitespace-nowrap" title="Source / Comptaweb / Justificatif">État</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -295,7 +291,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                   <TableCell className="text-right font-semibold">
                     <Amount cents={g.totalCents} tone="signed" />
                   </TableCell>
-                  <TableCell colSpan={5} className="text-xs text-muted-foreground whitespace-nowrap">
+                  <TableCell colSpan={2} className="text-xs text-muted-foreground whitespace-nowrap">
                     {isCollapsed
                       ? 'cliquer pour déplier'
                       : g.kind === 'bank'
@@ -376,59 +372,11 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     onSave={(v) => updateEcritureField(e.id, 'category_id', v)}
                   />
                 </TableCell>
-                <TableCell className="whitespace-nowrap">
-                  <EcritureStatePair
-                    hasJustif={!!e.has_justificatif}
-                    comptawebSynced={e.comptaweb_synced === 1}
-                  />
-                </TableCell>
-                <TableCell className="text-xs text-center whitespace-nowrap">
-                  {e.missing_fields && e.missing_fields.length > 0 ? (
-                    <span
-                      className="inline-block rounded bg-orange-100 text-orange-800 px-1.5 py-0.5"
-                      title={`Champs manquants : ${e.missing_fields.join(', ')}`}
-                    >
-                      {e.missing_fields.length}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-center whitespace-nowrap">
-                  <span className="inline-flex items-center gap-2">
-                    {e.comptaweb_synced ? (
-                      <CheckCircle2 size={14} strokeWidth={2} className="text-emerald-600" aria-label="Synchronisée Comptaweb">
-                        <title>Synchronisée Comptaweb</title>
-                      </CheckCircle2>
-                    ) : (
-                      <Circle size={14} strokeWidth={1.75} className="text-fg-subtle/40" aria-label="Non synchronisée">
-                        <title>Non synchronisée Comptaweb</title>
-                      </Circle>
-                    )}
-                    {e.has_justificatif ? (
-                      <Paperclip size={14} strokeWidth={2} className="text-emerald-600" aria-label="Justificatif rattaché">
-                        <title>Justificatif rattaché</title>
-                      </Paperclip>
-                    ) : e.justif_attendu === 0 ? (
-                      <MinusCircle size={14} strokeWidth={1.75} className="text-fg-subtle/40" aria-label="Justif non attendu">
-                        <title>Justif non attendu (prélèvement / flux territoire)</title>
-                      </MinusCircle>
-                    ) : e.numero_piece ? (
-                      <Clock size={14} strokeWidth={2} className="text-amber-600" aria-label="En attente">
-                        <title>{`En attente — code Comptaweb ${e.numero_piece}`}</title>
-                      </Clock>
-                    ) : (
-                      <Paperclip size={14} strokeWidth={1.75} className="text-fg-subtle/40" aria-label="Justif manquant">
-                        <title>Justif manquant</title>
-                      </Paperclip>
-                    )}
-                  </span>
-                </TableCell>
               </TableRow>
             );
           })}
           {ecritures.length === 0 && (
-            <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Aucune écriture</TableCell></TableRow>
+            <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Aucune écriture</TableCell></TableRow>
           )}
         </TableBody>
       </Table>
