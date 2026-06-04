@@ -5,6 +5,7 @@ import {
   mirrorStatuses,
   pendingStatuses,
 } from './ecritures-status';
+import { isBouclee } from './ecritures-status';
 
 describe('ecritures-status helpers', () => {
   describe('isMirrorStatus', () => {
@@ -47,5 +48,17 @@ describe('ecritures-status helpers', () => {
     it('pendingStatuses() expose draft + pending_cw + pending_sync', () => {
       expect([...pendingStatuses()].sort()).toEqual(['draft', 'pending_cw', 'pending_sync']);
     });
+  });
+});
+
+describe('isBouclee — frontière À traiter / Bouclées (mirror strict)', () => {
+  it('mirror → bouclée', () => {
+    expect(isBouclee('mirror')).toBe(true);
+  });
+  it('divergent → PAS bouclée (demande un arbitrage humain)', () => {
+    expect(isBouclee('divergent')).toBe(false);
+  });
+  it.each(['draft', 'pending_cw', 'pending_sync'])('%s → PAS bouclée', (s) => {
+    expect(isBouclee(s)).toBe(false);
   });
 });

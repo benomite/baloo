@@ -73,3 +73,11 @@ export function mirrorStatuses(): EcritureStatus[] {
 export function pendingStatuses(): EcritureStatus[] {
   return [...PENDING_STATUSES];
 }
+
+// Frontière stricte du split UI « À traiter » / « Bouclées » :
+// seules les écritures `mirror` (miroir CW propre) sont bouclées.
+// Les `divergent` restent « À traiter » : un écart Baloo ↔ CW a été
+// détecté et demande un arbitrage humain — surtout pas les classer.
+export function isBouclee(status: string): boolean {
+  return status === 'mirror';
+}
