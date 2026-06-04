@@ -30,6 +30,9 @@ export interface EcritureFilters {
   //   `statusIn` prime si les deux sont fournis (fallback `else if`).
   status?: string;
   statusIn?: string[];
+  // Split UI : 'a_traiter' = tout sauf mirror ; 'bouclees' = mirror strict.
+  // Orthogonal à status/statusIn (qui filtrent un statut précis).
+  bucket?: 'a_traiter' | 'bouclees';
   search?: string;
   limit?: number;
   offset?: number;
@@ -109,6 +112,11 @@ export async function listEcritures(
   } else if (filters.status) {
     conditions.push('e.status = ?');
     values.push(filters.status);
+  }
+  if (filters.bucket === 'bouclees') {
+    conditions.push("e.status = 'mirror'");
+  } else if (filters.bucket === 'a_traiter') {
+    conditions.push("e.status <> 'mirror'");
   }
   if (filters.search) {
     // Recherche full-text sur tous les champs lisibles : description,
