@@ -13,6 +13,7 @@ import { FullResyncButton } from '@/components/ecritures/full-resync-button';
 import { ArbitrageBanner } from '@/components/ecritures/arbitrage-banner';
 import { listSupprimeeCw, listAgregesRemplaces, listLinkSuggestions } from '@/lib/queries/sync-arbitrage';
 import { EcrituresInfiniteList } from '@/components/ecritures/ecritures-infinite-list';
+import { EcrituresSection } from '@/components/ecritures/ecritures-section';
 import { EcritureDrawer } from '@/components/ecritures/ecriture-drawer';
 import { getCurrentContext } from '@/lib/context';
 import { requireNotParent } from '@/lib/auth/access';
@@ -42,7 +43,8 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
   // ne payer que le RTT le plus long (au lieu de la somme).
   const detailId = params.detail || undefined;
   const [
-    { ecritures, total },
+    aTraiter,
+    bouclees,
     categories,
     unites,
     modesPaiement,
@@ -56,7 +58,8 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     agregesRemplaces,
     linkSuggestions,
   ] = await Promise.all([
-    listEcritures(filters),
+    listEcritures({ ...filters, bucket: 'a_traiter' }),
+    listEcritures({ ...filters, bucket: 'bouclees' }),
     listCategories(),
     listUnites(),
     listModesPaiement(),
@@ -124,20 +127,35 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
 
       <EcritureFilters categories={categories} unites={unites} cartes={cartes} current={params} />
 
-      <p className="text-sm text-muted-foreground mb-4">{total} écriture{total > 1 ? 's' : ''}</p>
+      <EcrituresSection title="À traiter" count={aTraiter.total} defaultCollapsed={false}>
+        <EcrituresInfiniteList
+          key={`a_traiter:${JSON.stringify(filters)}`}
+          initialEcritures={aTraiter.ecritures}
+          total={aTraiter.total}
+          pageSize={PAGE_SIZE}
+          filters={{ ...filters, bucket: 'a_traiter' }}
+          categories={categories}
+          unites={unites}
+          modesPaiement={modesPaiement}
+          activites={activites}
+          cartes={cartes}
+        />
+      </EcrituresSection>
 
-      <EcrituresInfiniteList
-        key={JSON.stringify(filters)}
-        initialEcritures={ecritures}
-        total={total}
-        pageSize={PAGE_SIZE}
-        filters={filters}
-        categories={categories}
-        unites={unites}
-        modesPaiement={modesPaiement}
-        activites={activites}
-        cartes={cartes}
-      />
+      <EcrituresSection title="Bouclées" count={bouclees.total} defaultCollapsed={true}>
+        <EcrituresInfiniteList
+          key={`bouclees:${JSON.stringify(filters)}`}
+          initialEcritures={bouclees.ecritures}
+          total={bouclees.total}
+          pageSize={PAGE_SIZE}
+          filters={{ ...filters, bucket: 'bouclees' }}
+          categories={categories}
+          unites={unites}
+          modesPaiement={modesPaiement}
+          activites={activites}
+          cartes={cartes}
+        />
+      </EcrituresSection>
 
       {detailEcriture && detailJustifs && detailPendingDepots && (
         <EcritureDrawer
