@@ -36,7 +36,7 @@ export function InlineSelect({ value, options, display, onSave, disabled, placeh
         type="button"
         onClick={() => !disabled && setEditing(true)}
         disabled={disabled}
-        className={`text-left inline-flex items-center -mx-1 px-1 rounded ${disabled ? 'cursor-not-allowed' : 'hover:bg-muted/60 cursor-pointer'}`}
+        className={`text-left inline-flex items-center max-w-full min-w-0 -mx-1 px-1 rounded ${disabled ? 'cursor-not-allowed' : 'hover:bg-muted/60 cursor-pointer'}`}
         title={disabled ? 'Non modifiable' : 'Cliquer pour modifier'}
       >
         {display}

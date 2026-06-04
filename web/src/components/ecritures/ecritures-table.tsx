@@ -218,7 +218,11 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
 
   return (
     <div>
-      <Table>
+      {/* `table-fixed` : la largeur du tableau = celle du conteneur. Les
+          colonnes ont des largeurs explicites (sauf Description, flexible),
+          et le contenu long tronque au lieu d'élargir le tableau → jamais
+          de scroll horizontal. */}
+      <Table className="table-fixed">
         <TableHeader>
           <TableRow>
             <TableHead className="w-8">
@@ -230,14 +234,14 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                 disabled={editableIds.length === 0}
               />
             </TableHead>
-            <TableHead className="whitespace-nowrap">Date</TableHead>
+            <TableHead className="w-[92px] whitespace-nowrap">Date</TableHead>
             <TableHead>Description</TableHead>
-            <TableHead className="text-right whitespace-nowrap">Montant</TableHead>
-            <TableHead className="whitespace-nowrap">Unité</TableHead>
-            <TableHead>Catégorie</TableHead>
-            <TableHead className="whitespace-nowrap">Statut</TableHead>
-            <TableHead className="text-center whitespace-nowrap" title="Champs manquants">⚠</TableHead>
-            <TableHead className="text-center whitespace-nowrap" title="Source / Comptaweb / Justificatif">État</TableHead>
+            <TableHead className="w-[92px] text-right whitespace-nowrap">Montant</TableHead>
+            <TableHead className="w-[76px] whitespace-nowrap">Unité</TableHead>
+            <TableHead className="w-[150px]">Catégorie</TableHead>
+            <TableHead className="w-[108px] whitespace-nowrap">Statut</TableHead>
+            <TableHead className="w-[44px] text-center whitespace-nowrap" title="Champs manquants">⚠</TableHead>
+            <TableHead className="w-[64px] text-center whitespace-nowrap" title="Source / Comptaweb / Justificatif">État</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -332,7 +336,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                   />
                 </TableCell>
                 <TableCell className="whitespace-nowrap">{e.date_ecriture}</TableCell>
-                <TableCell className="max-w-[280px]">
+                <TableCell>
                   <Link
                     href={detailHref(e.id)}
                     className="hover:underline block truncate"
@@ -362,7 +366,13 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     disabled={!editable}
                     placeholder="Aucune"
                     options={categories.map((c) => ({ value: c.id, label: c.name }))}
-                    display={<span>{e.category_name ?? <span className="text-muted-foreground">—</span>}</span>}
+                    display={
+                      e.category_name ? (
+                        <span className="block truncate" title={e.category_name}>{e.category_name}</span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )
+                    }
                     onSave={(v) => updateEcritureField(e.id, 'category_id', v)}
                   />
                 </TableCell>
