@@ -1,6 +1,7 @@
 import Link from 'next/link';
-import { ChevronDown, FileText, Link2, Paperclip, X } from 'lucide-react';
+import { ChevronDown, FileText, Link2, Paperclip, Plus, X } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert } from '@/components/ui/alert';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -72,6 +73,14 @@ export default async function DepotsPage({
           depots.length > 0
             ? `${depots.length} justificatif${depots.length > 1 ? 's' : ''} en attente de rapprochement.`
             : undefined
+        }
+        actions={
+          <Link href="/depot">
+            <Button>
+              <Plus size={15} strokeWidth={2.25} />
+              Nouveau dépôt
+            </Button>
+          </Link>
         }
       />
 
