@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Landmark, Layers } from 'lucide-react';
@@ -10,6 +10,8 @@ import { InlineSelect } from '@/components/shared/inline-select';
 import { Amount } from '@/components/shared/amount';
 import { BatchEditBar } from './batch-edit-bar';
 import { updateEcritureField } from '@/lib/actions/ecritures';
+import { suggestMatchForEcriture, type MatchDepot, type MatchRemboursement } from '@/lib/services/ecriture-match';
+import { EcritureMatchBanner } from './ecriture-match-banner';
 import type { Ecriture, Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
 
 interface Props {
@@ -19,6 +21,8 @@ interface Props {
   modesPaiement: ModePaiement[];
   activites: Activite[];
   cartes: Carte[];
+  matchDepots: MatchDepot[];
+  matchRembs: MatchRemboursement[];
 }
 
 // Extrait l'intitulé parent bancaire depuis les notes de draft
@@ -74,7 +78,7 @@ type Item =
   | { kind: 'header'; key: string; group: Group }
   | { kind: 'row'; key: string; ecriture: Ecriture; index: number; group: Group | null };
 
-export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes }: Props) {
+export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes, matchDepots, matchRembs }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -315,64 +319,80 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
             const rowBg = isSelected ? 'bg-primary/5' : style ? style.rowBg : '';
             const railColor = e.unite_couleur || (style ? style.rowRail : null);
             const railShadow = railColor ? { boxShadow: `inset 3px 0 0 0 ${railColor}` } : undefined;
+            const match =
+              !e.has_justificatif && !e.remboursement_id && (matchDepots.length > 0 || matchRembs.length > 0)
+                ? suggestMatchForEcriture(
+                    { amount_cents: e.amount_cents, date_ecriture: e.date_ecriture },
+                    matchDepots,
+                    matchRembs,
+                  )
+                : null;
             return (
-              <TableRow
-                key={item.key}
-                className={`${rowBg} cursor-pointer hover:bg-muted/30 transition-colors`}
-                onClick={onRowClick(e.id)}
-              >
-                <TableCell style={railShadow} onClick={stop}>
-                  <input
-                    type="checkbox"
-                    aria-label={`Sélectionner ${e.id}`}
-                    checked={isSelected}
-                    onChange={(ev) => toggleRow(item.index, (ev.nativeEvent as MouseEvent).shiftKey)}
-                    disabled={!editable}
-                    title={editable ? 'Shift+clic pour sélectionner une plage' : 'Écriture synchronisée Comptaweb — non modifiable'}
-                  />
-                </TableCell>
-                <TableCell className="whitespace-nowrap">{e.date_ecriture}</TableCell>
-                <TableCell>
-                  <Link
-                    href={detailHref(e.id)}
-                    className="hover:underline block truncate"
-                    title={`${e.description} — clic pour ouvrir le panneau d'édition`}
-                    scroll={false}
-                    onClick={stop}
-                  >
-                    {e.description}
-                  </Link>
-                </TableCell>
-                <TableCell className="text-right font-medium">
-                  <Amount cents={e.amount_cents} tone={e.type === 'depense' ? 'negative' : 'positive'} />
-                </TableCell>
-                <TableCell onClick={stop}>
-                  <InlineSelect
-                    value={e.unite_id}
-                    disabled={!editable}
-                    placeholder="Aucune unité"
-                    options={unites.map((u) => ({ value: u.id, label: `${u.code} — ${u.name}` }))}
-                    display={<UniteBadge code={e.unite_code} name={e.unite_name} couleur={e.unite_couleur} />}
-                    onSave={(v) => updateEcritureField(e.id, 'unite_id', v)}
-                  />
-                </TableCell>
-                <TableCell className="text-sm" onClick={stop}>
-                  <InlineSelect
-                    value={e.category_id}
-                    disabled={!editable}
-                    placeholder="Aucune"
-                    options={categories.map((c) => ({ value: c.id, label: c.name }))}
-                    display={
-                      e.category_name ? (
-                        <span className="block truncate" title={e.category_name}>{e.category_name}</span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )
-                    }
-                    onSave={(v) => updateEcritureField(e.id, 'category_id', v)}
-                  />
-                </TableCell>
-              </TableRow>
+              <Fragment key={item.key}>
+                <TableRow
+                  className={`${rowBg} cursor-pointer hover:bg-muted/30 transition-colors`}
+                  onClick={onRowClick(e.id)}
+                >
+                  <TableCell style={railShadow} onClick={stop}>
+                    <input
+                      type="checkbox"
+                      aria-label={`Sélectionner ${e.id}`}
+                      checked={isSelected}
+                      onChange={(ev) => toggleRow(item.index, (ev.nativeEvent as MouseEvent).shiftKey)}
+                      disabled={!editable}
+                      title={editable ? 'Shift+clic pour sélectionner une plage' : 'Écriture synchronisée Comptaweb — non modifiable'}
+                    />
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">{e.date_ecriture}</TableCell>
+                  <TableCell>
+                    <Link
+                      href={detailHref(e.id)}
+                      className="hover:underline block truncate"
+                      title={`${e.description} — clic pour ouvrir le panneau d'édition`}
+                      scroll={false}
+                      onClick={stop}
+                    >
+                      {e.description}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="text-right font-medium">
+                    <Amount cents={e.amount_cents} tone={e.type === 'depense' ? 'negative' : 'positive'} />
+                  </TableCell>
+                  <TableCell onClick={stop}>
+                    <InlineSelect
+                      value={e.unite_id}
+                      disabled={!editable}
+                      placeholder="Aucune unité"
+                      options={unites.map((u) => ({ value: u.id, label: `${u.code} — ${u.name}` }))}
+                      display={<UniteBadge code={e.unite_code} name={e.unite_name} couleur={e.unite_couleur} />}
+                      onSave={(v) => updateEcritureField(e.id, 'unite_id', v)}
+                    />
+                  </TableCell>
+                  <TableCell className="text-sm" onClick={stop}>
+                    <InlineSelect
+                      value={e.category_id}
+                      disabled={!editable}
+                      placeholder="Aucune"
+                      options={categories.map((c) => ({ value: c.id, label: c.name }))}
+                      display={
+                        e.category_name ? (
+                          <span className="block truncate" title={e.category_name}>{e.category_name}</span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )
+                      }
+                      onSave={(v) => updateEcritureField(e.id, 'category_id', v)}
+                    />
+                  </TableCell>
+                </TableRow>
+                {match && (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={6} className="py-1.5">
+                      <EcritureMatchBanner match={match} ecritureId={e.id} />
+                    </TableCell>
+                  </TableRow>
+                )}
+              </Fragment>
             );
           })}
           {ecritures.length === 0 && (

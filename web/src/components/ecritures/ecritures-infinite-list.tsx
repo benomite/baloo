@@ -6,6 +6,7 @@ import { EcrituresTable } from './ecritures-table';
 import { fetchEcrituresPage } from '@/lib/actions/ecritures';
 import type { EcritureFilters } from '@/lib/queries/ecritures';
 import type { Ecriture, Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
+import type { MatchDepot, MatchRemboursement } from '@/lib/services/ecriture-match';
 
 interface Props {
   initialEcritures: Ecriture[];
@@ -17,6 +18,8 @@ interface Props {
   modesPaiement: ModePaiement[];
   activites: Activite[];
   cartes: Carte[];
+  matchDepots: MatchDepot[];
+  matchRembs: MatchRemboursement[];
 }
 
 /**
@@ -36,6 +39,8 @@ export function EcrituresInfiniteList({
   modesPaiement,
   activites,
   cartes,
+  matchDepots,
+  matchRembs,
 }: Props) {
   const [rows, setRows] = useState<Ecriture[]>(initialEcritures);
   const [loading, setLoading] = useState(false);
@@ -91,6 +96,8 @@ export function EcrituresInfiniteList({
         modesPaiement={modesPaiement}
         activites={activites}
         cartes={cartes}
+        matchDepots={matchDepots}
+        matchRembs={matchRembs}
       />
 
       <div ref={sentinelRef} className="h-px" aria-hidden />

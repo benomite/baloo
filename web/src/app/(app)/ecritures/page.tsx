@@ -6,7 +6,8 @@ import { TabLink } from '@/components/shared/tab-link';
 import { listEcritures, getEcriture } from '@/lib/queries/ecritures';
 import { listCategories, listUnites, listModesPaiement, listActivites, listCartes, getTopCategoryIds } from '@/lib/queries/reference';
 import { listJustificatifsForEcriture } from '@/lib/queries/justificatifs';
-import { listDepots } from '@/lib/services/depots';
+import { listDepots, listAllAttachableRemboursements } from '@/lib/services/depots';
+import type { MatchDepot, MatchRemboursement } from '@/lib/services/ecriture-match';
 import { EcritureFilters } from '@/components/ecritures/ecriture-filters';
 import { ScanDraftsButton } from '@/components/ecritures/scan-drafts-button';
 import { FullResyncButton } from '@/components/ecritures/full-resync-button';
@@ -27,6 +28,7 @@ const PAGE_SIZE = 100;
 export default async function EcrituresPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const ctx = await getCurrentContext();
   requireNotParent(ctx.role);
+  const canLink = ctx.role === 'tresorier' || ctx.role === 'RG';
   const params = await searchParams;
   const exercice = currentExercice();
   const filters = {
@@ -61,6 +63,8 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     agregesRemplaces,
     linkSuggestions,
     headerTotals,
+    rawMatchDepots,
+    rawMatchRembs,
   ] = await Promise.all([
     listEcritures({ ...filters, bucket: 'a_traiter' }),
     listEcritures({ ...filters, bucket: 'bouclees' }),
@@ -81,7 +85,22 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     listAgregesRemplaces(ctx.groupId),
     listLinkSuggestions(ctx.groupId),
     getEcrituresHeaderTotals({ groupId: ctx.groupId }, { exercice }),
+    canLink ? listDepots({ groupId: ctx.groupId }, { statut: 'a_traiter' }) : Promise.resolve([]),
+    canLink ? listAllAttachableRemboursements({ groupId: ctx.groupId }) : Promise.resolve([]),
   ]);
+
+  const matchDepots: MatchDepot[] = rawMatchDepots.map((d) => ({
+    id: d.id,
+    amount_cents: d.amount_cents,
+    date_estimee: d.date_estimee,
+    titre: d.titre,
+  }));
+  const matchRembs: MatchRemboursement[] = rawMatchRembs.map((r) => ({
+    id: r.id,
+    total_cents: r.total_cents,
+    date_depense: r.date_depense,
+    demandeur: r.demandeur,
+  }));
 
   const presetQS = (preset: 'all' | 'incomplete' | 'from_bank' | 'sans_unite') => {
     const sp = new URLSearchParams();
@@ -152,6 +171,8 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
           modesPaiement={modesPaiement}
           activites={activites}
           cartes={cartes}
+          matchDepots={matchDepots}
+          matchRembs={matchRembs}
         />
       </EcrituresSection>
 
@@ -167,6 +188,8 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
           modesPaiement={modesPaiement}
           activites={activites}
           cartes={cartes}
+          matchDepots={matchDepots}
+          matchRembs={matchRembs}
         />
       </EcrituresSection>
 
