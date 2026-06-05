@@ -13,6 +13,15 @@ export interface OverviewFilters {
   exercice?: string | null; // 'YYYY-YYYY+1' ex: '2025-2026'
 }
 
+// Catégories « hors résultat » : comptes de transfert / trésorerie qui ne
+// sont ni des recettes ni des dépenses réelles, juste de l'argent qui se
+// déplace. Les inclure dans un « résultat » le fausse — ex. un dépôt
+// d'espèces (caisse → banque) compté comme une dépense, ou les flux entre
+// structures SGDF (circulation, pas une perte). Exclues du solde de tête
+// (getOverview) et du bandeau Écritures. Le détail PAR CATÉGORIE, lui, les
+// montre toujours (transparence). Cf. analyse du 2026-06-05.
+export const CATEGORIES_HORS_RESULTAT = ['cat-depot-especes', 'cat-flux-structures'] as const;
+
 export function exerciceBounds(exercice: string): { start: string; end: string } {
   const m = exercice.match(/^(\d{4})-(\d{4})$/);
   if (!m) throw new Error(`Exercice invalide : ${exercice}`);
@@ -127,15 +136,20 @@ export async function getOverview(
     dateValues.push(start, end);
   }
 
+  // Solde de tête HORS catégories de transfert (cf. CATEGORIES_HORS_RESULTAT) :
+  // cohérent avec le bandeau « Résultat de l'exercice ». Le détail par
+  // catégorie plus bas garde, lui, toutes les catégories.
+  const exclusClause = ` AND (e.category_id IS NULL OR e.category_id NOT IN (${CATEGORIES_HORS_RESULTAT.map(() => '?').join(',')}))`;
+
   const dep = await db.prepare(
     `SELECT COALESCE(SUM(amount_cents), 0) as total FROM ecritures e
-     WHERE e.group_id = ? AND e.type = 'depense'${dateClause}`,
-  ).get<{ total: number }>(groupId, ...dateValues);
+     WHERE e.group_id = ? AND e.type = 'depense'${dateClause}${exclusClause}`,
+  ).get<{ total: number }>(groupId, ...dateValues, ...CATEGORIES_HORS_RESULTAT);
 
   const rec = await db.prepare(
     `SELECT COALESCE(SUM(amount_cents), 0) as total FROM ecritures e
-     WHERE e.group_id = ? AND e.type = 'recette'${dateClause}`,
-  ).get<{ total: number }>(groupId, ...dateValues);
+     WHERE e.group_id = ? AND e.type = 'recette'${dateClause}${exclusClause}`,
+  ).get<{ total: number }>(groupId, ...dateValues, ...CATEGORIES_HORS_RESULTAT);
 
   const saison = filters.exercice ?? currentExercice();
   const saisonClause = filters.exercice ? 'AND r.saison = ?' : '';
@@ -437,14 +451,6 @@ export async function getUniteOverview(
     repartitions,
   };
 }
-
-// Catégories « hors résultat » : comptes de transfert / trésorerie qui ne
-// sont ni des recettes ni des dépenses réelles, juste de l'argent qui se
-// déplace. Les inclure dans un « résultat » le fausse — ex. un dépôt
-// d'espèces (caisse → banque) compté comme une dépense, ou les flux entre
-// structures SGDF (circulation, pas une perte). On les exclut du calcul du
-// résultat affiché dans le bandeau. Cf. analyse du 2026-06-05.
-export const CATEGORIES_HORS_RESULTAT = ['cat-depot-especes', 'cat-flux-structures'] as const;
 
 export interface EcrituresHeaderTotals {
   exercice: string;
