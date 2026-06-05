@@ -15,7 +15,6 @@ import { ArbitrageBanner } from '@/components/ecritures/arbitrage-banner';
 import { listSupprimeeCw, listAgregesRemplaces, listLinkSuggestions } from '@/lib/queries/sync-arbitrage';
 import { EcrituresInfiniteList } from '@/components/ecritures/ecritures-infinite-list';
 import { EcrituresSection } from '@/components/ecritures/ecritures-section';
-import { EcritureDrawer } from '@/components/ecritures/ecriture-drawer';
 import { getCurrentContext } from '@/lib/context';
 import { requireNotParent } from '@/lib/auth/access';
 import { getEcrituresHeaderTotals, currentExercice } from '@/lib/services/overview';
@@ -102,6 +101,11 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     demandeur: r.demandeur,
   }));
 
+  const detail =
+    detailEcriture && detailJustifs && detailPendingDepots
+      ? { ecriture: detailEcriture, justifsBundle: detailJustifs, pendingDepots: detailPendingDepots }
+      : null;
+
   const presetQS = (preset: 'all' | 'incomplete' | 'from_bank' | 'sans_unite') => {
     const sp = new URLSearchParams();
     if (preset === 'incomplete') sp.set('incomplete', '1');
@@ -173,6 +177,8 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
           cartes={cartes}
           matchDepots={matchDepots}
           matchRembs={matchRembs}
+          detail={detail}
+          topCategoryIds={topCategoryIds}
         />
       </EcrituresSection>
 
@@ -190,22 +196,11 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
           cartes={cartes}
           matchDepots={matchDepots}
           matchRembs={matchRembs}
+          detail={detail}
+          topCategoryIds={topCategoryIds}
         />
       </EcrituresSection>
 
-      {detailEcriture && detailJustifs && detailPendingDepots && (
-        <EcritureDrawer
-          ecriture={detailEcriture}
-          justifsBundle={detailJustifs}
-          pendingDepots={detailPendingDepots}
-          categories={categories}
-          topCategoryIds={topCategoryIds}
-          unites={unites}
-          modesPaiement={modesPaiement}
-          activites={activites}
-          cartes={cartes}
-        />
-      )}
     </div>
   );
 }
