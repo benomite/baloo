@@ -111,10 +111,11 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
       </PageHeader>
 
       <EcrituresFinancialHeader
-        soldeExerciceCents={headerTotals.soldeExerciceCents}
+        resultatExerciceCents={headerTotals.resultatExerciceCents}
         exercice={headerTotals.exercice}
         entreesExerciceCents={headerTotals.entreesExerciceCents}
         sortiesExerciceCents={headerTotals.sortiesExerciceCents}
+        soldeCaisseCents={headerTotals.soldeCaisseCents}
       />
 
       {/* Tabs underline (style Linear / Stripe) — plus subtil que des

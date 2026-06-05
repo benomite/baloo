@@ -438,25 +438,37 @@ export async function getUniteOverview(
   };
 }
 
+// Catégories « hors résultat » : comptes de transfert / trésorerie qui ne
+// sont ni des recettes ni des dépenses réelles, juste de l'argent qui se
+// déplace. Les inclure dans un « résultat » le fausse — ex. un dépôt
+// d'espèces (caisse → banque) compté comme une dépense, ou les flux entre
+// structures SGDF (circulation, pas une perte). On les exclut du calcul du
+// résultat affiché dans le bandeau. Cf. analyse du 2026-06-05.
+export const CATEGORIES_HORS_RESULTAT = ['cat-depot-especes', 'cat-flux-structures'] as const;
+
 export interface EcrituresHeaderTotals {
   exercice: string;
-  soldeExerciceCents: number;
+  // « Résultat » = recettes − dépenses HORS catégories de transfert.
+  resultatExerciceCents: number;
   entreesExerciceCents: number;
   sortiesExerciceCents: number;
+  // Solde courant de la caisse espèces (toutes dates, mouvements non
+  // archivés) — non compté dans le résultat ci-dessus (table séparée).
+  soldeCaisseCents: number;
 }
 
 // Totaux du bandeau de la vue Écritures. `now.exercice` est calculé par
 // l'appelant (page RSC) — pas de `new Date()` ici, pour que la fonction
-// reste déterministe. Volontairement GLOBAL (pas filter-aware) : le solde
-// de l'exercice est une ancre stable, indépendante des filtres UI. On
-// expose aussi entrées (recettes) / sorties (dépenses) de l'exercice pour
-// rendre le solde lisible (solde = entrées − sorties).
+// reste déterministe. Volontairement GLOBAL (pas filter-aware) : le résultat
+// de l'exercice est une ancre stable, indépendante des filtres UI. Entrées /
+// sorties sont exposées HORS transferts pour que résultat = entrées − sorties.
 export async function getEcrituresHeaderTotals(
   { groupId }: OverviewContext,
   now: { exercice: string },
 ): Promise<EcrituresHeaderTotals> {
   const db = getDb();
   const { start, end } = exerciceBounds(now.exercice);
+  const exclus = CATEGORIES_HORS_RESULTAT.map(() => '?').join(',');
 
   const exo = await db
     .prepare(
@@ -464,16 +476,29 @@ export async function getEcrituresHeaderTotals(
          COALESCE(SUM(CASE WHEN type = 'recette' THEN amount_cents ELSE 0 END), 0) as rec,
          COALESCE(SUM(CASE WHEN type = 'depense' THEN amount_cents ELSE 0 END), 0) as dep
        FROM ecritures
-       WHERE group_id = ? AND date_ecriture >= ? AND date_ecriture <= ?`,
+       WHERE group_id = ? AND date_ecriture >= ? AND date_ecriture <= ?
+         AND (category_id IS NULL OR category_id NOT IN (${exclus}))`,
     )
-    .get<{ rec: number; dep: number }>(groupId, start, end);
+    .get<{ rec: number; dep: number }>(groupId, start, end, ...CATEGORIES_HORS_RESULTAT);
+
+  // Solde caisse : somme des mouvements espèces non archivés (entrées
+  // positives, dépôts vers banque négatifs). Point-in-time, pas borné à
+  // l'exercice. Table distincte de `ecritures`.
+  const caisse = await db
+    .prepare(
+      `SELECT COALESCE(SUM(amount_cents), 0) as total
+       FROM mouvements_caisse
+       WHERE group_id = ? AND archived_at IS NULL`,
+    )
+    .get<{ total: number }>(groupId);
 
   const exoRec = exo?.rec ?? 0;
   const exoDep = exo?.dep ?? 0;
   return {
     exercice: now.exercice,
-    soldeExerciceCents: exoRec - exoDep,
+    resultatExerciceCents: exoRec - exoDep,
     entreesExerciceCents: exoRec,
     sortiesExerciceCents: exoDep,
+    soldeCaisseCents: caisse?.total ?? 0,
   };
 }
