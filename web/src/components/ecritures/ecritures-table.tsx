@@ -12,7 +12,10 @@ import { BatchEditBar } from './batch-edit-bar';
 import { updateEcritureField } from '@/lib/actions/ecritures';
 import { suggestMatchForEcriture, type MatchDepot, type MatchRemboursement } from '@/lib/services/ecriture-match';
 import { EcritureMatchBanner } from './ecriture-match-banner';
+import { EcritureInlinePanel } from './ecriture-inline-panel';
 import type { Ecriture, Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
+import type { EcritureJustifsBundle } from '@/lib/queries/justificatifs';
+import type { DepotEnriched } from '@/lib/services/depots';
 
 interface Props {
   ecritures: Ecriture[];
@@ -23,6 +26,8 @@ interface Props {
   cartes: Carte[];
   matchDepots: MatchDepot[];
   matchRembs: MatchRemboursement[];
+  detail: { ecriture: Ecriture; justifsBundle: EcritureJustifsBundle; pendingDepots: DepotEnriched[] } | null;
+  topCategoryIds: string[];
 }
 
 // Extrait l'intitulé parent bancaire depuis les notes de draft
@@ -78,7 +83,7 @@ type Item =
   | { kind: 'header'; key: string; group: Group }
   | { kind: 'row'; key: string; ecriture: Ecriture; index: number; group: Group | null };
 
-export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes, matchDepots, matchRembs }: Props) {
+export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes, matchDepots, matchRembs, detail, topCategoryIds }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -90,6 +95,13 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
   const onRowClick = (id: string) => (ev: React.MouseEvent) => {
     if (ev.metaKey || ev.ctrlKey || ev.button === 1) {
       window.open(`/ecritures/${id}`, '_blank');
+      return;
+    }
+    if (detail?.ecriture.id === id) {
+      const sp = new URLSearchParams(searchParams.toString());
+      sp.delete('detail');
+      const qs = sp.toString();
+      router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
       return;
     }
     router.push(detailHref(id), { scroll: false });
@@ -327,10 +339,11 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     matchRembs,
                   )
                 : null;
+            const isOpen = detail?.ecriture.id === e.id;
             return (
               <Fragment key={item.key}>
                 <TableRow
-                  className={`${rowBg} cursor-pointer hover:bg-muted/30 transition-colors`}
+                  className={`${rowBg} ${isOpen ? 'bg-muted/40' : ''} cursor-pointer hover:bg-muted/30 transition-colors`}
                   onClick={onRowClick(e.id)}
                 >
                   <TableCell style={railShadow} onClick={stop}>
@@ -389,6 +402,23 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={6} className="py-1.5">
                       <EcritureMatchBanner match={match} ecritureId={e.id} />
+                    </TableCell>
+                  </TableRow>
+                )}
+                {isOpen && detail && (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={6} className="p-0 pb-2">
+                      <EcritureInlinePanel
+                        ecriture={detail.ecriture}
+                        justifsBundle={detail.justifsBundle}
+                        pendingDepots={detail.pendingDepots}
+                        categories={categories}
+                        topCategoryIds={topCategoryIds}
+                        unites={unites}
+                        modesPaiement={modesPaiement}
+                        activites={activites}
+                        cartes={cartes}
+                      />
                     </TableCell>
                   </TableRow>
                 )}
