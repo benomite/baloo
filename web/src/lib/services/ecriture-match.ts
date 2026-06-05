@@ -35,27 +35,27 @@ export function suggestMatchForEcriture(
   depots: MatchDepot[],
   rembs: MatchRemboursement[],
 ): EcritureMatch | null {
-  let best: { match: EcritureMatch; dist: number; pref: number } | null = null;
-  const consider = (match: EcritureMatch, dist: number, pref: number) => {
-    if (!best || dist < best.dist || (dist === best.dist && pref < best.pref)) {
-      best = { match, dist, pref };
-    }
-  };
+  // Collecte puis tri (pas de mutation dans une closure : TS ne sait pas
+  // suivre l'affectation capturée et réduit la variable à `never`).
+  // pref : 0 = dépôt, 1 = remboursement → à égalité de date, le dépôt gagne.
+  const candidates: { match: EcritureMatch; dist: number; pref: number }[] = [];
 
   for (const d of depots) {
     if (d.amount_cents == null || d.date_estimee == null) continue;
     if (!amountMatches(ecriture.amount_cents, d.amount_cents)) continue;
     const dist = dayDiff(ecriture.date_ecriture, d.date_estimee);
     if (dist > DATE_TOL_DAYS) continue;
-    consider({ kind: 'depot', id: d.id, label: d.titre }, dist, 0);
+    candidates.push({ match: { kind: 'depot', id: d.id, label: d.titre }, dist, pref: 0 });
   }
   for (const r of rembs) {
     if (r.date_depense == null) continue;
     if (!amountMatches(ecriture.amount_cents, r.total_cents)) continue;
     const dist = dayDiff(ecriture.date_ecriture, r.date_depense);
     if (dist > DATE_TOL_DAYS) continue;
-    consider({ kind: 'remboursement', id: r.id, label: r.demandeur }, dist, 1);
+    candidates.push({ match: { kind: 'remboursement', id: r.id, label: r.demandeur }, dist, pref: 1 });
   }
 
-  return best ? best.match : null;
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => a.dist - b.dist || a.pref - b.pref);
+  return candidates[0].match;
 }
