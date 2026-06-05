@@ -10,6 +10,7 @@ import {
   attachDepotToRemboursement as attachDepotToRemboursementService,
 } from '../services/depots';
 import { parseAmount } from '../format';
+import { setRembsEcritureLink } from '@/lib/services/remboursement-ecriture-link';
 
 const SUBMIT_ROLES = ['tresorier', 'RG', 'chef', 'equipier'] as const;
 const ADMIN_ROLES = ['tresorier', 'RG'] as const;
@@ -135,6 +136,29 @@ export async function attachDepotToRemboursement(formData: FormData): Promise<vo
   revalidatePath('/depots');
   revalidatePath(`/remboursements/${remboursementId}`);
   redirect('/depots?attached=' + encodeURIComponent(depotId));
+}
+
+// Lie un remboursement actif à une écriture depuis la vue Écritures
+// (bannière de correspondance). L'écriture compte alors comme justifiée
+// (la feuille de remboursement fait office de justif). Admin only.
+export async function lierRemboursementDepuisEcriture(formData: FormData): Promise<void> {
+  const ctx = await getCurrentContext();
+  if (!isAdminRole(ctx.role)) {
+    redirect('/ecritures?error=' + encodeURIComponent('Action réservée aux trésoriers / RG.'));
+  }
+  const ecritureId = formData.get('ecriture_id') as string | null;
+  const remboursementId = formData.get('remboursement_id') as string | null;
+  if (!ecritureId || !remboursementId) {
+    redirect('/ecritures?error=' + encodeURIComponent('Écriture et remboursement requis.'));
+  }
+  const result = await setRembsEcritureLink(ctx.groupId, remboursementId!, ecritureId!);
+  if (!result.ok) {
+    redirect(`/ecritures/${ecritureId}?error=` + encodeURIComponent(result.error ?? 'Liaison refusée.'));
+  }
+  revalidatePath('/remboursements');
+  revalidatePath(`/remboursements/${remboursementId}`);
+  revalidatePath(`/ecritures/${ecritureId}`);
+  redirect(`/ecritures/${ecritureId}`);
 }
 
 // Variante de l'action : sens inverse (l'utilisateur est sur la fiche
