@@ -5,6 +5,8 @@ import { Loader2 } from 'lucide-react';
 import { EcrituresTable } from './ecritures-table';
 import { fetchEcrituresPage } from '@/lib/actions/ecritures';
 import type { EcritureFilters } from '@/lib/queries/ecritures';
+import type { EcritureJustifsBundle } from '@/lib/queries/justificatifs';
+import type { DepotEnriched } from '@/lib/services/depots';
 import type { Ecriture, Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
 import type { MatchDepot, MatchRemboursement } from '@/lib/services/ecriture-match';
 
@@ -20,6 +22,8 @@ interface Props {
   cartes: Carte[];
   matchDepots: MatchDepot[];
   matchRembs: MatchRemboursement[];
+  detail: { ecriture: Ecriture; justifsBundle: EcritureJustifsBundle; pendingDepots: DepotEnriched[] } | null;
+  topCategoryIds: string[];
 }
 
 /**
@@ -41,6 +45,8 @@ export function EcrituresInfiniteList({
   cartes,
   matchDepots,
   matchRembs,
+  detail,
+  topCategoryIds,
 }: Props) {
   const [rows, setRows] = useState<Ecriture[]>(initialEcritures);
   const [loading, setLoading] = useState(false);
@@ -98,6 +104,8 @@ export function EcrituresInfiniteList({
         cartes={cartes}
         matchDepots={matchDepots}
         matchRembs={matchRembs}
+        detail={detail}
+        topCategoryIds={topCategoryIds}
       />
 
       <div ref={sentinelRef} className="h-px" aria-hidden />
