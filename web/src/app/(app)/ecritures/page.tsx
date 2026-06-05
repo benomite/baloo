@@ -17,6 +17,8 @@ import { EcrituresSection } from '@/components/ecritures/ecritures-section';
 import { EcritureDrawer } from '@/components/ecritures/ecriture-drawer';
 import { getCurrentContext } from '@/lib/context';
 import { requireNotParent } from '@/lib/auth/access';
+import { getEcrituresHeaderTotals, currentExercice } from '@/lib/services/overview';
+import { EcrituresFinancialHeader } from '@/components/ecritures/ecritures-financial-header';
 
 // Taille de page du chargement progressif (infinite scroll). La première
 // page est servie côté serveur ; les suivantes via la server action.
@@ -26,6 +28,8 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
   const ctx = await getCurrentContext();
   requireNotParent(ctx.role);
   const params = await searchParams;
+  const exercice = currentExercice();
+  const mois = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
   const filters = {
     type: params.type || undefined,
     unite_id: params.unite_id || undefined,
@@ -57,6 +61,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     supprimeesCw,
     agregesRemplaces,
     linkSuggestions,
+    headerTotals,
   ] = await Promise.all([
     listEcritures({ ...filters, bucket: 'a_traiter' }),
     listEcritures({ ...filters, bucket: 'bouclees' }),
@@ -76,6 +81,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     listSupprimeeCw(ctx.groupId),
     listAgregesRemplaces(ctx.groupId),
     listLinkSuggestions(ctx.groupId),
+    getEcrituresHeaderTotals({ groupId: ctx.groupId }, { exercice, mois }),
   ]);
 
   const presetQS = (preset: 'all' | 'incomplete' | 'from_bank' | 'sans_unite') => {
@@ -104,6 +110,13 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
         <ScanDraftsButton />
         <Link href="/ecritures/nouveau"><Button>Nouvelle écriture</Button></Link>
       </PageHeader>
+
+      <EcrituresFinancialHeader
+        soldeExerciceCents={headerTotals.soldeExerciceCents}
+        exercice={headerTotals.exercice}
+        entreesMoisCents={headerTotals.entreesMoisCents}
+        sortiesMoisCents={headerTotals.sortiesMoisCents}
+      />
 
       {/* Tabs underline (style Linear / Stripe) — plus subtil que des
           pill-buttons remplis. Le tab actif a un trait coloré sous le
