@@ -7,13 +7,13 @@ import { Amount } from '@/components/shared/amount';
 export function EcrituresFinancialHeader({
   soldeExerciceCents,
   exercice,
-  entreesMoisCents,
-  sortiesMoisCents,
+  entreesExerciceCents,
+  sortiesExerciceCents,
 }: {
   soldeExerciceCents: number;
   exercice: string;
-  entreesMoisCents: number;
-  sortiesMoisCents: number;
+  entreesExerciceCents: number;
+  sortiesExerciceCents: number;
 }) {
   return (
     <div className="mb-6 rounded-xl border border-border-soft bg-bg-elevated px-5 py-4 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
@@ -31,9 +31,9 @@ export function EcrituresFinancialHeader({
             <ArrowUpRight size={15} strokeWidth={2.25} />
           </span>
           <div>
-            <div className="text-[11px] text-fg-subtle">Entrées du mois</div>
+            <div className="text-[11px] text-fg-subtle">Entrées de l&apos;exercice</div>
             <div className="font-semibold tabular-nums text-fg">
-              <Amount cents={entreesMoisCents} tone="positive" />
+              <Amount cents={entreesExerciceCents} tone="positive" />
             </div>
           </div>
         </div>
@@ -42,9 +42,9 @@ export function EcrituresFinancialHeader({
             <ArrowDownRight size={15} strokeWidth={2.25} />
           </span>
           <div>
-            <div className="text-[11px] text-fg-subtle">Sorties du mois</div>
+            <div className="text-[11px] text-fg-subtle">Sorties de l&apos;exercice</div>
             <div className="font-semibold tabular-nums text-fg">
-              <Amount cents={sortiesMoisCents} tone="negative" />
+              <Amount cents={sortiesExerciceCents} tone="negative" />
             </div>
           </div>
         </div>

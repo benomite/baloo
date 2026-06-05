@@ -29,7 +29,6 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
   requireNotParent(ctx.role);
   const params = await searchParams;
   const exercice = currentExercice();
-  const mois = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
   const filters = {
     type: params.type || undefined,
     unite_id: params.unite_id || undefined,
@@ -81,7 +80,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     listSupprimeeCw(ctx.groupId),
     listAgregesRemplaces(ctx.groupId),
     listLinkSuggestions(ctx.groupId),
-    getEcrituresHeaderTotals({ groupId: ctx.groupId }, { exercice, mois }),
+    getEcrituresHeaderTotals({ groupId: ctx.groupId }, { exercice }),
   ]);
 
   const presetQS = (preset: 'all' | 'incomplete' | 'from_bank' | 'sans_unite') => {
@@ -114,8 +113,8 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
       <EcrituresFinancialHeader
         soldeExerciceCents={headerTotals.soldeExerciceCents}
         exercice={headerTotals.exercice}
-        entreesMoisCents={headerTotals.entreesMoisCents}
-        sortiesMoisCents={headerTotals.sortiesMoisCents}
+        entreesExerciceCents={headerTotals.entreesExerciceCents}
+        sortiesExerciceCents={headerTotals.sortiesExerciceCents}
       />
 
       {/* Tabs underline (style Linear / Stripe) — plus subtil que des

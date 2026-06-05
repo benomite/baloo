@@ -441,18 +441,19 @@ export async function getUniteOverview(
 export interface EcrituresHeaderTotals {
   exercice: string;
   soldeExerciceCents: number;
-  mois: string; // 'YYYY-MM'
-  entreesMoisCents: number;
-  sortiesMoisCents: number;
+  entreesExerciceCents: number;
+  sortiesExerciceCents: number;
 }
 
-// Totaux du bandeau de la vue Écritures. `now` (exercice + mois) est
-// calculé par l'appelant (page RSC) — pas de `new Date()` ici, pour que
-// la fonction reste déterministe. Volontairement GLOBAL (pas filter-aware) :
-// le solde de l'exercice est une ancre stable, indépendante des filtres UI.
+// Totaux du bandeau de la vue Écritures. `now.exercice` est calculé par
+// l'appelant (page RSC) — pas de `new Date()` ici, pour que la fonction
+// reste déterministe. Volontairement GLOBAL (pas filter-aware) : le solde
+// de l'exercice est une ancre stable, indépendante des filtres UI. On
+// expose aussi entrées (recettes) / sorties (dépenses) de l'exercice pour
+// rendre le solde lisible (solde = entrées − sorties).
 export async function getEcrituresHeaderTotals(
   { groupId }: OverviewContext,
-  now: { exercice: string; mois: string },
+  now: { exercice: string },
 ): Promise<EcrituresHeaderTotals> {
   const db = getDb();
   const { start, end } = exerciceBounds(now.exercice);
@@ -467,23 +468,12 @@ export async function getEcrituresHeaderTotals(
     )
     .get<{ rec: number; dep: number }>(groupId, start, end);
 
-  const mois = await db
-    .prepare(
-      `SELECT
-         COALESCE(SUM(CASE WHEN type = 'recette' THEN amount_cents ELSE 0 END), 0) as rec,
-         COALESCE(SUM(CASE WHEN type = 'depense' THEN amount_cents ELSE 0 END), 0) as dep
-       FROM ecritures
-       WHERE group_id = ? AND date_ecriture LIKE ?`,
-    )
-    .get<{ rec: number; dep: number }>(groupId, `${now.mois}%`);
-
   const exoRec = exo?.rec ?? 0;
   const exoDep = exo?.dep ?? 0;
   return {
     exercice: now.exercice,
     soldeExerciceCents: exoRec - exoDep,
-    mois: now.mois,
-    entreesMoisCents: mois?.rec ?? 0,
-    sortiesMoisCents: mois?.dep ?? 0,
+    entreesExerciceCents: exoRec,
+    sortiesExerciceCents: exoDep,
   };
 }
