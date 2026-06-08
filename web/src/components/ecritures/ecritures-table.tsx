@@ -1,10 +1,9 @@
 'use client';
 
-import { Fragment, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Landmark, Layers } from 'lucide-react';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { UniteBadge } from '@/components/shared/unite-badge';
 import { InlineSelect } from '@/components/shared/inline-select';
 import { Amount } from '@/components/shared/amount';
@@ -13,6 +12,8 @@ import { updateEcritureField } from '@/lib/actions/ecritures';
 import { suggestMatchForEcriture, type MatchDepot, type MatchRemboursement } from '@/lib/services/ecriture-match';
 import { EcritureMatchBanner } from './ecriture-match-banner';
 import { EcritureInlinePanel } from './ecriture-inline-panel';
+import { computeReadiness } from '@/lib/sync-readiness';
+import { ValiderCwButton } from './valider-cw-button';
 import type { Ecriture, Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
 import type { EcritureJustifsBundle } from '@/lib/queries/justificatifs';
 import type { DepotEnriched } from '@/lib/services/depots';
@@ -28,6 +29,12 @@ interface Props {
   matchRembs: MatchRemboursement[];
   detail: { ecriture: Ecriture; justifsBundle: EcritureJustifsBundle; pendingDepots: DepotEnriched[] } | null;
   topCategoryIds: string[];
+}
+
+const MOIS_COURTS = ['janv', 'févr', 'mars', 'avr', 'mai', 'juin', 'juil', 'août', 'sept', 'oct', 'nov', 'déc'];
+function moisCourt(dateIso: string): string {
+  const m = parseInt(dateIso.slice(5, 7), 10);
+  return MOIS_COURTS[m - 1] ?? '';
 }
 
 // Extrait l'intitulé parent bancaire depuis les notes de draft
@@ -233,30 +240,19 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
 
   return (
     <div>
-      {/* `table-fixed` : la largeur du tableau = celle du conteneur. Les
-          colonnes ont des largeurs explicites (sauf Description, flexible),
-          et le contenu long tronque au lieu d'élargir le tableau → jamais
-          de scroll horizontal. */}
-      <Table className="table-fixed">
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-8">
-              <input
-                type="checkbox"
-                aria-label="Tout sélectionner"
-                checked={allEditableSelected}
-                onChange={toggleAll}
-                disabled={editableIds.length === 0}
-              />
-            </TableHead>
-            <TableHead className="w-[92px] whitespace-nowrap">Date</TableHead>
-            <TableHead>Description</TableHead>
-            <TableHead className="w-[92px] text-right whitespace-nowrap">Montant</TableHead>
-            <TableHead className="w-[76px] whitespace-nowrap">Unité</TableHead>
-            <TableHead className="w-[150px]">Catégorie</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
+      <div className="rounded-xl border border-border-soft bg-bg-elevated overflow-hidden">
+        {editableIds.length > 0 && (
+          <div className="flex items-center gap-2 px-3 h-9 border-b border-border-soft bg-bg-sunken/40 text-[11.5px] text-fg-muted">
+            <input
+              type="checkbox"
+              aria-label="Tout sélectionner"
+              checked={allEditableSelected}
+              onChange={toggleAll}
+            />
+            <span>Tout sélectionner</span>
+          </div>
+        )}
+        <div className="divide-y divide-border-soft">
           {items.map((item) => {
             if (item.kind === 'header') {
               const g = item.group;
@@ -265,56 +261,43 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
               const style = GROUP_STYLE[g.kind];
               const editableInGroup = groupEntries(g).filter(isEditable);
               return (
-                <TableRow
+                <div
                   key={item.key}
-                  className={`${style.headerBg} cursor-pointer`}
+                  className={`flex items-center gap-2.5 px-3 py-2 cursor-pointer text-xs text-muted-foreground ${style.headerBg}`}
                   onClick={() => toggleGroup(g)}
+                  style={isCollapsed ? undefined : { boxShadow: `inset 3px 0 0 0 ${style.rail}` }}
                 >
-                  <TableCell
-                    onClick={(e) => e.stopPropagation()}
-                    style={isCollapsed ? undefined : { boxShadow: `inset 3px 0 0 0 ${style.rail}` }}
-                  >
-                    {editableInGroup.length > 0 ? (
-                      <input
-                        type="checkbox"
-                        aria-label={`Sélectionner le groupe ${gk}`}
-                        onChange={() => selectGroup(g)}
-                        checked={editableInGroup.every((x) => selected.has(x.id))}
-                      />
-                    ) : null}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground" colSpan={2}>
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="text-xs">{isCollapsed ? '▶' : '▼'}</span>
-                      {g.kind === 'bank' ? (
-                        <Landmark size={13} className="text-muted-foreground" />
-                      ) : (
-                        <Layers size={13} className="text-indigo-500 dark:text-indigo-400" />
-                      )}
-                      <span className="font-medium">
-                        {g.kind === 'bank' ? 'Ligne bancaire' : 'Écriture Comptaweb'}
-                      </span>
-                      <code className="text-[11px]">{g.sublabel}</code>
-                      <span className="text-muted-foreground">·</span>
-                      <span className="truncate max-w-md">{g.label}</span>
-                      <span className="text-muted-foreground">·</span>
-                      <span>
-                        {g.count} {g.kind === 'bank' ? 'sous-ligne' : 'ventilation'}
-                        {g.count > 1 ? 's' : ''}
-                      </span>
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right font-semibold">
+                  {editableInGroup.length > 0 ? (
+                    <input
+                      type="checkbox"
+                      aria-label={`Sélectionner le groupe ${gk}`}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={() => selectGroup(g)}
+                      checked={editableInGroup.every((x) => selected.has(x.id))}
+                    />
+                  ) : (
+                    <span className="w-[13px]" />
+                  )}
+                  <span className="text-xs">{isCollapsed ? '▶' : '▼'}</span>
+                  {g.kind === 'bank' ? (
+                    <Landmark size={13} className="text-muted-foreground" />
+                  ) : (
+                    <Layers size={13} className="text-indigo-500 dark:text-indigo-400" />
+                  )}
+                  <span className="font-medium">
+                    {g.kind === 'bank' ? 'Ligne bancaire' : 'Écriture Comptaweb'}
+                  </span>
+                  <code className="text-[11px]">{g.sublabel}</code>
+                  <span>·</span>
+                  <span className="truncate max-w-md">{g.label}</span>
+                  <span className="hidden sm:inline">·</span>
+                  <span className="hidden sm:inline">
+                    {g.count} {g.kind === 'bank' ? 'sous-ligne' : 'ventilation'}{g.count > 1 ? 's' : ''}
+                  </span>
+                  <span className="ml-auto font-semibold tabular-nums">
                     <Amount cents={g.totalCents} tone="signed" />
-                  </TableCell>
-                  <TableCell colSpan={2} className="text-xs text-muted-foreground whitespace-nowrap">
-                    {isCollapsed
-                      ? 'cliquer pour déplier'
-                      : g.kind === 'bank'
-                        ? 'total des sous-lignes visibles'
-                        : 'une écriture Comptaweb éclatée par ventilation'}
-                  </TableCell>
-                </TableRow>
+                  </span>
+                </div>
               );
             }
 
@@ -340,48 +323,51 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                   )
                 : null;
             const isOpen = detail?.ecriture.id === e.id;
+            const readiness = computeReadiness(e, { categories, unites, modesPaiement, activites });
+            const showValider = e.status === 'draft';
             return (
-              <Fragment key={item.key}>
-                <TableRow
-                  className={`${rowBg} ${isOpen ? 'bg-muted/40' : ''} cursor-pointer hover:bg-muted/30 transition-colors`}
+              <div key={item.key}>
+                <div
+                  className={`group/row flex items-start gap-3 px-3 py-2.5 cursor-pointer transition-colors ${rowBg} ${isOpen ? 'bg-muted/40' : 'hover:bg-muted/30'}`}
+                  style={railShadow}
                   onClick={onRowClick(e.id)}
                 >
-                  <TableCell style={railShadow} onClick={stop}>
-                    <input
-                      type="checkbox"
-                      aria-label={`Sélectionner ${e.id}`}
-                      checked={isSelected}
-                      onChange={(ev) => toggleRow(item.index, (ev.nativeEvent as MouseEvent).shiftKey)}
-                      disabled={!editable}
-                      title={editable ? 'Shift+clic pour sélectionner une plage' : 'Écriture synchronisée Comptaweb — non modifiable'}
-                    />
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">{e.date_ecriture}</TableCell>
-                  <TableCell>
+                  <input
+                    type="checkbox"
+                    className="mt-1.5"
+                    aria-label={`Sélectionner ${e.id}`}
+                    checked={isSelected}
+                    onClick={stop}
+                    onChange={(ev) => toggleRow(item.index, (ev.nativeEvent as MouseEvent).shiftKey)}
+                    disabled={!editable}
+                    title={editable ? 'Shift+clic pour sélectionner une plage' : 'Écriture synchronisée Comptaweb — non modifiable'}
+                  />
+                  <div className="shrink-0 w-10 text-center leading-none pt-0.5">
+                    <div className="text-[15px] font-semibold tabular-nums text-fg">{e.date_ecriture.slice(8, 10)}</div>
+                    <div className="text-[9.5px] uppercase tracking-wide text-fg-subtle">{moisCourt(e.date_ecriture)}</div>
+                  </div>
+                  <div className="flex-1 min-w-0">
                     <Link
                       href={detailHref(e.id)}
-                      className="hover:underline block truncate"
-                      title={`${e.description} — clic pour ouvrir le panneau d'édition`}
                       scroll={false}
                       onClick={stop}
+                      className="block truncate font-medium text-[13.5px] text-fg hover:underline"
+                      title={e.description}
                     >
                       {e.description}
                     </Link>
-                  </TableCell>
-                  <TableCell className="text-right font-medium">
-                    <Amount cents={e.amount_cents} tone={e.type === 'depense' ? 'negative' : 'positive'} />
-                  </TableCell>
-                  <TableCell onClick={stop}>
-                    <InlineSelect
-                      value={e.unite_id}
-                      disabled={!editable}
-                      placeholder="Aucune unité"
-                      options={unites.map((u) => ({ value: u.id, label: `${u.code} — ${u.name}` }))}
-                      display={<UniteBadge code={e.unite_code} name={e.unite_name} couleur={e.unite_couleur} />}
-                      onSave={(v) => updateEcritureField(e.id, 'unite_id', v)}
-                    />
-                  </TableCell>
-                  <TableCell className="text-sm" onClick={stop}>
+                    <div className="mt-1 flex items-center gap-2" onClick={stop}>
+                      <InlineSelect
+                        value={e.unite_id}
+                        disabled={!editable}
+                        placeholder="Aucune unité"
+                        options={unites.map((u) => ({ value: u.id, label: `${u.code} — ${u.name}` }))}
+                        display={<UniteBadge code={e.unite_code} name={e.unite_name} couleur={e.unite_couleur} />}
+                        onSave={(v) => updateEcritureField(e.id, 'unite_id', v)}
+                      />
+                    </div>
+                  </div>
+                  <div className="shrink-0 w-[150px] text-sm self-center" onClick={stop}>
                     <InlineSelect
                       value={e.category_id}
                       disabled={!editable}
@@ -396,40 +382,48 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                       }
                       onSave={(v) => updateEcritureField(e.id, 'category_id', v)}
                     />
-                  </TableCell>
-                </TableRow>
+                  </div>
+                  <div className="shrink-0 w-[92px] text-right font-medium tabular-nums self-center">
+                    <Amount cents={e.amount_cents} tone={e.type === 'depense' ? 'negative' : 'positive'} />
+                  </div>
+                  <div className="shrink-0 w-[88px] flex justify-end self-center" onClick={stop}>
+                    {showValider && (
+                      <ValiderCwButton
+                        ecritureId={e.id}
+                        disabled={readiness.level === 'incomplete'}
+                        missing={readiness.missingFields}
+                      />
+                    )}
+                  </div>
+                </div>
                 {match && (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={6} className="py-1.5">
-                      <EcritureMatchBanner match={match} ecritureId={e.id} />
-                    </TableCell>
-                  </TableRow>
+                  <div className="px-3 pb-2 pl-16">
+                    <EcritureMatchBanner match={match} ecritureId={e.id} />
+                  </div>
                 )}
                 {isOpen && detail && (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={6} className="p-0 pb-2">
-                      <EcritureInlinePanel
-                        ecriture={detail.ecriture}
-                        justifsBundle={detail.justifsBundle}
-                        pendingDepots={detail.pendingDepots}
-                        categories={categories}
-                        topCategoryIds={topCategoryIds}
-                        unites={unites}
-                        modesPaiement={modesPaiement}
-                        activites={activites}
-                        cartes={cartes}
-                      />
-                    </TableCell>
-                  </TableRow>
+                  <div className="px-3 pb-2">
+                    <EcritureInlinePanel
+                      ecriture={detail.ecriture}
+                      justifsBundle={detail.justifsBundle}
+                      pendingDepots={detail.pendingDepots}
+                      categories={categories}
+                      topCategoryIds={topCategoryIds}
+                      unites={unites}
+                      modesPaiement={modesPaiement}
+                      activites={activites}
+                      cartes={cartes}
+                    />
+                  </div>
                 )}
-              </Fragment>
+              </div>
             );
           })}
           {ecritures.length === 0 && (
-            <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Aucune écriture</TableCell></TableRow>
+            <div className="text-center text-muted-foreground py-8 text-sm">Aucune écriture</div>
           )}
-        </TableBody>
-      </Table>
+        </div>
+      </div>
 
       {selected.size > 0 && (
         <BatchEditBar
