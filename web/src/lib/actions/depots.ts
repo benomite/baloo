@@ -138,29 +138,6 @@ export async function attachDepotToRemboursement(formData: FormData): Promise<vo
   redirect('/depots?attached=' + encodeURIComponent(depotId));
 }
 
-// Lie un remboursement actif à une écriture depuis la vue Écritures
-// (bannière de correspondance). L'écriture compte alors comme justifiée
-// (la feuille de remboursement fait office de justif). Admin only.
-export async function lierRemboursementDepuisEcriture(formData: FormData): Promise<void> {
-  const ctx = await getCurrentContext();
-  if (!isAdminRole(ctx.role)) {
-    redirect('/ecritures?error=' + encodeURIComponent('Action réservée aux trésoriers / RG.'));
-  }
-  const ecritureId = formData.get('ecriture_id') as string | null;
-  const remboursementId = formData.get('remboursement_id') as string | null;
-  if (!ecritureId || !remboursementId) {
-    redirect('/ecritures?error=' + encodeURIComponent('Écriture et remboursement requis.'));
-  }
-  const result = await setRembsEcritureLink(ctx.groupId, remboursementId!, ecritureId!);
-  if (!result.ok) {
-    redirect(`/ecritures/${ecritureId}?error=` + encodeURIComponent(result.error ?? 'Liaison refusée.'));
-  }
-  revalidatePath('/remboursements');
-  revalidatePath(`/remboursements/${remboursementId}`);
-  revalidatePath(`/ecritures/${ecritureId}`);
-  redirect(`/ecritures/${ecritureId}`);
-}
-
 // Variante de l'action : sens inverse (l'utilisateur est sur la fiche
 // écriture et choisit un dépôt en attente à y rattacher). Même logique,
 // redirection finale différente.
