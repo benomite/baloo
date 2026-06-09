@@ -29,6 +29,8 @@ interface Props {
   rejectedMatchKeys: string[];
   detail: { ecriture: Ecriture; justifsBundle: EcritureJustifsBundle; pendingDepots: DepotEnriched[] } | null;
   topCategoryIds: string[];
+  // Rafraîchit une ligne précise après mutation (Lier, etc.).
+  refreshRow: (id: string) => void | Promise<void>;
 }
 
 const MOIS_COURTS = ['janv', 'févr', 'mars', 'avr', 'mai', 'juin', 'juil', 'août', 'sept', 'oct', 'nov', 'déc'];
@@ -90,7 +92,7 @@ type Item =
   | { kind: 'header'; key: string; group: Group }
   | { kind: 'row'; key: string; ecriture: Ecriture; index: number; group: Group | null };
 
-export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes, matchDepots, matchRembs, rejectedMatchKeys, topCategoryIds }: Props) {
+export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes, matchDepots, matchRembs, rejectedMatchKeys, topCategoryIds, refreshRow }: Props) {
   const rejectedMatchSet = useMemo(() => new Set(rejectedMatchKeys), [rejectedMatchKeys]);
   // Ouverture du panneau d'édition = état CLIENT pur (pas de navigation
   // `?detail` : elle relançait toute la page → lent, et `useSearchParams`
@@ -389,7 +391,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                 </div>
                 {match && (
                   <div className="px-3 pb-2 pl-16">
-                    <EcritureMatchBanner match={match} ecritureId={e.id} />
+                    <EcritureMatchBanner match={match} ecritureId={e.id} refreshRow={refreshRow} />
                   </div>
                 )}
                 {isOpen && (

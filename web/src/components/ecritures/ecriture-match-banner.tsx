@@ -15,9 +15,13 @@ import type { EcritureMatch } from '@/lib/services/ecriture-match';
 export function EcritureMatchBanner({
   match,
   ecritureId,
+  refreshRow,
 }: {
   match: EcritureMatch;
   ecritureId: string;
+  // Rafraîchit la ligne après liaison (les infos recopiées — unité/catégorie
+  // — apparaissent sans recharger la page).
+  refreshRow?: (id: string) => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [dismissed, setDismissed] = useState(false);
@@ -31,10 +35,11 @@ export function EcritureMatchBanner({
         : await linkRembToEcriture(match.id, ecritureId);
       if (res.ok) {
         toast.success('Rattaché à l’écriture.');
-        // Masquage immédiat de la bannière (la liste garde ses lignes en
-        // état client, donc un router.refresh() ne les rafraîchit pas — le
-        // rattachement est persisté, reflété au prochain chargement).
+        // Masquage immédiat + rafraîchissement de la ligne : les infos
+        // recopiées depuis le dépôt/remboursement (unité/catégorie) et le
+        // lien apparaissent sans recharger toute la liste.
         setDismissed(true);
+        void refreshRow?.(ecritureId);
       } else {
         toast.error(res.error ?? 'Liaison impossible.');
       }

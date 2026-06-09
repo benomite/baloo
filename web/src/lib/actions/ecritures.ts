@@ -175,3 +175,11 @@ export async function fetchEcritureDetail(id: string): Promise<{
   ]);
   return { ecriture, justifsBundle, pendingDepots };
 }
+
+// Recharge UNE écriture avec ses champs d'affichage (unité/catégorie joints,
+// has_justificatif, remboursement_id) — pour rafraîchir une seule ligne du
+// tableau après une mutation (ex. « Lier »), sans recharger toute la liste.
+export async function fetchEcritureRow(id: string): Promise<Ecriture | null> {
+  const ecriture = await getEcriture(id);
+  return ecriture ?? null;
+}

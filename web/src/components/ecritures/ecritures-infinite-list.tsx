@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { EcrituresTable } from './ecritures-table';
-import { fetchEcrituresPage } from '@/lib/actions/ecritures';
+import { fetchEcrituresPage, fetchEcritureRow } from '@/lib/actions/ecritures';
 import type { EcritureFilters } from '@/lib/queries/ecritures';
 import type { EcritureJustifsBundle } from '@/lib/queries/justificatifs';
 import type { DepotEnriched } from '@/lib/services/depots';
@@ -82,6 +82,14 @@ export function EcrituresInfiniteList({
     }
   }, [rows.length, filters, done, total, pageSize]);
 
+  // Rafraîchit UNE ligne après mutation (ex. « Lier ») : re-fetch l'écriture
+  // mise à jour et la remplace en place dans `rows` — sans recharger toute la
+  // liste ni perdre le scroll / les pages déjà chargées.
+  const refreshRow = useCallback(async (id: string) => {
+    const fresh = await fetchEcritureRow(id);
+    if (fresh) setRows((prev) => prev.map((r) => (r.id === id ? fresh : r)));
+  }, []);
+
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el || done) return;
@@ -109,6 +117,7 @@ export function EcrituresInfiniteList({
         rejectedMatchKeys={rejectedMatchKeys}
         detail={detail}
         topCategoryIds={topCategoryIds}
+        refreshRow={refreshRow}
       />
 
       <div ref={sentinelRef} className="h-px" aria-hidden />
