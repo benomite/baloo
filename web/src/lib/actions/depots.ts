@@ -183,3 +183,34 @@ export async function attachDepotFromEcriture(formData: FormData): Promise<void>
   revalidatePath(`/ecritures/${ecritureId}`);
   redirect(`/ecritures/${ecritureId}`);
 }
+
+// Variantes « en place » de la liaison depuis la bannière de correspondance :
+// renvoient un résultat au lieu de rediriger, pour rester dans la vue liste.
+export async function linkDepotToEcriture(
+  depotId: string,
+  ecritureId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const ctx = await getCurrentContext();
+  if (!isAdminRole(ctx.role)) return { ok: false, error: 'Action réservée aux trésoriers / RG.' };
+  try {
+    await attachDepotToEcritureService({ groupId: ctx.groupId }, depotId, ecritureId);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  revalidatePath('/ecritures');
+  revalidatePath('/depots');
+  return { ok: true };
+}
+
+export async function linkRembToEcriture(
+  remboursementId: string,
+  ecritureId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const ctx = await getCurrentContext();
+  if (!isAdminRole(ctx.role)) return { ok: false, error: 'Action réservée aux trésoriers / RG.' };
+  const result = await setRembsEcritureLink(ctx.groupId, remboursementId, ecritureId);
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath('/ecritures');
+  revalidatePath('/remboursements');
+  return { ok: true };
+}
