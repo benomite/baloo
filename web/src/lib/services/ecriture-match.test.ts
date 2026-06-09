@@ -1,15 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { suggestMatchForEcriture } from './ecriture-match';
 
-const depot = (over = {}) => ({ id: 'DEP1', amount_cents: 5000, date_estimee: '2026-01-10', titre: 'Courses', ...over });
-const remb = (over = {}) => ({ id: 'RBT1', total_cents: 5000, date_depense: '2026-01-10', demandeur: 'Alice', ...over });
+const depot = (over = {}) => ({ id: 'DEP1', amount_cents: 5000, date_estimee: '2026-01-10', titre: 'Courses', uniteCode: 'PC', categoryName: 'Intendance', ...over });
+const remb = (over = {}) => ({ id: 'RBT1', total_cents: 5000, date_depense: '2026-01-10', demandeur: 'Alice', uniteCode: 'LJ', status: 'virement_effectue', ...over });
 const ecr = { amount_cents: 5000, date_ecriture: '2026-01-10' };
 
 describe('suggestMatchForEcriture', () => {
-  it('match dépôt exact (montant + date)', () => {
-    expect(suggestMatchForEcriture(ecr, [depot()], [])).toEqual({ kind: 'depot', id: 'DEP1', label: 'Courses' });
+  it('match dépôt exact → champs d\'affichage', () => {
+    expect(suggestMatchForEcriture(ecr, [depot()], [])).toEqual({
+      kind: 'depot', id: 'DEP1', label: 'Courses', amountCents: 5000, date: '2026-01-10', uniteCode: 'PC', detail: 'Intendance',
+    });
   });
-  it('match dans la tolérance ±10% montant / ±15j date', () => {
+  it('match remboursement → champs d\'affichage', () => {
+    expect(suggestMatchForEcriture(ecr, [], [remb()])).toEqual({
+      kind: 'remboursement', id: 'RBT1', label: 'Alice', amountCents: 5000, date: '2026-01-10', uniteCode: 'LJ', detail: 'virement_effectue',
+    });
+  });
+  it('tolérance ±10% / ±15j', () => {
     expect(suggestMatchForEcriture(ecr, [depot({ amount_cents: 5400, date_estimee: '2026-01-22' })], [])).not.toBeNull();
   });
   it('rejet hors tolérance montant', () => {
@@ -18,24 +25,16 @@ describe('suggestMatchForEcriture', () => {
   it('rejet hors tolérance date', () => {
     expect(suggestMatchForEcriture(ecr, [depot({ date_estimee: '2026-02-15' })], [])).toBeNull();
   });
-  it('tolérance plancher 1€ pour petits montants', () => {
-    expect(suggestMatchForEcriture(
-      { amount_cents: 200, date_ecriture: '2026-01-10' },
-      [depot({ amount_cents: 250 })], [],
-    )).not.toBeNull();
+  it('plancher 1€', () => {
+    expect(suggestMatchForEcriture({ amount_cents: 200, date_ecriture: '2026-01-10' }, [depot({ amount_cents: 250 })], [])).not.toBeNull();
   });
   it('ignore dépôt sans montant ou sans date', () => {
     expect(suggestMatchForEcriture(ecr, [depot({ amount_cents: null }), depot({ date_estimee: null })], [])).toBeNull();
-  });
-  it('match remboursement', () => {
-    expect(suggestMatchForEcriture(ecr, [], [remb()])).toEqual({ kind: 'remboursement', id: 'RBT1', label: 'Alice' });
   });
   it('à égalité de date, préfère le dépôt', () => {
     expect(suggestMatchForEcriture(ecr, [depot()], [remb()])?.kind).toBe('depot');
   });
   it('choisit le plus proche en date', () => {
-    const loin = depot({ id: 'DEP_LOIN', date_estimee: '2026-01-20' });
-    const proche = depot({ id: 'DEP_PROCHE', date_estimee: '2026-01-11' });
-    expect(suggestMatchForEcriture(ecr, [loin, proche], [])?.id).toBe('DEP_PROCHE');
+    expect(suggestMatchForEcriture(ecr, [depot({ id: 'LOIN', date_estimee: '2026-01-20' }), depot({ id: 'PROCHE', date_estimee: '2026-01-11' })], [])?.id).toBe('PROCHE');
   });
 });

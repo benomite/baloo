@@ -8,16 +8,26 @@ export interface MatchDepot {
   amount_cents: number | null;
   date_estimee: string | null;
   titre: string;
+  uniteCode: string | null;
+  categoryName: string | null;
 }
 export interface MatchRemboursement {
   id: string;
   total_cents: number;
   date_depense: string | null;
   demandeur: string;
+  uniteCode: string | null;
+  status: string;
 }
-export type EcritureMatch =
-  | { kind: 'depot'; id: string; label: string }
-  | { kind: 'remboursement'; id: string; label: string };
+export interface EcritureMatch {
+  kind: 'depot' | 'remboursement';
+  id: string;
+  label: string;
+  amountCents: number | null;
+  date: string | null;
+  uniteCode: string | null;
+  detail: string | null;
+}
 
 const DATE_TOL_DAYS = 15;
 
@@ -45,14 +55,20 @@ export function suggestMatchForEcriture(
     if (!amountMatches(ecriture.amount_cents, d.amount_cents)) continue;
     const dist = dayDiff(ecriture.date_ecriture, d.date_estimee);
     if (dist > DATE_TOL_DAYS) continue;
-    candidates.push({ match: { kind: 'depot', id: d.id, label: d.titre }, dist, pref: 0 });
+    candidates.push({
+      match: { kind: 'depot', id: d.id, label: d.titre, amountCents: d.amount_cents, date: d.date_estimee, uniteCode: d.uniteCode, detail: d.categoryName },
+      dist, pref: 0,
+    });
   }
   for (const r of rembs) {
     if (r.date_depense == null) continue;
     if (!amountMatches(ecriture.amount_cents, r.total_cents)) continue;
     const dist = dayDiff(ecriture.date_ecriture, r.date_depense);
     if (dist > DATE_TOL_DAYS) continue;
-    candidates.push({ match: { kind: 'remboursement', id: r.id, label: r.demandeur }, dist, pref: 1 });
+    candidates.push({
+      match: { kind: 'remboursement', id: r.id, label: r.demandeur, amountCents: r.total_cents, date: r.date_depense, uniteCode: r.uniteCode, detail: r.status },
+      dist, pref: 1,
+    });
   }
 
   if (candidates.length === 0) return null;
