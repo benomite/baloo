@@ -1,11 +1,17 @@
-import { Link2 } from 'lucide-react';
-import { PendingButton } from '@/components/shared/pending-button';
-import { attachDepotFromEcriture, lierRemboursementDepuisEcriture } from '@/lib/actions/depots';
+'use client';
+
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { ChevronDown, Link2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Amount } from '@/components/shared/amount';
+import { linkDepotToEcriture, linkRembToEcriture } from '@/lib/actions/depots';
 import type { EcritureMatch } from '@/lib/services/ecriture-match';
 
-// Bannière « un dépôt / remboursement semble correspondre · Lier » affichée
-// sous une écriture sans justif. Un seul bouton (form server action). Admin
-// only (la page ne fournit les pools qu'aux admins).
+// Bannière « un dépôt / remboursement semble correspondre ». Dépliable
+// (clic → détails pour vérifier le match) et « Lier » en place (toast +
+// refresh, aucune navigation). Admin only (pools fournis aux admins).
 export function EcritureMatchBanner({
   match,
   ecritureId,
@@ -13,46 +19,61 @@ export function EcritureMatchBanner({
   match: EcritureMatch;
   ecritureId: string;
 }) {
-  if (match.kind === 'depot') {
-    return (
-      <Banner
-        text={
-          <>
-            Un dépôt <b className="font-medium">« {match.label} »</b> semble correspondre
-          </>
-        }
-      >
-        <form action={attachDepotFromEcriture}>
-          <input type="hidden" name="depot_id" value={match.id} />
-          <input type="hidden" name="ecriture_id" value={ecritureId} />
-          <PendingButton size="xs">Lier</PendingButton>
-        </form>
-      </Banner>
-    );
-  }
-  return (
-    <Banner
-      text={
-        <>
-          Un remboursement de <b className="font-medium">{match.label}</b> semble correspondre
-        </>
-      }
-    >
-      <form action={lierRemboursementDepuisEcriture}>
-        <input type="hidden" name="remboursement_id" value={match.id} />
-        <input type="hidden" name="ecriture_id" value={ecritureId} />
-        <PendingButton size="xs">Lier</PendingButton>
-      </form>
-    </Banner>
-  );
-}
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
+  const isDepot = match.kind === 'depot';
 
-function Banner({ text, children }: { text: React.ReactNode; children: React.ReactNode }) {
+  const lier = () =>
+    startTransition(async () => {
+      const res = isDepot
+        ? await linkDepotToEcriture(match.id, ecritureId)
+        : await linkRembToEcriture(match.id, ecritureId);
+      if (res.ok) {
+        toast.success('Rattaché à l’écriture.');
+        router.refresh();
+      } else {
+        toast.error(res.error ?? 'Liaison impossible.');
+      }
+    });
+
   return (
-    <div className="flex items-center gap-2 rounded-md bg-amber-50 dark:bg-amber-950/25 px-2.5 py-1.5 text-[12px] text-amber-900 dark:text-amber-200">
-      <Link2 size={13} strokeWidth={2} className="shrink-0" />
-      <span className="min-w-0 truncate">{text}</span>
-      <div className="ml-auto shrink-0">{children}</div>
+    <div className="rounded-md bg-amber-50 dark:bg-amber-950/25 text-amber-900 dark:text-amber-200">
+      <div className="flex items-center gap-2 px-2.5 py-1.5 text-[12px]">
+        <Link2 size={13} strokeWidth={2} className="shrink-0" />
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="min-w-0 flex items-center gap-1 text-left hover:underline"
+          aria-expanded={open}
+        >
+          <span className="truncate">
+            {isDepot ? (
+              <>Un dépôt <b className="font-medium">« {match.label} »</b> semble correspondre</>
+            ) : (
+              <>Un remboursement de <b className="font-medium">{match.label}</b> semble correspondre</>
+            )}
+          </span>
+          <ChevronDown size={12} strokeWidth={2.25} className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+        <div className="ml-auto shrink-0">
+          <Button size="xs" disabled={pending} onClick={lier}>Lier</Button>
+        </div>
+      </div>
+      {open && (
+        <dl className="mx-2.5 mb-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 border-t border-amber-200/60 dark:border-amber-900/40 pt-1.5 text-[11.5px]">
+          <dt className="text-amber-700/80 dark:text-amber-300/70">Montant</dt>
+          <dd className="tabular-nums font-medium">
+            {match.amountCents != null ? <Amount cents={match.amountCents} /> : '—'}
+          </dd>
+          <dt className="text-amber-700/80 dark:text-amber-300/70">Date</dt>
+          <dd className="tabular-nums">{match.date ?? '—'}</dd>
+          <dt className="text-amber-700/80 dark:text-amber-300/70">Unité</dt>
+          <dd>{match.uniteCode ?? '—'}</dd>
+          <dt className="text-amber-700/80 dark:text-amber-300/70">{isDepot ? 'Catégorie' : 'Statut'}</dt>
+          <dd>{match.detail ?? '—'}</dd>
+        </dl>
+      )}
     </div>
   );
 }
