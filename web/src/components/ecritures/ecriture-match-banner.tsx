@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 import { ChevronDown, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -23,7 +22,6 @@ export function EcritureMatchBanner({
   const [open, setOpen] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [pending, startTransition] = useTransition();
-  const router = useRouter();
   const isDepot = match.kind === 'depot';
 
   const lier = () =>
@@ -33,7 +31,10 @@ export function EcritureMatchBanner({
         : await linkRembToEcriture(match.id, ecritureId);
       if (res.ok) {
         toast.success('Rattaché à l’écriture.');
-        router.refresh();
+        // Masquage immédiat de la bannière (la liste garde ses lignes en
+        // état client, donc un router.refresh() ne les rafraîchit pas — le
+        // rattachement est persisté, reflété au prochain chargement).
+        setDismissed(true);
       } else {
         toast.error(res.error ?? 'Liaison impossible.');
       }
