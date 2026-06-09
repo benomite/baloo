@@ -3,9 +3,8 @@ import { Calculator } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/page-header';
 import { TabLink } from '@/components/shared/tab-link';
-import { listEcritures, getEcriture } from '@/lib/queries/ecritures';
+import { listEcritures } from '@/lib/queries/ecritures';
 import { listCategories, listUnites, listModesPaiement, listActivites, listCartes, getTopCategoryIds } from '@/lib/queries/reference';
-import { listJustificatifsForEcriture } from '@/lib/queries/justificatifs';
 import { listDepots, listAllAttachableRemboursements } from '@/lib/services/depots';
 import { loadRejectedPairKeys } from '@/lib/services/inbox-rejets';
 import type { MatchDepot, MatchRemboursement } from '@/lib/services/ecriture-match';
@@ -46,7 +45,6 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
   };
   // Toutes ces queries sont indépendantes : on les parallélise pour
   // ne payer que le RTT le plus long (au lieu de la somme).
-  const detailId = params.detail || undefined;
   const [
     aTraiter,
     bouclees,
@@ -56,9 +54,6 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     activites,
     cartes,
     topCategoryIds,
-    detailEcriture,
-    detailJustifs,
-    detailPendingDepots,
     supprimeesCw,
     agregesRemplaces,
     linkSuggestions,
@@ -75,13 +70,6 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     listActivites(),
     listCartes(),
     getTopCategoryIds(5),
-    detailId ? getEcriture(detailId) : Promise.resolve(undefined),
-    detailId
-      ? listJustificatifsForEcriture(detailId)
-      : Promise.resolve(null),
-    detailId
-      ? listDepots({ groupId: ctx.groupId }, { statut: 'a_traiter' })
-      : Promise.resolve(null),
     listSupprimeeCw(ctx.groupId),
     listAgregesRemplaces(ctx.groupId),
     listLinkSuggestions(ctx.groupId),
@@ -109,11 +97,6 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     status: r.status,
   }));
   const rejectedMatchKeys = Array.from(rawRejectedKeys);
-
-  const detail =
-    detailEcriture && detailJustifs && detailPendingDepots
-      ? { ecriture: detailEcriture, justifsBundle: detailJustifs, pendingDepots: detailPendingDepots }
-      : null;
 
   const presetQS = (preset: 'all' | 'incomplete' | 'from_bank' | 'sans_unite') => {
     const sp = new URLSearchParams();
@@ -187,7 +170,6 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
           matchDepots={matchDepots}
           matchRembs={matchRembs}
           rejectedMatchKeys={rejectedMatchKeys}
-          detail={detail}
           topCategoryIds={topCategoryIds}
         />
       </EcrituresSection>
@@ -207,7 +189,6 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
           matchDepots={matchDepots}
           matchRembs={matchRembs}
           rejectedMatchKeys={rejectedMatchKeys}
-          detail={detail}
           topCategoryIds={topCategoryIds}
         />
       </EcrituresSection>

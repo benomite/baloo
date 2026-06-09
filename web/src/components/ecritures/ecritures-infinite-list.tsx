@@ -5,8 +5,6 @@ import { Loader2 } from 'lucide-react';
 import { EcrituresTable } from './ecritures-table';
 import { fetchEcrituresPage, fetchEcritureRow } from '@/lib/actions/ecritures';
 import type { EcritureFilters } from '@/lib/queries/ecritures';
-import type { EcritureJustifsBundle } from '@/lib/queries/justificatifs';
-import type { DepotEnriched } from '@/lib/services/depots';
 import type { Ecriture, Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
 import type { MatchDepot, MatchRemboursement } from '@/lib/services/ecriture-match';
 
@@ -23,7 +21,6 @@ interface Props {
   matchDepots: MatchDepot[];
   matchRembs: MatchRemboursement[];
   rejectedMatchKeys: string[];
-  detail: { ecriture: Ecriture; justifsBundle: EcritureJustifsBundle; pendingDepots: DepotEnriched[] } | null;
   topCategoryIds: string[];
 }
 
@@ -47,7 +44,6 @@ export function EcrituresInfiniteList({
   matchDepots,
   matchRembs,
   rejectedMatchKeys,
-  detail,
   topCategoryIds,
 }: Props) {
   const [rows, setRows] = useState<Ecriture[]>(initialEcritures);
@@ -115,7 +111,6 @@ export function EcrituresInfiniteList({
         matchDepots={matchDepots}
         matchRembs={matchRembs}
         rejectedMatchKeys={rejectedMatchKeys}
-        detail={detail}
         topCategoryIds={topCategoryIds}
         refreshRow={refreshRow}
       />

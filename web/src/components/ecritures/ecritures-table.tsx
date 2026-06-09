@@ -13,8 +13,6 @@ import { EcritureInlinePanel } from './ecriture-inline-panel';
 import { computeReadiness } from '@/lib/sync-readiness';
 import { ValiderCwButton } from './valider-cw-button';
 import type { Ecriture, Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
-import type { EcritureJustifsBundle } from '@/lib/queries/justificatifs';
-import type { DepotEnriched } from '@/lib/services/depots';
 
 interface Props {
   ecritures: Ecriture[];
@@ -27,7 +25,6 @@ interface Props {
   matchRembs: MatchRemboursement[];
   // Clés `rejetPairKey` des correspondances « ne plus proposer » du groupe.
   rejectedMatchKeys: string[];
-  detail: { ecriture: Ecriture; justifsBundle: EcritureJustifsBundle; pendingDepots: DepotEnriched[] } | null;
   topCategoryIds: string[];
   // Rafraîchit une ligne précise après mutation (Lier, etc.).
   refreshRow: (id: string) => void | Promise<void>;
