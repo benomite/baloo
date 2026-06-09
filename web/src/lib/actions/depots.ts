@@ -185,8 +185,12 @@ export async function linkRembToEcriture(
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getCurrentContext();
   if (!isAdminRole(ctx.role)) return { ok: false, error: 'Action réservée aux trésoriers / RG.' };
-  const result = await setRembsEcritureLink(ctx.groupId, remboursementId, ecritureId);
-  if (!result.ok) return { ok: false, error: result.error };
+  try {
+    const result = await setRembsEcritureLink(ctx.groupId, remboursementId, ecritureId);
+    if (!result.ok) return { ok: false, error: result.error };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
   revalidatePath('/ecritures');
   revalidatePath('/remboursements');
   return { ok: true };

@@ -108,28 +108,23 @@ export async function setRembsEcritureLink(
     )
     .run(ecritureId, new Date().toISOString(), rembsId, groupId);
 
-  // Enrichissement : recopie l'imputation de la demande (unité / activité /
-  // catégorie) dans les champs ENCORE VIDES de l'écriture liée. COALESCE →
-  // jamais d'écrasement d'une valeur saisie. `status = 'draft'` → on ne
-  // touche pas à une écriture déjà dans Comptaweb (mirror/divergent).
+  // Enrichissement : recopie l'imputation de la demande dans les champs
+  // ENCORE VIDES de l'écriture liée (COALESCE → jamais d'écrasement ;
+  // `status = 'draft'` → on ne touche pas à une écriture déjà dans CW).
+  // NB : la table `remboursements` ne porte que `unite_id` comme imputation
+  // structurée (pas de category_id ni activite_id — juste un champ `nature`
+  // texte libre). On ne propage donc QUE l'unité.
   if (ecritureId) {
     const remb = await db
-      .prepare(
-        `SELECT unite_id, activite_id, category_id
-         FROM remboursements WHERE id = ? AND group_id = ?`,
-      )
-      .get<{ unite_id: string | null; activite_id: string | null; category_id: string | null }>(rembsId, groupId);
-    if (remb) {
+      .prepare('SELECT unite_id FROM remboursements WHERE id = ? AND group_id = ?')
+      .get<{ unite_id: string | null }>(rembsId, groupId);
+    if (remb?.unite_id) {
       await db
         .prepare(
-          `UPDATE ecritures SET
-             unite_id    = COALESCE(unite_id, ?),
-             activite_id = COALESCE(activite_id, ?),
-             category_id = COALESCE(category_id, ?),
-             updated_at  = ?
+          `UPDATE ecritures SET unite_id = COALESCE(unite_id, ?), updated_at = ?
            WHERE id = ? AND group_id = ? AND status = 'draft'`,
         )
-        .run(remb.unite_id, remb.activite_id, remb.category_id, new Date().toISOString(), ecritureId, groupId);
+        .run(remb.unite_id, new Date().toISOString(), ecritureId, groupId);
     }
   }
 
