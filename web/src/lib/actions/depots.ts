@@ -11,6 +11,7 @@ import {
 } from '../services/depots';
 import { parseAmount } from '../format';
 import { setRembsEcritureLink } from '@/lib/services/remboursement-ecriture-link';
+import { rejectSuggestion } from '@/lib/services/inbox-rejets';
 
 const SUBMIT_ROLES = ['tresorier', 'RG', 'chef', 'equipier'] as const;
 const ADMIN_ROLES = ['tresorier', 'RG'] as const;
@@ -193,5 +194,24 @@ export async function linkRembToEcriture(
   }
   revalidatePath('/ecritures');
   revalidatePath('/remboursements');
+  return { ok: true };
+}
+
+// « Ne plus proposer » : mémorise le rejet d'une paire (écriture ↔ dépôt /
+// remboursement) dans le registre partagé `inbox_suggestion_rejets` pour
+// que la bannière de correspondance ne la re-suggère plus jamais. En place
+// (renvoie un résultat, pas de redirect) : la bannière se masque côté client.
+export async function rejectMatchForEcriture(
+  ecritureId: string,
+  kind: 'depot' | 'remboursement',
+  targetId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const ctx = await getCurrentContext();
+  if (!isAdminRole(ctx.role)) return { ok: false, error: 'Action réservée aux trésoriers / RG.' };
+  try {
+    await rejectSuggestion({ groupId: ctx.groupId, userId: ctx.userId }, ecritureId, kind, targetId);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
   return { ok: true };
 }

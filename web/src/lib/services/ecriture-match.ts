@@ -2,6 +2,12 @@
 // actif ». Pur (pas de DB) : la page charge les pools une fois, le tableau
 // matche en mémoire par ligne. Tolérance alignée sur le matching dépôts
 // existant (depots.ts) : montant ±10% (plancher 1€), date ±15 jours.
+//
+// Les paires explicitement rejetées par le trésorier (« ne plus proposer »)
+// sont exclues : on réutilise le même registre que l'inbox
+// (`inbox_suggestion_rejets` + `rejetPairKey`).
+
+import { rejetPairKey } from '../queries/inbox-matching';
 
 export interface MatchDepot {
   id: string;
@@ -41,9 +47,10 @@ function dayDiff(a: string, b: string): number {
 }
 
 export function suggestMatchForEcriture(
-  ecriture: { amount_cents: number; date_ecriture: string },
+  ecriture: { id: string; amount_cents: number; date_ecriture: string },
   depots: MatchDepot[],
   rembs: MatchRemboursement[],
+  rejectedKeys: Set<string> = new Set(),
 ): EcritureMatch | null {
   // Collecte puis tri (pas de mutation dans une closure : TS ne sait pas
   // suivre l'affectation capturée et réduit la variable à `never`).
@@ -52,6 +59,7 @@ export function suggestMatchForEcriture(
 
   for (const d of depots) {
     if (d.amount_cents == null || d.date_estimee == null) continue;
+    if (rejectedKeys.has(rejetPairKey(ecriture.id, 'depot', d.id))) continue;
     if (!amountMatches(ecriture.amount_cents, d.amount_cents)) continue;
     const dist = dayDiff(ecriture.date_ecriture, d.date_estimee);
     if (dist > DATE_TOL_DAYS) continue;
@@ -62,6 +70,7 @@ export function suggestMatchForEcriture(
   }
   for (const r of rembs) {
     if (r.date_depense == null) continue;
+    if (rejectedKeys.has(rejetPairKey(ecriture.id, 'remboursement', r.id))) continue;
     if (!amountMatches(ecriture.amount_cents, r.total_cents)) continue;
     const dist = dayDiff(ecriture.date_ecriture, r.date_depense);
     if (dist > DATE_TOL_DAYS) continue;

@@ -6,12 +6,13 @@ import { ChevronDown, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Amount } from '@/components/shared/amount';
-import { linkDepotToEcriture, linkRembToEcriture } from '@/lib/actions/depots';
+import { linkDepotToEcriture, linkRembToEcriture, rejectMatchForEcriture } from '@/lib/actions/depots';
 import type { EcritureMatch } from '@/lib/services/ecriture-match';
 
 // Bannière « un dépôt / remboursement semble correspondre ». Dépliable
-// (clic → détails pour vérifier le match) et « Lier » en place (toast +
-// refresh, aucune navigation). Admin only (pools fournis aux admins).
+// (clic → détails pour vérifier le match), « Lier » en place (toast +
+// refresh) et « Ignorer » (ne plus proposer cette paire — persisté côté
+// serveur, masqué côté client). Admin only (pools fournis aux admins).
 export function EcritureMatchBanner({
   match,
   ecritureId,
@@ -20,6 +21,7 @@ export function EcritureMatchBanner({
   ecritureId: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   const isDepot = match.kind === 'depot';
@@ -36,6 +38,18 @@ export function EcritureMatchBanner({
         toast.error(res.error ?? 'Liaison impossible.');
       }
     });
+
+  const ignorer = () =>
+    startTransition(async () => {
+      const res = await rejectMatchForEcriture(ecritureId, match.kind, match.id);
+      if (res.ok) {
+        setDismissed(true);
+      } else {
+        toast.error(res.error ?? 'Action impossible.');
+      }
+    });
+
+  if (dismissed) return null;
 
   return (
     <div className="rounded-md bg-amber-50 dark:bg-amber-950/25 text-amber-900 dark:text-amber-200">
@@ -56,7 +70,16 @@ export function EcritureMatchBanner({
           </span>
           <ChevronDown size={12} strokeWidth={2.25} className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
-        <div className="ml-auto shrink-0">
+        <div className="ml-auto shrink-0 flex items-center gap-1.5">
+          <Button
+            size="xs"
+            variant="ghost"
+            disabled={pending}
+            onClick={ignorer}
+            title="Ne plus proposer cette correspondance"
+          >
+            Ignorer
+          </Button>
           <Button size="xs" disabled={pending} onClick={lier}>Lier</Button>
         </div>
       </div>

@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { suggestMatchForEcriture } from './ecriture-match';
+import { rejetPairKey } from '../queries/inbox-matching';
 
 const depot = (over = {}) => ({ id: 'DEP1', amount_cents: 5000, date_estimee: '2026-01-10', titre: 'Courses', uniteCode: 'PC', categoryName: 'Intendance', ...over });
 const remb = (over = {}) => ({ id: 'RBT1', total_cents: 5000, date_depense: '2026-01-10', demandeur: 'Alice', uniteCode: 'LJ', status: 'virement_effectue', ...over });
-const ecr = { amount_cents: 5000, date_ecriture: '2026-01-10' };
+const ecr = { id: 'ECR1', amount_cents: 5000, date_ecriture: '2026-01-10' };
 
 describe('suggestMatchForEcriture', () => {
   it('match dépôt exact → champs d\'affichage', () => {
@@ -26,7 +27,25 @@ describe('suggestMatchForEcriture', () => {
     expect(suggestMatchForEcriture(ecr, [depot({ date_estimee: '2026-02-15' })], [])).toBeNull();
   });
   it('plancher 1€', () => {
-    expect(suggestMatchForEcriture({ amount_cents: 200, date_ecriture: '2026-01-10' }, [depot({ amount_cents: 250 })], [])).not.toBeNull();
+    expect(suggestMatchForEcriture({ id: 'ECR1', amount_cents: 200, date_ecriture: '2026-01-10' }, [depot({ amount_cents: 250 })], [])).not.toBeNull();
+  });
+  it('exclut une paire rejetée (dépôt)', () => {
+    const rejected = new Set([rejetPairKey('ECR1', 'depot', 'DEP1')]);
+    expect(suggestMatchForEcriture(ecr, [depot()], [], rejected)).toBeNull();
+  });
+  it('exclut une paire rejetée (remboursement)', () => {
+    const rejected = new Set([rejetPairKey('ECR1', 'remboursement', 'RBT1')]);
+    expect(suggestMatchForEcriture(ecr, [], [remb()], rejected)).toBeNull();
+  });
+  it('rejette le meilleur match → propose le suivant', () => {
+    const rejected = new Set([rejetPairKey('ECR1', 'depot', 'PROCHE')]);
+    const r = suggestMatchForEcriture(
+      ecr,
+      [depot({ id: 'LOIN', date_estimee: '2026-01-20' }), depot({ id: 'PROCHE', date_estimee: '2026-01-11' })],
+      [],
+      rejected,
+    );
+    expect(r?.id).toBe('LOIN');
   });
   it('ignore dépôt sans montant ou sans date', () => {
     expect(suggestMatchForEcriture(ecr, [depot({ amount_cents: null }), depot({ date_estimee: null })], [])).toBeNull();

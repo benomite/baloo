@@ -22,6 +22,7 @@ interface Props {
   cartes: Carte[];
   matchDepots: MatchDepot[];
   matchRembs: MatchRemboursement[];
+  rejectedMatchKeys: string[];
   detail: { ecriture: Ecriture; justifsBundle: EcritureJustifsBundle; pendingDepots: DepotEnriched[] } | null;
   topCategoryIds: string[];
 }
@@ -45,6 +46,7 @@ export function EcrituresInfiniteList({
   cartes,
   matchDepots,
   matchRembs,
+  rejectedMatchKeys,
   detail,
   topCategoryIds,
 }: Props) {
@@ -104,6 +106,7 @@ export function EcrituresInfiniteList({
         cartes={cartes}
         matchDepots={matchDepots}
         matchRembs={matchRembs}
+        rejectedMatchKeys={rejectedMatchKeys}
         detail={detail}
         topCategoryIds={topCategoryIds}
       />

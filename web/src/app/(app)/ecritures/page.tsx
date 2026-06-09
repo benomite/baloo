@@ -7,6 +7,7 @@ import { listEcritures, getEcriture } from '@/lib/queries/ecritures';
 import { listCategories, listUnites, listModesPaiement, listActivites, listCartes, getTopCategoryIds } from '@/lib/queries/reference';
 import { listJustificatifsForEcriture } from '@/lib/queries/justificatifs';
 import { listDepots, listAllAttachableRemboursements } from '@/lib/services/depots';
+import { loadRejectedPairKeys } from '@/lib/services/inbox-rejets';
 import type { MatchDepot, MatchRemboursement } from '@/lib/services/ecriture-match';
 import { EcritureFilters } from '@/components/ecritures/ecriture-filters';
 import { ScanDraftsButton } from '@/components/ecritures/scan-drafts-button';
@@ -64,6 +65,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     headerTotals,
     rawMatchDepots,
     rawMatchRembs,
+    rawRejectedKeys,
   ] = await Promise.all([
     listEcritures({ ...filters, bucket: 'a_traiter' }),
     listEcritures({ ...filters, bucket: 'bouclees' }),
@@ -86,6 +88,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     getEcrituresHeaderTotals({ groupId: ctx.groupId }, { exercice }),
     canLink ? listDepots({ groupId: ctx.groupId }, { statut: 'a_traiter' }) : Promise.resolve([]),
     canLink ? listAllAttachableRemboursements({ groupId: ctx.groupId }) : Promise.resolve([]),
+    canLink ? loadRejectedPairKeys(ctx.groupId) : Promise.resolve(new Set<string>()),
   ]);
 
   const matchDepots: MatchDepot[] = rawMatchDepots.map((d) => ({
@@ -104,6 +107,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     uniteCode: r.unite_code ?? null,
     status: r.status,
   }));
+  const rejectedMatchKeys = Array.from(rawRejectedKeys);
 
   const detail =
     detailEcriture && detailJustifs && detailPendingDepots
@@ -181,6 +185,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
           cartes={cartes}
           matchDepots={matchDepots}
           matchRembs={matchRembs}
+          rejectedMatchKeys={rejectedMatchKeys}
           detail={detail}
           topCategoryIds={topCategoryIds}
         />
@@ -200,6 +205,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
           cartes={cartes}
           matchDepots={matchDepots}
           matchRembs={matchRembs}
+          rejectedMatchKeys={rejectedMatchKeys}
           detail={detail}
           topCategoryIds={topCategoryIds}
         />

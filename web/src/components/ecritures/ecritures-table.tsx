@@ -25,6 +25,8 @@ interface Props {
   cartes: Carte[];
   matchDepots: MatchDepot[];
   matchRembs: MatchRemboursement[];
+  // Clés `rejetPairKey` des correspondances « ne plus proposer » du groupe.
+  rejectedMatchKeys: string[];
   detail: { ecriture: Ecriture; justifsBundle: EcritureJustifsBundle; pendingDepots: DepotEnriched[] } | null;
   topCategoryIds: string[];
 }
@@ -88,7 +90,8 @@ type Item =
   | { kind: 'header'; key: string; group: Group }
   | { kind: 'row'; key: string; ecriture: Ecriture; index: number; group: Group | null };
 
-export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes, matchDepots, matchRembs, topCategoryIds }: Props) {
+export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes, matchDepots, matchRembs, rejectedMatchKeys, topCategoryIds }: Props) {
+  const rejectedMatchSet = useMemo(() => new Set(rejectedMatchKeys), [rejectedMatchKeys]);
   // Ouverture du panneau d'édition = état CLIENT pur (pas de navigation
   // `?detail` : elle relançait toute la page → lent, et `useSearchParams`
   // ne se mettait à jour qu'après le serveur, d'où le « refermer » cassé).
@@ -304,9 +307,10 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
             const match =
               !e.has_justificatif && !e.remboursement_id && (matchDepots.length > 0 || matchRembs.length > 0)
                 ? suggestMatchForEcriture(
-                    { amount_cents: e.amount_cents, date_ecriture: e.date_ecriture },
+                    { id: e.id, amount_cents: e.amount_cents, date_ecriture: e.date_ecriture },
                     matchDepots,
                     matchRembs,
+                    rejectedMatchSet,
                   )
                 : null;
             const isOpen = openId === e.id;
