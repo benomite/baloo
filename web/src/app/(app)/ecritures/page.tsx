@@ -93,12 +93,16 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     amount_cents: d.amount_cents,
     date_estimee: d.date_estimee,
     titre: d.titre,
+    uniteCode: d.unite_code ?? null,
+    categoryName: d.category_name ?? null,
   }));
   const matchRembs: MatchRemboursement[] = rawMatchRembs.map((r) => ({
     id: r.id,
     total_cents: r.total_cents,
     date_depense: r.date_depense,
     demandeur: r.demandeur,
+    uniteCode: r.unite_code ?? null,
+    status: r.status,
   }));
 
   const detail =
