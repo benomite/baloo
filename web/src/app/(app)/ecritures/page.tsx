@@ -103,6 +103,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     id: r.id,
     total_cents: r.total_cents,
     date_depense: r.date_depense,
+    date_paiement: r.date_paiement,
     demandeur: r.demandeur,
     uniteCode: r.unite_code ?? null,
     status: r.status,

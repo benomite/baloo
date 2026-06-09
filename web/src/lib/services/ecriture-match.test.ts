@@ -3,7 +3,7 @@ import { suggestMatchForEcriture } from './ecriture-match';
 import { rejetPairKey } from '../queries/inbox-matching';
 
 const depot = (over = {}) => ({ id: 'DEP1', amount_cents: 5000, date_estimee: '2026-01-10', titre: 'Courses', uniteCode: 'PC', categoryName: 'Intendance', ...over });
-const remb = (over = {}) => ({ id: 'RBT1', total_cents: 5000, date_depense: '2026-01-10', demandeur: 'Alice', uniteCode: 'LJ', status: 'virement_effectue', ...over });
+const remb = (over = {}) => ({ id: 'RBT1', total_cents: 5000, date_depense: '2026-01-10', date_paiement: null, demandeur: 'Alice', uniteCode: 'LJ', status: 'virement_effectue', ...over });
 const ecr = { id: 'ECR1', amount_cents: 5000, date_ecriture: '2026-01-10' };
 
 describe('suggestMatchForEcriture', () => {
@@ -32,6 +32,16 @@ describe('suggestMatchForEcriture', () => {
   it('exclut une paire rejetée (dépôt)', () => {
     const rejected = new Set([rejetPairKey('ECR1', 'depot', 'DEP1')]);
     expect(suggestMatchForEcriture(ecr, [depot()], [], rejected)).toBeNull();
+  });
+  it('remboursement : matche sur date_paiement (virement), même si date_depense est loin', () => {
+    // écriture = virement du 06-04 ; dépense le 05-15 (>15j) ; paiement le 06-04.
+    const r = suggestMatchForEcriture(
+      { id: 'ECR1', amount_cents: 18173, date_ecriture: '2026-06-04' },
+      [],
+      [remb({ total_cents: 18173, date_depense: '2026-05-15', date_paiement: '2026-06-04' })],
+    );
+    expect(r).not.toBeNull();
+    expect(r?.date).toBe('2026-06-04'); // date affichée = virement
   });
   it('exclut une paire rejetée (remboursement)', () => {
     const rejected = new Set([rejetPairKey('ECR1', 'remboursement', 'RBT1')]);

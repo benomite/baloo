@@ -21,6 +21,10 @@ export interface MatchRemboursement {
   id: string;
   total_cents: number;
   date_depense: string | null;
+  // Date du virement : c'est elle qui correspond à l'écriture bancaire du
+  // remboursement (date_depense est la date de la dépense d'origine, souvent
+  // bien antérieure). On matche sur date_paiement ?? date_depense.
+  date_paiement: string | null;
   demandeur: string;
   uniteCode: string | null;
   status: string;
@@ -69,13 +73,16 @@ export function suggestMatchForEcriture(
     });
   }
   for (const r of rembs) {
-    if (r.date_depense == null) continue;
+    // Date de référence = virement (date_paiement) sinon dépense — aligné
+    // sur le matching de l'inbox (l'écriture est le virement bancaire).
+    const refDate = r.date_paiement ?? r.date_depense;
+    if (refDate == null) continue;
     if (rejectedKeys.has(rejetPairKey(ecriture.id, 'remboursement', r.id))) continue;
     if (!amountMatches(ecriture.amount_cents, r.total_cents)) continue;
-    const dist = dayDiff(ecriture.date_ecriture, r.date_depense);
+    const dist = dayDiff(ecriture.date_ecriture, refDate);
     if (dist > DATE_TOL_DAYS) continue;
     candidates.push({
-      match: { kind: 'remboursement', id: r.id, label: r.demandeur, amountCents: r.total_cents, date: r.date_depense, uniteCode: r.uniteCode, detail: r.status },
+      match: { kind: 'remboursement', id: r.id, label: r.demandeur, amountCents: r.total_cents, date: refDate, uniteCode: r.uniteCode, detail: r.status },
       dist, pref: 1,
     });
   }

@@ -383,6 +383,10 @@ export async function listAllAttachableEcritures(
 export interface CandidateRemboursement {
   id: string;
   date_depense: string | null;
+  // Date du virement (paiement du remboursement). Pour matcher l'écriture
+  // de virement, c'est CETTE date qui compte (pas date_depense, souvent
+  // des semaines avant).
+  date_paiement: string | null;
   demandeur: string;
   total_cents: number;
   status: string;
@@ -412,7 +416,7 @@ export async function listCandidateRemboursements(
   }
   return await getDb()
     .prepare(
-      `SELECT r.id, r.date_depense, r.demandeur, r.total_cents, r.status,
+      `SELECT r.id, r.date_depense, r.date_paiement, r.demandeur, r.total_cents, r.status,
               un.code AS unite_code,
               (SELECT COUNT(*) FROM justificatifs j
                 WHERE j.entity_type = 'remboursement' AND j.entity_id = r.id) AS existing_justifs_count
@@ -431,7 +435,7 @@ export async function listAllAttachableRemboursements(
 ): Promise<CandidateRemboursement[]> {
   return await getDb()
     .prepare(
-      `SELECT r.id, r.date_depense, r.demandeur, r.total_cents, r.status,
+      `SELECT r.id, r.date_depense, r.date_paiement, r.demandeur, r.total_cents, r.status,
               un.code AS unite_code,
               (SELECT COUNT(*) FROM justificatifs j
                 WHERE j.entity_type = 'remboursement' AND j.entity_id = r.id) AS existing_justifs_count
