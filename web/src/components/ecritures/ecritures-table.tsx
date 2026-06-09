@@ -104,7 +104,9 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
       window.open(`/ecritures/${id}`, '_blank');
       return;
     }
-    if (detail?.ecriture.id === id) {
+    // Ouverture/fermeture pilotée par l'URL `?detail` (change instantanément
+    // côté client → repli/ouverture immédiats, sans attendre le serveur).
+    if (searchParams.get('detail') === id) {
       const sp = new URLSearchParams(searchParams.toString());
       sp.delete('detail');
       const qs = sp.toString();
@@ -322,7 +324,14 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     matchRembs,
                   )
                 : null;
-            const isOpen = detail?.ecriture.id === e.id;
+            // Ouvert = piloté par l'URL (instantané). Le bundle justifs vient
+            // du serveur (`detail`) et peut arriver après l'ouverture.
+            const isOpen = searchParams.get('detail') === e.id;
+            const detailBundle =
+              detail && detail.ecriture.id === e.id
+                ? { justifsBundle: detail.justifsBundle, pendingDepots: detail.pendingDepots }
+                : null;
+            const panelEcriture = detail && detail.ecriture.id === e.id ? detail.ecriture : e;
             const readiness = computeReadiness(e, { categories, unites, modesPaiement, activites });
             const showValider = e.status === 'draft';
             return (
@@ -401,12 +410,11 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     <EcritureMatchBanner match={match} ecritureId={e.id} />
                   </div>
                 )}
-                {isOpen && detail && (
+                {isOpen && (
                   <div className="px-3 pb-2">
                     <EcritureInlinePanel
-                      ecriture={detail.ecriture}
-                      justifsBundle={detail.justifsBundle}
-                      pendingDepots={detail.pendingDepots}
+                      ecriture={panelEcriture}
+                      bundle={detailBundle}
                       categories={categories}
                       topCategoryIds={topCategoryIds}
                       unites={unites}

@@ -26,8 +26,7 @@ import type {
 
 export function EcritureInlinePanel({
   ecriture,
-  justifsBundle,
-  pendingDepots,
+  bundle,
   categories,
   topCategoryIds,
   unites,
@@ -36,8 +35,10 @@ export function EcritureInlinePanel({
   cartes,
 }: {
   ecriture: Ecriture;
-  justifsBundle: EcritureJustifsBundle;
-  pendingDepots: DepotEnriched[];
+  // Justifs + dépôts en attente : chargés en différé (mécanisme `?detail`),
+  // d'où `null` tant qu'ils n'ont pas atterri (le panneau s'ouvre instant.
+  // depuis les données de la ligne, les justifs suivent).
+  bundle: { justifsBundle: EcritureJustifsBundle; pendingDepots: DepotEnriched[] } | null;
   categories: Category[];
   topCategoryIds: string[];
   unites: Unite[];
@@ -57,12 +58,15 @@ export function EcritureInlinePanel({
   };
 
   const updateAction = updateEcriture.bind(null, ecriture.id);
-  const totalJustifs =
-    justifsBundle.direct.length +
-    justifsBundle.viaRemboursement.reduce(
-      (sum, r) => sum + r.justifs.length + r.rib.length,
-      0,
-    );
+  const totalJustifs = bundle
+    ? bundle.justifsBundle.direct.length +
+      bundle.justifsBundle.viaRemboursement.reduce(
+        (sum, r) => sum + r.justifs.length + r.rib.length,
+        0,
+      )
+    : null;
+  // On ne signale « justif manquant » que si le bundle est chargé (sinon on
+  // ne sait pas encore).
   const justifMissing =
     ecriture.type === 'depense' &&
     ecriture.justif_attendu === 1 &&
@@ -75,7 +79,7 @@ export function EcritureInlinePanel({
   });
 
   return (
-    <div className="rounded-xl border border-border-soft bg-bg-elevated shadow-sm p-4 my-1 text-left">
+    <div className="rounded-xl border border-border-soft bg-bg-elevated shadow-sm p-3.5 my-1 text-left max-h-[72vh] overflow-y-auto">
       <div className="flex items-center gap-3 mb-3 pb-3 border-b border-border-soft">
         <Link
           href={`/ecritures/${ecriture.id}`}
@@ -150,22 +154,27 @@ export function EcritureInlinePanel({
         ecriture={ecriture}
       />
 
-      {/* JUSTIFICATIFS — après le form (souvent à enrichir) */}
-      <div className="mt-5">
-        <JustificatifsCard
-          entityId={ecriture.id}
-          bundle={justifsBundle}
-          justifAttendu={ecriture.justif_attendu === 1}
-          numeroPiece={ecriture.numero_piece}
-          type={ecriture.type}
-          pendingDepots={pendingDepots}
-          ecritureAmountCents={ecriture.amount_cents}
-          ecritureDate={ecriture.date_ecriture}
-        />
+      {/* JUSTIFICATIFS — après le form. Chargés en différé : « chargement… »
+          tant que le bundle n'a pas atterri. */}
+      <div className="mt-4">
+        {bundle ? (
+          <JustificatifsCard
+            entityId={ecriture.id}
+            bundle={bundle.justifsBundle}
+            justifAttendu={ecriture.justif_attendu === 1}
+            numeroPiece={ecriture.numero_piece}
+            type={ecriture.type}
+            pendingDepots={bundle.pendingDepots}
+            ecritureAmountCents={ecriture.amount_cents}
+            ecritureDate={ecriture.date_ecriture}
+          />
+        ) : (
+          <div className="text-[12px] text-fg-muted py-2">Chargement des justificatifs…</div>
+        )}
       </div>
 
       {/* CYCLE DE VIE — en bas, après le travail. Séparation visuelle nette. */}
-      <div className="mt-6 pt-4 border-t border-border-soft">
+      <div className="mt-5 pt-3 border-t border-border-soft">
         <div className="flex items-center gap-1.5 text-[10.5px] uppercase tracking-wide font-medium text-fg-subtle mb-2">
           Cycle de vie
         </div>
