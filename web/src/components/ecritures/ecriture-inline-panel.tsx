@@ -1,8 +1,8 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { AlertTriangle, CheckCircle2, ExternalLink, Landmark, Lock, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ExternalLink, Landmark, Loader2, Lock, X } from 'lucide-react';
 import { EcritureForm } from '@/components/ecritures/ecriture-form';
 import { JustificatifsCard } from '@/components/ecritures/justificatifs-card';
 import { SyncDraftButton } from '@/components/ecritures/sync-draft-button';
@@ -11,7 +11,7 @@ import { DeleteDraftButton } from '@/components/ecritures/delete-draft-button';
 import { EcritureStatePair } from '@/components/shared/status-badge';
 import { PendingButton } from '@/components/shared/pending-button';
 import { Alert } from '@/components/ui/alert';
-import { updateEcriture, updateEcritureStatus } from '@/lib/actions/ecritures';
+import { updateEcriture, updateEcritureStatus, fetchEcritureDetail } from '@/lib/actions/ecritures';
 import { computeReadiness } from '@/lib/sync-readiness';
 import { type EcritureJustifsBundle } from '@/lib/queries/justificatifs';
 import { type DepotEnriched } from '@/lib/services/depots';
@@ -24,9 +24,11 @@ import type {
   Carte,
 } from '@/lib/types';
 
+type Detail = { ecriture: Ecriture; justifsBundle: EcritureJustifsBundle; pendingDepots: DepotEnriched[] };
+
 export function EcritureInlinePanel({
-  ecriture,
-  bundle,
+  ecriture: rowEcriture,
+  onCollapse,
   categories,
   topCategoryIds,
   unites,
@@ -35,10 +37,7 @@ export function EcritureInlinePanel({
   cartes,
 }: {
   ecriture: Ecriture;
-  // Justifs + dépôts en attente : chargés en différé (mécanisme `?detail`),
-  // d'où `null` tant qu'ils n'ont pas atterri (le panneau s'ouvre instant.
-  // depuis les données de la ligne, les justifs suivent).
-  bundle: { justifsBundle: EcritureJustifsBundle; pendingDepots: DepotEnriched[] } | null;
+  onCollapse: () => void;
   categories: Category[];
   topCategoryIds: string[];
   unites: Unite[];
@@ -46,16 +45,28 @@ export function EcritureInlinePanel({
   activites: Activite[];
   cartes: Carte[];
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const params = useSearchParams();
+  // Chargement DIRECT du détail (écriture fraîche + justifs + dépôts) à
+  // l'ouverture — aucune navigation, aucun re-render de toute la page.
+  // Chaque panneau est monté pour UNE écriture (instance fraîche par ligne
+  // ouverte) → un seul fetch au montage. `detail` part à null → spinner.
+  const [detail, setDetail] = useState<Detail | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchEcritureDetail(rowEcriture.id).then((d) => {
+      if (!cancelled && d) setDetail(d);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [rowEcriture.id]);
 
-  const collapse = () => {
-    const sp = new URLSearchParams(params.toString());
-    sp.delete('detail');
-    const qs = sp.toString();
-    router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  };
+  // Écriture affichée : la fraîche dès qu'elle est là, sinon celle de la
+  // ligne (form + cycle de vie éditables tout de suite). Bundle justifs :
+  // null tant que le fetch n'a pas répondu → spinner visible dans le panneau.
+  const ecriture = detail?.ecriture ?? rowEcriture;
+  const bundle = detail
+    ? { justifsBundle: detail.justifsBundle, pendingDepots: detail.pendingDepots }
+    : null;
 
   const updateAction = updateEcriture.bind(null, ecriture.id);
   const totalJustifs = bundle
@@ -101,7 +112,7 @@ export function EcritureInlinePanel({
         </Link>
         <button
           type="button"
-          onClick={collapse}
+          onClick={onCollapse}
           aria-label="Replier"
           className="ml-auto inline-flex items-center justify-center size-6 rounded text-fg-subtle hover:bg-muted hover:text-fg transition-colors"
         >
@@ -169,7 +180,10 @@ export function EcritureInlinePanel({
             ecritureDate={ecriture.date_ecriture}
           />
         ) : (
-          <div className="text-[12px] text-fg-muted py-2">Chargement des justificatifs…</div>
+          <div className="flex items-center gap-2 text-[12px] text-fg-muted py-3">
+            <Loader2 size={14} className="animate-spin" />
+            Chargement des justificatifs…
+          </div>
         )}
       </div>
 

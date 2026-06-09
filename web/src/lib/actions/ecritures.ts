@@ -16,7 +16,9 @@ import { ECRITURE_STATUSES, type EcritureStatus, type Ecriture } from '../types'
 import { parseAmount } from '../format';
 import { getDb } from '../db';
 import { resyncEcritureDetail } from '../services/sync-cycle';
-import { listEcritures, type EcritureFilters } from '../queries/ecritures';
+import { listEcritures, getEcriture, type EcritureFilters } from '../queries/ecritures';
+import { listJustificatifsForEcriture, type EcritureJustifsBundle } from '../queries/justificatifs';
+import { listDepots, type DepotEnriched } from '../services/depots';
 
 /**
  * Pagination des écritures (chargement progressif côté client). Renvoie la
@@ -152,4 +154,24 @@ export async function batchUpdateEcritures(ids: string[], patch: BatchPatch): Pr
   const result = await batchUpdateEcrituresService({ groupId, scopeUniteId }, ids, patch);
   if (result.updated > 0) revalidatePath('/ecritures');
   return result;
+}
+
+// Charge le détail d'UNE écriture (écriture fraîche + justifs + dépôts en
+// attente) pour le panneau d'édition inline. Appelée côté client à
+// l'ouverture du panneau : évite de re-render toute la page (l'ancien
+// mécanisme `?detail` relançait toutes les requêtes → lent). Renvoie null
+// si l'écriture n'existe pas / hors scope.
+export async function fetchEcritureDetail(id: string): Promise<{
+  ecriture: Ecriture;
+  justifsBundle: EcritureJustifsBundle;
+  pendingDepots: DepotEnriched[];
+} | null> {
+  const { groupId } = await getCurrentContext();
+  const ecriture = await getEcriture(id);
+  if (!ecriture) return null;
+  const [justifsBundle, pendingDepots] = await Promise.all([
+    listJustificatifsForEcriture(id),
+    listDepots({ groupId }, { statut: 'a_traiter' }),
+  ]);
+  return { ecriture, justifsBundle, pendingDepots };
 }

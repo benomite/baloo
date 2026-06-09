@@ -1,8 +1,6 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Landmark, Layers } from 'lucide-react';
 import { UniteBadge } from '@/components/shared/unite-badge';
 import { InlineSelect } from '@/components/shared/inline-select';
@@ -90,30 +88,17 @@ type Item =
   | { kind: 'header'; key: string; group: Group }
   | { kind: 'row'; key: string; ecriture: Ecriture; index: number; group: Group | null };
 
-export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes, matchDepots, matchRembs, detail, topCategoryIds }: Props) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const detailHref = (id: string) => {
-    const sp = new URLSearchParams(searchParams.toString());
-    sp.set('detail', id);
-    return `${pathname}?${sp.toString()}`;
-  };
+export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes, matchDepots, matchRembs, topCategoryIds }: Props) {
+  // Ouverture du panneau d'édition = état CLIENT pur (pas de navigation
+  // `?detail` : elle relançait toute la page → lent, et `useSearchParams`
+  // ne se mettait à jour qu'après le serveur, d'où le « refermer » cassé).
+  const [openId, setOpenId] = useState<string | null>(null);
   const onRowClick = (id: string) => (ev: React.MouseEvent) => {
     if (ev.metaKey || ev.ctrlKey || ev.button === 1) {
       window.open(`/ecritures/${id}`, '_blank');
       return;
     }
-    // Ouverture/fermeture pilotée par l'URL `?detail` (change instantanément
-    // côté client → repli/ouverture immédiats, sans attendre le serveur).
-    if (searchParams.get('detail') === id) {
-      const sp = new URLSearchParams(searchParams.toString());
-      sp.delete('detail');
-      const qs = sp.toString();
-      router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-      return;
-    }
-    router.push(detailHref(id), { scroll: false });
+    setOpenId((prev) => (prev === id ? null : id));
   };
   const stop = (ev: React.MouseEvent | React.PointerEvent) => ev.stopPropagation();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -324,14 +309,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     matchRembs,
                   )
                 : null;
-            // Ouvert = piloté par l'URL (instantané). Le bundle justifs vient
-            // du serveur (`detail`) et peut arriver après l'ouverture.
-            const isOpen = searchParams.get('detail') === e.id;
-            const detailBundle =
-              detail && detail.ecriture.id === e.id
-                ? { justifsBundle: detail.justifsBundle, pendingDepots: detail.pendingDepots }
-                : null;
-            const panelEcriture = detail && detail.ecriture.id === e.id ? detail.ecriture : e;
+            const isOpen = openId === e.id;
             const readiness = computeReadiness(e, { categories, unites, modesPaiement, activites });
             const showValider = e.status === 'draft';
             return (
@@ -356,15 +334,15 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     <div className="text-[9.5px] uppercase tracking-wide text-fg-subtle">{moisCourt(e.date_ecriture)}</div>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <Link
-                      href={detailHref(e.id)}
-                      scroll={false}
-                      onClick={stop}
-                      className="block truncate font-medium text-[13.5px] text-fg hover:underline"
+                    {/* Clic = ouvre/ferme le panneau via la ligne (pas de
+                        navigation) ; on laisse l'événement remonter au onClick
+                        de la carte. */}
+                    <span
+                      className="block truncate font-medium text-[13.5px] text-fg hover:underline cursor-pointer"
                       title={e.description}
                     >
                       {e.description}
-                    </Link>
+                    </span>
                     <div className="mt-1 flex items-center gap-2" onClick={stop}>
                       <InlineSelect
                         value={e.unite_id}
@@ -413,8 +391,8 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                 {isOpen && (
                   <div className="px-3 pb-2">
                     <EcritureInlinePanel
-                      ecriture={panelEcriture}
-                      bundle={detailBundle}
+                      ecriture={e}
+                      onCollapse={() => setOpenId(null)}
                       categories={categories}
                       topCategoryIds={topCategoryIds}
                       unites={unites}
