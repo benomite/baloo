@@ -1,5 +1,5 @@
 import { getDb } from '../db';
-import { nextId, currentTimestamp } from '../ids';
+import { nextIdOn, currentTimestamp } from '../ids';
 import { currentExercice, CATEGORIES_HORS_RESULTAT } from './overview';
 import { ensureDepotsSchema } from './depots';
 import { buildCampBudgetRows, type CampBudgetRows, type CatAmount } from './camp-budget';
@@ -61,7 +61,10 @@ export async function createCamp(
   input: { name: string; unite_id: string; activite_id: string; date_debut?: string | null; date_fin?: string | null; notes?: string | null },
 ): Promise<Camp> {
   await ensureCampsSchema();
-  const id = await nextId('CAMP');
+  // `nextId` par défaut scanne une liste de tables historiques qui n'inclut
+  // PAS `camps` → renvoyait toujours CAMP-AAAA-001 (UNIQUE violé au 2e camp).
+  // On scanne explicitement la table camps (créée par ensureCampsSchema ↑).
+  const id = await nextIdOn(getDb(), 'CAMP', { tables: ['camps'] });
   await getDb()
     .prepare(
       `INSERT INTO camps (id, group_id, name, unite_id, activite_id, date_debut, date_fin, notes)
