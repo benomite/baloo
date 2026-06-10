@@ -13,7 +13,7 @@
 | Granularité budget chef | **Par poste de dépense** (intendance, transport, activités…) — s'appuie sur `budget_lignes` par catégorie. |
 | Source du suivi « pendant » | **Les dépôts de justifs des chefs** (photo ticket → montant + poste → budget bouge immédiatement). Le rapprochement bancaire confirme ensuite (dédup naturelle). |
 | Architecture | **Approche A** : entité `camps` légère qui orchestre l'existant (activités, budget_lignes, écritures, dépôts). |
-| Filtre du réel | **`activite_id` seule** (pas activité+unité) — robuste si une écriture a l'activité mais pas l'unité. L'unité du camp sert au scope chef et à l'affichage. |
+| Filtre du réel | **`activite_id` × `unite_id`** (CORRIGÉ 2026-06-10) : dans le Comptaweb du groupe il existe UNE activité générique « Camp » partagée — un camp précis = activité « Camp » × branche/pôle (= unité). Le filtre composé est obligatoire (sinon les camps d'unités différentes se mélangent, budget ET réel). Garde-fou : la page camp signale les écritures de l'activité SANS unité (invisibles de tous les camps). |
 
 ## Principe directeur
 

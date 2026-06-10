@@ -181,7 +181,7 @@ function CreateCampForm({
           label="Activité Comptaweb"
           htmlFor="activite_id"
           required
-          hint="l’activité dédiée au camp"
+          hint="souvent l’activité générique « Camp »"
         >
           <NativeSelect id="activite_id" name="activite_id" required defaultValue="">
             <option value="" disabled>
@@ -196,8 +196,10 @@ function CreateCampForm({
         </Field>
       </div>
       <p className="-mt-2 text-[11.5px] text-fg-subtle">
-        L’activité Comptaweb dédiée au camp — si elle n’existe pas encore,
-        crée-la dans Comptaweb puis lance la sync des référentiels.
+        Le camp = cette activité × l’unité (branche/pôle Comptaweb). Plusieurs
+        camps peuvent partager la même activité « Camp », c’est l’unité qui les
+        distingue. Si l’activité n’existe pas encore dans Comptaweb, crée-la
+        puis lance la sync des référentiels.
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

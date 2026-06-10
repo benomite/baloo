@@ -142,6 +142,9 @@ export interface CampDashboard {
   ecrituresRecentes: EcritureCampRow[];
   depotsEnAttente: DepotCampRow[];
   justifsManquants: EcritureCampRow[];
+  // Écritures de l'activité SANS branche/pôle (unite_id null) : invisibles
+  // de tous les camps (camp = activité × unité) — à signaler.
+  sansUniteCount: number;
 }
 
 const EXCLUS = CATEGORIES_HORS_RESULTAT.map(() => '?').join(',');
@@ -159,30 +162,30 @@ export async function getCampDashboard(ctx: CampContext, id: string): Promise<Ca
      FROM budget_lignes bl
      JOIN budgets b ON b.id = bl.budget_id
      LEFT JOIN categories c ON c.id = bl.category_id
-     WHERE b.group_id = ? AND b.saison = ? AND bl.activite_id = ?
+     WHERE b.group_id = ? AND b.saison = ? AND bl.activite_id = ? AND bl.unite_id = ?
      GROUP BY bl.category_id, bl.type`,
-  ).all<CatAmount & { type: 'depense' | 'recette' }>(ctx.groupId, saison, camp.activite_id);
+  ).all<CatAmount & { type: 'depense' | 'recette' }>(ctx.groupId, saison, camp.activite_id, camp.unite_id);
 
   const ecrDep = await db.prepare(
     `SELECT e.category_id AS categoryId, c.name AS categoryName, SUM(e.amount_cents) AS amountCents
      FROM ecritures e LEFT JOIN categories c ON c.id = e.category_id
-     WHERE e.group_id = ? AND e.activite_id = ? AND e.type = 'depense'
+     WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id = ? AND e.type = 'depense'
        AND (e.category_id IS NULL OR e.category_id NOT IN (${EXCLUS}))
      GROUP BY e.category_id`,
-  ).all<CatAmount>(ctx.groupId, camp.activite_id, ...CATEGORIES_HORS_RESULTAT);
+  ).all<CatAmount>(ctx.groupId, camp.activite_id, camp.unite_id, ...CATEGORIES_HORS_RESULTAT);
 
   const depAttente = await db.prepare(
     `SELECT d.category_id AS categoryId, c.name AS categoryName, SUM(COALESCE(d.amount_cents, 0)) AS amountCents
      FROM depots_justificatifs d LEFT JOIN categories c ON c.id = d.category_id
-     WHERE d.group_id = ? AND d.activite_id = ? AND d.statut = 'a_traiter'
+     WHERE d.group_id = ? AND d.activite_id = ? AND d.unite_id = ? AND d.statut = 'a_traiter'
      GROUP BY d.category_id`,
-  ).all<CatAmount>(ctx.groupId, camp.activite_id);
+  ).all<CatAmount>(ctx.groupId, camp.activite_id, camp.unite_id);
 
   const rec = await db.prepare(
     `SELECT COALESCE(SUM(e.amount_cents), 0) AS total FROM ecritures e
-     WHERE e.group_id = ? AND e.activite_id = ? AND e.type = 'recette'
+     WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id = ? AND e.type = 'recette'
        AND (e.category_id IS NULL OR e.category_id NOT IN (${EXCLUS}))`,
-  ).get<{ total: number }>(ctx.groupId, camp.activite_id, ...CATEGORIES_HORS_RESULTAT);
+  ).get<{ total: number }>(ctx.groupId, camp.activite_id, camp.unite_id, ...CATEGORIES_HORS_RESULTAT);
 
   const rows = buildCampBudgetRows({
     budgetDepenses: budget.filter((b) => b.type === 'depense'),
@@ -198,18 +201,18 @@ export async function getCampDashboard(ctx: CampContext, id: string): Promise<Ca
            EXISTS(SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id) AS has_justificatif,
            (SELECT r.id FROM remboursements r WHERE r.ecriture_id = e.id LIMIT 1) AS remboursement_id
     FROM ecritures e LEFT JOIN categories c ON c.id = e.category_id
-    WHERE e.group_id = ? AND e.activite_id = ?`;
+    WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id = ?`;
 
   const ecrituresRecentes = await db.prepare(
     `${ECR_SELECT} ORDER BY e.date_ecriture DESC, e.id DESC LIMIT 20`,
-  ).all<EcritureCampRow>(ctx.groupId, camp.activite_id);
+  ).all<EcritureCampRow>(ctx.groupId, camp.activite_id, camp.unite_id);
 
   const justifsManquants = await db.prepare(
     `${ECR_SELECT} AND e.type = 'depense' AND e.justif_attendu = 1
        AND NOT EXISTS(SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id)
        AND NOT EXISTS(SELECT 1 FROM remboursements r WHERE r.ecriture_id = e.id)
      ORDER BY e.date_ecriture DESC LIMIT 50`,
-  ).all<EcritureCampRow>(ctx.groupId, camp.activite_id);
+  ).all<EcritureCampRow>(ctx.groupId, camp.activite_id, camp.unite_id);
 
   const depotsEnAttente = await db.prepare(
     `SELECT d.id, d.titre, d.amount_cents, d.date_estimee, c.name AS category_name,
@@ -217,9 +220,17 @@ export async function getCampDashboard(ctx: CampContext, id: string): Promise<Ca
      FROM depots_justificatifs d
      LEFT JOIN categories c ON c.id = d.category_id
      LEFT JOIN users u ON u.id = d.submitted_by_user_id
-     WHERE d.group_id = ? AND d.activite_id = ? AND d.statut = 'a_traiter'
+     WHERE d.group_id = ? AND d.activite_id = ? AND d.unite_id = ? AND d.statut = 'a_traiter'
      ORDER BY d.created_at DESC`,
-  ).all<DepotCampRow>(ctx.groupId, camp.activite_id);
+  ).all<DepotCampRow>(ctx.groupId, camp.activite_id, camp.unite_id);
 
-  return { camp, rows, ecrituresRecentes, depotsEnAttente, justifsManquants };
+  // Garde-fou : une écriture de l'activité SANS branche/pôle (unite_id null)
+  // n'apparaît dans AUCUN camp (camp = activité × unité) — on la signale
+  // pour éviter les trous silencieux ; à imputer depuis /ecritures.
+  const orphelines = await db.prepare(
+    `SELECT COUNT(*) AS n FROM ecritures e
+     WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id IS NULL`,
+  ).get<{ n: number }>(ctx.groupId, camp.activite_id);
+
+  return { camp, rows, ecrituresRecentes, depotsEnAttente, justifsManquants, sansUniteCount: orphelines?.n ?? 0 };
 }

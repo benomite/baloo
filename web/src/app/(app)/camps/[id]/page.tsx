@@ -103,7 +103,7 @@ export default async function CampDetailPage({
   );
   if (!dashboard) notFound();
 
-  const { camp, rows, ecrituresRecentes, depotsEnAttente, justifsManquants } =
+  const { camp, rows, ecrituresRecentes, depotsEnAttente, justifsManquants, sansUniteCount } =
     dashboard;
   const isAdmin = ADMIN_ROLES.includes(ctx.role);
   const dates =
@@ -154,6 +154,19 @@ export default async function CampDetailPage({
       {sp.error && (
         <Alert variant="error" className="mb-4">
           {sp.error}
+        </Alert>
+      )}
+
+      {/* Camp = activité × branche/pôle : une écriture de l'activité sans
+          branche/pôle n'apparaît dans AUCUN camp — signalement anti-trou. */}
+      {sansUniteCount > 0 && (
+        <Alert variant="warning" className="mb-4">
+          {sansUniteCount} écriture{sansUniteCount > 1 ? 's' : ''} de l’activité «{' '}
+          {camp.activite_name} » sans branche/pôle : elle{sansUniteCount > 1 ? 's' : ''} n’
+          apparai{sansUniteCount > 1 ? 'ssent' : 't'} dans aucun camp.{' '}
+          <Link href="/ecritures?sans_unite=1" className="underline underline-offset-2 font-medium">
+            Imputer les unités
+          </Link>
         </Alert>
       )}
 
