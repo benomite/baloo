@@ -9,7 +9,7 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { Alert } from '@/components/ui/alert';
 import { getCurrentContext } from '@/lib/context';
 import { requireCanSubmit } from '@/lib/auth/access';
-import { listUnites, listCategories, listCartes, getTopCategoryIds } from '@/lib/queries/reference';
+import { listUnites, listCategories, listCartes, getTopCategoryIds, listSelectableActivites } from '@/lib/queries/reference';
 import { createDepot } from '@/lib/actions/depots';
 import { CategoryPicker } from '@/components/shared/category-picker';
 import { JustifCapture } from '@/components/shared/justif-capture';
@@ -18,6 +18,8 @@ import { keepSelectable, isUnmapped } from '@/lib/selectable';
 interface SearchParams {
   error?: string;
   success?: string;
+  activite?: string;
+  unite?: string;
 }
 
 export default async function DepotPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
@@ -25,11 +27,12 @@ export default async function DepotPage({ searchParams }: { searchParams: Promis
   requireCanSubmit(ctx.role);
 
   const params = await searchParams;
-  const [unitesAll, categoriesAll, cartesAll, topCategoryIds] = await Promise.all([
+  const [unitesAll, categoriesAll, cartesAll, topCategoryIds, activites] = await Promise.all([
     listUnites(),
     listCategories(),
     listCartes(),
     getTopCategoryIds(5),
+    listSelectableActivites(),
   ]);
   // Pas de valeur courante (création), on filtre simplement les non-mappés.
   const unites = keepSelectable(unitesAll, null);
@@ -37,7 +40,7 @@ export default async function DepotPage({ searchParams }: { searchParams: Promis
   const cartes = keepSelectable(cartesAll, null);
 
   const today = new Date().toISOString().split('T')[0];
-  const defaultUnite = ctx.scopeUniteId ?? '';
+  const defaultUnite = params.unite ?? ctx.scopeUniteId ?? '';
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -123,6 +126,14 @@ export default async function DepotPage({ searchParams }: { searchParams: Promis
               </NativeSelect>
             </Field>
           </div>
+          <Field label="Activité / camp" htmlFor="activite_id" hint="optionnel — ex. le camp">
+            <NativeSelect id="activite_id" name="activite_id" defaultValue={params.activite ?? ''}>
+              <option value="">— Aucune —</option>
+              {activites.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </NativeSelect>
+          </Field>
           <Field label="Carte utilisée" htmlFor="carte_id" hint="si paiement par CB ou procurement">
             <NativeSelect id="carte_id" name="carte_id">
               <option value="">— Aucune / Espèces / Virement —</option>
