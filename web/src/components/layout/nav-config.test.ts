@@ -30,9 +30,9 @@ describe('nav-config — structure des groupes', () => {
 });
 
 describe('nav-config — desktop, filtrage par rôle', () => {
-  it('le trésorier voit les 3 process + comptabilité + administration (système)', () => {
+  it('le trésorier voit les 4 process + comptabilité + administration (système)', () => {
     const process = visibleItemsForRole(group('process').items, 'tresorier').map((i) => i.href);
-    expect(process).toEqual(['/depot', '/remboursements', '/abandons']);
+    expect(process).toEqual(['/depot', '/camps', '/remboursements', '/abandons']);
     const compta = visibleItemsForRole(group('comptabilite').items, 'tresorier').map((i) => i.href);
     expect(compta).toEqual(['/ecritures', '/caisse', '/inbox']);
     const admin = visibleItemsForRole(group('administration').items, 'tresorier').map((i) => i.href);

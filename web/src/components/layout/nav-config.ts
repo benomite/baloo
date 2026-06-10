@@ -1,6 +1,6 @@
 import {
   BookOpen, Bot, Coins, Ellipsis, FileText, Files, Gift, HandCoins, Link2, Mail,
-  Paperclip, ShieldAlert,
+  Paperclip, ShieldAlert, Tent,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -58,6 +58,7 @@ export const DESKTOP_GROUPS: NavGroup[] = [
     title: 'Process',
     items: [
       { href: '/depot', adminHref: '/depots', label: 'Déposer', adminLabel: 'Dépôts', icon: Paperclip, roles: SUBMITTERS },
+      { href: '/camps', label: 'Camps', icon: Tent, roles: SUBMITTERS },
       { href: '/remboursements', parentHref: '/', label: 'Mes demandes', adminLabel: 'Remboursements', parentLabel: 'Mes reçus', icon: HandCoins },
       { href: '/abandons', label: 'Abandons', icon: Gift, roles: SUBMITTERS },
     ],
