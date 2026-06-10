@@ -63,6 +63,7 @@ export async function createDepot(formData: FormData): Promise<void> {
         amount_cents,
         date_estimee: (formData.get('date_estimee') as string | null) || null,
         carte_id: (formData.get('carte_id') as string | null) || null,
+        activite_id: (formData.get('activite_id') as string | null) || null,
         file: {
           filename: (file as File).name,
           content: buffer,

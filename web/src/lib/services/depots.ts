@@ -38,6 +38,12 @@ export async function ensureDepotsSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_depots_group_statut ON depots_justificatifs(group_id, statut);
     CREATE INDEX IF NOT EXISTS idx_depots_submitter ON depots_justificatifs(submitted_by_user_id);
   `);
+  // Migration camps (spec 2026-06-10) : rattachement d'un dépôt à une
+  // activité (le camp retrouve ses dépôts via son activite_id).
+  const depotCols = await db.prepare(`PRAGMA table_info(depots_justificatifs)`).all<{ name: string }>();
+  if (!depotCols.some((c) => c.name === 'activite_id')) {
+    await db.exec(`ALTER TABLE depots_justificatifs ADD COLUMN activite_id TEXT REFERENCES activites(id);`);
+  }
   schemaEnsured = true;
 }
 
@@ -55,6 +61,7 @@ export interface Depot {
   amount_cents: number | null;
   date_estimee: string | null;
   carte_id: string | null;
+  activite_id: string | null;
   statut: DepotStatut;
   ecriture_id: string | null;
   motif_rejet: string | null;
@@ -84,6 +91,7 @@ export interface CreateDepotInput {
   amount_cents?: number | null;
   date_estimee?: string | null;
   carte_id?: string | null;
+  activite_id?: string | null;
   // Fichier joint (obligatoire à la création).
   file: {
     filename: string;
@@ -104,9 +112,9 @@ export async function createDepot(
   await db.prepare(
     `INSERT INTO depots_justificatifs
        (id, group_id, submitted_by_user_id, titre, description, category_id,
-        unite_id, amount_cents, date_estimee, carte_id, statut,
+        unite_id, amount_cents, date_estimee, carte_id, activite_id, statut,
         created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'a_traiter', ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'a_traiter', ?, ?)`,
   ).run(
     id,
     groupId,
@@ -118,6 +126,7 @@ export async function createDepot(
     input.amount_cents ?? null,
     input.date_estimee || null,
     input.carte_id || null,
+    input.activite_id ?? null,
     now,
     now,
   );
@@ -235,7 +244,7 @@ export async function attachDepotToEcriture(
 
   const depot = await db
     .prepare(
-      `SELECT statut, category_id, unite_id, carte_id
+      `SELECT statut, category_id, unite_id, carte_id, activite_id
        FROM depots_justificatifs WHERE id = ? AND group_id = ?`,
     )
     .get<{
@@ -243,6 +252,7 @@ export async function attachDepotToEcriture(
       category_id: string | null;
       unite_id: string | null;
       carte_id: string | null;
+      activite_id: string | null;
     }>(depotId, groupId);
   if (!depot) throw new Error(`Dépôt ${depotId} introuvable.`);
   if (depot.statut !== 'a_traiter') {
@@ -280,12 +290,14 @@ export async function attachDepotToEcriture(
          category_id = COALESCE(category_id, ?),
          unite_id    = COALESCE(unite_id, ?),
          carte_id    = COALESCE(carte_id, ?),
+         activite_id = COALESCE(activite_id, ?),
          updated_at  = ?
        WHERE id = ? AND group_id = ? AND status = 'draft'`,
     ).run(
       depot.category_id,
       depot.unite_id,
       depot.carte_id,
+      depot.activite_id,
       currentTimestamp(),
       ecritureId,
       groupId,
