@@ -86,11 +86,13 @@ export function EcritureInlinePanel({
       )
     : null;
   // On ne signale « justif manquant » que si le bundle est chargé (sinon on
-  // ne sait pas encore).
+  // ne sait pas encore) et que l'écriture n'est pas couverte par un
+  // remboursement lié (la feuille fait office de justif).
   const justifMissing =
     ecriture.type === 'depense' &&
     ecriture.justif_attendu === 1 &&
-    totalJustifs === 0;
+    totalJustifs === 0 &&
+    !ecriture.remboursement_id;
   const readiness = computeReadiness(ecriture, {
     categories,
     unites,
@@ -109,7 +111,9 @@ export function EcritureInlinePanel({
           {ecriture.id}
         </Link>
         <EcritureStatePair
-          hasJustif={!!ecriture.has_justificatif}
+          // Justifiée par un justif direct OU par un remboursement lié (la
+          // feuille de remboursement fait office de justificatif).
+          hasJustif={!!ecriture.has_justificatif || !!ecriture.remboursement_id}
           comptawebSynced={ecriture.comptaweb_synced === 1}
         />
         <Link
