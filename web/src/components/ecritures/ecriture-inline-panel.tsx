@@ -29,6 +29,7 @@ type Detail = { ecriture: Ecriture; justifsBundle: EcritureJustifsBundle; pendin
 export function EcritureInlinePanel({
   ecriture: rowEcriture,
   onCollapse,
+  refreshRow,
   categories,
   topCategoryIds,
   unites,
@@ -38,6 +39,9 @@ export function EcritureInlinePanel({
 }: {
   ecriture: Ecriture;
   onCollapse: () => void;
+  // Rafraîchit la ligne après une édition (les champs modifiés réapparaissent
+  // dans la ligne sans recharger la liste).
+  refreshRow?: (id: string) => void | Promise<void>;
   categories: Category[];
   topCategoryIds: string[];
   unites: Unite[];
@@ -60,15 +64,20 @@ export function EcritureInlinePanel({
     };
   }, [rowEcriture.id]);
 
-  // Écriture affichée : la fraîche dès qu'elle est là, sinon celle de la
-  // ligne (form + cycle de vie éditables tout de suite). Bundle justifs :
-  // null tant que le fetch n'a pas répondu → spinner visible dans le panneau.
-  const ecriture = detail?.ecriture ?? rowEcriture;
+  // Écriture affichée = celle de la LIGNE (mise à jour via refreshRow après
+  // édition → le panneau reflète les changements). Le `detail` chargé ne sert
+  // qu'aux justifs/dépôts (null tant que le fetch n'a pas répondu → spinner).
+  const ecriture = rowEcriture;
   const bundle = detail
     ? { justifsBundle: detail.justifsBundle, pendingDepots: detail.pendingDepots }
     : null;
 
-  const updateAction = updateEcriture.bind(null, ecriture.id);
+  // Sauvegarde du formulaire puis rafraîchissement de la ligne (les champs
+  // modifiés réapparaissent immédiatement dans la ligne).
+  const handleSave = async (formData: FormData) => {
+    await updateEcriture(ecriture.id, formData);
+    await refreshRow?.(ecriture.id);
+  };
   const totalJustifs = bundle
     ? bundle.justifsBundle.direct.length +
       bundle.justifsBundle.viaRemboursement.reduce(
@@ -155,7 +164,7 @@ export function EcritureInlinePanel({
 
       {/* FORMULAIRE D'ÉDITION (priorité : c'est le travail principal) */}
       <EcritureForm
-        action={updateAction}
+        action={handleSave}
         categories={categories}
         topCategoryIds={topCategoryIds}
         unites={unites}

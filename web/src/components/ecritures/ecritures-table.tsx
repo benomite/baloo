@@ -353,7 +353,11 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                         placeholder="Aucune unité"
                         options={unites.map((u) => ({ value: u.id, label: `${u.code} — ${u.name}` }))}
                         display={<UniteBadge code={e.unite_code} name={e.unite_name} couleur={e.unite_couleur} />}
-                        onSave={(v) => updateEcritureField(e.id, 'unite_id', v)}
+                        onSave={async (v) => {
+                          const r = await updateEcritureField(e.id, 'unite_id', v);
+                          if (r.ok) void refreshRow(e.id);
+                          return r;
+                        }}
                       />
                     </div>
                   </div>
@@ -370,7 +374,11 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                           <span className="text-muted-foreground">—</span>
                         )
                       }
-                      onSave={(v) => updateEcritureField(e.id, 'category_id', v)}
+                      onSave={async (v) => {
+                        const r = await updateEcritureField(e.id, 'category_id', v);
+                        if (r.ok) void refreshRow(e.id);
+                        return r;
+                      }}
                     />
                   </div>
                   <div className="shrink-0 w-[92px] text-right font-medium tabular-nums self-center">
@@ -396,6 +404,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     <EcritureInlinePanel
                       ecriture={e}
                       onCollapse={() => setOpenId(null)}
+                      refreshRow={refreshRow}
                       categories={categories}
                       topCategoryIds={topCategoryIds}
                       unites={unites}
