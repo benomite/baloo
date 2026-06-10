@@ -432,7 +432,14 @@ export async function listCandidateRemboursements(
 
 export async function listAllAttachableRemboursements(
   { groupId }: { groupId: string },
+  // `unlinkedOnly` : exclut les remboursements déjà liés à une écriture
+  // (ecriture_id renseigné). Utilisé par la bannière de correspondance
+  // écriture→remb (un remb déjà rattaché ne doit plus être proposé). La page
+  // Dépôts garde le comportement par défaut (un remb avec virement peut
+  // encore recevoir un justif).
+  opts: { unlinkedOnly?: boolean } = {},
 ): Promise<CandidateRemboursement[]> {
+  const linkedClause = opts.unlinkedOnly ? 'AND r.ecriture_id IS NULL' : '';
   return await getDb()
     .prepare(
       `SELECT r.id, r.date_depense, r.date_paiement, r.demandeur, r.total_cents, r.status,
@@ -441,7 +448,7 @@ export async function listAllAttachableRemboursements(
                 WHERE j.entity_type = 'remboursement' AND j.entity_id = r.id) AS existing_justifs_count
        FROM remboursements r
        LEFT JOIN unites un ON un.id = r.unite_id
-       WHERE r.group_id = ? AND r.status IN (${REMB_ATTACHABLE_STATUSES})
+       WHERE r.group_id = ? AND r.status IN (${REMB_ATTACHABLE_STATUSES}) ${linkedClause}
        ORDER BY COALESCE(r.date_depense, r.created_at) DESC
        LIMIT 100`,
     )

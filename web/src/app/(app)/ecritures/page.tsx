@@ -75,7 +75,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     listLinkSuggestions(ctx.groupId),
     getEcrituresHeaderTotals({ groupId: ctx.groupId }, { exercice }),
     canLink ? listDepots({ groupId: ctx.groupId }, { statut: 'a_traiter' }) : Promise.resolve([]),
-    canLink ? listAllAttachableRemboursements({ groupId: ctx.groupId }) : Promise.resolve([]),
+    canLink ? listAllAttachableRemboursements({ groupId: ctx.groupId }, { unlinkedOnly: true }) : Promise.resolve([]),
     canLink ? loadRejectedPairKeys(ctx.groupId) : Promise.resolve(new Set<string>()),
   ]);
 
