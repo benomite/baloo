@@ -116,6 +116,11 @@ export interface VentCandidate {
   amountCents: number;
   /** true si l'écriture est déjà reliée à CE cwId (comptaweb_ecriture_id == cwId). */
   linkedToThisCw: boolean;
+  /** A une pièce attachée (justif / dépôt / remboursement). Sert à choisir la
+   *  copie canonique à GARDER en cas de doublon (on préserve l'enrichie). */
+  hasAttachment?: boolean;
+  /** A une imputation (catégorie / unité / activité) posée. */
+  hasImputation?: boolean;
 }
 
 export interface VentilationPlan {
@@ -129,10 +134,26 @@ export interface VentilationPlan {
 }
 
 /**
+ * Priorité à GARDER en cas de doublon (montant égal, plus de candidats que de
+ * ventilations) : on conserve la copie la plus ENRICHIE — pièce attachée
+ * d'abord (justif/dépôt/remb), puis imputation, puis lien CW existant. Évite
+ * de jeter la copie qui porte le justificatif au profit d'un doublon nu.
+ */
+function canonicalRank(c: VentCandidate): number {
+  return (c.hasAttachment ? 4 : 0) + (c.hasImputation ? 2 : 0) + (c.linkedToThisCw ? 1 : 0);
+}
+
+/**
  * Apparie les ventilations CW d'une écriture aux écritures Baloo candidates,
  * par montant (clé naturelle : au sein d'une écriture les ventilations ont
- * des montants généralement distincts). Une écriture non reliée non
- * appariée n'est PAS touchée (ce n'était pas une ventilation de ce cwId).
+ * des montants généralement distincts).
+ *
+ * Dédoublonnage : s'il y a PLUS de candidats d'un montant que de ventilations
+ * de ce montant, on garde les N plus enrichis (N = nb de ventilations) et
+ * l'excédent devient orphelin (doublon — ex. une écriture issue de l'import
+ * CSV NON reliée + sa jumelle créée par une ancienne sync, toutes deux pour la
+ * même ventilation CW). Une écriture non reliée d'un montant ÉTRANGER aux
+ * ventilations n'est PAS touchée (ce n'était pas une ventilation de ce cwId).
  */
 export function reconcileVentilations(
   ventilations: ResolvedVentilation[],
@@ -140,28 +161,49 @@ export function reconcileVentilations(
 ): VentilationPlan {
   const plan: VentilationPlan = { updates: [], creates: [], orphans: [] };
   const consumed = new Set<string>();
-  const unmatched: ResolvedVentilation[] = [];
 
-  // Passe 1 — appariement par MONTANT (priorité à un candidat déjà relié à
-  // ce cwId, pour ne pas re-piocher une écriture CSV non reliée si une
-  // version reliée existe).
+  // Ventilations groupées par montant (file ordonnée par montant).
+  const ventsByAmount = new Map<number, ResolvedVentilation[]>();
   for (const v of ventilations) {
-    const free = candidates.filter((c) => !consumed.has(c.id) && c.amountCents === v.montantCents);
-    const pick = free.find((c) => c.linkedToThisCw) ?? free[0];
-    if (pick) {
-      consumed.add(pick.id);
-      plan.updates.push({ ecritureId: pick.id, vent: v });
-    } else {
-      unmatched.push(v);
+    const list = ventsByAmount.get(v.montantCents) ?? [];
+    list.push(v);
+    ventsByAmount.set(v.montantCents, list);
+  }
+  // Candidats groupés par montant.
+  const candsByAmount = new Map<number, VentCandidate[]>();
+  for (const c of candidates) {
+    const list = candsByAmount.get(c.amountCents) ?? [];
+    list.push(c);
+    candsByAmount.set(c.amountCents, list);
+  }
+
+  const leftoverVents: ResolvedVentilation[] = [];
+
+  // Passe 1 — par MONTANT : garde les N candidats les plus enrichis (N = nb de
+  // ventilations de ce montant), apparie-les ; l'excédent = doublons → orphelins.
+  for (const [amount, vents] of ventsByAmount) {
+    const cands = (candsByAmount.get(amount) ?? [])
+      .slice()
+      .sort((a, b) => canonicalRank(b) - canonicalRank(a)); // plus enrichi d'abord
+    const keep = cands.slice(0, vents.length);
+    keep.forEach((c, i) => {
+      consumed.add(c.id);
+      plan.updates.push({ ecritureId: c.id, vent: vents[i] });
+    });
+    // Ventilations de ce montant sans candidat → passe 2 / création.
+    for (let i = keep.length; i < vents.length; i++) leftoverVents.push(vents[i]);
+    // Candidats excédentaires de ce montant = doublons → orphelins.
+    for (const c of cands.slice(vents.length)) {
+      consumed.add(c.id);
+      plan.orphans.push(c.id);
     }
   }
 
-  // Passe 2 — appariement AGNOSTIQUE au montant, uniquement entre les
-  // ventilations restantes et les candidats déjà RELIÉS non consommés. Gère
-  // un changement de montant côté CW (sinon : faux delete+create). On reste
-  // prudent : on ne pioche pas d'écriture non reliée à l'aveugle.
+  // Passe 2 — appariement AGNOSTIQUE au montant : ventilations restantes ↔
+  // candidats déjà RELIÉS non consommés. Gère un changement de montant côté CW
+  // (sinon : faux delete+create). On ne pioche pas d'écriture non reliée.
   const freeLinked = candidates.filter((c) => c.linkedToThisCw && !consumed.has(c.id));
-  for (const v of unmatched) {
+  for (const v of leftoverVents) {
     const pick = freeLinked.find((c) => !consumed.has(c.id));
     if (pick) {
       consumed.add(pick.id);
@@ -172,9 +214,11 @@ export function reconcileVentilations(
   }
 
   // Candidats reliés à ce cwId mais non consommés = orphelins (agrégat, ou
-  // ventilation disparue de CW). Les non-reliés non consommés sont ignorés.
+  // ventilation disparue de CW). Les non-reliés non consommés (montant étranger
+  // aux ventilations) sont ignorés (conservatisme).
   for (const c of candidates) {
-    if (c.linkedToThisCw && !consumed.has(c.id)) plan.orphans.push(c.id);
+    if (consumed.has(c.id)) continue;
+    if (c.linkedToThisCw) plan.orphans.push(c.id);
   }
 
   return plan;

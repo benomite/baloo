@@ -54,6 +54,12 @@ const ECRITURES_DDL = `
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
   );
   CREATE INDEX idx_ecritures_group ON ecritures(group_id);
+
+  -- Tables satellites requises par loadVentCandidates (flags d'enrichissement).
+  CREATE TABLE justificatifs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT);
+  CREATE TABLE depots_justificatifs (id TEXT PRIMARY KEY, ecriture_id TEXT);
+  CREATE TABLE depots_especes (id TEXT PRIMARY KEY, ecriture_id TEXT);
+  CREATE TABLE remboursements (id TEXT PRIMARY KEY, ecriture_id TEXT);
 `;
 
 async function setupDb(): Promise<{ client: Client; db: DbWrapper }> {
@@ -522,6 +528,46 @@ describe('runSyncCycle — imports et drafts', () => {
     // les 2 CSV reliées au cwId
     const linked = await db.prepare("SELECT COUNT(*) c FROM ecritures WHERE comptaweb_ecriture_id=555 AND id LIKE 'CSV-%'").get<{ c: number }>();
     expect(linked?.c).toBe(2);
+  });
+
+  it('doublon (copie CSV avec justif + jumelle sync nue) → garde la copie au justif, neutralise la nue', async () => {
+    // Cas réel "Courte échelle" : une écriture CSV non reliée PORTE le justif,
+    // une jumelle créée par une ancienne sync est reliée mais nue. On garde
+    // l'enrichie (reliée au cwId) et on passe la nue en agrege_remplace.
+    await insertEcriture(db, { id: 'SYNC-DUP', status: 'mirror', comptaweb_ecriture_id: 700, amount_cents: 25000, type: 'depense', date_ecriture: '2026-05-04', description: 'Courte échelle' });
+    await insertEcriture(db, { id: 'CSV-DUP', status: 'mirror', comptaweb_ecriture_id: null, amount_cents: 25000, type: 'depense', date_ecriture: '2026-05-04', description: 'Courte échelle' });
+    await db.prepare("INSERT INTO justificatifs (id, entity_type, entity_id) VALUES ('J1','ecriture','CSV-DUP')").run();
+    const res = await runSyncCycle(db, 'g1', mockOpts({
+      ecritures: [makeRow({ id: 700, numeroPiece: '', montantCentimes: 25000, type: 'depense', dateEcriture: '2026-05-04', intitule: 'Courte échelle' })],
+      scrapeDetail: async () => ({ ventilations: [
+        { montantCents: 25000, nature: 'Hébergement', activite: 'Activités', brancheprojet: 'Groupe' },
+      ] }),
+    }));
+    expect(res.supprimee_cw_detected).toBe(1); // la jumelle nue
+    const csv = await db.prepare("SELECT status, comptaweb_ecriture_id FROM ecritures WHERE id='CSV-DUP'").get<{ status: string; comptaweb_ecriture_id: number | null }>();
+    expect(csv?.status).toBe('mirror'); // la copie au justif est gardée…
+    expect(csv?.comptaweb_ecriture_id).toBe(700); // …et reliée au cwId
+    const sync = await db.prepare("SELECT status FROM ecritures WHERE id='SYNC-DUP'").get<{ status: string }>();
+    expect(sync?.status).toBe('agrege_remplace'); // la jumelle nue est neutralisée
+    // le justif n'a pas bougé (toujours sur la copie gardée)
+    const just = await db.prepare("SELECT entity_id FROM justificatifs WHERE id='J1'").get<{ entity_id: string }>();
+    expect(just?.entity_id).toBe('CSV-DUP');
+  });
+
+  it('doublon dont les DEUX copies portent une pièce → ne neutralise pas (rien perdu)', async () => {
+    await insertEcriture(db, { id: 'DUP-A', status: 'mirror', comptaweb_ecriture_id: 701, amount_cents: 25000, type: 'depense', date_ecriture: '2026-05-04', description: 'X' });
+    await insertEcriture(db, { id: 'DUP-B', status: 'mirror', comptaweb_ecriture_id: null, amount_cents: 25000, type: 'depense', date_ecriture: '2026-05-04', description: 'X' });
+    await db.prepare("INSERT INTO justificatifs (id, entity_type, entity_id) VALUES ('JA','ecriture','DUP-A')").run();
+    await db.prepare("INSERT INTO justificatifs (id, entity_type, entity_id) VALUES ('JB','ecriture','DUP-B')").run();
+    const res = await runSyncCycle(db, 'g1', mockOpts({
+      ecritures: [makeRow({ id: 701, numeroPiece: '', montantCentimes: 25000, type: 'depense', dateEcriture: '2026-05-04', intitule: 'X' })],
+      scrapeDetail: async () => ({ ventilations: [
+        { montantCents: 25000, nature: 'Hébergement', activite: 'Activités', brancheprojet: 'Groupe' },
+      ] }),
+    }));
+    expect(res.supprimee_cw_detected).toBe(0); // aucune neutralisation (les deux ont une pièce)
+    const neutralised = await db.prepare("SELECT COUNT(*) c FROM ecritures WHERE status='agrege_remplace'").get<{ c: number }>();
+    expect(neutralised?.c).toBe(0);
   });
 });
 

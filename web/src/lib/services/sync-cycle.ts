@@ -375,16 +375,31 @@ async function loadVentCandidates(
   meta: CwEcritureMeta,
   ventAmounts: number[],
 ): Promise<VentCandidate[]> {
-  const linked = await db
-    .prepare(
-      `SELECT id, amount_cents FROM ecritures WHERE group_id = ? AND comptaweb_ecriture_id = ?`,
-    )
-    .all<{ id: string; amount_cents: number }>(groupId, meta.cwId);
-  const candidates: VentCandidate[] = linked.map((row) => ({
+  // Flags d'enrichissement (pour choisir la copie canonique à garder en cas de
+  // doublon) : pièce attachée (justif / dépôt justif / dépôt espèces / remb) et
+  // imputation. `depots_justificatifs` est lazy-init (présente en prod ; les
+  // tests qui exercent ce chemin la créent dans leur setup).
+  const SELECT_COLS = `e.id, e.amount_cents,
+      (CASE WHEN e.category_id IS NOT NULL OR e.unite_id IS NOT NULL OR e.activite_id IS NOT NULL
+            THEN 1 ELSE 0 END) AS has_imput,
+      (CASE WHEN EXISTS(SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id)
+              OR EXISTS(SELECT 1 FROM depots_justificatifs d WHERE d.ecriture_id = e.id)
+              OR EXISTS(SELECT 1 FROM depots_especes de WHERE de.ecriture_id = e.id)
+              OR EXISTS(SELECT 1 FROM remboursements r WHERE r.ecriture_id = e.id)
+            THEN 1 ELSE 0 END) AS has_attach`;
+  type CandRow = { id: string; amount_cents: number; has_imput: number; has_attach: number };
+  const toCandidate = (row: CandRow, linked: boolean): VentCandidate => ({
     id: row.id,
     amountCents: row.amount_cents,
-    linkedToThisCw: true,
-  }));
+    linkedToThisCw: linked,
+    hasImputation: row.has_imput === 1,
+    hasAttachment: row.has_attach === 1,
+  });
+
+  const linked = await db
+    .prepare(`SELECT ${SELECT_COLS} FROM ecritures e WHERE e.group_id = ? AND e.comptaweb_ecriture_id = ?`)
+    .all<CandRow>(groupId, meta.cwId);
+  const candidates: VentCandidate[] = linked.map((row) => toCandidate(row, true));
 
   if (ventAmounts.length > 0) {
     const placeholders = ventAmounts.map(() => '?').join(',');
@@ -396,23 +411,21 @@ async function loadVentCandidates(
     const unlinked = piece
       ? await db
           .prepare(
-            `SELECT id, amount_cents FROM ecritures
-             WHERE group_id = ? AND comptaweb_ecriture_id IS NULL
-               AND numero_piece = ? AND amount_cents IN (${placeholders})
-               AND status IN ('draft','pending_sync','mirror','divergent')`,
+            `SELECT ${SELECT_COLS} FROM ecritures e
+             WHERE e.group_id = ? AND e.comptaweb_ecriture_id IS NULL
+               AND e.numero_piece = ? AND e.amount_cents IN (${placeholders})
+               AND e.status IN ('draft','pending_sync','mirror','divergent')`,
           )
-          .all<{ id: string; amount_cents: number }>(groupId, piece, ...ventAmounts)
+          .all<CandRow>(groupId, piece, ...ventAmounts)
       : await db
           .prepare(
-            `SELECT id, amount_cents FROM ecritures
-             WHERE group_id = ? AND comptaweb_ecriture_id IS NULL
-               AND date_ecriture = ? AND type = ? AND amount_cents IN (${placeholders})
-               AND status IN ('draft','pending_sync','mirror','divergent')`,
+            `SELECT ${SELECT_COLS} FROM ecritures e
+             WHERE e.group_id = ? AND e.comptaweb_ecriture_id IS NULL
+               AND e.date_ecriture = ? AND e.type = ? AND e.amount_cents IN (${placeholders})
+               AND e.status IN ('draft','pending_sync','mirror','divergent')`,
           )
-          .all<{ id: string; amount_cents: number }>(groupId, meta.date, meta.type, ...ventAmounts);
-    for (const u of unlinked) {
-      candidates.push({ id: u.id, amountCents: u.amount_cents, linkedToThisCw: false });
-    }
+          .all<CandRow>(groupId, meta.date, meta.type, ...ventAmounts);
+    for (const u of unlinked) candidates.push(toCandidate(u, false));
   }
   return candidates;
 }
@@ -487,6 +500,10 @@ async function processCwEcriture(
   const ventAmounts = [...new Set(ventilations.map((v) => v.montantCents))];
   const candidates = await loadVentCandidates(db, groupId, meta, ventAmounts);
   const vplan = reconcileVentilations(ventilations, candidates);
+  // Garde anti-perte : ne JAMAIS neutraliser un orphelin qui porte une pièce
+  // (justif / dépôt / remb). Le réconciliateur garde déjà la copie la plus
+  // enrichie ; ce filet protège le cas limite où deux doublons sont attachés.
+  const attachedIds = new Set(candidates.filter((c) => c.hasAttachment).map((c) => c.id));
 
   for (const u of vplan.updates) {
     await writeVentilation(db, groupId, u.ecritureId, meta, u.vent, now);
@@ -527,6 +544,13 @@ async function processCwEcriture(
     // candidat relié non apparié est un AGRÉGAT remplacé par le détail des
     // ventilations (souvent un doublon créé par une ancienne sync), PAS une
     // suppression côté CW. Statut dédié → label non anxiogène.
+    if (attachedIds.has(orphanId)) {
+      // Doublon porteur d'une pièce : on ne le neutralise pas (sinon justif
+      // « perdu » dans un statut masqué). Laissé visible pour résolution
+      // manuelle. Signalé pour suivi.
+      logError('sync-cycle', 'orphan_avec_piece_conserve', null, { groupId, orphanId, cwId: meta.cwId });
+      continue;
+    }
     await db
       .prepare(`UPDATE ecritures SET status = 'agrege_remplace', updated_at = ? WHERE id = ?`)
       .run(now, orphanId);

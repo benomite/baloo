@@ -246,6 +246,75 @@ describe('reconcileVentilations (grain ventilation)', () => {
   });
 });
 
+describe('reconcileVentilations — dédoublonnage (garde la copie enrichie)', () => {
+  const vent = (montantCents: number) => ({ montantCents, categoryId: null, activiteId: null, uniteId: null });
+
+  it('1 ventilation, 2 copies du même montant → garde celle qui a la pièce, orpheline le doublon nu relié', () => {
+    // Cas réel "Courte échelle" : copie CSV non reliée avec justif vs jumelle
+    // sync reliée mais nue. On GARDE l'enrichie (justif) et on orpheline la nue.
+    const plan = reconcileVentilations(
+      [vent(25000)],
+      [
+        { id: 'CSV-0003', amountCents: 25000, linkedToThisCw: false, hasAttachment: true, hasImputation: true },
+        { id: 'SYNC-227', amountCents: 25000, linkedToThisCw: true, hasAttachment: false, hasImputation: true },
+      ],
+    );
+    expect(plan.updates).toEqual([{ ecritureId: 'CSV-0003', vent: vent(25000) }]);
+    expect(plan.orphans).toEqual(['SYNC-227']);
+    expect(plan.creates).toHaveLength(0);
+  });
+
+  it('préfère la pièce attachée au lien CW (justif gagne sur "déjà relié")', () => {
+    const plan = reconcileVentilations(
+      [vent(500)],
+      [
+        { id: 'LINKED-NU', amountCents: 500, linkedToThisCw: true, hasAttachment: false, hasImputation: false },
+        { id: 'UNLINKED-JUSTIF', amountCents: 500, linkedToThisCw: false, hasAttachment: true, hasImputation: false },
+      ],
+    );
+    expect(plan.updates).toEqual([{ ecritureId: 'UNLINKED-JUSTIF', vent: vent(500) }]);
+    expect(plan.orphans).toEqual(['LINKED-NU']);
+  });
+
+  it('à enrichissement égal, garde le relié (moins de churn)', () => {
+    const plan = reconcileVentilations(
+      [vent(500)],
+      [
+        { id: 'UNLINKED', amountCents: 500, linkedToThisCw: false },
+        { id: 'LINKED', amountCents: 500, linkedToThisCw: true },
+      ],
+    );
+    expect(plan.updates).toEqual([{ ecritureId: 'LINKED', vent: vent(500) }]);
+    expect(plan.orphans).toEqual(['UNLINKED']);
+  });
+
+  it('2 ventilations de même montant + 2 candidats → les deux gardés, aucun orphelin', () => {
+    const plan = reconcileVentilations(
+      [vent(300), vent(300)],
+      [
+        { id: 'A', amountCents: 300, linkedToThisCw: true },
+        { id: 'B', amountCents: 300, linkedToThisCw: false },
+      ],
+    );
+    expect(plan.updates.map((u) => u.ecritureId).sort()).toEqual(['A', 'B']);
+    expect(plan.orphans).toHaveLength(0);
+    expect(plan.creates).toHaveLength(0);
+  });
+
+  it('2 ventilations de même montant + 3 candidats → garde 2, orpheline 1 (le moins enrichi)', () => {
+    const plan = reconcileVentilations(
+      [vent(300), vent(300)],
+      [
+        { id: 'JUSTIF', amountCents: 300, linkedToThisCw: false, hasAttachment: true },
+        { id: 'LINKED', amountCents: 300, linkedToThisCw: true },
+        { id: 'NU', amountCents: 300, linkedToThisCw: false },
+      ],
+    );
+    expect(plan.updates.map((u) => u.ecritureId).sort()).toEqual(['JUSTIF', 'LINKED']);
+    expect(plan.orphans).toEqual(['NU']);
+  });
+});
+
 describe('reconcileVentilations — changement de montant (passe 2)', () => {
   const vent = (montantCents: number) => ({ montantCents, categoryId: null, activiteId: null, uniteId: null });
   it('mono-ventilation dont le montant a changé → update du candidat relié (pas orphan+create)', () => {
