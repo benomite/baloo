@@ -12,6 +12,7 @@ import type {
   SousLigneDsp2,
   CreateEcritureInput,
 } from '../comptaweb';
+import { planStaleLineDrafts, type ExistingLineDraft } from './drafts-line-reconcile';
 
 ensureComptawebEnv();
 
@@ -48,37 +49,37 @@ function extractCarteProcCode(intitule: string): string | null {
   return m ? m[1] : null;
 }
 
-function listCandidates(lignes: EcritureBancaireNonRapprochee[]): Candidate[] {
-  const out: Candidate[] = [];
-  for (const l of lignes) {
-    if (l.sousLignes.length > 0) {
-      l.sousLignes.forEach((sl: SousLigneDsp2, idx: number) => {
-        out.push({
-          ligneBancaireId: l.id,
-          sousLigneIndex: idx,
-          dateOperation: l.dateOperation,
-          montantCentimes: sl.montantCentimes,
-          intituleParent: l.intitule,
-          libelProposal: cleanLabel(sl.commercant),
-        });
-      });
-    } else {
-      out.push({
-        ligneBancaireId: l.id,
-        sousLigneIndex: null,
-        dateOperation: l.dateOperation,
-        montantCentimes: l.montantCentimes,
-        intituleParent: l.intitule,
-        libelProposal: cleanLabel(l.intitule),
-      });
-    }
+// Candidats d'UNE ligne bancaire : un par sous-ligne DSP2 si présentes
+// (grain réel de la dépense), sinon un seul pour la ligne entière. Ces deux
+// formes sont MUTUELLEMENT EXCLUSIVES — cf. `drafts-line-reconcile.ts` pour la
+// réconciliation quand la ventilation DSP2 d'une ligne change entre scrapes.
+function candidatesForLine(l: EcritureBancaireNonRapprochee): Candidate[] {
+  if (l.sousLignes.length > 0) {
+    return l.sousLignes.map((sl: SousLigneDsp2, idx: number) => ({
+      ligneBancaireId: l.id,
+      sousLigneIndex: idx,
+      dateOperation: l.dateOperation,
+      montantCentimes: sl.montantCentimes,
+      intituleParent: l.intitule,
+      libelProposal: cleanLabel(sl.commercant),
+    }));
   }
-  return out;
+  return [
+    {
+      ligneBancaireId: l.id,
+      sousLigneIndex: null,
+      dateOperation: l.dateOperation,
+      montantCentimes: l.montantCentimes,
+      intituleParent: l.intitule,
+      libelProposal: cleanLabel(l.intitule),
+    },
+  ];
 }
 
 export interface ScanDraftsResult {
   crees: number;
   existants: number;
+  supprimes: number;
   erreur?: string;
 }
 
@@ -86,7 +87,6 @@ export async function scanDraftsFromComptaweb({ groupId }: DraftsContext): Promi
   try {
     const data = await withAutoReLogin((cfg) => listRapprochementBancaire(cfg));
     const db = getDb();
-    const candidates = listCandidates(data.ecrituresBancaires);
 
     const findExisting = db.prepare(
       `SELECT id FROM ecritures
@@ -106,37 +106,86 @@ export async function scanDraftsFromComptaweb({ groupId }: DraftsContext): Promi
          comptaweb_ecriture_id, carte_id, notes, created_at, updated_at
        ) VALUES (?, ?, NULL, ?, ?, ?, ?, NULL, ?, NULL, NULL, 'draft', 0, ?, ?, NULL, ?, ?, ?, ?)`,
     );
+    // Drafts existants d'une ligne, avec les flags du garde-fou de suppression
+    // (statut, lien CW, imputation, pièce attachée) — cf. deleteDraftEcriture.
+    const findLineDrafts = db.prepare(
+      `SELECT e.id AS id,
+              e.ligne_bancaire_sous_index AS sousIndex,
+              e.status AS status,
+              e.comptaweb_ecriture_id AS cwId,
+              (CASE WHEN e.category_id IS NOT NULL OR e.unite_id IS NOT NULL OR e.activite_id IS NOT NULL
+                    THEN 1 ELSE 0 END) AS hasImput,
+              (CASE WHEN EXISTS(SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id)
+                      OR EXISTS(SELECT 1 FROM depots_justificatifs d WHERE d.ecriture_id = e.id)
+                      OR EXISTS(SELECT 1 FROM remboursements r WHERE r.ecriture_id = e.id)
+                    THEN 1 ELSE 0 END) AS hasAttach
+       FROM ecritures e
+       WHERE e.group_id = ? AND e.ligne_bancaire_id = ?`,
+    );
+    const deleteStaleDraft = db.prepare(
+      `DELETE FROM ecritures WHERE id = ? AND group_id = ? AND status = 'draft'`,
+    );
 
     let crees = 0;
     let existants = 0;
-    for (const c of candidates) {
-      const existing = await findExisting.get(groupId, c.ligneBancaireId, c.sousLigneIndex, c.sousLigneIndex);
-      if (existing) { existants++; continue; }
-      const type = c.montantCentimes < 0 ? 'depense' : 'recette';
-      const amountAbs = Math.abs(c.montantCentimes);
-      const cwMode = inferComptawebModeId(c.intituleParent);
-      const modeLocal = cwMode !== null
-        ? (await findMode.get<{ id: string }>(cwMode))?.id ?? null
-        : null;
-      const carteCode = extractCarteProcCode(c.intituleParent);
-      const carteLocal = carteCode
-        ? (await findCarte.get<{ id: string }>(groupId, carteCode))?.id ?? null
-        : null;
-      const id = await nextId('ECR');
-      const now = currentTimestamp();
-      const notes = c.sousLigneIndex !== null
-        ? `Draft généré depuis ligne bancaire ${c.ligneBancaireId} sous-ligne ${c.sousLigneIndex} (intitulé parent: ${c.intituleParent.slice(0, 80)}).`
-        : `Draft généré depuis ligne bancaire ${c.ligneBancaireId}.`;
-      await insert.run(id, groupId, c.dateOperation, c.libelProposal, amountAbs, type, modeLocal, c.ligneBancaireId, c.sousLigneIndex, carteLocal, notes, now, now);
-      crees++;
+    let supprimes = 0;
+
+    for (const ligne of data.ecrituresBancaires) {
+      const candidates = candidatesForLine(ligne);
+
+      // 1. Réconciliation : retire les drafts fantômes de la ligne dont le
+      //    sous_index n'est plus canonique (ex. draft « ligne entière »
+      //    survivant après l'apparition des sous-lignes DSP2 → son montant =
+      //    somme des sous-lignes → double comptage). Brouillons NUS seulement
+      //    (le garde-fou est dans planStaleLineDrafts).
+      const existingRows = await findLineDrafts.all<{
+        id: string; sousIndex: number | null; status: string;
+        cwId: number | null; hasImput: number; hasAttach: number;
+      }>(groupId, ligne.id);
+      const existing: ExistingLineDraft[] = existingRows.map((r) => ({
+        id: r.id,
+        sousLigneIndex: r.sousIndex,
+        status: r.status,
+        comptawebEcritureId: r.cwId,
+        hasImputation: r.hasImput === 1,
+        hasAttachment: r.hasAttach === 1,
+      }));
+      const canonical = candidates.map((c) => c.sousLigneIndex);
+      for (const staleId of planStaleLineDrafts(canonical, existing)) {
+        await deleteStaleDraft.run(staleId, groupId);
+        supprimes++;
+      }
+
+      // 2. Création des candidats manquants (clé (ligne, sous_index)).
+      for (const c of candidates) {
+        const existingCand = await findExisting.get(groupId, c.ligneBancaireId, c.sousLigneIndex, c.sousLigneIndex);
+        if (existingCand) { existants++; continue; }
+        const type = c.montantCentimes < 0 ? 'depense' : 'recette';
+        const amountAbs = Math.abs(c.montantCentimes);
+        const cwMode = inferComptawebModeId(c.intituleParent);
+        const modeLocal = cwMode !== null
+          ? (await findMode.get<{ id: string }>(cwMode))?.id ?? null
+          : null;
+        const carteCode = extractCarteProcCode(c.intituleParent);
+        const carteLocal = carteCode
+          ? (await findCarte.get<{ id: string }>(groupId, carteCode))?.id ?? null
+          : null;
+        const id = await nextId('ECR');
+        const now = currentTimestamp();
+        const notes = c.sousLigneIndex !== null
+          ? `Draft généré depuis ligne bancaire ${c.ligneBancaireId} sous-ligne ${c.sousLigneIndex} (intitulé parent: ${c.intituleParent.slice(0, 80)}).`
+          : `Draft généré depuis ligne bancaire ${c.ligneBancaireId}.`;
+        await insert.run(id, groupId, c.dateOperation, c.libelProposal, amountAbs, type, modeLocal, c.ligneBancaireId, c.sousLigneIndex, carteLocal, notes, now, now);
+        crees++;
+      }
     }
 
-    return { crees, existants };
+    return { crees, existants, supprimes };
   } catch (err) {
     if (err instanceof ComptawebSessionExpiredError) {
-      return { crees: 0, existants: 0, erreur: 'Session Comptaweb expirée.' };
+      return { crees: 0, existants: 0, supprimes: 0, erreur: 'Session Comptaweb expirée.' };
     }
-    return { crees: 0, existants: 0, erreur: err instanceof Error ? err.message : String(err) };
+    return { crees: 0, existants: 0, supprimes: 0, erreur: err instanceof Error ? err.message : String(err) };
   }
 }
 
