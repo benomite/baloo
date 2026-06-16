@@ -10,6 +10,7 @@
 import type { DbWrapper } from '../db';
 import { getDb } from '../db';
 import { currentTimestamp } from '../ids';
+import { logError } from '../log';
 import { canHardDelete, type EcritureStatus } from './ecritures-sync-transitions';
 import { getSuggestion, resolveSuggestion } from './cw-link-suggestions';
 
@@ -19,17 +20,48 @@ export interface ArbitrageResult {
   reason?: ArbitrageReason;
 }
 
+async function tableExists(db: DbWrapper, name: string): Promise<boolean> {
+  const r = await db
+    .prepare("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get<{ x: number }>(name);
+  return !!r;
+}
+
+// Tables de DONNÉES UTILISATEUR qui pointent vers une écriture (ecriture_id).
+// Si l'une référence l'écriture, la suppression est refusée (pas un simple
+// doublon). Toutes sont lazy-init sauf en prod où elles existent : on garde
+// par `tableExists` pour ne pas planter sur une base où elles n'existent pas.
+const ATTACHMENT_TABLES = [
+  'depots_justificatifs',
+  'depots_especes',
+  'remboursements',
+  'avances_camp',
+] as const;
+
 async function countAttachments(db: DbWrapper, ecritureId: string): Promise<number> {
   const justifs = await db
     .prepare(`SELECT COUNT(*) as n FROM justificatifs WHERE entity_type = 'ecriture' AND entity_id = ?`)
     .get<{ n: number }>(ecritureId);
-  const depots = await db
-    .prepare('SELECT COUNT(*) as n FROM depots_justificatifs WHERE ecriture_id = ?')
-    .get<{ n: number }>(ecritureId);
-  const rembs = await db
-    .prepare('SELECT COUNT(*) as n FROM remboursements WHERE ecriture_id = ?')
-    .get<{ n: number }>(ecritureId);
-  return (justifs?.n ?? 0) + (depots?.n ?? 0) + (rembs?.n ?? 0);
+  let total = justifs?.n ?? 0;
+  for (const table of ATTACHMENT_TABLES) {
+    if (!(await tableExists(db, table))) continue;
+    const r = await db
+      .prepare(`SELECT COUNT(*) as n FROM ${table} WHERE ecriture_id = ?`)
+      .get<{ n: number }>(ecritureId);
+    total += r?.n ?? 0;
+  }
+  return total;
+}
+
+// Retire les références NON-données-utilisateur qui bloqueraient le DELETE par
+// FK : les marqueurs « Ignorer » (inbox_suggestion_rejets, FK NOT NULL vers
+// ecritures). Une fois l'écriture supprimée, ce marqueur n'a plus de sens.
+async function clearDeleteBlockers(db: DbWrapper, groupId: string, ecritureId: string): Promise<void> {
+  if (await tableExists(db, 'inbox_suggestion_rejets')) {
+    await db
+      .prepare('DELETE FROM inbox_suggestion_rejets WHERE ecriture_id = ? AND group_id = ?')
+      .run(ecritureId, groupId);
+  }
 }
 
 /** Restaure une écriture `supprimee_cw` en brouillon local. */
@@ -72,12 +104,52 @@ export async function deleteArbitratedEcriture(
   if (!canHardDelete(cur.status, attachments > 0)) {
     return { ok: false, reason: 'has_attachments' };
   }
-  await db
-    .prepare(
-      `DELETE FROM ecritures WHERE id = ? AND group_id = ? AND status IN ('supprimee_cw','agrege_remplace')`,
-    )
-    .run(id, groupId);
+  // Nettoie les marqueurs « Ignorer » (FK NOT NULL) qui feraient échouer le
+  // DELETE par contrainte — c'était la cause des crashs « sur certaines ».
+  await clearDeleteBlockers(db, groupId, id);
+  try {
+    await db
+      .prepare(
+        `DELETE FROM ecritures WHERE id = ? AND group_id = ? AND status IN ('supprimee_cw','agrege_remplace')`,
+      )
+      .run(id, groupId);
+  } catch (err) {
+    // Filet de sécurité : une FK inattendue ne doit jamais planter la page.
+    // On signale « pièce attachée » (message clair) plutôt qu'une 500.
+    logError('ecritures-arbitrage', 'deleteArbitratedEcriture FK', err, { groupId, id });
+    return { ok: false, reason: 'has_attachments' };
+  }
   return { ok: true };
+}
+
+export interface BatchDeleteResult {
+  ok: true;
+  deleted: number;
+  skipped: number;
+}
+
+/**
+ * Supprime en lot toutes les écritures d'un statut arbitrable
+ * (`agrege_remplace` ou `supprimee_cw`) du groupe. Chaque écriture passe par
+ * le même garde-fou que la suppression unitaire : celles qui portent une pièce
+ * (justif/dépôt/remb/avance) sont IGNORÉES, pas supprimées. Renvoie le décompte.
+ */
+export async function deleteAllArbitrated(
+  groupId: string,
+  status: 'agrege_remplace' | 'supprimee_cw',
+  db: DbWrapper = getDb(),
+): Promise<BatchDeleteResult> {
+  const rows = await db
+    .prepare('SELECT id FROM ecritures WHERE group_id = ? AND status = ?')
+    .all<{ id: string }>(groupId, status);
+  let deleted = 0;
+  let skipped = 0;
+  for (const r of rows) {
+    const res = await deleteArbitratedEcriture(groupId, r.id, db);
+    if (res.ok) deleted++;
+    else skipped++;
+  }
+  return { ok: true, deleted, skipped };
 }
 
 /**

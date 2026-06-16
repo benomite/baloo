@@ -5,6 +5,7 @@ import { getCurrentContext } from '../context';
 import {
   restoreSupprimeeToDraft,
   deleteArbitratedEcriture,
+  deleteAllArbitrated,
   confirmLink,
   rejectLink,
   type ArbitrageResult,
@@ -34,6 +35,15 @@ export async function supprimerDefinitivement(id: string) {
   const res = await deleteArbitratedEcriture(groupId, id);
   if (res.ok) revalidatePath('/ecritures');
   return toResponse(res);
+}
+
+export async function supprimerTousArbitres(status: 'agrege_remplace' | 'supprimee_cw') {
+  const { groupId } = await getCurrentContext();
+  const res = await deleteAllArbitrated(groupId, status);
+  if (res.deleted > 0) revalidatePath('/ecritures');
+  const parts = [`${res.deleted} supprimée${res.deleted > 1 ? 's' : ''}`];
+  if (res.skipped > 0) parts.push(`${res.skipped} ignorée${res.skipped > 1 ? 's' : ''} (pièce attachée)`);
+  return { ok: true, deleted: res.deleted, skipped: res.skipped, message: parts.join(', ') };
 }
 
 export async function confirmerLien(suggestionId: string) {

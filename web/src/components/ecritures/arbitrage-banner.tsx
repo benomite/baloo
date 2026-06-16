@@ -9,6 +9,7 @@ import { Amount } from '@/components/shared/amount';
 import {
   restaurerEnDraft,
   supprimerDefinitivement,
+  supprimerTousArbitres,
   confirmerLien,
   rejeterLien,
 } from '@/lib/actions/ecritures-arbitrage';
@@ -38,13 +39,28 @@ export function ArbitrageBanner({ supprimees, agregesRemplaces = [], suggestions
     });
   }
 
+  function runBatch(status: 'agrege_remplace' | 'supprimee_cw') {
+    startTransition(async () => {
+      const res = await supprimerTousArbitres(status);
+      toast.success(res.message);
+      router.refresh();
+    });
+  }
+
   return (
     <div className="mb-5 space-y-4">
       {supprimees.length > 0 && (
         <section className="rounded-lg border border-red-200 bg-red-50/60 p-3 dark:border-red-900/40 dark:bg-red-950/20">
-          <h3 className="mb-2 text-sm font-semibold text-red-900 dark:text-red-200">
-            {supprimees.length} écriture{supprimees.length > 1 ? 's' : ''} supprimée{supprimees.length > 1 ? 's' : ''} dans Comptaweb — à arbitrer
-          </h3>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-red-900 dark:text-red-200">
+              {supprimees.length} écriture{supprimees.length > 1 ? 's' : ''} supprimée{supprimees.length > 1 ? 's' : ''} dans Comptaweb — à arbitrer
+            </h3>
+            {supprimees.length > 1 && (
+              <Button size="sm" variant="outline" disabled={pending} onClick={() => runBatch('supprimee_cw')}>
+                <Trash2 size={13} className="mr-1" /> Tout supprimer ({supprimees.length})
+              </Button>
+            )}
+          </div>
           <ul className="space-y-1.5">
             {supprimees.map((e) => (
               <li
@@ -82,9 +98,16 @@ export function ArbitrageBanner({ supprimees, agregesRemplaces = [], suggestions
 
       {agregesRemplaces.length > 0 && (
         <section className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900/40 dark:bg-amber-950/20">
-          <h3 className="mb-1 text-sm font-semibold text-amber-900 dark:text-amber-200">
-            {agregesRemplaces.length} ligne{agregesRemplaces.length > 1 ? 's' : ''} « total » remplacée{agregesRemplaces.length > 1 ? 's' : ''} par le détail des ventilations — à supprimer
-          </h3>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+              {agregesRemplaces.length} ligne{agregesRemplaces.length > 1 ? 's' : ''} « total » remplacée{agregesRemplaces.length > 1 ? 's' : ''} par le détail des ventilations — à supprimer
+            </h3>
+            {agregesRemplaces.length > 1 && (
+              <Button size="sm" disabled={pending} onClick={() => runBatch('agrege_remplace')}>
+                <Trash2 size={13} className="mr-1" /> Tout supprimer ({agregesRemplaces.length})
+              </Button>
+            )}
+          </div>
           <p className="mb-2 text-[11.5px] text-amber-800/80 dark:text-amber-300/70">
             Ces lignes existent toujours dans Comptaweb : ce sont d&apos;anciens agrégats (le montant total) qui font doublon avec les lignes par ventilation. Tu peux les supprimer sans risque — le détail est conservé.
           </p>

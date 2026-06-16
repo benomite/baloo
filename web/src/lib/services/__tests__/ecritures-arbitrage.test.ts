@@ -5,10 +5,24 @@ import { ensureReconcileSchema } from '../../db/business-schema';
 import {
   restoreSupprimeeToDraft,
   deleteArbitratedEcriture,
+  deleteAllArbitrated,
   confirmLink,
   rejectLink,
 } from '../ecritures-arbitrage';
 import { upsertSuggestion, listSuggestions } from '../cw-link-suggestions';
+
+const SATELLITE_DDL = `
+  CREATE TABLE justificatifs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT);
+  CREATE TABLE depots_justificatifs (id TEXT PRIMARY KEY, ecriture_id TEXT);
+  CREATE TABLE depots_especes (id TEXT PRIMARY KEY, ecriture_id TEXT);
+  CREATE TABLE remboursements (id TEXT PRIMARY KEY, ecriture_id TEXT);
+  CREATE TABLE avances_camp (id TEXT PRIMARY KEY, ecriture_id TEXT);
+  CREATE TABLE inbox_suggestion_rejets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, group_id TEXT NOT NULL,
+    ecriture_id TEXT NOT NULL, target_kind TEXT NOT NULL DEFAULT 'depot',
+    target_id TEXT NOT NULL
+  );
+`;
 
 async function setupDb(): Promise<DbWrapper> {
   const client: Client = createClient({ url: 'file::memory:' });
@@ -22,9 +36,7 @@ async function setupDb(): Promise<DbWrapper> {
       comptaweb_synced INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'draft', updated_at TEXT
     );
-    CREATE TABLE justificatifs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT);
-    CREATE TABLE depots_justificatifs (id TEXT PRIMARY KEY, ecriture_id TEXT);
-    CREATE TABLE remboursements (id TEXT PRIMARY KEY, ecriture_id TEXT);
+    ${SATELLITE_DDL}
   `);
   await ensureReconcileSchema(db);
   return db;
@@ -84,6 +96,80 @@ describe('deleteArbitratedEcriture', () => {
     await insertEcr(db, 'E1', 'mirror');
     const res = await deleteArbitratedEcriture('g1', 'E1', db);
     expect(res).toEqual({ ok: false, reason: 'wrong_status' });
+  });
+
+  it('nettoie le marqueur « Ignorer » (inbox_suggestion_rejets) puis supprime', async () => {
+    await insertEcr(db, 'E1', 'agrege_remplace');
+    await db.prepare("INSERT INTO inbox_suggestion_rejets (group_id, ecriture_id, target_id) VALUES ('g1','E1','D1')").run();
+    const res = await deleteArbitratedEcriture('g1', 'E1', db);
+    expect(res.ok).toBe(true);
+    expect(await db.prepare('SELECT id FROM ecritures WHERE id=?').get('E1')).toBeUndefined();
+    const rejet = await db.prepare("SELECT COUNT(*) n FROM inbox_suggestion_rejets WHERE ecriture_id='E1'").get<{ n: number }>();
+    expect(rejet?.n).toBe(0);
+  });
+
+  it('refuse si un dépôt espèces est rattaché (FK non couverte avant)', async () => {
+    await insertEcr(db, 'E1', 'agrege_remplace');
+    await db.prepare("INSERT INTO depots_especes (id, ecriture_id) VALUES ('DE1','E1')").run();
+    const res = await deleteArbitratedEcriture('g1', 'E1', db);
+    expect(res).toEqual({ ok: false, reason: 'has_attachments' });
+  });
+
+  it('refuse si une avance de camp est rattachée', async () => {
+    await insertEcr(db, 'E1', 'agrege_remplace');
+    await db.prepare("INSERT INTO avances_camp (id, ecriture_id) VALUES ('AVC1','E1')").run();
+    const res = await deleteArbitratedEcriture('g1', 'E1', db);
+    expect(res).toEqual({ ok: false, reason: 'has_attachments' });
+  });
+
+  it('ne plante PAS sur la FK NOT NULL du marqueur « Ignorer » (FK activées)', async () => {
+    // Repro réelle du crash : avec les FK SQLite activées, le DELETE échouait
+    // sur inbox_suggestion_rejets.ecriture_id (NOT NULL). Le nettoyage préalable
+    // doit faire passer la suppression.
+    const client: Client = createClient({ url: 'file::memory:' });
+    await client.execute('PRAGMA foreign_keys = ON');
+    const fkDb = wrapClient(client);
+    await fkDb.exec(`
+      CREATE TABLE ecritures (
+        id TEXT PRIMARY KEY, group_id TEXT NOT NULL, date_ecriture TEXT NOT NULL,
+        description TEXT NOT NULL, amount_cents INTEGER NOT NULL, type TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft', updated_at TEXT
+      );
+      CREATE TABLE justificatifs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT);
+      CREATE TABLE inbox_suggestion_rejets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, group_id TEXT NOT NULL,
+        ecriture_id TEXT NOT NULL REFERENCES ecritures(id),
+        target_kind TEXT NOT NULL DEFAULT 'depot', target_id TEXT NOT NULL
+      );
+    `);
+    await fkDb.prepare("INSERT INTO ecritures (id, group_id, date_ecriture, description, amount_cents, type, status) VALUES ('E1','g1','2026-04-01','x',1000,'depense','agrege_remplace')").run();
+    await fkDb.prepare("INSERT INTO inbox_suggestion_rejets (group_id, ecriture_id, target_id) VALUES ('g1','E1','D1')").run();
+    const res = await deleteArbitratedEcriture('g1', 'E1', fkDb);
+    expect(res.ok).toBe(true);
+    expect(await fkDb.prepare('SELECT id FROM ecritures WHERE id=?').get('E1')).toBeUndefined();
+  });
+});
+
+describe('deleteAllArbitrated (batch)', () => {
+  let db: DbWrapper;
+  beforeEach(async () => { db = await setupDb(); });
+
+  it('supprime tous les doublons sans pièce et ignore ceux qui en ont une', async () => {
+    await insertEcr(db, 'A1', 'agrege_remplace');
+    await insertEcr(db, 'A2', 'agrege_remplace');
+    await insertEcr(db, 'A3', 'agrege_remplace');
+    await db.prepare("INSERT INTO justificatifs (id, entity_type, entity_id) VALUES ('J1','ecriture','A3')").run();
+    await insertEcr(db, 'M1', 'mirror'); // ne doit pas être touchée
+    const res = await deleteAllArbitrated('g1', 'agrege_remplace', db);
+    expect(res).toEqual({ ok: true, deleted: 2, skipped: 1 });
+    const rest = await db.prepare("SELECT COUNT(*) n FROM ecritures WHERE status='agrege_remplace'").get<{ n: number }>();
+    expect(rest?.n).toBe(1); // A3 (avec justif) conservée
+    expect(await db.prepare("SELECT id FROM ecritures WHERE id='M1'").get('M1')).toBeTruthy();
+  });
+
+  it('liste vide → 0 supprimé', async () => {
+    const res = await deleteAllArbitrated('g1', 'agrege_remplace', db);
+    expect(res).toEqual({ ok: true, deleted: 0, skipped: 0 });
   });
 });
 
