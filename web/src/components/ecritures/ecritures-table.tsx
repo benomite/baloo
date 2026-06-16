@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Landmark, Layers } from 'lucide-react';
+import { Landmark, Layers, Tag, Activity, Paperclip } from 'lucide-react';
 import { UniteBadge } from '@/components/shared/unite-badge';
 import { InlineSelect } from '@/components/shared/inline-select';
 import { Amount } from '@/components/shared/amount';
@@ -315,6 +315,8 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
             const isOpen = openId === e.id;
             const readiness = computeReadiness(e, { categories, unites, modesPaiement, activites });
             const showValider = e.status === 'draft';
+            // Un remboursement lié vaut justificatif (cf. badge « sans justif »).
+            const hasJustif = !!e.has_justificatif || !!e.remboursement_id;
             return (
               <div key={item.key}>
                 <div
@@ -346,40 +348,82 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     >
                       {e.description}
                     </span>
-                    <div className="mt-1 flex items-center gap-2" onClick={stop}>
+                    {/* Imputation complète et cohérente : unité + catégorie +
+                        activité (les 3 requises pour valider), éditables inline.
+                        Un champ manquant s'affiche en ambre. + présence justif. */}
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px]" onClick={stop}>
                       <InlineSelect
                         value={e.unite_id}
                         disabled={!editable}
                         placeholder="Aucune unité"
                         options={unites.map((u) => ({ value: u.id, label: `${u.code} — ${u.name}` }))}
-                        display={<UniteBadge code={e.unite_code} name={e.unite_name} couleur={e.unite_couleur} />}
+                        display={
+                          e.unite_id ? (
+                            <UniteBadge code={e.unite_code} name={e.unite_name} couleur={e.unite_couleur} />
+                          ) : (
+                            <span className="text-amber-600 dark:text-amber-400">+ Unité</span>
+                          )
+                        }
                         onSave={async (v) => {
                           const r = await updateEcritureField(e.id, 'unite_id', v);
                           if (r.ok) void refreshRow(e.id);
                           return r;
                         }}
                       />
+                      <InlineSelect
+                        value={e.category_id}
+                        disabled={!editable}
+                        placeholder="Aucune"
+                        options={categories.map((c) => ({ value: c.id, label: c.name }))}
+                        display={
+                          e.category_name ? (
+                            <span className="inline-flex items-center gap-1 text-fg-muted min-w-0">
+                              <Tag size={11} className="shrink-0 text-fg-subtle" />
+                              <span className="truncate max-w-[160px]" title={e.category_name}>{e.category_name}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                              <Tag size={11} /> + Catégorie
+                            </span>
+                          )
+                        }
+                        onSave={async (v) => {
+                          const r = await updateEcritureField(e.id, 'category_id', v);
+                          if (r.ok) void refreshRow(e.id);
+                          return r;
+                        }}
+                      />
+                      <InlineSelect
+                        value={e.activite_id}
+                        disabled={!editable}
+                        placeholder="Aucune"
+                        options={activites.map((a) => ({ value: a.id, label: a.name }))}
+                        display={
+                          e.activite_name ? (
+                            <span className="inline-flex items-center gap-1 text-fg-muted min-w-0">
+                              <Activity size={11} className="shrink-0 text-fg-subtle" />
+                              <span className="truncate max-w-[160px]" title={e.activite_name}>{e.activite_name}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                              <Activity size={11} /> + Activité
+                            </span>
+                          )
+                        }
+                        onSave={async (v) => {
+                          const r = await updateEcritureField(e.id, 'activite_id', v);
+                          if (r.ok) void refreshRow(e.id);
+                          return r;
+                        }}
+                      />
+                      <span
+                        className={`inline-flex items-center gap-1 ${hasJustif ? 'text-emerald-700 dark:text-emerald-300' : 'text-fg-subtle'}`}
+                        title={hasJustif ? 'Justificatif présent' : 'Aucun justificatif'}
+                      >
+                        <Paperclip size={11} className={`shrink-0 ${hasJustif ? 'text-emerald-600 dark:text-emerald-400' : 'text-fg-subtle/60'}`} />
+                        {hasJustif ? 'justif' : 'sans justif'}
+                      </span>
                     </div>
-                  </div>
-                  <div className="shrink-0 w-[150px] text-sm self-center" onClick={stop}>
-                    <InlineSelect
-                      value={e.category_id}
-                      disabled={!editable}
-                      placeholder="Aucune"
-                      options={categories.map((c) => ({ value: c.id, label: c.name }))}
-                      display={
-                        e.category_name ? (
-                          <span className="block truncate" title={e.category_name}>{e.category_name}</span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )
-                      }
-                      onSave={async (v) => {
-                        const r = await updateEcritureField(e.id, 'category_id', v);
-                        if (r.ok) void refreshRow(e.id);
-                        return r;
-                      }}
-                    />
                   </div>
                   <div className="shrink-0 w-[92px] text-right font-medium tabular-nums self-center">
                     <Amount cents={e.amount_cents} tone={e.type === 'depense' ? 'negative' : 'positive'} />
