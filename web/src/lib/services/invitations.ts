@@ -2,6 +2,7 @@ import { getDb } from '../db';
 import { currentTimestamp, uniqueId } from '../ids';
 import { nullIfEmpty } from '../utils/form';
 import { sendInvitationEmail } from '../email/invitation';
+import { generateInviteLink, buildInviteUrl } from '../auth/invite-links';
 
 // Service d'invitation par email (chantier 0.2, ADR-020).
 //
@@ -33,6 +34,8 @@ export interface CreateInvitationResult {
   role: string;
   scope_unite_id: string | null;
   email_sent: boolean;
+  invite_url: string;
+  reused: boolean;
 }
 
 function slugify(value: string): string {
@@ -64,13 +67,11 @@ export async function createInvitation(
     throw new Error(`Le rôle '${input.role}' n'a pas de scope unité.`);
   }
 
-  // Anti-doublon dans le même groupe.
+  // Anti-doublon : si un user existe déjà avec cet email dans le groupe, on
+  // le réutilise (idempotent) au lieu d'échouer — on lui régénère un lien.
   const existing = await db
-    .prepare('SELECT id FROM users WHERE group_id = ? AND email = ? LIMIT 1')
-    .get<{ id: string }>(groupId, email);
-  if (existing) {
-    throw new Error(`Un user avec l'email ${email} existe déjà dans ce groupe.`);
-  }
+    .prepare('SELECT id, role, scope_unite_id FROM users WHERE group_id = ? AND email = ? LIMIT 1')
+    .get<{ id: string; role: string; scope_unite_id: string | null }>(groupId, email);
 
   // Validation du scope (l'unité doit exister dans le groupe).
   if (input.scope_unite_id) {
@@ -88,19 +89,48 @@ export async function createInvitation(
     .prepare('SELECT nom_affichage FROM users WHERE id = ?')
     .get<{ nom_affichage: string | null }>(inviterUserId);
 
-  // Création du user.
-  const baseId = slugify(email.split('@')[0] || 'user');
-  const id = await uniqueId('users', baseId);
-  const now = currentTimestamp();
-  const nomAffichage = input.nom_affichage?.trim() || email.split('@')[0];
+  let userId: string;
+  let effectiveRole: string;
+  let effectiveScope: string | null;
+  let nomAffichage: string;
+  const reused = !!existing;
 
-  await db.prepare(
-    `INSERT INTO users (id, group_id, person_id, email, nom_affichage, role, scope_unite_id, statut, created_at, updated_at)
-     VALUES (?, ?, NULL, ?, ?, ?, ?, 'actif', ?, ?)`,
-  ).run(id, groupId, email, nomAffichage, input.role, nullIfEmpty(input.scope_unite_id), now, now);
+  if (existing) {
+    // On garde le rôle/scope actuels du user existant (modifiables via la
+    // section « Modifier le rôle »). On ne touche pas à ses données.
+    userId = existing.id;
+    effectiveRole = existing.role;
+    effectiveScope = existing.scope_unite_id;
+    const u = await db
+      .prepare('SELECT nom_affichage FROM users WHERE id = ?')
+      .get<{ nom_affichage: string | null }>(existing.id);
+    nomAffichage = u?.nom_affichage ?? email.split('@')[0];
+  } else {
+    const baseId = slugify(email.split('@')[0] || 'user');
+    userId = await uniqueId('users', baseId);
+    const now = currentTimestamp();
+    nomAffichage = input.nom_affichage?.trim() || email.split('@')[0];
+    effectiveRole = input.role;
+    effectiveScope = nullIfEmpty(input.scope_unite_id) ?? null;
+    await db.prepare(
+      `INSERT INTO users (id, group_id, person_id, email, nom_affichage, role, scope_unite_id, statut, created_at, updated_at)
+       VALUES (?, ?, NULL, ?, ?, ?, ?, 'actif', ?, ?)`,
+    ).run(userId, groupId, email, nomAffichage, input.role, effectiveScope, now, now);
+  }
 
-  // Envoi du mail. Si ça échoue, on garde quand même le user créé — le
-  // trésorier peut renvoyer un mail manuellement plus tard.
+  // Génère le lien d'auto-connexion vers le formulaire de remboursement.
+  // (Si le rôle est `parent`, le formulaire le redirigera vers l'accueil :
+  // c'est géré côté page /remboursements/nouveau.)
+  const { rawToken } = await generateInviteLink(db, {
+    userId,
+    groupId,
+    callbackUrl: '/remboursements/nouveau',
+    createdBy: inviterUserId,
+  });
+  const inviteUrl = buildInviteUrl(input.app_url, rawToken);
+
+  // Envoi du mail. Si ça échoue, on garde quand même le user + le lien — le
+  // trésorier peut copier le lien affiché à l'écran.
   let emailSent = false;
   try {
     await sendInvitationEmail({
@@ -108,8 +138,9 @@ export async function createInvitation(
       invitedName: nomAffichage,
       inviterName: inviterRow?.nom_affichage ?? null,
       groupName: groupRow?.nom ?? 'ton groupe SGDF',
-      role: input.role,
+      role: effectiveRole,
       appUrl: input.app_url,
+      inviteUrl,
     });
     emailSent = true;
   } catch (err) {
@@ -117,11 +148,13 @@ export async function createInvitation(
   }
 
   return {
-    userId: id,
+    userId,
     email,
-    role: input.role,
-    scope_unite_id: input.scope_unite_id ?? null,
+    role: effectiveRole,
+    scope_unite_id: effectiveScope,
     email_sent: emailSent,
+    invite_url: inviteUrl,
+    reused,
   };
 }
 
@@ -201,6 +234,12 @@ export async function resendInvitation(
   const groupRow = await db
     .prepare('SELECT nom FROM groupes WHERE id = ?')
     .get<{ nom: string }>(groupId);
+  const { rawToken } = await generateInviteLink(db, {
+    userId,
+    groupId,
+    callbackUrl: '/remboursements/nouveau',
+    createdBy: null,
+  });
   await sendInvitationEmail({
     to: user.email,
     invitedName: user.nom_affichage ?? user.email.split('@')[0],
@@ -208,6 +247,7 @@ export async function resendInvitation(
     groupName: groupRow?.nom ?? 'ton groupe SGDF',
     role: user.role as InvitationRole,
     appUrl: app_url,
+    inviteUrl: buildInviteUrl(app_url, rawToken),
   });
 }
 

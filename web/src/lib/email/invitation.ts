@@ -7,6 +7,7 @@ interface InvitationMailParams {
   groupName: string;
   role: string;
   appUrl: string;
+  inviteUrl?: string | null;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -92,7 +93,7 @@ function actionsFor(role: string): Action[] {
 }
 
 function buildText(params: InvitationMailParams): string {
-  const { to, invitedName, inviterName, groupName, role, appUrl } = params;
+  const { to, invitedName, inviterName, groupName, role, appUrl, inviteUrl } = params;
   const greeting = invitedName ? `Bonjour ${invitedName},` : 'Bonjour,';
   const inviter = inviterName ? `${inviterName} t'a` : 'Tu as été';
   const roleLabel = ROLE_LABELS[role] ?? role;
@@ -102,6 +103,20 @@ function buildText(params: InvitationMailParams): string {
   const actions = actionsFor(role)
     .map((a) => `  • ${a.label} — ${a.description}`)
     .join('\n');
+
+  const accessBlock = inviteUrl
+    ? [
+        'Pour accéder à ton espace (tu es connecté automatiquement) :',
+        inviteUrl,
+        '',
+        '(Ce lien est valable 7 jours. Garde-le pour toi.)',
+      ]
+    : [
+        'Pour activer ton compte :',
+        loginUrl,
+        '',
+        `(Saisis ton email — ${to} — puis clique sur "Recevoir un lien". Un lien de connexion arrive par mail, tu cliques, et tu es connecté.)`,
+      ];
 
   return [
     greeting,
@@ -113,10 +128,7 @@ function buildText(params: InvitationMailParams): string {
     'Ce que tu pourras faire :',
     actions,
     '',
-    'Pour activer ton compte :',
-    loginUrl,
-    '',
-    `(Saisis ton email — ${to} — puis clique sur "Recevoir un lien". Un lien de connexion arrive par mail, tu cliques, et tu es connecté.)`,
+    ...accessBlock,
     '',
     `Une page d'aide détaillée est dispo : ${aideUrl}`,
     '',
@@ -125,7 +137,7 @@ function buildText(params: InvitationMailParams): string {
 }
 
 function buildHtml(params: InvitationMailParams): string {
-  const { to, invitedName, inviterName, groupName, role, appUrl } = params;
+  const { invitedName, inviterName, groupName, role, appUrl } = params;
   const greeting = invitedName ? `Bonjour ${escapeHtml(invitedName)},` : 'Bonjour,';
   const inviter = inviterName
     ? `<strong>${escapeHtml(inviterName)}</strong> t'a invité`
@@ -133,6 +145,11 @@ function buildHtml(params: InvitationMailParams): string {
   const roleLabel = ROLE_LABELS[role] ?? role;
   const loginUrl = `${appUrl.replace(/\/$/, '')}/login`;
   const aideUrl = `${appUrl.replace(/\/$/, '')}/aide`;
+  const ctaUrl = params.inviteUrl ?? loginUrl;
+  const ctaLabel = params.inviteUrl ? 'Accéder à mon espace →' : 'Activer mon compte →';
+  const ctaHint = params.inviteUrl
+    ? 'Tu seras connecté automatiquement. Ce lien est valable 7 jours.'
+    : `Sur la page de connexion, saisis ton email (${escapeHtml(params.to)})<br>puis clique sur « Recevoir un lien ».`;
 
   // Tokens couleur — bleu marine SGDF + accents.
   const brand = '#1a3a6c';
@@ -202,15 +219,14 @@ function buildHtml(params: InvitationMailParams): string {
               <table role="presentation" cellpadding="0" cellspacing="0">
                 <tr>
                   <td style="background: ${brand}; border-radius: 8px;">
-                    <a href="${loginUrl}" style="display: inline-block; padding: 12px 28px; color: #ffffff; font-size: 14.5px; font-weight: 600; text-decoration: none; letter-spacing: 0.005em;">
-                      Activer mon compte →
+                    <a href="${ctaUrl}" style="display: inline-block; padding: 12px 28px; color: #ffffff; font-size: 14.5px; font-weight: 600; text-decoration: none; letter-spacing: 0.005em;">
+                      ${ctaLabel}
                     </a>
                   </td>
                 </tr>
               </table>
               <p style="margin: 12px 0 0; font-size: 11.5px; color: ${fgSubtle}; line-height: 1.5;">
-                Sur la page de connexion, saisis ton email (${escapeHtml(to)})<br>
-                puis clique sur « Recevoir un lien ».
+                ${ctaHint}
               </p>
             </td>
           </tr>
