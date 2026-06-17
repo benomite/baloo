@@ -17,6 +17,9 @@ export interface RemboursementLigne {
   amount_cents: number;
   nature: string;
   notes: string | null;
+  type: string;
+  distance_km_dixiemes: number | null;
+  taux_km_millicents: number | null;
   created_at: string;
 }
 
@@ -165,6 +168,9 @@ export interface CreateLigneInput {
   amount_cents: number;
   nature: string;
   notes?: string | null;
+  type?: 'depense' | 'km';
+  distance_km_dixiemes?: number | null;
+  taux_km_millicents?: number | null;
 }
 
 export async function addLigne(
@@ -175,9 +181,21 @@ export async function addLigne(
   const id = randomUUID();
   const now = currentTimestamp();
   await db.prepare(
-    `INSERT INTO remboursement_lignes (id, remboursement_id, date_depense, amount_cents, nature, notes, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, remboursementId, input.date_depense, input.amount_cents, input.nature, nullIfEmpty(input.notes), now);
+    `INSERT INTO remboursement_lignes
+       (id, remboursement_id, date_depense, amount_cents, nature, notes, type, distance_km_dixiemes, taux_km_millicents, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    id,
+    remboursementId,
+    input.date_depense,
+    input.amount_cents,
+    input.nature,
+    nullIfEmpty(input.notes),
+    input.type ?? 'depense',
+    input.distance_km_dixiemes ?? null,
+    input.taux_km_millicents ?? null,
+    now,
+  );
   await recalcTotal(remboursementId);
   return (await db.prepare('SELECT * FROM remboursement_lignes WHERE id = ?').get<RemboursementLigne>(id))!;
 }
