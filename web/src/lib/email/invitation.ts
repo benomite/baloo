@@ -34,7 +34,7 @@ const ROLE_ACTIONS: Record<string, Action[]> = {
     },
     {
       label: 'Inviter le reste du groupe',
-      description: 'co-trésorier, RG, chefs, équipiers, parents.',
+      description: 'co-trésorier, RG, chefs, membres.',
     },
   ],
   RG: [

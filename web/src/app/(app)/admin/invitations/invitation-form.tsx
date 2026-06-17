@@ -34,7 +34,7 @@ interface Props {
 const INITIAL: CreateInvitationState = { ok: false };
 
 export function InvitationForm({ action, unites, roles }: Props) {
-  const [role, setRole] = useState(roles[0]?.value ?? 'equipier');
+  const [role, setRole] = useState(roles[0]?.value ?? 'membre');
   const [state, formAction] = useActionState(action, INITIAL);
   const [copied, setCopied] = useState(false);
   const needsUnit = role === 'chef';
