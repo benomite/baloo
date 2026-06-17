@@ -52,6 +52,10 @@ function errorLabel(code: string): string {
       return 'Accès refusé : email inconnu côté Baloo.';
     case 'Verification':
       return 'Lien de connexion invalide ou expiré. Demande un nouveau lien.';
+    case 'InviteExpired':
+      return "Ce lien d'accès direct a expiré ou n'est plus valide. Demande-en un nouveau au trésorier.";
+    case 'InviteError':
+      return "Impossible d'ouvrir ce lien d'accès direct. Réessaie ou demande un nouveau lien au trésorier.";
     default:
       return `Erreur d'authentification (${code}).`;
   }
