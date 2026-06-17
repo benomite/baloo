@@ -17,6 +17,15 @@ import { logError } from '../log';
 
 const VALID_ROLES: readonly InvitationRole[] = ['tresorier', 'RG', 'chef', 'equipier', 'parent'];
 
+export interface CreateInvitationState {
+  ok: boolean;
+  error?: string;
+  email?: string;
+  inviteUrl?: string;
+  emailSent?: boolean;
+  reused?: boolean;
+}
+
 async function requireAdmin() {
   const ctx = await getCurrentContext();
   if (ctx.role !== 'tresorier' && ctx.role !== 'RG') {
@@ -37,7 +46,10 @@ async function deriveAppUrl(): Promise<string> {
   return host ? `${proto}://${host}` : 'https://localhost';
 }
 
-export async function createInvitation(formData: FormData): Promise<void> {
+export async function createInvitation(
+  _prevState: CreateInvitationState,
+  formData: FormData,
+): Promise<CreateInvitationState> {
   const { groupId, userId } = await requireAdmin();
 
   const email = (formData.get('email') as string | null)?.trim() ?? '';
@@ -46,15 +58,14 @@ export async function createInvitation(formData: FormData): Promise<void> {
   const nomAffichage = (formData.get('nom_affichage') as string | null)?.trim() || null;
 
   if (!email) {
-    redirect('/admin/invitations?error=' + encodeURIComponent('Email requis.'));
+    return { ok: false, error: 'Email requis.' };
   }
   if (!requestedRole || !VALID_ROLES.includes(requestedRole as InvitationRole)) {
-    redirect('/admin/invitations?error=' + encodeURIComponent('Rôle invalide.'));
+    return { ok: false, error: 'Rôle invalide.' };
   }
 
-  let result;
   try {
-    result = await createInvitationService(
+    const result = await createInvitationService(
       { groupId, inviterUserId: userId },
       {
         email,
@@ -64,14 +75,19 @@ export async function createInvitation(formData: FormData): Promise<void> {
         app_url: await deriveAppUrl(),
       },
     );
+    revalidatePath('/admin/invitations');
+    return {
+      ok: true,
+      email: result.email,
+      inviteUrl: result.invite_url,
+      emailSent: result.email_sent,
+      reused: result.reused,
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    redirect('/admin/invitations?error=' + encodeURIComponent(message));
+    logError('invitations', 'Création invitation échouée', err, { email });
+    return { ok: false, error: message };
   }
-
-  revalidatePath('/admin/invitations');
-  const flag = result.email_sent ? 'sent' : 'created';
-  redirect(`/admin/invitations?success=${encodeURIComponent(email)}&status=${flag}`);
 }
 
 export async function resendInvitation(userId: string): Promise<void> {

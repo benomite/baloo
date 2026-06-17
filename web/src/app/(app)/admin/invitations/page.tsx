@@ -36,8 +36,6 @@ import { InvitationForm } from './invitation-form';
 
 interface SearchParams {
   error?: string;
-  success?: string;
-  status?: string;
   resent?: string;
   deleted?: string;
   role_changed?: string;
@@ -90,14 +88,6 @@ export default async function AdminInvitationsPage({
           {params.error}
         </Alert>
       )}
-      {params.success && (
-        <Alert variant="success" className="mb-6">
-          Invitation créée pour <b>{params.success}</b>
-          {params.status === 'sent'
-            ? ' — email envoyé.'
-            : " — user créé mais l'envoi du mail a échoué (cf. logs)."}
-        </Alert>
-      )}
       {params.resent && (
         <Alert variant="success" className="mb-6">
           Mail d&apos;invitation renvoyé.
@@ -125,7 +115,7 @@ export default async function AdminInvitationsPage({
       )}
 
       <div className="grid gap-6 md:grid-cols-2 items-start mb-6">
-        <Section title="Nouvelle invitation" subtitle="Le destinataire reçoit un magic link.">
+        <Section title="Nouvelle invitation" subtitle="Crée le compte et génère un lien d'accès direct (mail + à copier).">
           <InvitationForm action={createInvitation} unites={unites} roles={ROLE_OPTIONS} />
         </Section>
 
