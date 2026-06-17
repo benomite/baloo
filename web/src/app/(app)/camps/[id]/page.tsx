@@ -14,6 +14,7 @@ import { PendingButton } from '@/components/shared/pending-button';
 import { UniteBadge } from '@/components/shared/unite-badge';
 import { Field } from '@/components/shared/field';
 import { getCurrentContext } from '@/lib/context';
+import { requireCampsAccess } from '@/lib/auth/access';
 import {
   getCampDashboard,
   type CampStatut,
@@ -109,6 +110,7 @@ export default async function CampDetailPage({
     params,
     searchParams,
   ]);
+  requireCampsAccess(ctx.role);
   const campCtx = { groupId: ctx.groupId, scopeUniteId: ctx.scopeUniteId };
   const dashboard = await getCampDashboard(campCtx, id);
   if (!dashboard) notFound();

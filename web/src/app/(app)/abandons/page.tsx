@@ -17,7 +17,7 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { TabLink } from '@/components/shared/tab-link';
 import { PendingButton } from '@/components/shared/pending-button';
 import { getCurrentContext } from '@/lib/context';
-import { requireNotParent } from '@/lib/auth/access';
+import { requireCanSubmit } from '@/lib/auth/access';
 import { listAbandons, type AbandonStatus } from '@/lib/services/abandons';
 import { toggleCerfaEmis } from '@/lib/actions/abandons';
 
@@ -52,7 +52,7 @@ export default async function AbandonsPage({
   searchParams: Promise<SearchParams>;
 }) {
   const [ctx, params] = await Promise.all([getCurrentContext(), searchParams]);
-  requireNotParent(ctx.role);
+  requireCanSubmit(ctx.role);
   const isAdmin = ADMIN_ROLES.includes(ctx.role);
 
   const activeFilter: AbandonStatus | 'all' = isAbandonStatus(params.status)

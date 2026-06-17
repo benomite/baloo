@@ -1,7 +1,7 @@
-import { redirect } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
 import { Alert } from '@/components/ui/alert';
 import { getCurrentContext } from '@/lib/context';
+import { requireCanSubmit } from '@/lib/auth/access';
 import { getDb } from '@/lib/db';
 import { listSelectableUnites } from '@/lib/queries/reference';
 import { createRemboursement } from '@/lib/actions/remboursements';
@@ -43,7 +43,7 @@ export default async function NouveauRemboursementPage({
   searchParams: Promise<SearchParams>;
 }) {
   const ctx = await getCurrentContext();
-  if (ctx.role === 'parent') redirect('/');
+  requireCanSubmit(ctx.role);
 
   const [params, unites, lastRib] = await Promise.all([
     searchParams,
