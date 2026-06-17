@@ -28,11 +28,17 @@
 //    existent déjà avec un schéma plus ancien) et les migrations
 //    ci-dessous évoluent la BDD vers la forme courante.
 
-import { getDb } from '../db';
+import { getDb, type DbWrapper } from '../db';
 import { ensureBusinessSchema } from '../db/business-schema';
 import { inferBrancheSGDF } from '../branches-sgdf';
 
 let ensured = false;
+// Fusion des rôles applicatifs equipier + parent → membre (spec 2026-06-17).
+// Idempotent. Pas de DELETE. La validation des valeurs reste côté code.
+export async function migrateLegacyRolesToMembre(db: DbWrapper): Promise<void> {
+  await db.exec("UPDATE users SET role = 'membre' WHERE role IN ('equipier', 'parent')");
+}
+
 // Lazy-init appelé depuis l'adapter NextAuth (cf. adapter.ts) au
 // premier accès. Garde le flag `ensured` pour ne tourner qu'une fois
 // par process.
@@ -160,6 +166,7 @@ export async function ensureAuthSchema(): Promise<void> {
   // n'étaient pas autorisées par la CHECK.
   await db.exec("UPDATE users SET role = 'tresorier' WHERE role = 'cotresorier'");
   await db.exec("UPDATE users SET role = 'chef' WHERE role = 'chef_unite'");
+  await migrateLegacyRolesToMembre(db);
 
   // Chantier 2 P2-workflows : lien remboursement ↔ user demandeur
   // (pour scoper "ses propres demandes" côté equipier/chef et envoyer
