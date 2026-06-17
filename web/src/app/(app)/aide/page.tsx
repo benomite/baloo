@@ -17,20 +17,20 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Section } from '@/components/shared/section';
 import { Alert } from '@/components/ui/alert';
 import { getCurrentContext } from '@/lib/context';
+import { SUBMIT_ROLES } from '@/lib/auth/access';
 
 const ROLE_LABEL: Record<string, string> = {
   tresorier: 'Trésorier',
   RG: 'Responsable de groupe',
   chef: "Chef d'unité",
-  equipier: 'Équipier',
-  parent: 'Parent',
+  membre: 'Membre',
 };
 
 export default async function AidePage() {
   const ctx = await getCurrentContext();
   const roleLabel = ROLE_LABEL[ctx.role] ?? ctx.role;
   const isAdmin = ctx.role === 'tresorier' || ctx.role === 'RG';
-  const canSubmit = ctx.role !== 'parent';
+  const canSubmit = SUBMIT_ROLES.includes(ctx.role as never);
 
   return (
     <div className="max-w-4xl mx-auto">

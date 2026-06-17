@@ -16,7 +16,7 @@ import { listSupprimeeCw, listAgregesRemplaces, listLinkSuggestions } from '@/li
 import { EcrituresInfiniteList } from '@/components/ecritures/ecritures-infinite-list';
 import { EcrituresSection } from '@/components/ecritures/ecritures-section';
 import { getCurrentContext } from '@/lib/context';
-import { requireNotParent } from '@/lib/auth/access';
+import { requireComptaAccess } from '@/lib/auth/access';
 import { getEcrituresHeaderTotals, currentExercice } from '@/lib/services/overview';
 import { EcrituresFinancialHeader } from '@/components/ecritures/ecritures-financial-header';
 
@@ -26,7 +26,7 @@ const PAGE_SIZE = 100;
 
 export default async function EcrituresPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const ctx = await getCurrentContext();
-  requireNotParent(ctx.role);
+  requireComptaAccess(ctx.role);
   const canLink = ctx.role === 'tresorier' || ctx.role === 'RG';
   const params = await searchParams;
   const exercice = currentExercice();

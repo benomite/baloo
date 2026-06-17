@@ -13,7 +13,7 @@ import { parseAmount } from '../format';
 import { setRembsEcritureLink } from '@/lib/services/remboursement-ecriture-link';
 import { rejectSuggestion } from '@/lib/services/inbox-rejets';
 
-const SUBMIT_ROLES = ['tresorier', 'RG', 'chef', 'equipier'] as const;
+const SUBMIT_ROLES = ['tresorier', 'RG', 'chef', 'membre', 'equipier', 'parent'] as const;
 const ADMIN_ROLES = ['tresorier', 'RG'] as const;
 
 function isSubmitRole(role: string): role is (typeof SUBMIT_ROLES)[number] {

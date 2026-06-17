@@ -1,8 +1,8 @@
-import { redirect } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
 import { Alert } from '@/components/ui/alert';
 import { AbandonForm } from '@/components/abandons/abandon-form';
 import { getCurrentContext } from '@/lib/context';
+import { requireCanSubmit } from '@/lib/auth/access';
 import { listSelectableUnites } from '@/lib/queries/reference';
 import { createAbandon } from '@/lib/actions/abandons';
 import { getDb } from '@/lib/db';
@@ -38,7 +38,7 @@ export default async function NouvelAbandonPage({
   searchParams: Promise<SearchParams>;
 }) {
   const ctx = await getCurrentContext();
-  if (ctx.role === 'parent') redirect('/');
+  requireCanSubmit(ctx.role);
 
   const [params, unites, natureSuggestions] = await Promise.all([
     searchParams,

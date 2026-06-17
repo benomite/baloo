@@ -17,7 +17,7 @@ export interface InvitationContext {
   inviterUserId: string;
 }
 
-const VALID_ROLES = ['tresorier', 'RG', 'chef', 'equipier', 'parent'] as const;
+const VALID_ROLES = ['tresorier', 'RG', 'chef', 'membre'] as const;
 export type InvitationRole = (typeof VALID_ROLES)[number];
 
 export interface CreateInvitationInput {
@@ -119,8 +119,6 @@ export async function createInvitation(
   }
 
   // Génère le lien d'auto-connexion vers le formulaire de remboursement.
-  // (Si le rôle est `parent`, le formulaire le redirigera vers l'accueil :
-  // c'est géré côté page /remboursements/nouveau.)
   const { rawToken } = await generateInviteLink(db, {
     userId,
     groupId,
@@ -344,7 +342,7 @@ export async function setUserRole(
   // Garde-fou bis : un admin ne peut pas se rétrograder lui-même
   // (sinon il perd ses droits dans la même requête et finit en
   // demi-cassé). Doit demander à un autre admin.
-  if (userId === currentUserId && (role === 'chef' || role === 'equipier' || role === 'parent')) {
+  if (userId === currentUserId && (role === 'chef' || role === 'membre')) {
     throw new Error(
       'Tu ne peux pas te rétrograder toi-même — demande à un autre admin de le faire.',
     );

@@ -44,11 +44,11 @@ describe('nav-config — desktop, filtrage par rôle', () => {
     expect(visibleItemsForRole(group('administration').items, 'chef')).toHaveLength(0);
   });
 
-  it('le parent ne voit que Remboursements dans process', () => {
-    const process = visibleItemsForRole(group('process').items, 'parent').map((i) => i.href);
-    expect(process).toEqual(['/remboursements']);
-    expect(visibleItemsForRole(group('comptabilite').items, 'parent')).toHaveLength(0);
-    expect(visibleItemsForRole(group('administration').items, 'parent')).toHaveLength(0);
+  it('le membre voit Déposer/Demandes/Abandons mais PAS Camps', () => {
+    const process = visibleItemsForRole(group('process').items, 'membre').map((i) => i.href);
+    expect(process).toEqual(['/depot', '/remboursements', '/abandons']);
+    expect(visibleItemsForRole(group('comptabilite').items, 'membre')).toHaveLength(0);
+    expect(visibleItemsForRole(group('administration').items, 'membre')).toHaveLength(0);
   });
 });
 
@@ -60,14 +60,13 @@ describe('nav-config — resolveNavItem (role-switch)', () => {
     expect(resolveNavItem(depot, 'tresorier')).toMatchObject({ href: '/depots', label: 'Dépôts' });
   });
 
-  it('Déposer pointe vers /depot avec le libellé "Déposer" pour un equipier', () => {
-    expect(resolveNavItem(depot, 'equipier')).toMatchObject({ href: '/depot', label: 'Déposer' });
+  it('Déposer pointe vers /depot avec le libellé "Déposer" pour un membre', () => {
+    expect(resolveNavItem(depot, 'membre')).toMatchObject({ href: '/depot', label: 'Déposer' });
   });
 
-  it('Remboursements : "Remboursements" pour admin, "Mes demandes" pour equipier, "Mes reçus"→/ pour parent', () => {
+  it('Remboursements : "Remboursements" pour admin, "Mes demandes" pour membre', () => {
     expect(resolveNavItem(rembs, 'RG').label).toBe('Remboursements');
-    expect(resolveNavItem(rembs, 'equipier').label).toBe('Mes demandes');
-    expect(resolveNavItem(rembs, 'parent')).toMatchObject({ href: '/', label: 'Mes reçus' });
+    expect(resolveNavItem(rembs, 'membre').label).toBe('Mes demandes');
   });
 });
 
@@ -78,13 +77,7 @@ describe('nav-config — mobile', () => {
     ]);
   });
 
-  it("l'equipier voit Déposer / Demandes / Abandons, sans Plus", () => {
-    expect(visibleTabsForRole('equipier').map((t) => t.key)).toEqual(['depot', 'demandes', 'abandons']);
-  });
-
-  it('le parent voit seulement "Mes reçus" pointant vers /', () => {
-    const tabs = visibleTabsForRole('parent');
-    expect(tabs.map((t) => t.key)).toEqual(['recus']);
-    expect(tabs[0].href).toBe('/');
+  it('le membre voit Déposer / Demandes / Abandons, sans Plus', () => {
+    expect(visibleTabsForRole('membre').map((t) => t.key)).toEqual(['depot', 'demandes', 'abandons']);
   });
 });

@@ -15,7 +15,7 @@ import {
 } from '../services/invitations';
 import { logError } from '../log';
 
-const VALID_ROLES: readonly InvitationRole[] = ['tresorier', 'RG', 'chef', 'equipier', 'parent'];
+const VALID_ROLES: readonly InvitationRole[] = ['tresorier', 'RG', 'chef', 'membre'];
 
 export interface CreateInvitationState {
   ok: boolean;

@@ -17,7 +17,7 @@ import { getDb } from './db';
 // `requireApiContext` dans `lib/api/route-helpers.ts` qui supporte aussi
 // le Bearer token MCP.
 
-export type UserRole = 'tresorier' | 'RG' | 'chef' | 'equipier' | 'parent' | string;
+export type UserRole = 'tresorier' | 'RG' | 'chef' | 'membre' | string;
 
 export interface CurrentContext {
   userId: string;

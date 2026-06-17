@@ -8,19 +8,12 @@ vi.mock('next/navigation', () => ({ usePathname: () => '/' }));
 afterEach(cleanup);
 
 describe('<BottomNav>', () => {
-  it("l'equipier voit Déposer / Demandes / Abandons, sans Plus", () => {
-    render(<BottomNav role="equipier" />);
+  it('le membre voit Déposer / Demandes / Abandons, sans Plus', () => {
+    render(<BottomNav role="membre" />);
     expect(screen.getByText('Déposer')).toBeTruthy();
     expect(screen.getByText('Demandes')).toBeTruthy();
     expect(screen.getByText('Abandons')).toBeTruthy();
     expect(screen.queryByText('Plus')).toBeNull();
-  });
-
-  it('le parent voit seulement Mes reçus', () => {
-    render(<BottomNav role="parent" />);
-    expect(screen.getByText('Mes reçus')).toBeTruthy();
-    expect(screen.queryByText('Déposer')).toBeNull();
-    expect(screen.queryByText('Abandons')).toBeNull();
   });
 
   it("le trésorier voit l'onglet Plus", () => {

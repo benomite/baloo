@@ -14,8 +14,7 @@ const ROLE_LABELS: Record<string, string> = {
   tresorier: 'trésorier',
   RG: 'responsable de groupe',
   chef: "chef d'unité",
-  equipier: 'équipier',
-  parent: 'parent',
+  membre: 'membre',
 };
 
 interface Action {
@@ -35,7 +34,7 @@ const ROLE_ACTIONS: Record<string, Action[]> = {
     },
     {
       label: 'Inviter le reste du groupe',
-      description: 'co-trésorier, RG, chefs, équipiers, parents.',
+      description: 'co-trésorier, RG, chefs, membres.',
     },
   ],
   RG: [
@@ -62,7 +61,7 @@ const ROLE_ACTIONS: Record<string, Action[]> = {
       description: 'pour que le trésorier rapproche avec une écriture.',
     },
   ],
-  equipier: [
+  membre: [
     {
       label: 'Faire une demande de remboursement',
       description: "quand tu as avancé des frais — c'est rapide.",
@@ -76,20 +75,10 @@ const ROLE_ACTIONS: Record<string, Action[]> = {
       description: 'pour que le trésorier rapproche avec une écriture.',
     },
   ],
-  parent: [
-    {
-      label: 'Suivre tes paiements',
-      description: 'inscriptions, camps, activités de tes enfants.',
-    },
-    {
-      label: 'Consulter tes reçus fiscaux',
-      description: 'CERFA pour tes dons au groupe.',
-    },
-  ],
 };
 
 function actionsFor(role: string): Action[] {
-  return ROLE_ACTIONS[role] ?? ROLE_ACTIONS.equipier;
+  return ROLE_ACTIONS[role] ?? ROLE_ACTIONS.membre;
 }
 
 function buildText(params: InvitationMailParams): string {

@@ -11,7 +11,7 @@ import { TabLink } from '@/components/shared/tab-link';
 import { listRemboursements } from '@/lib/queries/remboursements';
 import { getDb } from '@/lib/db';
 import { getCurrentContext } from '@/lib/context';
-import { requireNotParent } from '@/lib/auth/access';
+import { requireCanSubmit } from '@/lib/auth/access';
 
 const ADMIN_ROLES = ['tresorier', 'RG'];
 
@@ -21,7 +21,7 @@ export default async function RemboursementsPage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const [ctx, params] = await Promise.all([getCurrentContext(), searchParams]);
-  requireNotParent(ctx.role);
+  requireCanSubmit(ctx.role);
   const isAdmin = ADMIN_ROLES.includes(ctx.role);
   const unlinkedFilter = params.unlinked === '1';
 

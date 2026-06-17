@@ -10,7 +10,7 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { PendingButton } from '@/components/shared/pending-button';
 import { UniteBadge } from '@/components/shared/unite-badge';
 import { getCurrentContext } from '@/lib/context';
-import { requireNotParent } from '@/lib/auth/access';
+import { requireCampsAccess } from '@/lib/auth/access';
 import { listCamps, type Camp, type CampStatut } from '@/lib/services/camps';
 import { createCamp } from '@/lib/actions/camps';
 import {
@@ -57,7 +57,7 @@ export default async function CampsPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const [ctx, params] = await Promise.all([getCurrentContext(), searchParams]);
-  requireNotParent(ctx.role);
+  requireCampsAccess(ctx.role);
   const isAdmin = ADMIN_ROLES.includes(ctx.role);
 
   const [camps, unites, activites] = await Promise.all([
