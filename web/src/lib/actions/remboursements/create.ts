@@ -182,7 +182,7 @@ async function createRemboursementFromForm(
 }
 
 // Formulaire unifié de création (depuis /remboursements/nouveau).
-// Accessible à tous les rôles authentifiés sauf parent.
+// Accessible à tous les rôles qui peuvent soumettre (dont `membre`).
 // Le demandeur (prenom/nom/email) est lu depuis formData — la page
 // préremplie les champs avec l'utilisateur connecté, mais chacun peut
 // les modifier.
@@ -194,7 +194,8 @@ export async function createRemboursement(
 ): Promise<RembFormState> {
   return runFormAction(async () => {
     const ctx = await getCurrentContext();
-    if (ctx.role === 'parent') {
+    // `membre` = rôle unifié autorisé ; `equipier`/`parent` tolérés en legacy.
+    if (!['tresorier', 'RG', 'chef', 'membre', 'equipier', 'parent'].includes(ctx.role)) {
       throw new FormValidationError('Action non autorisée pour ton rôle.');
     }
 

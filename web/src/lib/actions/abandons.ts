@@ -20,6 +20,7 @@ import {
 import { parseAmount } from '../format';
 import { sendAbandonCreatedEmail } from '../email/abandon';
 import { currentTimestamp } from '../ids';
+import { requireCanSubmit } from '@/lib/auth/access';
 
 const ADMIN_ROLES = ['tresorier', 'RG'];
 
@@ -80,13 +81,12 @@ async function attachFile(
 // Saisie d'un abandon depuis le formulaire unifie /abandons/nouveau.
 // L'identite du donateur est lue dans le formData (champs prenom/nom/email),
 // prepopulee cote serveur avec le user connecte mais modifiable dans le form.
-// Roles autorises : tous sauf parent. Les fichiers (feuille + justifs) sont
-// optionnels — le cas admin (rattrapage d'historique) n'a pas toujours les docs.
+// Roles autorises : tous ceux qui peuvent soumettre (cf. SUBMIT_ROLES, dont
+// `membre`). Les fichiers (feuille + justifs) sont optionnels — le cas admin
+// (rattrapage d'historique) n'a pas toujours les docs.
 export async function createAbandon(formData: FormData): Promise<void> {
   const ctx = await getCurrentContext();
-  if (ctx.role === 'parent') {
-    redirect('/abandons/nouveau?error=' + encodeURIComponent('Action non autorisée pour ton rôle.'));
-  }
+  requireCanSubmit(ctx.role);
 
   const feuille = pickFile(formData, 'feuille');
   const justifs = pickFiles(formData, 'justifs');
