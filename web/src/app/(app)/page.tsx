@@ -7,6 +7,7 @@ import {
   HandCoins,
   Paperclip,
   Sparkles,
+  Tent,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -33,12 +34,11 @@ const ROLE_LABEL: Record<string, string> = {
   tresorier: 'trésorier',
   RG: 'responsable de groupe',
   chef: "chef d'unité",
-  equipier: 'équipier',
-  parent: 'parent',
+  membre: 'membre',
 };
 
 const ADMIN_ROLES = ['tresorier', 'RG'];
-const SUBMIT_ROLES = ['tresorier', 'RG', 'chef', 'equipier'];
+const SUBMIT_ROLES = ['tresorier', 'RG', 'chef', 'membre', 'equipier', 'parent'];
 
 // La home lit les cookies (auth + welcome banner) → ne peut pas être
 // rendue statiquement. Sans ça, Next tente la prérendu au build et
@@ -60,12 +60,10 @@ export default async function HomePage() {
     isWelcomeBannerDismissed(),
   ]);
 
-  // La home n'est plus un dashboard : redirection par rôle (spec 2026-05-31).
-  // Le parent garde cette page comme « Mes reçus » (rendu plus bas). On
-  // redirige avant les requêtes coûteuses pour ne pas les payer inutilement.
+  // Admin → vue compta. chef + membre → home didactique (rendu ci-dessous).
   if (ADMIN_ROLES.includes(ctx.role)) redirect('/ecritures');
-  if (ctx.role !== 'parent') redirect('/depot');
 
+  const isChef = ctx.role === 'chef';
   const canSubmit = SUBMIT_ROLES.includes(ctx.role);
 
   const [myRbts, myAbandons] = await Promise.all([
@@ -90,7 +88,7 @@ export default async function HomePage() {
     <div className="max-w-5xl mx-auto">
       <PageHeader
         title={hello}
-        subtitle="Tes demandes et tes raccourcis pour faire avancer la compta du groupe."
+        subtitle="Voici ce que tu peux faire dans Baloo, et où aller pour chaque chose."
       />
 
       {!welcomeDismissed && (
@@ -98,7 +96,7 @@ export default async function HomePage() {
       )}
 
       <div className="space-y-8">
-        {canSubmit && <QuickActions />}
+        {canSubmit && <QuickActions showCamps={isChef} />}
 
         {canSubmit && (
           <MyDemandsSection rbts={myRbts} abandons={myAbandons} hasAny={hasMyDemands} />
@@ -159,7 +157,7 @@ function WelcomeBanner({
   );
 }
 
-function QuickActions() {
+function QuickActions({ showCamps }: { showCamps: boolean }) {
   const actions: { href: string; label: string; description: string; icon: LucideIcon }[] = [
     {
       href: '/depot',
@@ -179,6 +177,16 @@ function QuickActions() {
       description: 'Renoncer au remboursement → reçu fiscal CERFA pour défiscaliser.',
       icon: Gift,
     },
+    ...(showCamps
+      ? [
+          {
+            href: '/camps',
+            label: 'Mes camps',
+            description: "Suivi du budget et des dépenses du camp de ton unité.",
+            icon: Tent,
+          },
+        ]
+      : []),
   ];
 
   return (
