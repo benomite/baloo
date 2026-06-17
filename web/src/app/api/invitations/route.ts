@@ -8,7 +8,7 @@ import {
 
 const createSchema = z.object({
   email: z.string().email(),
-  role: z.enum(['tresorier', 'RG', 'chef', 'equipier', 'parent']),
+  role: z.enum(['tresorier', 'RG', 'chef', 'membre']),
   scope_unite_id: z.string().nullish(),
   nom_affichage: z.string().nullish(),
 });

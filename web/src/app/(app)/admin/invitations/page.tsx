@@ -44,9 +44,8 @@ interface SearchParams {
 }
 
 const ROLE_OPTIONS = [
-  { value: 'equipier', label: 'Équipier' },
+  { value: 'membre', label: 'Membre (dépôt, remboursement, abandon)' },
   { value: 'chef', label: "Chef d'unité" },
-  { value: 'parent', label: 'Parent' },
   { value: 'tresorier', label: 'Trésorier' },
   { value: 'RG', label: 'Responsable de groupe' },
 ];
