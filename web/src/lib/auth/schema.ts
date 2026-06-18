@@ -39,6 +39,29 @@ export async function migrateLegacyRolesToMembre(db: DbWrapper): Promise<void> {
   await db.exec("UPDATE users SET role = 'membre' WHERE role IN ('equipier', 'parent')");
 }
 
+// Frais kilométriques (spec 2026-06-17). Idempotent. Colonnes nullable +
+// backfill (pas de NOT NULL DEFAULT — cf. piège Turso). Pas de CHECK SQL.
+export async function migrateKmColumns(db: DbWrapper): Promise<void> {
+  const ligneCols = await db.prepare('PRAGMA table_info(remboursement_lignes)').all<{ name: string }>();
+  const hasLigne = (n: string) => ligneCols.some((c) => c.name === n);
+  if (!hasLigne('type')) {
+    await db.exec("ALTER TABLE remboursement_lignes ADD COLUMN type TEXT DEFAULT 'depense'");
+    await db.exec("UPDATE remboursement_lignes SET type = 'depense' WHERE type IS NULL");
+  }
+  if (!hasLigne('distance_km_dixiemes')) {
+    await db.exec('ALTER TABLE remboursement_lignes ADD COLUMN distance_km_dixiemes INTEGER');
+  }
+  if (!hasLigne('taux_km_millicents')) {
+    await db.exec('ALTER TABLE remboursement_lignes ADD COLUMN taux_km_millicents INTEGER');
+  }
+
+  const groupeCols = await db.prepare('PRAGMA table_info(groupes)').all<{ name: string }>();
+  if (!groupeCols.some((c) => c.name === 'taux_km_millicents')) {
+    await db.exec('ALTER TABLE groupes ADD COLUMN taux_km_millicents INTEGER DEFAULT 354');
+    await db.exec('UPDATE groupes SET taux_km_millicents = 354 WHERE taux_km_millicents IS NULL');
+  }
+}
+
 // Lazy-init appelé depuis l'adapter NextAuth (cf. adapter.ts) au
 // premier accès. Garde le flag `ensured` pour ne tourner qu'une fois
 // par process.
@@ -583,6 +606,8 @@ export async function ensureAuthSchema(): Promise<void> {
   await db.exec(
     'CREATE INDEX IF NOT EXISTS idx_budget_lignes_activite ON budget_lignes(activite_id)',
   );
+
+  await migrateKmColumns(db);
 
   ensured = true;
 }

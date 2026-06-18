@@ -10,6 +10,7 @@ import type { Remboursement } from '../types';
 import type { RemboursementLigne } from '../services/remboursements';
 import type { Signature } from '../services/signatures';
 import { formatAmount } from '../format';
+import { formatKmRate, formatDistance } from '../services/km';
 
 const ROLE_LABEL: Record<string, string> = {
   demandeur: 'Demandeur',
@@ -82,7 +83,10 @@ export async function renderFeuilleRemboursementPdf(
         y += 22;
       } else {
         for (const l of lignes) {
-          const nature = l.notes ? `${l.nature} — ${l.notes}` : l.nature;
+          let nature = l.notes ? `${l.nature} — ${l.notes}` : l.nature;
+          if (l.type === 'km' && l.distance_km_dixiemes != null && l.taux_km_millicents != null) {
+            nature += ` (${formatDistance(l.distance_km_dixiemes)} × ${formatKmRate(l.taux_km_millicents)}/km)`;
+          }
           const heightNeeded = doc.heightOfString(nature, { width: colAmount - colNature - 10 });
           const rowHeight = Math.max(18, heightNeeded + 6);
 
@@ -105,6 +109,16 @@ export async function renderFeuilleRemboursementPdf(
       doc.text(formatAmount(total), colAmount, totalY + 6, { width: 75, align: 'right' });
       doc.font('Helvetica');
       y = totalY + 22;
+
+      if (lignes.some((l) => l.type === 'km')) {
+        const kmLine = lignes.find((l) => l.type === 'km' && l.taux_km_millicents != null);
+        if (kmLine?.taux_km_millicents != null) {
+          doc.fillColor('#555').fontSize(8).font('Helvetica')
+            .text(`Taux kilométrique appliqué : ${formatKmRate(kmLine.taux_km_millicents)}/km`, 40, y + 4);
+          y += 16;
+          doc.fillColor('black');
+        }
+      }
 
       // RIB
       if (rbt.rib_texte || rbt.rib_file_path) {

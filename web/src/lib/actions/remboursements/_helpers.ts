@@ -1,6 +1,7 @@
 import { headers } from 'next/headers';
 import { getDb } from '../../db';
 import { parseAmount } from '../../format';
+import { parseDistanceToDixiemes, computeKmAmountCents } from '../../services/km';
 import {
   JustificatifValidationError,
   validateJustifAttachment,
@@ -93,9 +94,11 @@ export function parseIdentiteFromForm(
 }
 
 export interface LigneInput {
+  type: 'depense' | 'km';
   date: string;
   nature: string;
-  amount_cents: number;
+  amount_cents: number;            // dépense : saisi ; km : 0 jusqu'à résolution
+  distance_km_dixiemes: number | null;
 }
 
 // Pré-valide les justificatifs uploadés (taille, extension, MIME)
@@ -126,18 +129,70 @@ export function parseLignesFromForm(
 
   const lignes: LigneInput[] = [];
   for (let i = 0; i < ligneCount; i++) {
+    const type = ((formData.get(`ligne_${i}_type`) as string | null) ?? 'depense') === 'km' ? 'km' : 'depense';
     const date = (formData.get(`ligne_${i}_date`) as string | null) ?? '';
     const nature = ((formData.get(`ligne_${i}_nature`) as string | null) ?? '').trim();
-    const montantRaw = ((formData.get(`ligne_${i}_montant`) as string | null) ?? '').trim();
-    if (!date || !nature || !montantRaw) fail(`Ligne ${i + 1} incomplète.`);
-    let amount_cents: number;
-    try {
-      amount_cents = parseAmount(montantRaw);
-    } catch {
-      fail(`Ligne ${i + 1} : montant invalide « ${montantRaw} ».`);
-      return null as never;
+    if (!date || !nature) fail(`Ligne ${i + 1} incomplète.`);
+
+    if (type === 'km') {
+      const kmRaw = ((formData.get(`ligne_${i}_km`) as string | null) ?? '').trim();
+      if (!kmRaw) fail(`Ligne ${i + 1} : nombre de km requis.`);
+      let distance_km_dixiemes: number;
+      try {
+        distance_km_dixiemes = parseDistanceToDixiemes(kmRaw);
+      } catch {
+        fail(`Ligne ${i + 1} : distance invalide « ${kmRaw} ».`);
+        return null as never;
+      }
+      lignes.push({ type: 'km', date, nature, amount_cents: 0, distance_km_dixiemes });
+    } else {
+      const montantRaw = ((formData.get(`ligne_${i}_montant`) as string | null) ?? '').trim();
+      if (!montantRaw) fail(`Ligne ${i + 1} incomplète.`);
+      let amount_cents: number;
+      try {
+        amount_cents = parseAmount(montantRaw);
+      } catch {
+        fail(`Ligne ${i + 1} : montant invalide « ${montantRaw} ».`);
+        return null as never;
+      }
+      lignes.push({ type: 'depense', date, nature, amount_cents, distance_km_dixiemes: null });
     }
-    lignes.push({ date, nature, amount_cents });
   }
   return lignes;
+}
+
+export interface ResolvedLigne {
+  type: 'depense' | 'km';
+  date: string;
+  nature: string;
+  amount_cents: number;
+  distance_km_dixiemes: number | null;
+  taux_km_millicents: number | null;
+}
+
+// Calcule le montant des lignes km au taux fourni (figé sur la ligne).
+// Les lignes dépense gardent leur montant saisi.
+export function resolveLignesWithRate(
+  lignes: LigneInput[],
+  tauxKmMillicents: number,
+): ResolvedLigne[] {
+  return lignes.map((l) =>
+    l.type === 'km'
+      ? {
+          type: 'km' as const,
+          date: l.date,
+          nature: l.nature,
+          amount_cents: computeKmAmountCents(l.distance_km_dixiemes ?? 0, tauxKmMillicents),
+          distance_km_dixiemes: l.distance_km_dixiemes,
+          taux_km_millicents: tauxKmMillicents,
+        }
+      : {
+          type: 'depense' as const,
+          date: l.date,
+          nature: l.nature,
+          amount_cents: l.amount_cents,
+          distance_km_dixiemes: null,
+          taux_km_millicents: null,
+        },
+  );
 }

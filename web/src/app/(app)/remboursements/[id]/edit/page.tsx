@@ -7,6 +7,7 @@ import { getRemboursement } from '@/lib/queries/remboursements';
 import { listLignes } from '@/lib/services/remboursements';
 import { listJustificatifs } from '@/lib/queries/justificatifs';
 import { updateMyRemboursement } from '@/lib/actions/remboursements';
+import { getGroupe } from '@/lib/services/groupes';
 import { RemboursementForm } from '@/components/rembs/remboursement-form';
 
 interface SearchParams {
@@ -34,6 +35,7 @@ export default async function EditRemboursementPage({
   if (!r) notFound();
   // Préserve l'unité orpheline éventuellement déjà sur la demande.
   const unites = await listSelectableUnites(r.unite_id);
+  const groupe = await getGroupe({ groupId: ctx.groupId });
 
   const isAdmin = ADMIN_ROLES.includes(ctx.role);
   const isOwner = !!r.submitted_by_user_id && r.submitted_by_user_id === ctx.userId;
@@ -92,12 +94,15 @@ export default async function EditRemboursementPage({
           date_depense: l.date_depense,
           amount_cents: l.amount_cents,
           nature: l.nature,
+          type: l.type === 'km' ? 'km' : 'depense',
+          distance_km_dixiemes: l.distance_km_dixiemes,
         }))}
         initialRibTexte={r.rib_texte}
         initialNotes={r.notes}
         initialUniteId={r.unite_id}
         existingJustifsCount={justifs.length}
         submitLabel="Enregistrer les modifications"
+        tauxKmMillicents={groupe?.taux_km_millicents ?? 354}
       />
     </div>
   );

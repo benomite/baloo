@@ -44,6 +44,9 @@ function makeLigne(overrides: Partial<RemboursementLigne> = {}): RemboursementLi
     amount_cents: 1500,
     nature: 'ticket métro',
     notes: null,
+    type: 'depense',
+    distance_km_dixiemes: null,
+    taux_km_millicents: null,
     created_at: '2026-04-15T10:00:00Z',
     ...overrides,
   };

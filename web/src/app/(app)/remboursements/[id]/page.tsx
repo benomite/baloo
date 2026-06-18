@@ -33,6 +33,7 @@ import {
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
 import { getCurrentContext } from '@/lib/context';
 import { cn } from '@/lib/utils';
+import { formatKmRate, formatDistance } from '@/lib/services/km';
 
 interface SearchParams {
   error?: string;
@@ -212,7 +213,14 @@ export default async function RemboursementDetailPage({
                       className="border-b border-border-soft last:border-b-0"
                     >
                       <td className="py-2 px-2 text-fg tabular-nums">{l.date_depense}</td>
-                      <td className="py-2 px-2 text-fg">{l.nature}</td>
+                      <td className="py-2 px-2 text-fg">
+                        {l.nature}
+                        {l.type === 'km' && l.distance_km_dixiemes != null && l.taux_km_millicents != null && (
+                          <span className="block text-[11.5px] text-fg-subtle tabular-nums">
+                            {formatDistance(l.distance_km_dixiemes)} × {formatKmRate(l.taux_km_millicents)}/km
+                          </span>
+                        )}
+                      </td>
                       <td className="py-2 px-2 text-right font-medium">
                         <Amount cents={l.amount_cents} tone="negative" />
                       </td>

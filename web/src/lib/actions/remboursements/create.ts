@@ -9,6 +9,7 @@ import {
   addLigne,
 } from '../../services/remboursements';
 import { attachJustificatif } from '../../services/justificatifs';
+import { getGroupe } from '../../services/groupes';
 import { sendRemboursementCreatedEmail } from '../../email/remboursement';
 import { signAndRefreshRemboursementPdf } from '../../services/remboursement-signing';
 import { logError } from '../../log';
@@ -20,6 +21,7 @@ import {
   listAdminEmails,
   parseIdentiteFromForm,
   parseLignesFromForm,
+  resolveLignesWithRate,
   runFormAction,
   validateJustifFiles,
   type RembFormState,
@@ -50,6 +52,10 @@ async function createRemboursementFromForm(
   const { prenom, nom, email } = parseIdentiteFromForm(formData, fail);
   const lignes = parseLignesFromForm(formData, fail);
 
+  const groupe = await getGroupe({ groupId: ctx.groupId });
+  const tauxKm = groupe?.taux_km_millicents ?? 354;
+  const resolvedLignes = resolveLignesWithRate(lignes, tauxKm);
+
   const justifFiles = formData.getAll('justifs').filter((f): f is File => f instanceof File && f.size > 0);
   if (justifFiles.length === 0) fail('Au moins un justificatif (photo / PDF) est requis.');
 
@@ -63,7 +69,7 @@ async function createRemboursementFromForm(
   validateJustifFiles(ribFile ? [...justifFiles, ribFile] : justifFiles, fail);
 
   const fullName = `${prenom} ${nom}`.trim();
-  const totalEstime = lignes.reduce((s, l) => s + l.amount_cents, 0);
+  const totalEstime = resolvedLignes.reduce((s, l) => s + l.amount_cents, 0);
   const uniteIdRaw = (formData.get('unite_id') as string | null)?.trim() || null;
   const uniteId = ctx.scopeUniteId || uniteIdRaw;
 
@@ -91,11 +97,14 @@ async function createRemboursementFromForm(
     return null as never;
   }
 
-  for (const l of lignes) {
+  for (const l of resolvedLignes) {
     await addLigne(created.id, {
       date_depense: l.date,
       amount_cents: l.amount_cents,
       nature: l.nature,
+      type: l.type,
+      distance_km_dixiemes: l.distance_km_dixiemes,
+      taux_km_millicents: l.taux_km_millicents,
     });
   }
 

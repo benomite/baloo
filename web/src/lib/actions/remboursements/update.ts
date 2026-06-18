@@ -6,6 +6,7 @@ import { getCurrentContext } from '../../context';
 import { getDb } from '../../db';
 import { getRemboursement, addLigne } from '../../services/remboursements';
 import { attachJustificatif } from '../../services/justificatifs';
+import { getGroupe } from '../../services/groupes';
 import { signAndRefreshRemboursementPdf } from '../../services/remboursement-signing';
 import { logError } from '../../log';
 import {
@@ -14,6 +15,7 @@ import {
   FormValidationError,
   parseIdentiteFromForm,
   parseLignesFromForm,
+  resolveLignesWithRate,
   runFormAction,
   validateJustifFiles,
   type RembFormState,
@@ -56,6 +58,10 @@ async function updateMyRemboursementBody(id: string, formData: FormData): Promis
   const { prenom, nom, email } = parseIdentiteFromForm(formData, fail);
   const lignes = parseLignesFromForm(formData, fail);
 
+  const groupe = await getGroupe({ groupId: ctx.groupId });
+  const tauxKm = groupe?.taux_km_millicents ?? 354;
+  const resolvedLignes = resolveLignesWithRate(lignes, tauxKm);
+
   const ribTexte = (formData.get('rib_texte') as string | null)?.trim() || null;
   const uniteIdRaw = (formData.get('unite_id') as string | null)?.trim() || null;
   const uniteId = ctx.scopeUniteId || uniteIdRaw;
@@ -88,11 +94,14 @@ async function updateMyRemboursementBody(id: string, formData: FormData): Promis
   );
 
   await getDb().prepare('DELETE FROM remboursement_lignes WHERE remboursement_id = ?').run(id);
-  for (const l of lignes) {
+  for (const l of resolvedLignes) {
     await addLigne(id, {
       date_depense: l.date,
       amount_cents: l.amount_cents,
       nature: l.nature,
+      type: l.type,
+      distance_km_dixiemes: l.distance_km_dixiemes,
+      taux_km_millicents: l.taux_km_millicents,
     });
   }
 

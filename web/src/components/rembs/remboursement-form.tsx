@@ -1,7 +1,8 @@
 'use client';
 
 import { useActionState, useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, Car } from 'lucide-react';
+import { computeKmAmountCents, formatKmRate } from '@/lib/services/km';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -33,6 +34,8 @@ interface InitialLigne {
   date_depense: string;
   amount_cents: number;
   nature: string;
+  type?: 'depense' | 'km';
+  distance_km_dixiemes?: number | null;
 }
 
 interface Props {
@@ -56,26 +59,34 @@ interface Props {
   existingJustifsCount?: number;
   submitLabel?: string;
   introNode?: React.ReactNode;
+  tauxKmMillicents: number;
 }
 
 interface Ligne {
   key: number;
+  type: 'depense' | 'km';
   date: string;
-  montant: string;
+  montant: string; // dépense
+  km: string;      // kilométrique (saisie km)
   nature: string;
 }
 
 let _rowSeq = 0;
 function newRow(today: string, init?: InitialLigne): Ligne {
   if (init) {
+    const type = init.type === 'km' ? 'km' : 'depense';
     return {
       key: ++_rowSeq,
+      type,
       date: init.date_depense,
-      montant: (init.amount_cents / 100).toFixed(2).replace('.', ','),
+      montant: type === 'depense' ? (init.amount_cents / 100).toFixed(2).replace('.', ',') : '',
+      km: type === 'km' && init.distance_km_dixiemes != null
+        ? (init.distance_km_dixiemes / 10).toString().replace('.', ',')
+        : '',
       nature: init.nature,
     };
   }
-  return { key: ++_rowSeq, date: today, montant: '', nature: '' };
+  return { key: ++_rowSeq, type: 'depense', date: today, montant: '', km: '', nature: '' };
 }
 
 export function RemboursementForm({
@@ -91,6 +102,7 @@ export function RemboursementForm({
   existingJustifsCount = 0,
   submitLabel = 'Envoyer la demande',
   introNode,
+  tauxKmMillicents,
 }: Props) {
   const [state, formAction] = useActionState(action, null);
   const [ribFileError, setRibFileError] = useState<string | null>(null);
@@ -112,10 +124,17 @@ export function RemboursementForm({
     return [newRow(today)];
   });
 
-  const total = lignes.reduce((s, l) => {
+  const ligneAmountCents = (l: Ligne): number => {
+    if (l.type === 'km') {
+      const km = parseFloat(l.km.replace(',', '.').replace(/\s/g, ''));
+      if (!isFinite(km) || km <= 0) return 0;
+      return computeKmAmountCents(Math.round(km * 10), tauxKmMillicents);
+    }
     const v = parseFloat(l.montant.replace(',', '.').replace(/\s/g, ''));
-    return s + (isFinite(v) ? v : 0);
-  }, 0);
+    return isFinite(v) ? Math.round(v * 100) : 0;
+  };
+  const totalCents = lignes.reduce((s, l) => s + ligneAmountCents(l), 0);
+  const hasKm = lignes.some((l) => l.type === 'km');
 
   const updateLigne = (key: number, patch: Partial<Ligne>) => {
     setLignes((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -172,7 +191,7 @@ export function RemboursementForm({
           <div className="text-right">
             <div className="text-overline text-fg-subtle">Total</div>
             <div className="text-display-sm tabular-nums">
-              {total.toFixed(2).replace('.', ',')}&nbsp;€
+              {(totalCents / 100).toFixed(2).replace('.', ',')}&nbsp;€
             </div>
           </div>
         }
@@ -180,55 +199,44 @@ export function RemboursementForm({
         <input type="hidden" name="ligne_count" value={lignes.length} />
         <div className="space-y-3">
           {lignes.map((l, i) => (
-            <div
-              key={l.key}
-              className="grid grid-cols-[100px_1fr_110px_auto] sm:grid-cols-[120px_1fr_120px_auto] gap-2 sm:gap-3 items-end"
-            >
+            <div key={l.key} className="grid grid-cols-[110px_100px_1fr_140px_auto] gap-2 sm:gap-3 items-end">
+              <Field label={i === 0 ? 'Type' : ''} htmlFor={`ligne_${i}_type_sel`}>
+                <NativeSelect
+                  id={`ligne_${i}_type_sel`}
+                  value={l.type}
+                  onChange={(e) => updateLigne(l.key, { type: e.target.value === 'km' ? 'km' : 'depense' })}
+                >
+                  <option value="depense">Dépense</option>
+                  <option value="km">Kilométrique</option>
+                </NativeSelect>
+              </Field>
+              <input type="hidden" name={`ligne_${i}_type`} value={l.type} />
               <Field label={i === 0 ? 'Date' : ''} htmlFor={`ligne_${i}_date`} required={i === 0}>
-                <Input
-                  type="date"
-                  id={`ligne_${i}_date`}
-                  name={`ligne_${i}_date`}
-                  required
-                  value={l.date}
-                  onChange={(e) => updateLigne(l.key, { date: e.target.value })}
-                />
+                <Input type="date" id={`ligne_${i}_date`} name={`ligne_${i}_date`} required
+                  value={l.date} onChange={(e) => updateLigne(l.key, { date: e.target.value })} />
               </Field>
               <Field label={i === 0 ? 'Nature' : ''} htmlFor={`ligne_${i}_nature`} required={i === 0}>
-                <Input
-                  id={`ligne_${i}_nature`}
-                  name={`ligne_${i}_nature`}
-                  required
-                  placeholder="Ex. tickets métro, péage, intendance"
-                  value={l.nature}
-                  onChange={(e) => updateLigne(l.key, { nature: e.target.value })}
-                />
+                <Input id={`ligne_${i}_nature`} name={`ligne_${i}_nature`} required
+                  placeholder={l.type === 'km' ? 'Ex. trajet domicile → camp' : 'Ex. tickets métro, péage'}
+                  value={l.nature} onChange={(e) => updateLigne(l.key, { nature: e.target.value })} />
               </Field>
-              <Field
-                label={i === 0 ? 'Montant TTC' : ''}
-                htmlFor={`ligne_${i}_montant`}
-                required={i === 0}
-              >
-                <Input
-                  id={`ligne_${i}_montant`}
-                  name={`ligne_${i}_montant`}
-                  required
-                  inputMode="decimal"
-                  placeholder="42,50"
-                  value={l.montant}
-                  onChange={(e) => updateLigne(l.key, { montant: e.target.value })}
-                  className="tabular-nums"
-                />
-              </Field>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => removeLigne(l.key)}
-                disabled={lignes.length === 1}
-                aria-label="Supprimer la ligne"
-                className="mb-px text-fg-subtle hover:text-destructive"
-              >
+              {l.type === 'km' ? (
+                <Field label={i === 0 ? 'Nb de km' : ''} htmlFor={`ligne_${i}_km`} required={i === 0}>
+                  <Input id={`ligne_${i}_km`} name={`ligne_${i}_km`} required inputMode="decimal" placeholder="120"
+                    value={l.km} onChange={(e) => updateLigne(l.key, { km: e.target.value })} className="tabular-nums" />
+                  <p className="mt-1 text-[11px] text-fg-subtle tabular-nums">
+                    = {(ligneAmountCents(l) / 100).toFixed(2).replace('.', ',')} € ({formatKmRate(tauxKmMillicents)}/km)
+                  </p>
+                </Field>
+              ) : (
+                <Field label={i === 0 ? 'Montant TTC' : ''} htmlFor={`ligne_${i}_montant`} required={i === 0}>
+                  <Input id={`ligne_${i}_montant`} name={`ligne_${i}_montant`} required inputMode="decimal" placeholder="42,50"
+                    value={l.montant} onChange={(e) => updateLigne(l.key, { montant: e.target.value })} className="tabular-nums" />
+                </Field>
+              )}
+              <Button type="button" variant="ghost" size="icon-sm" onClick={() => removeLigne(l.key)}
+                disabled={lignes.length === 1} aria-label="Supprimer la ligne"
+                className="mb-px text-fg-subtle hover:text-destructive">
                 <X size={15} strokeWidth={2} />
               </Button>
             </div>
@@ -260,6 +268,14 @@ export function RemboursementForm({
           accept="image/*,application/pdf"
           helpText="Tu peux glisser-déposer plusieurs fichiers d'un coup."
         />
+        {hasKm && (
+          <Alert variant="info" className="mt-3">
+            <span className="inline-flex items-center gap-1.5">
+              <Car size={14} strokeWidth={1.75} />
+              Frais kilométriques : pense à joindre la carte grise du véhicule dans les justificatifs.
+            </span>
+          </Alert>
+        )}
       </Section>
 
       <Section

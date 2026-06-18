@@ -5,6 +5,7 @@ import { requireCanSubmit } from '@/lib/auth/access';
 import { getDb } from '@/lib/db';
 import { listSelectableUnites } from '@/lib/queries/reference';
 import { createRemboursement } from '@/lib/actions/remboursements';
+import { getGroupe } from '@/lib/services/groupes';
 import { RemboursementForm } from '@/components/rembs/remboursement-form';
 
 // Récupère le RIB texte de la dernière demande non vide d'un user. Utile
@@ -45,10 +46,11 @@ export default async function NouveauRemboursementPage({
   const ctx = await getCurrentContext();
   requireCanSubmit(ctx.role);
 
-  const [params, unites, lastRib] = await Promise.all([
+  const [params, unites, lastRib, groupe] = await Promise.all([
     searchParams,
     listSelectableUnites(),
     getLastRibForUser(ctx.userId, ctx.groupId),
+    getGroupe({ groupId: ctx.groupId }),
   ]);
   const today = new Date().toISOString().split('T')[0];
   const { prenom, nom } = splitName(ctx.name);
@@ -74,6 +76,7 @@ export default async function NouveauRemboursementPage({
         defaultIdentity={{ prenom, nom, email: ctx.email }}
         scopeUniteId={ctx.scopeUniteId}
         initialRibTexte={lastRib}
+        tauxKmMillicents={groupe?.taux_km_millicents ?? 354}
       />
     </div>
   );

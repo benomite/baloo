@@ -14,6 +14,7 @@ export interface Groupe {
   email_contact: string | null;
   iban_principal: string | null;
   notes: string | null;
+  taux_km_millicents: number;
   created_at: string;
   updated_at: string;
 }
@@ -29,6 +30,7 @@ export interface UpdateGroupeInput {
   email_contact?: string | null;
   iban_principal?: string | null;
   notes?: string | null;
+  taux_km_millicents?: number;
 }
 
 export async function updateGroupe(
