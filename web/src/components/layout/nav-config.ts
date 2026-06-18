@@ -1,6 +1,6 @@
 import {
   BookOpen, Bot, Coins, Ellipsis, Files, Gift, HandCoins, Link2, Mail,
-  Paperclip, ShieldAlert, Tent,
+  Paperclip, ShieldAlert, SlidersHorizontal, Tent,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -78,6 +78,7 @@ export const DESKTOP_GROUPS: NavGroup[] = [
       { href: '/import', label: 'Configs Comptaweb', icon: Link2, roles: ADMIN },
       { href: '/moi/connexions', label: 'Connexion Claude', icon: Bot, roles: ADMIN },
       { href: '/admin/invitations', label: 'Membres', icon: Mail, roles: ADMIN },
+      { href: '/admin/parametres', label: 'Paramètres', icon: SlidersHorizontal, roles: ADMIN },
       { href: '/admin/errors', label: "Journal d'erreurs", icon: ShieldAlert, roles: ADMIN },
     ],
   },
