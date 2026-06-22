@@ -30,8 +30,8 @@ export async function POST(request: Request) {
   }
 
   const form = await request.formData();
-  const file = form.get('file');
-  if (!(file instanceof File)) return jsonError('Fichier requis.', 400);
+  const files = form.getAll('file').filter((f): f is File => f instanceof File && f.size > 0);
+  if (files.length === 0) return jsonError('Fichier requis.', 400);
 
   const meta = {
     titre: (form.get('titre') as string | null) ?? undefined,
@@ -43,7 +43,13 @@ export async function POST(request: Request) {
   const parsed = metaSchema.safeParse(meta);
   if (!parsed.success) return jsonError('Paramètres invalides.', 400);
 
-  const buf = Buffer.from(await file.arrayBuffer());
+  const filesPayload = await Promise.all(
+    files.map(async (f) => ({
+      filename: f.name,
+      content: Buffer.from(await f.arrayBuffer()),
+      mime_type: f.type || 'application/octet-stream',
+    })),
+  );
 
   const created = await createDepot(
     { groupId, userId },
@@ -51,11 +57,7 @@ export async function POST(request: Request) {
       titre: parsed.data.titre,
       amount_cents: parseAmountFr(parsed.data.montant_estime),
       date_estimee: parsed.data.date_estimee ?? null,
-      file: {
-        filename: file.name,
-        content: buf,
-        mime_type: file.type || 'application/octet-stream',
-      },
+      files: filesPayload,
     },
   );
 

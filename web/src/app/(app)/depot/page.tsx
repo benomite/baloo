@@ -1,5 +1,4 @@
 import { PageHeader } from '@/components/layout/page-header';
-import { Button } from '@/components/ui/button';
 import { PendingButton } from '@/components/shared/pending-button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -12,7 +11,7 @@ import { requireCanSubmit } from '@/lib/auth/access';
 import { listUnites, listCategories, listCartes, getTopCategoryIds, listSelectableActivites } from '@/lib/queries/reference';
 import { createDepot } from '@/lib/actions/depots';
 import { CategoryPicker } from '@/components/shared/category-picker';
-import { JustifCapture } from '@/components/shared/justif-capture';
+import { JustifMultiCapture } from '@/components/shared/justif-multi-capture';
 import { keepSelectable, isUnmapped } from '@/lib/selectable';
 
 interface SearchParams {
@@ -57,9 +56,9 @@ export default async function DepotPage({ searchParams }: { searchParams: Promis
       )}
 
       <form action={createDepot} encType="multipart/form-data" className="space-y-6">
-        <Section title="Le justificatif" subtitle="Photo, PDF ou scan.">
-          <Field label="Fichier" htmlFor="file" required>
-            <JustifCapture id="file" name="file" required />
+        <Section title="Le justificatif" subtitle="Photo, PDF ou scan. Tu peux joindre plusieurs pièces (ticket + facture, recto/verso…).">
+          <Field label="Fichiers" htmlFor="file" required hint="une ou plusieurs pièces">
+            <JustifMultiCapture name="file" required />
           </Field>
           <Field label="Titre" htmlFor="titre" required hint="ce qui aidera le trésorier à le retrouver">
             <Input

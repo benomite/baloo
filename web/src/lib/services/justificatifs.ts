@@ -162,12 +162,16 @@ export async function attachJustificatif(
     mime_type: input.mime_type,
   });
 
-  const relativePath = `${input.entity_type}/${input.entity_id}/${input.filename}`;
+  const id = await nextId('JUS');
+  // Préfixe par l'id du justif : garantit un chemin unique même si deux
+  // fichiers d'une même entité portent le même nom (cas multi-fichiers :
+  // deux photos "image.jpg", deux scans renommés .jpg…). Sans ça, le
+  // second écrasait le premier dans le storage (même path) tout en
+  // créant deux lignes BDD → contenu perdu.
+  const relativePath = `${input.entity_type}/${input.entity_id}/${id}-${input.filename}`;
   const mime = input.mime_type ?? guessMime(input.filename);
 
   await getStorage().put({ path: relativePath, content: input.content, contentType: mime });
-
-  const id = await nextId('JUS');
 
   await getDb().prepare(
     `INSERT INTO justificatifs (id, group_id, file_path, original_filename, mime_type, entity_type, entity_id, uploaded_at)

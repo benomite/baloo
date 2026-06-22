@@ -75,7 +75,18 @@ export interface DepotEnriched extends Depot {
   unite_code: string | null;
   category_name: string | null;
   carte_label: string | null;
+  // Chemin du justif le plus récent (compat) + liste complète (séparée
+  // par des sauts de ligne, impossibles dans un nom de fichier) et leur
+  // nombre, pour afficher tous les fichiers d'un dépôt.
   justif_path: string | null;
+  justif_paths: string | null;
+  justif_count: number;
+}
+
+// Découpe la colonne agrégée `justif_paths` en liste de chemins.
+export function splitJustifPaths(paths: string | null): string[] {
+  if (!paths) return [];
+  return paths.split('\n').filter((p) => p.length > 0);
 }
 
 export interface DepotsContext {
@@ -92,12 +103,14 @@ export interface CreateDepotInput {
   date_estimee?: string | null;
   carte_id?: string | null;
   activite_id?: string | null;
-  // Fichier joint (obligatoire à la création).
-  file: {
+  // Fichiers joints (au moins un, obligatoire à la création). Un même
+  // dépôt peut regrouper plusieurs pièces (ticket + facture, recto/verso,
+  // pages multiples…).
+  files: {
     filename: string;
     content: Buffer;
     mime_type?: string | null;
-  };
+  }[];
 }
 
 export async function createDepot(
@@ -131,17 +144,24 @@ export async function createDepot(
     now,
   );
 
-  // Le file vit dans `justificatifs` avec entity_type='depot'.
-  await attachJustificatif(
-    { groupId },
-    {
-      entity_type: 'depot',
-      entity_id: id,
-      filename: input.file.filename,
-      content: input.file.content,
-      mime_type: input.file.mime_type,
-    },
-  );
+  if (!input.files || input.files.length === 0) {
+    throw new Error('Au moins un fichier justificatif est requis.');
+  }
+
+  // Les fichiers vivent dans `justificatifs` avec entity_type='depot'.
+  // Un dépôt peut en regrouper plusieurs.
+  for (const f of input.files) {
+    await attachJustificatif(
+      { groupId },
+      {
+        entity_type: 'depot',
+        entity_id: id,
+        filename: f.filename,
+        content: f.content,
+        mime_type: f.mime_type,
+      },
+    );
+  }
 
   return (await db.prepare('SELECT * FROM depots_justificatifs WHERE id = ?').get<Depot>(id))!;
 }
@@ -174,7 +194,9 @@ export async function listDepots(
               un.code AS unite_code,
               c.name AS category_name,
               ca.porteur AS carte_label,
-              (SELECT file_path FROM justificatifs WHERE entity_type = 'depot' AND entity_id = d.id ORDER BY uploaded_at DESC LIMIT 1) AS justif_path
+              (SELECT file_path FROM justificatifs WHERE entity_type = 'depot' AND entity_id = d.id ORDER BY uploaded_at DESC LIMIT 1) AS justif_path,
+              (SELECT group_concat(file_path, char(10)) FROM justificatifs WHERE entity_type = 'depot' AND entity_id = d.id) AS justif_paths,
+              (SELECT COUNT(*) FROM justificatifs WHERE entity_type = 'depot' AND entity_id = d.id) AS justif_count
        FROM depots_justificatifs d
        JOIN users u ON u.id = d.submitted_by_user_id
        LEFT JOIN unites un ON un.id = d.unite_id
@@ -199,7 +221,9 @@ export async function getDepot(
               un.code AS unite_code,
               c.name AS category_name,
               ca.porteur AS carte_label,
-              (SELECT file_path FROM justificatifs WHERE entity_type = 'depot' AND entity_id = d.id ORDER BY uploaded_at DESC LIMIT 1) AS justif_path
+              (SELECT file_path FROM justificatifs WHERE entity_type = 'depot' AND entity_id = d.id ORDER BY uploaded_at DESC LIMIT 1) AS justif_path,
+              (SELECT group_concat(file_path, char(10)) FROM justificatifs WHERE entity_type = 'depot' AND entity_id = d.id) AS justif_paths,
+              (SELECT COUNT(*) FROM justificatifs WHERE entity_type = 'depot' AND entity_id = d.id) AS justif_count
        FROM depots_justificatifs d
        JOIN users u ON u.id = d.submitted_by_user_id
        LEFT JOIN unites un ON un.id = d.unite_id

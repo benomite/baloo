@@ -10,6 +10,7 @@ import {
   attachDepotToRemboursement as attachDepotToRemboursementService,
 } from '../services/depots';
 import { parseAmount } from '../format';
+import { validateJustifAttachment, JustificatifValidationError } from '../services/justificatifs';
 import { setRembsEcritureLink } from '@/lib/services/remboursement-ecriture-link';
 import { rejectSuggestion } from '@/lib/services/inbox-rejets';
 
@@ -29,8 +30,10 @@ export async function createDepot(formData: FormData): Promise<void> {
     redirect('/depot?error=' + encodeURIComponent('Rôle non autorisé à déposer.'));
   }
 
-  const file = formData.get('file');
-  if (!(file instanceof File) || file.size === 0) {
+  const files = formData
+    .getAll('file')
+    .filter((f): f is File => f instanceof File && f.size > 0);
+  if (files.length === 0) {
     redirect('/depot?error=' + encodeURIComponent('Photo ou PDF du justificatif requis.'));
   }
 
@@ -49,7 +52,24 @@ export async function createDepot(formData: FormData): Promise<void> {
     }
   }
 
-  const buffer = Buffer.from(await (file as File).arrayBuffer());
+  // Pré-validation (taille / extension / MIME) avant tout INSERT : un
+  // fichier refusé ne doit pas laisser de dépôt orphelin.
+  for (const f of files) {
+    try {
+      validateJustifAttachment({ filename: f.name, size: f.size, mime_type: f.type || null });
+    } catch (err) {
+      const msg = err instanceof JustificatifValidationError ? `${f.name} : ${err.message}` : String(err);
+      redirect('/depot?error=' + encodeURIComponent(msg));
+    }
+  }
+
+  const filesPayload = await Promise.all(
+    files.map(async (f) => ({
+      filename: f.name,
+      content: Buffer.from(await f.arrayBuffer()),
+      mime_type: f.type || null,
+    })),
+  );
 
   let depotId: string;
   try {
@@ -64,11 +84,7 @@ export async function createDepot(formData: FormData): Promise<void> {
         date_estimee: (formData.get('date_estimee') as string | null) || null,
         carte_id: (formData.get('carte_id') as string | null) || null,
         activite_id: (formData.get('activite_id') as string | null) || null,
-        file: {
-          filename: (file as File).name,
-          content: buffer,
-          mime_type: (file as File).type || null,
-        },
+        files: filesPayload,
       },
     );
     depotId = depot.id;

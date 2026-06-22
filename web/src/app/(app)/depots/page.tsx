@@ -17,6 +17,7 @@ import {
   listAllAttachableEcritures,
   listCandidateRemboursements,
   listAllAttachableRemboursements,
+  splitJustifPaths,
   type DepotEnriched,
 } from '@/lib/services/depots';
 import {
@@ -221,17 +222,40 @@ function DepotRow({
             <span className="text-[11px] text-fg-subtle">
               · {depot.submitter_name ?? depot.submitter_email}
             </span>
-            {depot.justif_path && (
-              <Link
-                href={`/api/justificatifs/${depot.justif_path}`}
-                target="_blank"
-                rel="noopener"
-                className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-brand hover:underline underline-offset-2"
-              >
-                <Paperclip size={11} strokeWidth={1.75} />
-                voir le fichier
-              </Link>
-            )}
+            {(() => {
+              const paths = splitJustifPaths(depot.justif_paths);
+              if (paths.length === 0) return null;
+              if (paths.length === 1) {
+                return (
+                  <Link
+                    href={`/api/justificatifs/${paths[0]}`}
+                    target="_blank"
+                    rel="noopener"
+                    className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-brand hover:underline underline-offset-2"
+                  >
+                    <Paperclip size={11} strokeWidth={1.75} />
+                    voir le fichier
+                  </Link>
+                );
+              }
+              return (
+                <span className="ml-auto inline-flex items-center gap-1.5 text-[11.5px] text-fg-muted">
+                  <Paperclip size={11} strokeWidth={1.75} />
+                  {paths.length} fichiers :
+                  {paths.map((p, i) => (
+                    <Link
+                      key={p}
+                      href={`/api/justificatifs/${p}`}
+                      target="_blank"
+                      rel="noopener"
+                      className="text-brand hover:underline underline-offset-2"
+                    >
+                      {i + 1}
+                    </Link>
+                  ))}
+                </span>
+              );
+            })()}
           </div>
         </div>
       </div>

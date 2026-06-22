@@ -54,12 +54,24 @@ export function JustifCapture({
   name,
   id,
   required,
+  onReady,
 }: {
-  name: string;
+  name?: string;
   id?: string;
   required?: boolean;
+  // Mode « multi » : au lieu de porter lui-même l'input file du form,
+  // le composant remonte le fichier traité (ou null) au parent qui gère
+  // la soumission. Le hidden <input> reste utilisé en interne pour
+  // ouvrir le picker / la caméra, mais sans `name` (donc hors FormData).
+  onReady?: (file: File | null) => void;
 }) {
   const reactId = useId();
+  // Ref stable pour appeler onReady depuis les effets sans les faire
+  // dépendre de son identité (le parent peut passer une lambda inline).
+  const onReadyRef = useRef(onReady);
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
   const inputId = id ?? `justif-${reactId}`;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -101,6 +113,7 @@ export function JustifCapture({
   useEffect(() => {
     if (!rawFile) {
       if (fileInputRef.current) fileInputRef.current.value = '';
+      onReadyRef.current?.(null);
       return;
     }
     if (isPdf) {
@@ -109,6 +122,7 @@ export function JustifCapture({
         dt.items.add(rawFile);
         fileInputRef.current.files = dt.files;
       }
+      onReadyRef.current?.(rawFile);
       return;
     }
     if (!sourceBlob) return;
@@ -127,6 +141,7 @@ export function JustifCapture({
         }
         setProcessedBlob(blob);
         setBusy(false);
+        onReadyRef.current?.(processed);
       })
       .catch(() => {
         if (cancelled) return;
@@ -225,10 +240,10 @@ export function JustifCapture({
       <input
         ref={fileInputRef}
         id={inputId}
-        name={name}
+        name={onReady ? undefined : name}
         type="file"
         accept="image/*,application/pdf"
-        required={required}
+        required={onReady ? undefined : required}
         className="sr-only"
         onChange={onPickFile}
       />
