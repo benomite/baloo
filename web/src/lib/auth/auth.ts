@@ -3,6 +3,8 @@ import type { EmailConfig } from 'next-auth/providers/email';
 import { SqliteAdapter } from './adapter';
 import { logError, logWarn } from '../log';
 import { recordSigninAttempt } from './rate-limit';
+import { getDb } from '../db';
+import { createLoginCode } from './login-codes';
 
 // Auth.js v5 (chantier 4, ADR-014).
 //
@@ -45,6 +47,14 @@ function magicLinkProvider(): EmailConfig {
         logWarn('auth', 'Magic link bloqué (rate limit)', undefined, { identifier });
         return;
       }
+
+      // Code OTP à 6 chiffres, dans le MÊME mail que le lien. Sur une PWA
+      // installée, le lien s'ouvre dans un autre navigateur (conteneur de
+      // cookies isolé) → l'utilisateur saisit plutôt ce code dans l'app
+      // pour que la session se pose dans le bon conteneur. Cf.
+      // login-codes.ts + page /login (étape code).
+      const { code } = await createLoginCode(getDb(), identifier);
+
       if (smtp) {
         const { createTransport } = await import('nodemailer');
         // Timeouts courts pour éviter qu'une serverless function Vercel
@@ -61,16 +71,20 @@ function magicLinkProvider(): EmailConfig {
           subject: 'Connexion à Baloo',
           text:
             `Bonjour,\n\n` +
-            `Clique sur le lien suivant pour te connecter à Baloo :\n${url}\n\n` +
-            `Il expire dans 30 minutes. Si tu n'es pas à l'origine de cette demande, ignore cet email.`,
+            `Pour te connecter à Baloo, tu as deux possibilités :\n\n` +
+            `1) Saisis ce code dans l'application :\n\n` +
+            `   ${code}\n\n` +
+            `   (À utiliser si tu es sur l'app installée sur ton téléphone.)\n\n` +
+            `2) Ou clique sur ce lien (pratique sur ordinateur) :\n${url}\n\n` +
+            `Code et lien expirent dans 30 minutes. Si tu n'es pas à l'origine de cette demande, ignore cet email.`,
         });
         return;
       }
-      // Fallback dev : pas de SMTP configuré → log du lien dans la sortie
-      // serveur. Le trésorier peut copier-coller le lien dans son navigateur.
+      // Fallback dev : pas de SMTP configuré → log du lien ET du code dans
+      // la sortie serveur. Le trésorier peut copier-coller l'un ou l'autre.
       logError(
         'auth',
-        `Magic link en mode console (EMAIL_SERVER non défini) pour ${identifier} : ${url}`,
+        `Connexion Baloo en mode console (EMAIL_SERVER non défini) pour ${identifier} :\n  code = ${code}\n  lien = ${url}`,
       );
     },
   };

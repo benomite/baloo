@@ -30,7 +30,7 @@ function SubmitButton() {
   const { pending } = useFormStatus();
   return (
     <Button type="submit" className="w-full" disabled={pending}>
-      {pending ? 'Envoi en cours…' : 'Recevoir un lien de connexion'}
+      {pending ? 'Envoi en cours…' : 'Recevoir un code de connexion'}
     </Button>
   );
 }

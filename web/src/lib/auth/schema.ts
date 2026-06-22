@@ -119,6 +119,19 @@ export async function ensureAuthSchema(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_invite_links_hash ON invite_links(token_hash);
     CREATE INDEX IF NOT EXISTS idx_invite_links_user ON invite_links(user_id);
+
+    -- Codes de connexion à usage unique (OTP), complément du magic link
+    -- pour les PWA installées. Code stocké hashé. Cf. login-codes.ts.
+    CREATE TABLE IF NOT EXISTS login_codes (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      code_hash TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      consumed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_login_codes_email ON login_codes(email, consumed_at);
   `);
 
   // Migrations idempotentes sur la table `users`.
