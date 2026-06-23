@@ -13,6 +13,9 @@ import { parseAmount } from '../format';
 import { validateJustifAttachment, JustificatifValidationError } from '../services/justificatifs';
 import { setRembsEcritureLink } from '@/lib/services/remboursement-ecriture-link';
 import { rejectSuggestion } from '@/lib/services/inbox-rejets';
+import { listAdminEmails, deriveAppUrl } from '@/lib/actions/remboursements/_helpers';
+import { sendDepotCreatedEmail } from '@/lib/email/depot';
+import { logError } from '@/lib/log';
 
 const SUBMIT_ROLES = ['tresorier', 'RG', 'chef', 'membre', 'equipier', 'parent'] as const;
 const ADMIN_ROLES = ['tresorier', 'RG'] as const;
@@ -90,6 +93,26 @@ export async function createDepot(formData: FormData): Promise<void> {
     depotId = depot.id;
   } catch (err) {
     redirect('/depot?error=' + encodeURIComponent(err instanceof Error ? err.message : String(err)));
+  }
+
+  // Notifie les trésoriers / RG DU GROUPE concerné (multi-tenant : la
+  // liste est scopée par group_id). On exclut le déposeur lui-même.
+  // Fire-and-forget : un échec mail ne doit pas casser le dépôt.
+  try {
+    const admins = (await listAdminEmails(ctx.groupId)).filter((e) => e !== ctx.email);
+    if (admins.length > 0) {
+      await sendDepotCreatedEmail({
+        to: admins,
+        depotId,
+        titre,
+        deposeur: ctx.name ?? ctx.email,
+        amountCents: amount_cents,
+        dateEstimee: (formData.get('date_estimee') as string | null) || null,
+        appUrl: await deriveAppUrl(),
+      });
+    }
+  } catch (err) {
+    logError('depots', 'Notif admins (nouveau dépôt) échouée', err);
   }
 
   revalidatePath('/depot');

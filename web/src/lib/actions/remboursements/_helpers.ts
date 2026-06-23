@@ -55,8 +55,14 @@ export async function deriveAppUrl(): Promise<string> {
   return host ? `${proto}://${host}` : 'https://localhost';
 }
 
-export async function listAdminEmails(groupId: string): Promise<string[]> {
-  const rows = await getDb()
+// Emails des admins (trésorier/RG) ACTIFS du groupe donné. Le filtre
+// `group_id = ?` garantit l'isolation multi-tenant : on ne notifie jamais
+// les admins d'un autre groupe. `db` injectable pour les tests.
+export async function listAdminEmails(
+  groupId: string,
+  db: Pick<ReturnType<typeof getDb>, 'prepare'> = getDb(),
+): Promise<string[]> {
+  const rows = await db
     .prepare(
       "SELECT email FROM users WHERE group_id = ? AND statut = 'actif' AND role IN ('tresorier', 'RG')",
     )
