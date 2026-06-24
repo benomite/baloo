@@ -195,7 +195,7 @@ export async function getOverview(
   `).all<CategorieRow>(groupId, ...dateValues);
 
   const rbt = await db.prepare(
-    "SELECT COUNT(*) as count, COALESCE(SUM(amount_cents), 0) as total FROM remboursements WHERE group_id = ? AND status IN ('demande', 'valide')"
+    "SELECT COUNT(*) as count, COALESCE(SUM(amount_cents), 0) as total FROM remboursements WHERE group_id = ? AND status IN ('a_traiter', 'valide_tresorier', 'valide_rg')"
   ).get<{ count: number; total: number }>(groupId);
 
   const sansJustif = await db.prepare(`

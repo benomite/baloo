@@ -2,6 +2,7 @@
 // Réutilise getOverview (trésorerie, rembs en attente, alertes justif/sync)
 // + getSyncStatus + 3 compteurs dédiés. Lecture seule, une passe parallèle.
 import { getDb } from '../db';
+import { logError } from '../log';
 import { getOverview } from './overview';
 import { getSyncStatus } from './sync-cycle';
 import { ensureDepotsSchema } from './depots';
@@ -21,9 +22,7 @@ export interface DashboardData {
   };
   sante: {
     soldeCents: number;
-    soldeFormatted: string;
     engagementRembsCents: number;
-    engagementRembsFormatted: string;
     nonSyncComptaweb: number;
     parUnite: Awaited<ReturnType<typeof getOverview>>['parUnite'];
     sync: { stale: boolean; isRunning: boolean; lastRunAt: string | null };
@@ -44,12 +43,27 @@ export async function getDashboardData(ctx: { groupId: string }): Promise<Dashbo
   const db = getDb();
   await ensureDepotsSchema(); // table lazy-init — cf. web/AGENTS.md
 
+  // getOverview est le cœur trésorerie/budgets : s'il échoue, la page
+  // peut légitimement tomber sur l'error boundary. Les agrégats secondaires
+  // sont rendus résilients : repli sur valeur neutre + log.
   const [overview, sync, depots, abandons, drafts] = await Promise.all([
     getOverview({ groupId: ctx.groupId }),
-    getSyncStatus(db, ctx.groupId),
-    countDepotsATraiter(db, ctx.groupId),
-    countAbandonsATraiter(db, ctx.groupId),
-    countDraftsBancaires(db, ctx.groupId),
+    getSyncStatus(db, ctx.groupId).catch((err) => {
+      logError('dashboard', 'getSyncStatus échoué', err);
+      return { stale: true, is_running: false, last_run: null };
+    }),
+    countDepotsATraiter(db, ctx.groupId).catch((err) => {
+      logError('dashboard', 'countDepotsATraiter échoué', err);
+      return 0;
+    }),
+    countAbandonsATraiter(db, ctx.groupId).catch((err) => {
+      logError('dashboard', 'countAbandonsATraiter échoué', err);
+      return 0;
+    }),
+    countDraftsBancaires(db, ctx.groupId).catch((err) => {
+      logError('dashboard', 'countDraftsBancaires échoué', err);
+      return 0;
+    }),
   ]);
 
   return {
@@ -65,9 +79,7 @@ export async function getDashboardData(ctx: { groupId: string }): Promise<Dashbo
     },
     sante: {
       soldeCents: overview.solde,
-      soldeFormatted: overview.soldeFormatted,
       engagementRembsCents: overview.remboursementsEnAttente.total,
-      engagementRembsFormatted: overview.remboursementsEnAttente.totalFormatted,
       nonSyncComptaweb: overview.alertes.nonSyncComptaweb,
       parUnite: overview.parUnite,
       sync: {

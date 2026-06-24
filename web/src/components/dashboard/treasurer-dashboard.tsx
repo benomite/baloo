@@ -25,7 +25,7 @@ export function TreasurerDashboard({ data }: { data: DashboardData }) {
   const depassements = sante.parUnite.filter((u) => u.budget_prevu_depenses > 0 && u.depenses > u.budget_prevu_depenses);
 
   const actions: ActionItem[] = [
-    { key: 'rembs', label: 'Remboursements à traiter', href: '/remboursements?status=demande', icon: HandCoins, count: aTraiter.rembs.count, totalCents: aTraiter.rembs.totalCents },
+    { key: 'rembs', label: 'Remboursements à traiter', href: '/remboursements', icon: HandCoins, count: aTraiter.rembs.count, totalCents: aTraiter.rembs.totalCents },
     { key: 'depots', label: 'Dépôts membres à rapprocher', href: '/depots', icon: Paperclip, count: aTraiter.depotsARapprocher },
     { key: 'justif', label: 'Dépenses sans justificatif', href: '/inbox', icon: FileWarning, count: aTraiter.depensesSansJustif },
     { key: 'abandons', label: 'Abandons à traiter', href: '/abandons', icon: Gift, count: aTraiter.abandonsATraiter },
