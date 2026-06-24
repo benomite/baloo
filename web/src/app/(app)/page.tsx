@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 import {
   ArrowRight,
   CircleHelp,
@@ -19,6 +18,8 @@ import {
   RemboursementStatusBadge,
 } from '@/components/shared/status-badge';
 import { PendingButton } from '@/components/shared/pending-button';
+import { getDashboardData } from '@/lib/services/dashboard';
+import { TreasurerDashboard } from '@/components/dashboard/treasurer-dashboard';
 import { getCurrentContext } from '@/lib/context';
 import { listRemboursements } from '@/lib/services/remboursements';
 import { listAbandons } from '@/lib/services/abandons';
@@ -60,8 +61,19 @@ export default async function HomePage() {
     isWelcomeBannerDismissed(),
   ]);
 
-  // Admin → vue compta. chef + membre → home didactique (rendu ci-dessous).
-  if (ADMIN_ROLES.includes(ctx.role)) redirect('/ecritures');
+  // Admin → dashboard trésorier. chef + membre → home didactique (rendu ci-dessous).
+  if (ADMIN_ROLES.includes(ctx.role)) {
+    const data = await getDashboardData({ groupId: ctx.groupId });
+    return (
+      <div className="max-w-5xl mx-auto">
+        <PageHeader
+          title={`Bonjour ${firstName(ctx.name, ctx.email)}`}
+          subtitle="Voici l'état de la trésorerie et ce qui attend ton action."
+        />
+        <TreasurerDashboard data={data} />
+      </div>
+    );
+  }
 
   const isChef = ctx.role === 'chef';
   const canSubmit = SUBMIT_ROLES.includes(ctx.role);
