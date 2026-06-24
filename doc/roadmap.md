@@ -4,6 +4,8 @@ Le projet est pensé en **4 phases** progressives. Chaque phase est validée ava
 
 > **Note de cap** (2026-04-25) : la roadmap a été révisée pour acter un pivot d'archi. La cible n'est pas "CLI + MCP en MVP, webapp en P3" comme initialement écrit, mais **webapp = source de vérité** dès la P2. Le MCP `baloo-compta` devient un client HTTP de la webapp pour exposer ses opérations à Claude Code (LLM local). L'historique de la P1 (CLI + MCP + SQLite local) reste valide comme MVP de validation, mais sa BDD est provisoire.
 
+> **Note de cap** (2026-06-19) : depuis le 18/05 le projet suit le **pivot "miroir MCP-first"** (spec [`specs/2026-05-18-baloo-miroir-mcp-first-design.md`](specs/2026-05-18-baloo-miroir-mcp-first-design.md), 6 sous-phases) qui raffine la P2 ci-dessous — Baloo devient un companion/miroir strict de Comptaweb, MCP en source de vérité opérationnelle. **État au 2026-06-19** : sous-phases 1 (fondations MCP) et 2 (sync incrémentale + réconciliation, ADR-035, prod le 01/06) ✅ livrées. Depuis début juin, le travail est piloté par l'usage terrain plutôt que par le plan : **camps/avances** (10-11/06), **lien d'accès direct remboursement** (17/06), **rôle « membre » + home didactique** (17/06), **frais kilométriques** (18/06) — toutes en prod. C'est de facto la "Phase 3 dogfood" du pivot, mais en codant les manques au lieu de seulement observer. Les sous-phases 4 (dashboard), 5 (kill ancien front), 6 (onboarding multi-trésorier + ouverture membres) restent à faire.
+
 ---
 
 ## Phase 1 — MVP perso CLI (en voie d'achèvement)
@@ -58,6 +60,8 @@ Le pivot conceptuel : la webapp porte la BDD, l'API et les règles métier. Le M
 - [`p2-budgets-par-unite.md`](p2-budgets-par-unite.md) — pilotage budgétaire par unité (Farfadets / LJ / SG / PC / CO / Groupe). 3 phases livrées (2026-05-10 → 2026-05-11) : vue par unité (PR #9), budgets prévisionnels (PR #10), répartitions entre unités (PR #11). 43 commits, 2 ADRs structurels (cf. ADR-029, ADR-030).
 
 **Statut au 2026-05-11** : **P2 techniquement bouclée** ✅, enrichie du pilotage par unité. L'app supporte le scope cible (5 rôles, 4 workflows, signatures électroniques, génération PDF, notifs email, mobile + PWA, page d'aide, journal d'erreurs interne, export CSV, rapprochement bancaire DSP2 visible, **vue + budget + répartitions par unité**, etc.). Reste l'**activation terrain** (≥2 chefs actifs + 1 parent) qui n'est pas un chantier dev — il faut inviter les vrais users et observer ce qui coince. Le pilotage par unité sera réellement éprouvé sur les inscriptions Val de Saône de septembre 2026.
+
+**Mise à jour au 2026-06-19** : la P2 a continué d'être enrichie au-delà du scope initial via le pivot miroir MCP-first (cf. note de cap du 19/06 en tête de doc) : sync incrémentale Comptaweb + réconciliation, refonte des vues Écritures/navigation process-first, gestion des camps, frais kilométriques, rôle « membre » unifié, liens d'accès direct remboursement. L'**activation terrain** reste le vrai jalon non franchi — désormais alimentée par un usage réel qui pousse des features (camps, km, remb) plutôt que par une campagne d'invitation.
 
 **Stack** : Next.js (déjà en place dans `web/`) + API + Postgres (ou équivalent) + déploiement (VPS/Vercel/Fly.io). MCP `baloo-compta` réécrit comme client HTTP TypeScript.
 
