@@ -22,6 +22,8 @@ export function TreasurerDashboard({ data }: { data: DashboardData }) {
   const { aTraiter, sante } = data;
   const allClear = isAllClear(aTraiter);
 
+  const depassements = sante.parUnite.filter((u) => u.budget_prevu_depenses > 0 && u.depenses > u.budget_prevu_depenses);
+
   const actions: ActionItem[] = [
     { key: 'rembs', label: 'Remboursements à traiter', href: '/remboursements?status=demande', icon: HandCoins, count: aTraiter.rembs.count, totalCents: aTraiter.rembs.totalCents },
     { key: 'depots', label: 'Dépôts membres à rapprocher', href: '/depots', icon: Paperclip, count: aTraiter.depotsARapprocher },
@@ -79,8 +81,8 @@ export function TreasurerDashboard({ data }: { data: DashboardData }) {
             {sante.nonSyncComptaweb > 0 && ` · ${sante.nonSyncComptaweb} non synchro`}
           </HealthCard>
           <HealthCard icon={Landmark} label="Budgets par unité" href="/budgets">
-            {sante.parUnite.filter((u) => u.budget_prevu_depenses > 0 && u.depenses > u.budget_prevu_depenses).length > 0
-              ? `${sante.parUnite.filter((u) => u.budget_prevu_depenses > 0 && u.depenses > u.budget_prevu_depenses).length} dépassement(s)`
+            {depassements.length > 0
+              ? `${depassements.length} dépassement(s)`
               : 'Dans les clous'}
           </HealthCard>
         </div>
@@ -103,6 +105,7 @@ function HealthCard({
       </div>
       <div className={cn(
         'text-[16px] font-semibold tabular-nums text-fg',
+        tone === 'ok' && 'text-emerald-600 dark:text-emerald-400',
         tone === 'warn' && 'text-amber-700 dark:text-amber-300',
       )}>
         {children}
