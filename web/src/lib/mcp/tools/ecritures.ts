@@ -106,7 +106,10 @@ export function registerEcrituresTools(server: McpServer, ctx: McpContext) {
   server.tool(
     'create_ecriture',
     [
-      "Crée une écriture dans Comptaweb (via scraping) puis miroir en BDD Baloo.",
+      "Crée une écriture NEUVE dans Comptaweb (via scraping) puis miroir en BDD Baloo.",
+      "⚠️ Ce tool ÉCRIT dans Comptaweb. Ne l'utilise PAS pour catégoriser ou corriger une écriture/brouillon",
+      "qui existe déjà côté Baloo — ça créerait un DOUBLON dans CW. Pour éditer un brouillon (nature, unité,",
+      "activité, mode, montant…), utilise update_ecriture, qui reste local tant que l'écriture n'est pas dans CW.",
       "Si CW indisponible, l'écriture reste en draft, à valider manuellement plus tard.",
       "Accepte le montant en cents (champ amount_cents) OU en chaîne formatée FR (champ montant).",
     ].join(' '),
@@ -246,28 +249,58 @@ export function registerEcrituresTools(server: McpServer, ctx: McpContext) {
 
   // ─── update_ecriture ──────────────────────────────────────────────────
   //
-  // Whitelist STRICTE des champs Baloo-only : notes, justif_attendu,
-  // (statut/comptaweb_synced réservés aux flux internes). Si l'écriture
-  // est en status mirror/divergent, le service `updateEcriture` ignore
-  // déjà silencieusement les champs miroir (date, montant, libellé, etc.) ;
-  // côté MCP on ne les expose carrément PAS — un agent qui veut modifier
-  // ces champs doit passer par Comptaweb, pas par Baloo.
+  // Édition d'une écriture EXISTANTE. On expose les champs d'imputation
+  // (category_id, unite_id, activite_id, mode_paiement_id, carte_id, date,
+  // montant, libellé, type, numero_piece) EN PLUS des champs Baloo-only
+  // (notes, justif_attendu). C'est délégué au service `updateEcriture`, qui
+  // applique le verrou miroir : tant que l'écriture est un brouillon (status
+  // non mirror), tout est modifiable sans toucher Comptaweb ; une fois dans
+  // CW (mirror/divergent), les champs miroir sont silencieusement ignorés et
+  // seuls notes/justif_attendu passent. `status`/`comptaweb_synced` restent
+  // NON exposés (réservés aux flux internes de sync).
   //
-  // Description reformulée pour bien expliquer la sémantique miroir strict.
+  // Régression historique corrigée : la whitelist ne portait QUE sur
+  // notes+justif_attendu, rendant impossible la catégorisation d'un draft
+  // via MCP — un agent sommé de « catégoriser » se rabattait sur
+  // create_ecriture (push CW) et créait des doublons. Cf. create_ecriture.
   server.tool(
     'update_ecriture',
     [
-      'Met à jour une écriture sur ses champs Baloo-only (notes, justif_attendu).',
-      "Les champs miroir CW (date, montant, libellé, catégorie, etc.) NE PEUVENT PAS être modifiés via ce tool :",
-      "ils sont la source de vérité Comptaweb. Pour les corriger, modifie côté CW et la sync Baloo reflètera.",
+      "Met à jour une écriture EXISTANTE. À utiliser pour catégoriser / imputer / corriger un brouillon (draft) :",
+      'tant que l\'écriture n\'est pas dans Comptaweb, tous les champs (nature/catégorie, unité, activité, mode de paiement,',
+      'carte, date, montant, libellé, type, n° pièce) sont modifiables — un simple UPDATE local, AUCUN envoi vers Comptaweb.',
+      "Ne crée RIEN : pour une écriture neuve destinée à CW, utilise create_ecriture, pas ce tool.",
+      'Une fois l\'écriture dans Comptaweb (mirror/divergent), ces champs deviennent la source de vérité Comptaweb et sont',
+      'silencieusement ignorés ici ; seuls notes et justif_attendu (champs Baloo-only) restent modifiables. Pour corriger',
+      'une écriture déjà dans CW, modifie côté Comptaweb et la sync Baloo reflétera.',
     ].join(' '),
     {
       id: z.string().describe('ID de l\'écriture (ex: DEP-2026-001 ou REC-2026-005)'),
+      // Champs d'imputation : appliqués SEULEMENT si l'écriture est un brouillon
+      // (status non mirror) — le service updateEcriture les ignore en mirror.
+      category_id: z.string().optional().describe('Nature / catégorie comptable (cf. list_categories).'),
+      unite_id: z.string().optional(),
+      activite_id: z.string().optional(),
+      mode_paiement_id: z.string().optional(),
+      carte_id: z.string().optional(),
+      numero_piece: z.string().optional(),
+      date_ecriture: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Date (YYYY-MM-DD)'),
+      description: z.string().min(1).optional(),
+      amount_cents: z.number().int().optional(),
+      montant: z.string().optional().describe('Alternative à amount_cents : montant formaté FR (ex: "42,50").'),
+      type: z.enum(['depense', 'recette']).optional(),
+      // Champs Baloo-only : modifiables quel que soit le statut.
       notes: z.string().nullable().optional(),
       justif_attendu: z.union([z.boolean(), z.literal(0), z.literal(1)]).optional(),
     },
     async (params) => {
-      const { id, ...patch } = params;
+      const { id, montant, ...rest } = params;
+      const patch: Parameters<typeof updateEcriture>[2] = { ...rest };
+      // `montant` (FR) est un alias d'amount_cents ; on ne convertit que si
+      // amount_cents n'a pas été fourni explicitement.
+      if (patch.amount_cents === undefined && montant) {
+        patch.amount_cents = parseAmount(montant);
+      }
       const updated = await updateEcriture(ecritureCtx, id, patch);
       if (!updated) {
         return { content: [{ type: 'text' as const, text: `Écriture ${id} introuvable.` }] };
@@ -282,6 +315,11 @@ export function registerEcrituresTools(server: McpServer, ctx: McpContext) {
                 ecriture: {
                   id: updated.id,
                   status: updated.status as EcritureStatus,
+                  category_id: updated.category_id,
+                  unite_id: updated.unite_id,
+                  activite_id: updated.activite_id,
+                  mode_paiement_id: updated.mode_paiement_id,
+                  carte_id: updated.carte_id,
                   notes: updated.notes,
                   justif_attendu: updated.justif_attendu,
                 },

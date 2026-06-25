@@ -198,9 +198,19 @@ describe('ecritures tools (Vague 4 — étendus)', () => {
 
   // ─── update_ecriture ───────────────────────────────────────────────────
 
-  it("update_ecriture n'expose QUE notes + justif_attendu (champs Baloo-only)", () => {
+  it("update_ecriture expose les champs d'imputation (éditables sur un brouillon)", () => {
     const schema = tools.update_ecriture.schema as Record<string, unknown>;
-    expect(Object.keys(schema).sort()).toEqual(['id', 'justif_attendu', 'notes']);
+    const keys = Object.keys(schema);
+    // Champs Baloo-only toujours présents.
+    expect(keys).toContain('notes');
+    expect(keys).toContain('justif_attendu');
+    // Champs d'imputation désormais exposés : modifiables tant que l'écriture
+    // est un brouillon, ignorés par le service `updateEcriture` si elle est
+    // déjà dans CW (mirror/divergent). C'est ce qui permet de catégoriser un
+    // draft sans le recréer dans Comptaweb.
+    for (const k of ['category_id', 'unite_id', 'activite_id', 'mode_paiement_id', 'carte_id']) {
+      expect(keys).toContain(k);
+    }
   });
 
   it('update_ecriture met à jour les notes', async () => {
@@ -219,14 +229,43 @@ describe('ecritures tools (Vague 4 — étendus)', () => {
     expect(parsed.ecriture.notes).toBe('Notes du trésorier');
   });
 
+  it("update_ecriture transmet la catégorisation d'un brouillon au service (sans push CW)", async () => {
+    updateEcritureMock.mockResolvedValue({
+      id: 'DEP-2026-009',
+      status: 'draft',
+      category_id: 'cat-x',
+      unite_id: 'unite-y',
+      activite_id: 'act-z',
+      notes: null,
+      justif_attendu: 1,
+    });
+    const r = await tools.update_ecriture.handler({
+      id: 'DEP-2026-009',
+      category_id: 'cat-x',
+      unite_id: 'unite-y',
+      activite_id: 'act-z',
+    });
+    const parsed = parseToolResult(r) as { ok: boolean; ecriture: { category_id: string } };
+    expect(parsed.ok).toBe(true);
+    expect(parsed.ecriture.category_id).toBe('cat-x');
+    // Le handler doit transmettre l'imputation telle quelle au service ;
+    // updateEcriture ne pousse RIEN dans CW (simple UPDATE local sur le draft).
+    expect(updateEcritureMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'DEP-2026-009',
+      expect.objectContaining({ category_id: 'cat-x', unite_id: 'unite-y', activite_id: 'act-z' }),
+    );
+  });
+
   it('update_ecriture introuvable → message clair', async () => {
     updateEcritureMock.mockResolvedValue(null);
     const r = await tools.update_ecriture.handler({ id: 'DEP-INVALID', notes: 'x' });
     expect(parseToolResult(r) as string).toContain('introuvable');
   });
 
-  it('update_ecriture documente la sémantique miroir strict', () => {
-    expect(tools.update_ecriture.description).toMatch(/Baloo-only/);
-    expect(tools.update_ecriture.description).toMatch(/source de vérité Comptaweb/);
+  it('update_ecriture documente la sémantique brouillon-éditable / mirror-verrouillé', () => {
+    const d = tools.update_ecriture.description;
+    expect(d).toMatch(/brouillon/i);
+    expect(d).toMatch(/Comptaweb/);
   });
 });
