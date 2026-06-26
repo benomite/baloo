@@ -434,6 +434,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                         ecritureId={e.id}
                         disabled={readiness.level === 'incomplete'}
                         missing={readiness.missingFields}
+                        onValidated={() => void refreshRow(e.id)}
                       />
                     )}
                   </div>

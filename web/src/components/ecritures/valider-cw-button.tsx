@@ -13,10 +13,14 @@ export function ValiderCwButton({
   ecritureId,
   disabled = false,
   missing = [],
+  onValidated,
 }: {
   ecritureId: string;
   disabled?: boolean;
   missing?: string[];
+  /** Appelé après une validation réussie : permet au parent de re-fetcher la
+   *  ligne pour qu'elle migre vers le groupe des écritures validées. */
+  onValidated?: () => void;
 }) {
   const [pending, startTransition] = useTransition();
 
@@ -29,8 +33,10 @@ export function ValiderCwButton({
       )
         return;
       const res = await syncDraftToComptaweb(ecritureId, { dryRun: false });
-      if (res.ok) toast.success(res.message);
-      else toast.error(res.message);
+      if (res.ok) {
+        toast.success(res.message);
+        onValidated?.();
+      } else toast.error(res.message);
     });
 
   const title = disabled
