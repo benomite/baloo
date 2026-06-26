@@ -198,9 +198,20 @@ export function RemboursementForm({
       >
         <input type="hidden" name="ligne_count" value={lignes.length} />
         <div className="space-y-3">
-          {lignes.map((l, i) => (
-            <div key={l.key} className="grid grid-cols-[110px_100px_1fr_140px_auto] gap-2 sm:gap-3 items-end">
-              <Field label={i === 0 ? 'Type' : ''} htmlFor={`ligne_${i}_type_sel`}>
+          {lignes.map((l, i) => {
+            // Mobile : chaque ligne = carte empilée verticalement, tous les
+            // champs en pleine largeur avec leur label. Desktop (sm+) : grille
+            // tabulaire à colonnes fixes, labels affichés UNIQUEMENT sur la
+            // 1re ligne (les suivantes masquent leur bloc label en sm+).
+            // Sans ça, sur mobile la colonne Nature (1fr) était écrasée à ~0px
+            // dès la 2e ligne (label vide + Input min-w-0) → champ non saisissable.
+            const hideLabelDesktop = i > 0 ? 'sm:[&>div:first-child]:hidden' : undefined;
+            return (
+            <div
+              key={l.key}
+              className="flex flex-col gap-3 rounded-xl border border-border p-3 sm:grid sm:grid-cols-[110px_100px_1fr_140px_auto] sm:items-end sm:gap-3 sm:rounded-none sm:border-0 sm:p-0"
+            >
+              <Field label="Type" htmlFor={`ligne_${i}_type_sel`} className={hideLabelDesktop}>
                 <NativeSelect
                   id={`ligne_${i}_type_sel`}
                   value={l.type}
@@ -211,17 +222,17 @@ export function RemboursementForm({
                 </NativeSelect>
               </Field>
               <input type="hidden" name={`ligne_${i}_type`} value={l.type} />
-              <Field label={i === 0 ? 'Date' : ''} htmlFor={`ligne_${i}_date`} required={i === 0}>
+              <Field label="Date" htmlFor={`ligne_${i}_date`} required className={hideLabelDesktop}>
                 <Input type="date" id={`ligne_${i}_date`} name={`ligne_${i}_date`} required
                   value={l.date} onChange={(e) => updateLigne(l.key, { date: e.target.value })} />
               </Field>
-              <Field label={i === 0 ? 'Nature' : ''} htmlFor={`ligne_${i}_nature`} required={i === 0}>
+              <Field label="Nature" htmlFor={`ligne_${i}_nature`} required className={hideLabelDesktop}>
                 <Input id={`ligne_${i}_nature`} name={`ligne_${i}_nature`} required
                   placeholder={l.type === 'km' ? 'Ex. trajet domicile → camp' : 'Ex. tickets métro, péage'}
                   value={l.nature} onChange={(e) => updateLigne(l.key, { nature: e.target.value })} />
               </Field>
               {l.type === 'km' ? (
-                <Field label={i === 0 ? 'Nb de km' : ''} htmlFor={`ligne_${i}_km`} required={i === 0}>
+                <Field label="Nb de km" htmlFor={`ligne_${i}_km`} required className={hideLabelDesktop}>
                   <Input id={`ligne_${i}_km`} name={`ligne_${i}_km`} required inputMode="decimal" placeholder="120"
                     value={l.km} onChange={(e) => updateLigne(l.key, { km: e.target.value })} className="tabular-nums" />
                   <p className="mt-1 text-[11px] text-fg-subtle tabular-nums">
@@ -229,18 +240,19 @@ export function RemboursementForm({
                   </p>
                 </Field>
               ) : (
-                <Field label={i === 0 ? 'Montant TTC' : ''} htmlFor={`ligne_${i}_montant`} required={i === 0}>
+                <Field label="Montant TTC" htmlFor={`ligne_${i}_montant`} required className={hideLabelDesktop}>
                   <Input id={`ligne_${i}_montant`} name={`ligne_${i}_montant`} required inputMode="decimal" placeholder="42,50"
                     value={l.montant} onChange={(e) => updateLigne(l.key, { montant: e.target.value })} className="tabular-nums" />
                 </Field>
               )}
               <Button type="button" variant="ghost" size="icon-sm" onClick={() => removeLigne(l.key)}
                 disabled={lignes.length === 1} aria-label="Supprimer la ligne"
-                className="mb-px text-fg-subtle hover:text-destructive">
+                className="self-end mb-px text-fg-subtle hover:text-destructive">
                 <X size={15} strokeWidth={2} />
               </Button>
             </div>
-          ))}
+            );
+          })}
         </div>
         <Button
           type="button"
