@@ -21,8 +21,10 @@ import { registerInboxTools } from './tools/inbox';
 import { registerComptawebClientTools } from './tools/comptaweb-client';
 import { registerSyncReferentielsTools } from './tools/sync-referentiels';
 import { registerSyncTools } from './tools/sync';
+import { registerCampsTools } from './tools/camps';
+import { registerRepartitionsTools } from './tools/repartitions';
 
-// Compteur Phase 2 : 59 tools = 57 existants + 2 nouveaux tools de transition
+// Compteur Phase 2 : 70 tools = 59 existants + 7 camps + 4 repartitions
 // (`transition_remboursement` + `transition_abandon`) ajoutés pour la parité
 // app ↔ MCP sur les changements de statut.
 //
@@ -79,4 +81,8 @@ export function registerAllTools(server: McpServer, ctx: McpContext): void {
 
   // Phase 2 — Sync incrémentale Comptaweb (2 tools)
   registerSyncTools(server, ctx);
+
+  // Lot 2 — Camps + Répartitions budgétaires (7 + 4 = 11 tools)
+  registerCampsTools(server, ctx);
+  registerRepartitionsTools(server, ctx);
 }
