@@ -76,6 +76,7 @@ Avant d'introduire une nouvelle dépendance, une nouvelle couche technique ou un
 - [ ] Aucun secret ni donnée perso n'a été introduit dans les fichiers trackés.
 - [ ] La séparation générique (`sgdf-core/`, en git) vs spécifique (BDD, gitignored) est respectée. Aucune donnée nominative ou financière dans le repo.
 - [ ] Si un nouveau pattern est introduit, il est documenté quelque part dans `doc/`.
+- [ ] **Parité MCP ↔ app** (cf. [ADR-038](decisions.md#adr-038--parité-mcp--app-comme-invariant)) : si le changement ajoute/modifie une opération métier dans un domaine exposé en MCP, le tool MCP correspondant est créé/mis à jour **via la même logique métier** (service partagé, pas de logique dupliquée) — ou l'asymétrie est volontaire et notée dans l'ADR-038. Ne pas laisser le MCP diverger de l'app.
 - [ ] Commit atomique avec un message clair.
 - [ ] L'utilisateur a été informé de ce qui a été fait (résumé court en fin de réponse).
 

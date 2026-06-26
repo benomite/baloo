@@ -1501,4 +1501,36 @@ Retirer du serveur MCP les deux tools `create_ecriture` et `cw_ecriture_depuis_l
 
 ---
 
+## ADR-038 — Parité MCP ↔ app comme invariant
+
+**Date** : 2026-06-26
+**Statut** : Acté
+**Lié à** : [ADR-032](#adr-032) (miroir strict), [ADR-037](#adr-037--mcp--retrait-de-lécriture-directe-dans-comptaweb).
+
+### Contexte
+
+Le MCP et la webapp ont évolué séparément : des fonctionnalités ajoutées à l'app (camps/avances, répartitions de budget entre unités) n'avaient jamais été exposées en MCP, certains domaines étaient incomplets (budgets sans édition/transition de statut, écritures sans édition en masse), et quelques tools faisaient *autre chose* que l'app — `update_remboursement` / `update_abandon` posaient le `status` brut, court-circuitant les transitions encadrées par l'app (validation, signature électronique, notification). Un audit a cartographié les deux surfaces et confirmé la dérive.
+
+### Décision
+
+Acter comme **invariant** : ce qu'on peut faire via le MCP, on peut le faire via l'app, et réciproquement — avec les **mêmes règles métier**. Les divergences restantes sont **volontaires et documentées** (cf. ci-dessous).
+
+Travaux de mise en parité (surface MCP 57 → 74 tools) :
+- **Transitions sécurisées** : la logique des transitions de remboursement/abandon est extraite dans des services partagés (`remboursement-transition.ts`, `abandon-transition.ts`) appelés à la fois par les server actions UI et par les nouveaux tools `transition_remboursement` / `transition_abandon`. Le champ `status` brut est retiré des `update_*`. Même validation, même signature, même notification, quelle que soit la porte d'entrée.
+- **Domaines comblés** : camps + avances (7 tools), répartitions (4 tools).
+- **Domaines complétés** : budgets (édition/suppression de ligne, transition de statut), `batch_update_ecritures`, taux km via `update_groupe`.
+
+### Asymétries volontaires (à maintenir)
+
+Restent **UI-only**, par choix : création d'écriture / push Comptaweb (ADR-037), upload de justificatif et import CSV (multipart, hors HTTP MCP), gestion des membres/invitations (accès sensible — décision du 2026-06-26 : garder dans l'app). Pas de `DELETE` MCP sur les tables protégées (écritures, justifs, remboursements, abandons, caisse, dépôts, personnes, notes exceptée) ; le delete reste autorisé sur les données de planification (budgets, répartitions).
+
+### Conséquences
+
+- **Règle de maintenance** (ajoutée à `DEVELOPING.md`) : toute nouvelle opération métier dans l'app expose son équivalent MCP via la même logique partagée, ou documente l'asymétrie ici. Évite la re-dérive.
+- Pattern d'extraction « service partagé UI+MCP » à réutiliser pour toute logique à effets de bord (transitions, validations).
+
+**Liens** : `web/src/lib/services/remboursement-transition.ts`, `abandon-transition.ts`, `web/src/lib/mcp/tools/{camps,repartitions,budgets,ecritures,groupes}.ts`, `register-all.ts`.
+
+---
+
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*
