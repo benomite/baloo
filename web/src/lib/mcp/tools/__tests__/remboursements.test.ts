@@ -24,6 +24,18 @@ vi.mock('@/lib/services/remboursements', () => ({
   updateRemboursement: vi.fn(async () => FAKE),
 }));
 
+vi.mock('@/lib/services/remboursement-transition', () => ({
+  applyRemboursementTransition: vi.fn(async () => ({ ok: true })),
+}));
+
+vi.mock('@/lib/db', () => ({
+  getDb: vi.fn(() => ({
+    prepare: vi.fn(() => ({
+      get: vi.fn(async () => ({ email: 'tresorier@test.com', nom_affichage: 'Trésorier' })),
+    })),
+  })),
+}));
+
 vi.mock('@/lib/types', async (orig) => {
   const m = (await orig()) as Record<string, unknown>;
   return {
@@ -32,16 +44,22 @@ vi.mock('@/lib/types', async (orig) => {
   };
 });
 
-describe('remboursements tools (Vague 3)', () => {
+describe('remboursements tools (Vague 3 + parité MCP)', () => {
   const tools = captureTools(registerRemboursementTools);
   beforeEach(() => vi.clearAllMocks());
 
-  it('expose les 3 tools', () => {
+  it('expose les 4 tools (list, create, update, transition)', () => {
     expect(Object.keys(tools).sort()).toEqual([
       'create_remboursement',
       'list_remboursements',
+      'transition_remboursement',
       'update_remboursement',
     ]);
+  });
+
+  it('update_remboursement ne possède plus de champ status dans son schema', () => {
+    const schema = tools.update_remboursement.schema as Record<string, unknown>;
+    expect(schema).not.toHaveProperty('status');
   });
 
   it('list_remboursements formate le montant', async () => {
@@ -63,9 +81,34 @@ describe('remboursements tools (Vague 3)', () => {
     expect(parsed.montant).toMatch(/32,00/);
   });
 
-  it('update_remboursement confirme', async () => {
-    const r = await tools.update_remboursement.handler({ id: 'RBT-2026-001', status: 'valide_rg' });
+  it('update_remboursement met à jour sans status', async () => {
+    const r = await tools.update_remboursement.handler({ id: 'RBT-2026-001', notes: 'ok' });
     const parsed = parseToolResult(r) as { id: string };
     expect(parsed.id).toBe('RBT-2026-001');
+  });
+
+  it('transition_remboursement retourne { ok: true } via le service', async () => {
+    const r = await tools.transition_remboursement.handler({
+      id: 'RBT-2026-001',
+      target_status: 'valide_tresorier',
+    });
+    const parsed = parseToolResult(r) as { ok: boolean };
+    expect(parsed.ok).toBe(true);
+  });
+
+  it('transition_remboursement propage { ok: false } du service', async () => {
+    const { applyRemboursementTransition } = await import('@/lib/services/remboursement-transition');
+    vi.mocked(applyRemboursementTransition).mockResolvedValueOnce({
+      ok: false,
+      reason: 'wrong_role',
+      message: 'Action réservée aux rôles : tresorier / RG.',
+    });
+    const r = await tools.transition_remboursement.handler({
+      id: 'RBT-2026-001',
+      target_status: 'valide_tresorier',
+    });
+    const parsed = parseToolResult(r) as { ok: boolean; reason: string };
+    expect(parsed.ok).toBe(false);
+    expect(parsed.reason).toBe('wrong_role');
   });
 });

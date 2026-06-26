@@ -7,11 +7,10 @@ import { getCurrentContext } from '../context';
 import { getDb } from '../db';
 import {
   createAbandon as createAbandonService,
-  getAbandon,
-  isAllowedAbandonTransition,
   updateAbandon as updateAbandonService,
   type AbandonStatus,
 } from '../services/abandons';
+import { applyAbandonTransition } from '../services/abandon-transition';
 import {
   attachJustificatif,
   JustificatifValidationError,
@@ -212,31 +211,27 @@ export async function createAbandon(formData: FormData): Promise<void> {
 async function transitionAbandon(
   id: string,
   newStatus: AbandonStatus,
-  patch: { motif_refus?: string | null; sent_to_national_at?: string | null } = {},
+  opts: { motif?: string; sentToNationalAt?: string | null } = {},
 ): Promise<void> {
   const ctx = await getCurrentContext();
-  if (!ADMIN_ROLES.includes(ctx.role)) {
-    redirect(
-      `/abandons/${id}?error=` + encodeURIComponent('Action réservée aux trésoriers / RG.'),
-    );
-  }
-  const current = await getAbandon({ groupId: ctx.groupId }, id);
-  if (!current) {
-    redirect('/abandons?error=' + encodeURIComponent('Abandon introuvable.'));
-  }
-  if (!isAllowedAbandonTransition(current.status, newStatus)) {
-    redirect(
-      `/abandons/${id}?error=` +
-        encodeURIComponent(
-          `Transition non autorisée : ${current.status} → ${newStatus}.`,
-        ),
-    );
-  }
-  await updateAbandonService(
-    { groupId: ctx.groupId },
+
+  const result = await applyAbandonTransition(
+    { groupId: ctx.groupId, role: ctx.role, userId: ctx.userId },
     id,
-    { status: newStatus, ...patch },
+    newStatus,
+    { motif: opts.motif, sentToNationalAt: opts.sentToNationalAt },
   );
+
+  if (!result.ok) {
+    switch (result.reason) {
+      case 'not_found':
+        redirect('/abandons?error=' + encodeURIComponent(result.message));
+        break;
+      default:
+        redirect(`/abandons/${id}?error=` + encodeURIComponent(result.message));
+    }
+  }
+
   revalidatePath('/abandons');
   revalidatePath(`/abandons/${id}`);
   redirect(`/abandons/${id}?updated=1`);
@@ -253,13 +248,11 @@ export async function refuseAbandon(id: string, formData: FormData): Promise<voi
       `/abandons/${id}?error=` + encodeURIComponent('Motif de refus requis.'),
     );
   }
-  await transitionAbandon(id, 'refuse', { motif_refus: motif });
+  await transitionAbandon(id, 'refuse', { motif });
 }
 
 export async function markAbandonSentToNational(id: string): Promise<void> {
-  await transitionAbandon(id, 'envoye_national', {
-    sent_to_national_at: currentTimestamp(),
-  });
+  await transitionAbandon(id, 'envoye_national', { sentToNationalAt: currentTimestamp() });
 }
 
 // Inchangé côté API : continue de fonctionner depuis la liste avec un

@@ -22,9 +22,15 @@ import { registerComptawebClientTools } from './tools/comptaweb-client';
 import { registerSyncReferentielsTools } from './tools/sync-referentiels';
 import { registerSyncTools } from './tools/sync';
 
-// Compteur Phase 2 : 57 tools = 55 Phase 1 + 2 sync (sync_run +
-// sync_status) ajoutés en Phase 2 Task 5 (orchestrateur sync incrémental
-// Comptaweb).
+// Compteur Phase 2 : 59 tools = 57 existants + 2 nouveaux tools de transition
+// (`transition_remboursement` + `transition_abandon`) ajoutés pour la parité
+// app ↔ MCP sur les changements de statut.
+//
+// Note : `update_remboursement` et `update_abandon` ont perdu leur champ
+// `status` brut — le statut se change désormais uniquement via les tools
+// `transition_*` qui appliquent les règles métier.
+//
+// Phase 2 Task 5 précédente (57) : sync_run + sync_status (orchestrateur sync incrémental Comptaweb).
 //
 // Phase 1 (55 = 3 historiques + 52 portés via Vagues 1-5). Décisions :
 //  - 2 tools multipart (`attach_justificatif`, `upload_justificatif_orphan`)

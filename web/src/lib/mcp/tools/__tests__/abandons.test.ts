@@ -23,12 +23,30 @@ vi.mock('@/lib/services/abandons', () => ({
   updateAbandon: vi.fn(async () => FAKE),
 }));
 
-describe('abandons tools (Vague 3)', () => {
+vi.mock('@/lib/services/abandon-transition', () => ({
+  applyAbandonTransition: vi.fn(async () => ({ ok: true })),
+}));
+
+vi.mock('@/lib/ids', () => ({
+  currentTimestamp: vi.fn(() => '2026-06-26T00:00:00.000Z'),
+}));
+
+describe('abandons tools (Vague 3 + parité MCP)', () => {
   const tools = captureTools(registerAbandonTools);
   beforeEach(() => vi.clearAllMocks());
 
-  it('expose les 3 tools', () => {
-    expect(Object.keys(tools).sort()).toEqual(['create_abandon', 'list_abandons', 'update_abandon']);
+  it('expose les 4 tools (list, create, update, transition)', () => {
+    expect(Object.keys(tools).sort()).toEqual([
+      'create_abandon',
+      'list_abandons',
+      'transition_abandon',
+      'update_abandon',
+    ]);
+  });
+
+  it('update_abandon ne possède plus de champ status dans son schema', () => {
+    const schema = tools.update_abandon.schema as Record<string, unknown>;
+    expect(schema).not.toHaveProperty('status');
   });
 
   it('list_abandons formate le montant', async () => {
@@ -51,9 +69,34 @@ describe('abandons tools (Vague 3)', () => {
     expect(parsed.montant).toMatch(/42,50/);
   });
 
-  it('update_abandon confirme la mise à jour', async () => {
-    const r = await tools.update_abandon.handler({ id: 'ABF-2026-001', status: 'valide' });
+  it('update_abandon met à jour sans status', async () => {
+    const r = await tools.update_abandon.handler({ id: 'ABF-2026-001', notes: 'ok' });
     const parsed = parseToolResult(r) as { id: string };
     expect(parsed.id).toBe('ABF-2026-001');
+  });
+
+  it('transition_abandon retourne { ok: true } via le service', async () => {
+    const r = await tools.transition_abandon.handler({
+      id: 'ABF-2026-001',
+      target_status: 'valide',
+    });
+    const parsed = parseToolResult(r) as { ok: boolean };
+    expect(parsed.ok).toBe(true);
+  });
+
+  it('transition_abandon propage { ok: false } du service', async () => {
+    const { applyAbandonTransition } = await import('@/lib/services/abandon-transition');
+    vi.mocked(applyAbandonTransition).mockResolvedValueOnce({
+      ok: false,
+      reason: 'wrong_role',
+      message: 'Action réservée aux trésoriers / RG.',
+    });
+    const r = await tools.transition_abandon.handler({
+      id: 'ABF-2026-001',
+      target_status: 'valide',
+    });
+    const parsed = parseToolResult(r) as { ok: boolean; reason: string };
+    expect(parsed.ok).toBe(false);
+    expect(parsed.reason).toBe('wrong_role');
   });
 });

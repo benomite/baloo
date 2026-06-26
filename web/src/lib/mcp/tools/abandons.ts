@@ -3,6 +3,8 @@ import { z } from 'zod';
 import type { McpContext } from '../auth';
 import { listAbandons, createAbandon, updateAbandon } from '@/lib/services/abandons';
 import { formatAmount, parseAmount } from '@/lib/format';
+import { applyAbandonTransition } from '@/lib/services/abandon-transition';
+import { currentTimestamp } from '@/lib/ids';
 
 const ABANDON_STATUS = z.enum(['a_traiter', 'valide', 'envoye_national', 'refuse']);
 
@@ -69,11 +71,37 @@ export function registerAbandonTools(server: McpServer, ctx: McpContext) {
   );
 
   server.tool(
-    'update_abandon',
-    'Met à jour un abandon de frais (statut, CERFA émis, notes, motif refus...).',
+    'transition_abandon',
+    'Change le statut d’un abandon de frais en appliquant les règles de workflow. Statuts possibles : valide, envoye_national, refuse. Pour changer le statut, utilisez ce tool plutôt que `update_abandon`.',
     {
       id: z.string().describe("ID de l'abandon (ex: ABF-2026-001)"),
-      status: ABANDON_STATUS.optional(),
+      target_status: z.enum(['valide', 'envoye_national', 'refuse'] as const).describe('Statut cible'),
+      motif: z.string().optional().describe('Motif de refus (requis si target_status = "refuse")'),
+    },
+    async (params) => {
+      const opts: { motif?: string; sentToNationalAt?: string | null } = {};
+      if (params.target_status === 'refuse') opts.motif = params.motif;
+      if (params.target_status === 'envoye_national') opts.sentToNationalAt = currentTimestamp();
+
+      const result = await applyAbandonTransition(
+        { groupId: ctx.groupId, role: ctx.role, userId: ctx.userId },
+        params.id,
+        params.target_status,
+        opts,
+      );
+
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
+  server.tool(
+    'update_abandon',
+    'Met à jour les métadonnées d’un abandon de frais (CERFA émis, notes, motif refus…). Pour changer le statut, utilisez `transition_abandon` qui applique les règles de workflow.',
+    {
+      id: z.string().describe("ID de l'abandon (ex: ABF-2026-001)"),
+      // status RETIRÉ — utiliser transition_abandon
       cerfa_emis: z.boolean().optional().describe('Le CERFA fiscal a-t-il été émis ?'),
       cerfa_emis_at: z.string().nullable().optional(),
       sent_to_national_at: z.string().nullable().optional(),
