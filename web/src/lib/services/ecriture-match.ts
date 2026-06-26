@@ -51,7 +51,7 @@ function dayDiff(a: string, b: string): number {
 }
 
 export function suggestMatchForEcriture(
-  ecriture: { id: string; amount_cents: number; date_ecriture: string },
+  ecriture: { id: string; amount_cents: number; date_ecriture: string; type: 'depense' | 'recette' },
   depots: MatchDepot[],
   rembs: MatchRemboursement[],
   rejectedKeys: Set<string> = new Set(),
@@ -72,7 +72,14 @@ export function suggestMatchForEcriture(
       dist, pref: 0,
     });
   }
-  for (const r of rembs) {
+  // Un remboursement est une SORTIE d'argent (le virement au bénéficiaire) :
+  // il ne peut correspondre qu'à une écriture de type dépense. Une recette
+  // (entrée d'argent, montant positif côté banque) ne doit JAMAIS déclencher
+  // de suggestion de remboursement — cf. bug terrain 2026-06 (+45 € proposé
+  // à tort pour un remboursement de 41,24 €). `amount_cents` étant stocké en
+  // valeur absolue, c'est `type` qui porte le sens : on filtre dessus.
+  const rembsCandidates = ecriture.type === 'depense' ? rembs : [];
+  for (const r of rembsCandidates) {
     // Date de référence = virement (date_paiement) sinon dépense — aligné
     // sur le matching de l'inbox (l'écriture est le virement bancaire).
     const refDate = r.date_paiement ?? r.date_depense;

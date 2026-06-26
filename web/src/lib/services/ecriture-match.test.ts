@@ -4,7 +4,7 @@ import { rejetPairKey } from '../queries/inbox-matching';
 
 const depot = (over = {}) => ({ id: 'DEP1', amount_cents: 5000, date_estimee: '2026-01-10', titre: 'Courses', uniteCode: 'PC', categoryName: 'Intendance', ...over });
 const remb = (over = {}) => ({ id: 'RBT1', total_cents: 5000, date_depense: '2026-01-10', date_paiement: null, demandeur: 'Alice', uniteCode: 'LJ', status: 'virement_effectue', ...over });
-const ecr = { id: 'ECR1', amount_cents: 5000, date_ecriture: '2026-01-10' };
+const ecr = { id: 'ECR1', amount_cents: 5000, date_ecriture: '2026-01-10', type: 'depense' as const };
 
 describe('suggestMatchForEcriture', () => {
   it('match dépôt exact → champs d\'affichage', () => {
@@ -27,7 +27,7 @@ describe('suggestMatchForEcriture', () => {
     expect(suggestMatchForEcriture(ecr, [depot({ date_estimee: '2026-02-15' })], [])).toBeNull();
   });
   it('plancher 1€', () => {
-    expect(suggestMatchForEcriture({ id: 'ECR1', amount_cents: 200, date_ecriture: '2026-01-10' }, [depot({ amount_cents: 250 })], [])).not.toBeNull();
+    expect(suggestMatchForEcriture({ id: 'ECR1', amount_cents: 200, date_ecriture: '2026-01-10', type: 'depense' }, [depot({ amount_cents: 250 })], [])).not.toBeNull();
   });
   it('exclut une paire rejetée (dépôt)', () => {
     const rejected = new Set([rejetPairKey('ECR1', 'depot', 'DEP1')]);
@@ -36,7 +36,7 @@ describe('suggestMatchForEcriture', () => {
   it('remboursement : matche sur date_paiement (virement), même si date_depense est loin', () => {
     // écriture = virement du 06-04 ; dépense le 05-15 (>15j) ; paiement le 06-04.
     const r = suggestMatchForEcriture(
-      { id: 'ECR1', amount_cents: 18173, date_ecriture: '2026-06-04' },
+      { id: 'ECR1', amount_cents: 18173, date_ecriture: '2026-06-04', type: 'depense' },
       [],
       [remb({ total_cents: 18173, date_depense: '2026-05-15', date_paiement: '2026-06-04' })],
     );
@@ -59,6 +59,18 @@ describe('suggestMatchForEcriture', () => {
   });
   it('ignore dépôt sans montant ou sans date', () => {
     expect(suggestMatchForEcriture(ecr, [depot({ amount_cents: null }), depot({ date_estimee: null })], [])).toBeNull();
+  });
+  it('ne propose JAMAIS un remboursement pour une recette (entrée d\'argent)', () => {
+    // Un remboursement est une SORTIE d'argent → ne peut correspondre qu'à une
+    // dépense. Une recette (+45 €) ne doit jamais matcher un remboursement,
+    // même à montant/date dans la tolérance. Cf. bug terrain 2026-06 : ligne
+    // bancaire +45 € proposée à tort pour un remboursement de 41,24 €.
+    const recette = { id: 'ECR1', amount_cents: 4500, date_ecriture: '2026-06-20', type: 'recette' as const };
+    expect(suggestMatchForEcriture(recette, [], [remb({ total_cents: 4124, date_paiement: '2026-06-20' })])).toBeNull();
+  });
+  it('propose bien un remboursement pour une dépense de même montant/date', () => {
+    const depense = { id: 'ECR1', amount_cents: 4124, date_ecriture: '2026-06-20', type: 'depense' as const };
+    expect(suggestMatchForEcriture(depense, [], [remb({ total_cents: 4124, date_paiement: '2026-06-20' })])?.kind).toBe('remboursement');
   });
   it('à égalité de date, préfère le dépôt', () => {
     expect(suggestMatchForEcriture(ecr, [depot()], [remb()])?.kind).toBe('depot');

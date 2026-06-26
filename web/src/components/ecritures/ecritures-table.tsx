@@ -306,7 +306,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
             const match =
               !e.has_justificatif && !e.remboursement_id && (matchDepots.length > 0 || matchRembs.length > 0)
                 ? suggestMatchForEcriture(
-                    { id: e.id, amount_cents: e.amount_cents, date_ecriture: e.date_ecriture },
+                    { id: e.id, amount_cents: e.amount_cents, date_ecriture: e.date_ecriture, type: e.type },
                     matchDepots,
                     matchRembs,
                     rejectedMatchSet,
