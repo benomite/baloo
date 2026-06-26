@@ -24,7 +24,15 @@ import { registerSyncTools } from './tools/sync';
 import { registerCampsTools } from './tools/camps';
 import { registerRepartitionsTools } from './tools/repartitions';
 
-// Compteur Phase 2 : 70 tools = 59 existants + 7 camps + 4 repartitions
+// Compteur Lot 3 : 74 tools = 70 existants + 4 parité MCP↔app
+//  - update_budget_ligne : édition partielle d'une ligne budgétaire.
+//  - delete_budget_ligne : suppression d'une ligne budgétaire (planification,
+//    hors tables protégées par la règle "jamais de DELETE").
+//  - update_budget_statut : transition statut budget (projet → vote → cloture).
+//  - batch_update_ecritures : mise à jour en masse d'écritures (imputation).
+//  - taux_km intégré dans update_groupe (pas de tool dédié) : +0 tool.
+//
+// Phase 2 : 70 tools = 59 existants + 7 camps + 4 repartitions
 // (`transition_remboursement` + `transition_abandon`) ajoutés pour la parité
 // app ↔ MCP sur les changements de statut.
 //

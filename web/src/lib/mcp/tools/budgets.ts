@@ -6,6 +6,9 @@ import {
   createBudget,
   createBudgetLigne,
   listBudgetLignes,
+  updateBudgetLigne,
+  deleteBudgetLigne,
+  updateBudgetStatut,
 } from '@/lib/services/budgets';
 import { formatAmount, parseAmount } from '@/lib/format';
 
@@ -92,6 +95,76 @@ export function registerBudgetTools(server: McpServer, ctx: McpContext) {
         solde: formatAmount(data.solde_cents),
       };
       return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'update_budget_ligne',
+    'Modifie une ligne budgétaire (libellé, montant, type, unité, catégorie, activité, notes).',
+    {
+      id: z.string().describe('ID de la ligne (ex: bdl-abcd-1234)'),
+      libelle: z.string().min(1).optional(),
+      type: z.enum(['depense', 'recette']).optional(),
+      amount: z.string().optional().describe("Montant en format français, ex: '1 200' ou '1 234,56'"),
+      unite_id: z.string().nullable().optional(),
+      category_id: z.string().nullable().optional(),
+      activite_id: z.string().nullable().optional(),
+      notes: z.string().nullable().optional(),
+    },
+    async (params) => {
+      const { id, amount, ...rest } = params;
+      const patch: Parameters<typeof updateBudgetLigne>[2] = { ...rest };
+      if (amount !== undefined) {
+        patch.amount_cents = parseAmount(amount);
+      }
+      const updated = await updateBudgetLigne({ groupId: ctx.groupId }, id, patch);
+      if (!updated) {
+        return { content: [{ type: 'text' as const, text: `Ligne ${id} introuvable.` }] };
+      }
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({ ...updated, montant: formatAmount(updated.amount_cents) }, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
+  server.tool(
+    'delete_budget_ligne',
+    "Supprime une ligne budgétaire. Les lignes budget sont des données de planification (pas soumises à la règle 'jamais de DELETE').",
+    { id: z.string().describe('ID de la ligne (ex: bdl-abcd-1234)') },
+    async ({ id }) => {
+      const deleted = await deleteBudgetLigne({ groupId: ctx.groupId }, id);
+      if (!deleted) {
+        return { content: [{ type: 'text' as const, text: `Ligne ${id} introuvable.` }] };
+      }
+      return { content: [{ type: 'text' as const, text: `Ligne ${id} supprimée.` }] };
+    },
+  );
+
+  server.tool(
+    'update_budget_statut',
+    "Change le statut d'un budget (projet → vote → cloture). Pose automatiquement vote_le à la date du jour lors du passage à 'vote'.",
+    {
+      budget_id: z.string().describe("ID du budget (ex: bdg-g-test-2025-2026)"),
+      statut: STATUT_ENUM,
+    },
+    async ({ budget_id, statut }) => {
+      const updated = await updateBudgetStatut({ groupId: ctx.groupId }, budget_id, statut);
+      if (!updated) {
+        return { content: [{ type: 'text' as const, text: `Budget ${budget_id} introuvable.` }] };
+      }
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify(updated, null, 2),
+          },
+        ],
+      };
     },
   );
 }

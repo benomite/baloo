@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { McpContext } from '../auth';
-import { listEcritures, updateEcriture } from '@/lib/services/ecritures';
+import { listEcritures, updateEcriture, batchUpdateEcritures } from '@/lib/services/ecritures';
 import { ECRITURE_STATUSES, type EcritureStatus } from '@/lib/types';
 import { pendingStatuses } from '@/lib/services/ecritures-status';
 import { parseAmount } from '@/lib/format';
@@ -169,6 +169,45 @@ export function registerEcrituresTools(server: McpServer, ctx: McpContext) {
               null,
               2,
             ),
+          },
+        ],
+      };
+    },
+  );
+
+  // ─── batch_update_ecritures ───────────────────────────────────────────
+  //
+  // Édition en masse d'un lot d'écritures. Reflète `batchUpdateEcritures`
+  // (service), qui filtre silencieusement les écritures miroir (mirror /
+  // divergent) — seules les écritures modifiables (draft / pending_cw /
+  // pending_sync) sont mises à jour. Cohérent avec ADR-037 / update_ecriture.
+  // Pas de champ `status` ni de push CW.
+  server.tool(
+    'batch_update_ecritures',
+    [
+      "Met à jour en masse un lot d'écritures (imputation : catégorie, unité, activité, mode de paiement, carte, justif_attendu).",
+      'Seules les écritures modifiables (draft / pending_cw / pending_sync) sont affectées ;',
+      'les écritures déjà dans Comptaweb (mirror / divergent) sont silencieusement ignorées (skipped).',
+      'Pas de push Comptaweb — identique à update_ecriture, mais sur plusieurs écritures à la fois.',
+    ].join(' '),
+    {
+      ids: z.array(z.string()).min(1).describe('Liste des IDs d\'écritures à mettre à jour.'),
+      patch: z.object({
+        category_id: z.string().nullable().optional(),
+        unite_id: z.string().nullable().optional(),
+        activite_id: z.string().nullable().optional(),
+        mode_paiement_id: z.string().nullable().optional(),
+        carte_id: z.string().nullable().optional(),
+        justif_attendu: z.union([z.literal(0), z.literal(1)]).optional(),
+      }).describe('Champs à mettre à jour (seuls les champs fournis sont modifiés).'),
+    },
+    async ({ ids, patch }) => {
+      const result = await batchUpdateEcritures(ecritureCtx, ids, patch);
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify(result, null, 2),
           },
         ],
       };

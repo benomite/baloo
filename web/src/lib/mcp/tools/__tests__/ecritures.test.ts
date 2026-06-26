@@ -4,10 +4,12 @@ import { registerEcrituresTools } from '../ecritures';
 
 const listEcrituresMock = vi.fn();
 const updateEcritureMock = vi.fn();
+const batchUpdateEcrituresMock = vi.fn();
 
 vi.mock('@/lib/services/ecritures', () => ({
   listEcritures: (...args: unknown[]) => listEcrituresMock(...args),
   updateEcriture: (...args: unknown[]) => updateEcritureMock(...args),
+  batchUpdateEcritures: (...args: unknown[]) => batchUpdateEcrituresMock(...args),
 }));
 
 vi.mock('@/lib/services/ecritures-status', async (orig) => {
@@ -37,8 +39,8 @@ describe('ecritures tools (Vague 4 — étendus)', () => {
     });
   });
 
-  it('expose list_ecritures + update_ecriture (sans create_ecriture)', () => {
-    expect(Object.keys(tools).sort()).toEqual(['list_ecritures', 'update_ecriture']);
+  it('expose list_ecritures + update_ecriture + batch_update_ecritures (sans create_ecriture)', () => {
+    expect(Object.keys(tools).sort()).toEqual(['batch_update_ecritures', 'list_ecritures', 'update_ecriture']);
   });
 
   // ─── list_ecritures étendu ─────────────────────────────────────────────
@@ -161,5 +163,31 @@ describe('ecritures tools (Vague 4 — étendus)', () => {
     const d = tools.update_ecriture.description;
     expect(d).toMatch(/brouillon/i);
     expect(d).toMatch(/Comptaweb/);
+  });
+
+  // ─── batch_update_ecritures ────────────────────────────────────────────
+
+  it('batch_update_ecritures transmet ids + patch au service et retourne updated/skipped', async () => {
+    batchUpdateEcrituresMock.mockResolvedValue({ updated: 3, skipped: 1 });
+    const r = await tools.batch_update_ecritures.handler({
+      ids: ['DEP-2026-001', 'DEP-2026-002', 'DEP-2026-003', 'DEP-2026-004'],
+      patch: { category_id: 'cat-x', unite_id: 'unite-y' },
+    });
+    expect(batchUpdateEcrituresMock).toHaveBeenCalledWith(
+      expect.any(Object),
+      ['DEP-2026-001', 'DEP-2026-002', 'DEP-2026-003', 'DEP-2026-004'],
+      expect.objectContaining({ category_id: 'cat-x', unite_id: 'unite-y' }),
+    );
+    const parsed = parseToolResult(r) as { updated: number; skipped: number };
+    expect(parsed.updated).toBe(3);
+    expect(parsed.skipped).toBe(1);
+  });
+
+  it('batch_update_ecritures : le champ status est absent du schéma', () => {
+    const schema = tools.batch_update_ecritures.schema as Record<string, unknown>;
+    const patchSchema = schema.patch as Record<string, unknown>;
+    // Le patch est un z.object(), son shape est accessible via .shape dans zod
+    // mais le test-helper capture le schéma brut. On vérifie que status n'y figure pas.
+    expect(String(JSON.stringify(patchSchema))).not.toContain('"status"');
   });
 });
