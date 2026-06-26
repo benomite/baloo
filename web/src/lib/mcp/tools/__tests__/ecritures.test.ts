@@ -1,35 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { captureTools, parseToolResult } from './test-helpers';
 import { registerEcrituresTools } from '../ecritures';
-import { CwPushFailedError, CwLocalUpdateFailedError } from '@/lib/services/ecritures-create';
 
 const listEcrituresMock = vi.fn();
 const updateEcritureMock = vi.fn();
-const createMock = vi.fn();
 
 vi.mock('@/lib/services/ecritures', () => ({
   listEcritures: (...args: unknown[]) => listEcrituresMock(...args),
   updateEcriture: (...args: unknown[]) => updateEcritureMock(...args),
-}));
-
-vi.mock('@/lib/services/ecritures-create', async (orig) => {
-  const actual = (await orig()) as Record<string, unknown>;
-  return {
-    ...actual,
-    createEcritureAndPushToCw: (...args: unknown[]) => createMock(...args),
-  };
-});
-
-vi.mock('@/lib/services/ecritures-create-cw-adapter', () => ({
-  defaultCwScraper: vi.fn(),
-}));
-
-vi.mock('@/lib/comptaweb/auth', () => ({
-  loadConfig: vi.fn(async () => ({ baseUrl: 'http://x', cookie: 'c' })),
-}));
-
-vi.mock('@/lib/db', () => ({
-  getDb: vi.fn(() => ({ prepare: vi.fn() })),
 }));
 
 vi.mock('@/lib/services/ecritures-status', async (orig) => {
@@ -59,8 +37,8 @@ describe('ecritures tools (Vague 4 — étendus)', () => {
     });
   });
 
-  it('expose list_ecritures + create_ecriture + update_ecriture', () => {
-    expect(Object.keys(tools).sort()).toEqual(['create_ecriture', 'list_ecritures', 'update_ecriture']);
+  it('expose list_ecritures + update_ecriture (sans create_ecriture)', () => {
+    expect(Object.keys(tools).sort()).toEqual(['list_ecritures', 'update_ecriture']);
   });
 
   // ─── list_ecritures étendu ─────────────────────────────────────────────
@@ -110,90 +88,6 @@ describe('ecritures tools (Vague 4 — étendus)', () => {
     const r2 = await tools.list_ecritures.handler({ comptaweb_ecriture_id: 99999 });
     const parsed2 = parseToolResult(r2) as { ecritures: Array<unknown>; total: number };
     expect(parsed2.ecritures).toHaveLength(0);
-  });
-
-  // ─── create_ecriture ───────────────────────────────────────────────────
-
-  it('create_ecriture succès → renvoie ecriture en pending_sync', async () => {
-    createMock.mockResolvedValue({
-      id: 'DEP-2026-002',
-      status: 'pending_sync',
-      cw_numero_piece: 'CW-X-001',
-    });
-    const r = await tools.create_ecriture.handler({
-      date_ecriture: '2026-05-18',
-      description: 'Achat',
-      amount_cents: 5000,
-      type: 'depense',
-    });
-    const parsed = parseToolResult(r) as { ok: boolean; ecriture: { id: string; status: string } };
-    expect(parsed.ok).toBe(true);
-    expect(parsed.ecriture.status).toBe('pending_sync');
-  });
-
-  it('create_ecriture accepte montant FR via parseAmount', async () => {
-    createMock.mockResolvedValue({
-      id: 'DEP-2026-003',
-      status: 'pending_sync',
-      cw_numero_piece: 'CW-X-002',
-    });
-    await tools.create_ecriture.handler({
-      date_ecriture: '2026-05-18',
-      description: 'Achat',
-      montant: '42,50',
-      type: 'depense',
-    });
-    expect(createMock).toHaveBeenCalledWith(
-      expect.any(Object),
-      expect.objectContaining({
-        payload: expect.objectContaining({ amount_cents: 4250 }),
-      }),
-    );
-  });
-
-  it('create_ecriture sans montant renvoie une erreur explicite', async () => {
-    const r = await tools.create_ecriture.handler({
-      date_ecriture: '2026-05-18',
-      description: 'Achat',
-      type: 'depense',
-    });
-    const txt = parseToolResult(r) as string;
-    expect(txt).toContain('montant manquant');
-  });
-
-  it('create_ecriture CwPushFailedError → message draft + hint Tout copier', async () => {
-    createMock.mockRejectedValue(new CwPushFailedError('DEP-2026-004', new Error('CW down')));
-    const r = await tools.create_ecriture.handler({
-      date_ecriture: '2026-05-18',
-      description: 'Achat',
-      amount_cents: 5000,
-      type: 'depense',
-    });
-    const parsed = parseToolResult(r) as {
-      ok: boolean;
-      fallback_status: string;
-      ecriture_id: string;
-      hint: string;
-    };
-    expect(parsed.ok).toBe(false);
-    expect(parsed.fallback_status).toBe('draft');
-    expect(parsed.ecriture_id).toBe('DEP-2026-004');
-    expect(parsed.hint).toContain('Tout copier');
-  });
-
-  it('create_ecriture CwLocalUpdateFailedError → message désynchro grave + ne PAS retry', async () => {
-    createMock.mockRejectedValue(
-      new CwLocalUpdateFailedError('DEP-2026-005', 'CW-Z-007', new Error('DB down')),
-    );
-    const r = await tools.create_ecriture.handler({
-      date_ecriture: '2026-05-18',
-      description: 'Achat',
-      amount_cents: 5000,
-      type: 'depense',
-    });
-    const parsed = parseToolResult(r) as { hint: string; cw_numero_piece: string };
-    expect(parsed.cw_numero_piece).toBe('CW-Z-007');
-    expect(parsed.hint).toMatch(/ne PAS retry|doublon/);
   });
 
   // ─── update_ecriture ───────────────────────────────────────────────────

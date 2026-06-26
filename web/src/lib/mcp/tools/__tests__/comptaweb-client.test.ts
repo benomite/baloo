@@ -47,25 +47,12 @@ vi.mock('@/lib/comptaweb', () => ({
   })),
 }));
 
-vi.mock('@/lib/comptaweb/ecritures-from-bancaire', () => ({
-  createEcritureFromLigneBancaire: vi.fn(async () => ({
-    dryRun: true,
-    sourceLigneId: 100,
-    sourceSousLigneIndex: null,
-    sourceMontantCentimes: -5000,
-    inferredModetransactionId: 'mt-1',
-    postBody: { type: 'depense', libel: 'Test' },
-    warnings: [],
-  })),
-}));
-
 describe('comptaweb-client tools (Vague 5)', () => {
   const tools = captureTools(registerComptawebClientTools);
   beforeEach(() => vi.clearAllMocks());
 
-  it("expose les 3 tools attendus (pas cw_create_depense/recette)", () => {
+  it("expose les 2 tools de lecture (sans cw_ecriture_depuis_ligne_bancaire)", () => {
     expect(Object.keys(tools).sort()).toEqual([
-      'cw_ecriture_depuis_ligne_bancaire',
       'cw_list_rapprochement_bancaire',
       'cw_referentiels_creer_ecriture',
     ]);
@@ -85,15 +72,5 @@ describe('comptaweb-client tools (Vague 5)', () => {
     const r = await tools.cw_referentiels_creer_ecriture.handler({});
     const parsed = parseToolResult(r) as { nature: Array<{ id: string }> };
     expect(parsed.nature[0].id).toBe('1');
-  });
-
-  it('cw_ecriture_depuis_ligne_bancaire en dry-run renvoie un body preview', async () => {
-    const r = await tools.cw_ecriture_depuis_ligne_bancaire.handler({
-      ligne_bancaire_id: 100,
-      nature_id: 'n1',
-      activite_id: 'a1',
-      brancheprojet_id: 'b1',
-    });
-    expect(parseToolResult(r) as string).toContain('DRY-RUN');
   });
 });

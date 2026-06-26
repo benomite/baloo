@@ -1471,4 +1471,34 @@ Le dogfood prod immédiat a révélé 4 bugs, tous corrigés (commits `8ef950f`,
 
 ---
 
+## ADR-037 — MCP : retrait des tools d'écriture directe dans Comptaweb
+
+**Date** : 2026-06-26
+**Statut** : Acté
+**Lié à** : [ADR-032](#adr-032) (miroir strict, MCP source de vérité opérationnelle).
+
+### Contexte
+
+Le serveur MCP exposait deux tools qui **écrivaient directement dans Comptaweb**, en court-circuitant le cycle brouillon → enrichissement → matérialisation délibérée :
+
+- `create_ecriture` : crée une écriture neuve et la pousse aussitôt dans CW (`createEcritureAndPushToCw`, cycle `pending_cw → pending_sync`).
+- `cw_ecriture_depuis_ligne_bancaire` : poste directement dans CW depuis une ligne bancaire non rapprochée, sans jamais créer de brouillon Baloo.
+
+Le workflow attendu d'une écriture est : `[info banque] → [ligne au rapprochement CW] → [brouillon Baloo] → [enrichissement métadonnées] → [création côté CW, qui fige Baloo] → [rapprochement manuel CW]`. Baloo est l'**atelier de préparation** ; la matérialisation dans CW est une étape **humaine délibérée**. Or `cw_scan_drafts` / `cw_sync_draft` n'ayant jamais été portés en MCP, l'agent n'avait **aucun moyen de pousser un brouillon existant** : sommé de « catégoriser des lignes côté Baloo », il se rabattait sur `create_ecriture` → **doublons dans Comptaweb** (incident terrain 2026-06). Le correctif d'`update_ecriture` (édition de l'imputation d'un brouillon sans push CW) a rendu la préparation possible en MCP ; il restait à fermer la porte de l'écriture directe.
+
+### Décision
+
+Retirer du serveur MCP les deux tools `create_ecriture` et `cw_ecriture_depuis_ligne_bancaire`. L'agent MCP ne peut **plus écrire dans Comptaweb** : il prépare et enrichit des brouillons (`update_ecriture`), consulte et suggère. La matérialisation dans CW (le push qui fige Baloo) reste **réservée à l'UI** (bouton « Valider »), action humaine délibérée. Les **services** sous-jacents (`createEcritureAndPushToCw`, `createEcritureFromLigneBancaire`) sont conservés : ils servent l'UI et les routes API.
+
+### Conséquences
+
+- Surface MCP : 59 → **57 tools**. `register-all.ts` mis à jour (compteur + note : plus de point d'entrée création CW côté MCP).
+- Suppression structurelle du risque de doublon par l'agent : il n'a plus aucun chemin d'écriture vers CW.
+- Limite assumée : pas de création d'écriture *ex-nihilo* via MCP. Si le besoin émerge (ex. un tool `create_draft` purement local, sans push), il fera l'objet d'une décision dédiée — non spéculé ici (YAGNI).
+- Tests MCP (`ecritures.test.ts`, `comptaweb-client.test.ts`) ajustés ; aucune migration BDD.
+
+**Liens** : `web/src/lib/mcp/tools/ecritures.ts`, `web/src/lib/mcp/tools/comptaweb-client.ts`, `web/src/lib/mcp/register-all.ts`.
+
+---
+
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*

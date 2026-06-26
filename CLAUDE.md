@@ -34,7 +34,7 @@ Le MCP Baloo expose les outils suivants :
 
 **Compta opérationnelle** :
 - `vue_ensemble` — état global de la trésorerie (à appeler en début de session).
-- `create_ecriture` / `list_ecritures` / `update_ecriture` — journal des dépenses/recettes.
+- `list_ecritures` / `update_ecriture` — journal des dépenses/recettes (consultation + préparation/enrichissement des brouillons). **Pas de création d'écriture dans Comptaweb via MCP** (ADR-037) : Baloo prépare des brouillons, la matérialisation dans CW est une action humaine via l'UI.
 - `create_remboursement` / `list_remboursements` / `update_remboursement` — suivi remboursements.
 - `create_abandon` / `list_abandons` — abandons de frais.
 - `create_mouvement_caisse` / `list_mouvements_caisse` — caisse espèces.
