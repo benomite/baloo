@@ -225,8 +225,10 @@ export async function getCampDashboard(ctx: CampContext, id: string): Promise<Ca
     FROM ecritures e LEFT JOIN categories c ON c.id = e.category_id
     WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id = ?`;
 
+  // Onglet Dépenses : ne montrer que les dépenses ici. Les recettes ont
+  // leur propre onglet (« Paiements reçus », cf. selectCampRecettes).
   const ecrituresRecentes = await db.prepare(
-    `${ECR_SELECT} ORDER BY e.date_ecriture DESC, e.id DESC LIMIT 20`,
+    `${ECR_SELECT} AND e.type = 'depense' ORDER BY e.date_ecriture DESC, e.id DESC LIMIT 20`,
   ).all<EcritureCampRow>(ctx.groupId, camp.activite_id, camp.unite_id);
 
   const justifsManquants = await db.prepare(
