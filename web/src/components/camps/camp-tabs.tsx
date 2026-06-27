@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
 // Onglets Dépenses / Recettes de la vue camp. Les deux panneaux sont rendus
 // côté serveur et passés en props ; on bascule l'affichage via `hidden` pour
@@ -9,8 +9,8 @@ export function CampTabs({
   depenses,
   recettes,
 }: {
-  depenses: React.ReactNode;
-  recettes: React.ReactNode;
+  depenses: ReactNode;
+  recettes: ReactNode;
 }) {
   const [tab, setTab] = useState<'depenses' | 'recettes'>('depenses');
 

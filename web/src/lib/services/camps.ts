@@ -159,7 +159,6 @@ export async function selectCampRecettes(
   activiteId: string,
   uniteId: string,
 ): Promise<EcritureCampRow[]> {
-  const exclus = CATEGORIES_HORS_RESULTAT.map(() => '?').join(',');
   return db.prepare(
     `SELECT e.id, e.date_ecriture, e.description, e.amount_cents, e.type, e.justif_attendu,
             c.name AS category_name,
@@ -167,7 +166,7 @@ export async function selectCampRecettes(
             (SELECT r.id FROM remboursements r WHERE r.ecriture_id = e.id LIMIT 1) AS remboursement_id
      FROM ecritures e LEFT JOIN categories c ON c.id = e.category_id
      WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id = ? AND e.type = 'recette'
-       AND (e.category_id IS NULL OR e.category_id NOT IN (${exclus}))
+       AND (e.category_id IS NULL OR e.category_id NOT IN (${EXCLUS}))
      ORDER BY e.date_ecriture DESC, e.id DESC`,
   ).all<EcritureCampRow>(groupId, activiteId, uniteId, ...CATEGORIES_HORS_RESULTAT);
 }
