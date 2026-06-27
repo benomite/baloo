@@ -1,4 +1,4 @@
-import { getDb } from '../db';
+import { getDb, type DbWrapper } from '../db';
 import { nextIdOn, currentTimestamp } from '../ids';
 import { currentExercice, CATEGORIES_HORS_RESULTAT } from './overview';
 import { ensureDepotsSchema } from './depots';
@@ -145,12 +145,32 @@ export interface CampDashboard {
   ecrituresRecentes: EcritureCampRow[];
   depotsEnAttente: DepotCampRow[];
   justifsManquants: EcritureCampRow[];
+  recettes: EcritureCampRow[];
   // Écritures de l'activité SANS branche/pôle (unite_id null) : invisibles
   // de tous les camps (camp = activité × unité) — à signaler.
   sansUniteCount: number;
 }
 
 const EXCLUS = CATEGORIES_HORS_RESULTAT.map(() => '?').join(',');
+
+export async function selectCampRecettes(
+  db: DbWrapper,
+  groupId: string,
+  activiteId: string,
+  uniteId: string,
+): Promise<EcritureCampRow[]> {
+  const exclus = CATEGORIES_HORS_RESULTAT.map(() => '?').join(',');
+  return db.prepare(
+    `SELECT e.id, e.date_ecriture, e.description, e.amount_cents, e.type, e.justif_attendu,
+            c.name AS category_name,
+            EXISTS(SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id) AS has_justificatif,
+            (SELECT r.id FROM remboursements r WHERE r.ecriture_id = e.id LIMIT 1) AS remboursement_id
+     FROM ecritures e LEFT JOIN categories c ON c.id = e.category_id
+     WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id = ? AND e.type = 'recette'
+       AND (e.category_id IS NULL OR e.category_id NOT IN (${exclus}))
+     ORDER BY e.date_ecriture DESC, e.id DESC`,
+  ).all<EcritureCampRow>(groupId, activiteId, uniteId, ...CATEGORIES_HORS_RESULTAT);
+}
 
 export async function getCampDashboard(ctx: CampContext, id: string): Promise<CampDashboard | null> {
   // Assure l'existence de la table depots_justificatifs (lazy-init — cf. AGENTS.md).
@@ -217,6 +237,8 @@ export async function getCampDashboard(ctx: CampContext, id: string): Promise<Ca
      ORDER BY e.date_ecriture DESC LIMIT 50`,
   ).all<EcritureCampRow>(ctx.groupId, camp.activite_id, camp.unite_id);
 
+  const recettes = await selectCampRecettes(db, ctx.groupId, camp.activite_id, camp.unite_id);
+
   const depotsEnAttente = await db.prepare(
     `SELECT d.id, d.titre, d.amount_cents, d.date_estimee, c.name AS category_name,
             u.nom_affichage AS submitter_name
@@ -235,5 +257,5 @@ export async function getCampDashboard(ctx: CampContext, id: string): Promise<Ca
      WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id IS NULL`,
   ).get<{ n: number }>(ctx.groupId, camp.activite_id);
 
-  return { camp, rows, ecrituresRecentes, depotsEnAttente, justifsManquants, sansUniteCount: orphelines?.n ?? 0 };
+  return { camp, rows, ecrituresRecentes, depotsEnAttente, justifsManquants, recettes, sansUniteCount: orphelines?.n ?? 0 };
 }
