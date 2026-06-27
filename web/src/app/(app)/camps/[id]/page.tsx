@@ -13,6 +13,7 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { PendingButton } from '@/components/shared/pending-button';
 import { UniteBadge } from '@/components/shared/unite-badge';
 import { Field } from '@/components/shared/field';
+import { CampTabs } from '@/components/camps/camp-tabs';
 import { getCurrentContext } from '@/lib/context';
 import { requireCampsAccess } from '@/lib/auth/access';
 import {
@@ -115,7 +116,7 @@ export default async function CampDetailPage({
   const dashboard = await getCampDashboard(campCtx, id);
   if (!dashboard) notFound();
 
-  const { camp, rows, ecrituresRecentes, depotsEnAttente, justifsManquants, sansUniteCount } =
+  const { camp, rows, ecrituresRecentes, depotsEnAttente, justifsManquants, sansUniteCount, recettes } =
     dashboard;
   const isAdmin = ADMIN_ROLES.includes(ctx.role);
   const dates =
@@ -189,188 +190,220 @@ export default async function CampDetailPage({
         </Alert>
       )}
 
-      <div className="space-y-6">
-        <Section title="Budget dépenses">
-          {rows.postes.length === 0 ? (
-            <p className="text-[13px] text-fg-muted">
-              Aucune dépense ni budget sur ce camp pour l&apos;instant.
-            </p>
-          ) : (
-            <div className="space-y-3.5">
-              {rows.postes.map((p) => (
-                <PosteRow key={p.categoryId ?? '__none__'} poste={p} />
-              ))}
-              <div className="pt-3 border-t border-border-soft">
-                <div className="flex items-baseline justify-between gap-3 font-semibold text-[13.5px]">
-                  <span className="text-fg">Total</span>
-                  <span className="tabular-nums text-fg">
-                    <Amount cents={rows.totalDepenseCents} />
-                    <span className="text-fg-subtle font-normal"> / </span>
-                    <Amount cents={rows.totalBudgetDepensesCents} tone="muted" />
-                  </span>
+      <CampTabs
+        depenses={
+          <div className="space-y-6">
+            <Section title="Budget dépenses">
+              {rows.postes.length === 0 ? (
+                <p className="text-[13px] text-fg-muted">
+                  Aucune dépense ni budget sur ce camp pour l&apos;instant.
+                </p>
+              ) : (
+                <div className="space-y-3.5">
+                  {rows.postes.map((p) => (
+                    <PosteRow key={p.categoryId ?? '__none__'} poste={p} />
+                  ))}
+                  <div className="pt-3 border-t border-border-soft">
+                    <div className="flex items-baseline justify-between gap-3 font-semibold text-[13.5px]">
+                      <span className="text-fg">Total</span>
+                      <span className="tabular-nums text-fg">
+                        <Amount cents={rows.totalDepenseCents} />
+                        <span className="text-fg-subtle font-normal"> / </span>
+                        <Amount cents={rows.totalBudgetDepensesCents} tone="muted" />
+                      </span>
+                    </div>
+                    <div className="mt-2">
+                      <Jauge
+                        done={rows.totalDepenseCents}
+                        total={rows.totalBudgetDepensesCents}
+                      />
+                    </div>
+                    {totalDepots > 0 && (
+                      <p className="mt-2 text-[11.5px] text-fg-subtle">
+                        dont <Amount cents={totalDepots} /> en tickets déposés, en
+                        attente de rapprochement.
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <div className="mt-2">
-                  <Jauge
-                    done={rows.totalDepenseCents}
-                    total={rows.totalBudgetDepensesCents}
-                  />
-                </div>
-                {totalDepots > 0 && (
-                  <p className="mt-2 text-[11.5px] text-fg-subtle">
-                    dont <Amount cents={totalDepots} /> en tickets déposés, en
-                    attente de rapprochement.
+              )}
+            </Section>
+
+            {(isAdmin || avances.length > 0) && (
+              <Section title="Avances de trésorerie">
+                {avSummary && avances.length > 0 && (
+                  <p className="mb-3 text-[12.5px] text-fg-muted">
+                    <Amount cents={avSummary.enCirculationCents} /> en circulation
+                    ({avSummary.enCoursCount} avance{avSummary.enCoursCount > 1 ? 's' : ''} en cours)
+                    {avSummary.consommeCents > 0 && (
+                      <> · <Amount cents={avSummary.consommeCents} /> consommés sur les avances clôturées</>
+                    )}
                   </p>
                 )}
-              </div>
-            </div>
-          )}
-        </Section>
 
-        <Section title="Recettes">
-          <div className="flex items-baseline justify-between gap-3 text-[13.5px]">
-            <span className="text-fg-muted">Encaissé / attendu</span>
-            <span className="tabular-nums">
-              <Amount cents={rows.recettesEncaisseesCents} tone="positive" />
-              <span className="text-fg-subtle"> / </span>
-              <Amount cents={rows.totalBudgetRecettesCents} tone="muted" />
-            </span>
-          </div>
-          <div className="mt-2">
-            <Jauge
-              done={rows.recettesEncaisseesCents}
-              total={rows.totalBudgetRecettesCents}
-            />
-          </div>
-        </Section>
-
-        {(isAdmin || avances.length > 0) && (
-          <Section title="Avances de trésorerie">
-            {avSummary && avances.length > 0 && (
-              <p className="mb-3 text-[12.5px] text-fg-muted">
-                <Amount cents={avSummary.enCirculationCents} /> en circulation
-                ({avSummary.enCoursCount} avance{avSummary.enCoursCount > 1 ? 's' : ''} en cours)
-                {avSummary.consommeCents > 0 && (
-                  <> · <Amount cents={avSummary.consommeCents} /> consommés sur les avances clôturées</>
+                {avances.length === 0 ? (
+                  <p className="text-[13px] text-fg-muted">
+                    Aucune avance versée pour ce camp. Une avance est un transfert
+                    au chef — ce sont ses tickets qui comptent dans le budget.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-border-soft rounded-lg border border-border-soft overflow-hidden">
+                    {avances.map((a) => (
+                      <AvanceRow key={a.id} avance={a} campId={camp.id} isAdmin={isAdmin} />
+                    ))}
+                  </ul>
                 )}
-              </p>
+
+                {isAdmin && (
+                  <details className="group/avance mt-3 rounded-lg border border-border-soft overflow-hidden">
+                    <summary className="cursor-pointer list-none flex items-center gap-2 px-3 py-2.5 text-[13px] font-medium text-fg transition-colors hover:bg-bg-sunken/40">
+                      <Plus size={14} strokeWidth={2.25} className="text-brand" />
+                      Nouvelle avance
+                      <ChevronDown
+                        size={14}
+                        strokeWidth={2.25}
+                        className="ml-auto text-fg-subtle transition-transform group-open/avance:rotate-180"
+                      />
+                    </summary>
+                    <CreateAvanceForm campId={camp.id} candidates={candidates} />
+                  </details>
+                )}
+              </Section>
             )}
 
-            {avances.length === 0 ? (
-              <p className="text-[13px] text-fg-muted">
-                Aucune avance versée pour ce camp. Une avance est un transfert
-                au chef — ce sont ses tickets qui comptent dans le budget.
-              </p>
-            ) : (
-              <ul className="divide-y divide-border-soft rounded-lg border border-border-soft overflow-hidden">
-                {avances.map((a) => (
-                  <AvanceRow key={a.id} avance={a} campId={camp.id} isAdmin={isAdmin} />
-                ))}
-              </ul>
+            {justifsManquants.length > 0 && (
+              <Section title="Justificatifs manquants">
+                <Alert variant="warning" className="mb-3">
+                  {justifsManquants.length} dépense
+                  {justifsManquants.length > 1 ? 's' : ''} sans justificatif rattaché.
+                </Alert>
+                <ul className="divide-y divide-border-soft rounded-lg border border-border-soft overflow-hidden">
+                  {justifsManquants.map((e) => (
+                    <li key={e.id}>
+                      <Link
+                        href={`/ecritures/${e.id}`}
+                        className="flex items-center gap-3 px-3 py-2.5 text-[13px] transition-colors hover:bg-bg-sunken/40"
+                      >
+                        <span className="tabular-nums text-fg-subtle shrink-0">
+                          {e.date_ecriture}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-fg">
+                          {e.description}
+                        </span>
+                        <span className="tabular-nums shrink-0">
+                          <Amount cents={e.amount_cents} tone="negative" />
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </Section>
             )}
 
-            {isAdmin && (
-              <details className="group/avance mt-3 rounded-lg border border-border-soft overflow-hidden">
-                <summary className="cursor-pointer list-none flex items-center gap-2 px-3 py-2.5 text-[13px] font-medium text-fg transition-colors hover:bg-bg-sunken/40">
-                  <Plus size={14} strokeWidth={2.25} className="text-brand" />
-                  Nouvelle avance
-                  <ChevronDown
-                    size={14}
-                    strokeWidth={2.25}
-                    className="ml-auto text-fg-subtle transition-transform group-open/avance:rotate-180"
-                  />
-                </summary>
-                <CreateAvanceForm campId={camp.id} candidates={candidates} />
-              </details>
-            )}
-          </Section>
-        )}
+            <Section title="Dépenses récentes">
+              {depotsEnAttente.length === 0 && ecrituresRecentes.length === 0 ? (
+                <EmptyState
+                  title="Rien à afficher"
+                  description="Aucune dépense ni ticket en attente sur ce camp."
+                  className="py-6"
+                />
+              ) : (
+                <ul className="divide-y divide-border-soft rounded-lg border border-border-soft overflow-hidden">
+                  {depotsEnAttente.map((d) => (
+                    <li
+                      key={d.id}
+                      className="flex items-center gap-3 px-3 py-2.5 text-[13px]"
+                    >
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-medium text-amber-900 dark:bg-amber-950/30 dark:text-amber-200 shrink-0">
+                        <span className="size-1.5 rounded-full bg-amber-500" aria-hidden />
+                        ticket en attente
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-fg">
+                        {d.titre}
+                        {d.submitter_name && (
+                          <span className="text-fg-subtle"> · {d.submitter_name}</span>
+                        )}
+                      </span>
+                      {d.amount_cents !== null && (
+                        <span className="tabular-nums shrink-0">
+                          <Amount cents={d.amount_cents} />
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                  {ecrituresRecentes.map((e) => (
+                    <li
+                      key={e.id}
+                      className="flex items-center gap-3 px-3 py-2.5 text-[13px]"
+                    >
+                      <span className="inline-flex items-center rounded-full bg-bg-sunken px-2 py-0.5 text-[10.5px] font-medium text-fg-muted shrink-0">
+                        en banque
+                      </span>
+                      <span className="tabular-nums text-fg-subtle shrink-0">
+                        {e.date_ecriture}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-fg">
+                        {e.description}
+                      </span>
+                      <span className="tabular-nums shrink-0">
+                        <Amount
+                          cents={e.amount_cents}
+                          tone={e.type === 'recette' ? 'positive' : 'negative'}
+                        />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Section>
+          </div>
+        }
+        recettes={
+          <div className="space-y-6">
+            <Section title="Recettes">
+              <div className="flex items-baseline justify-between gap-3 text-[13.5px]">
+                <span className="text-fg-muted">Encaissé / attendu</span>
+                <span className="tabular-nums">
+                  <Amount cents={rows.recettesEncaisseesCents} tone="positive" />
+                  <span className="text-fg-subtle"> / </span>
+                  <Amount cents={rows.totalBudgetRecettesCents} tone="muted" />
+                </span>
+              </div>
+              <div className="mt-2">
+                <Jauge
+                  done={rows.recettesEncaisseesCents}
+                  total={rows.totalBudgetRecettesCents}
+                />
+              </div>
+            </Section>
 
-        {justifsManquants.length > 0 && (
-          <Section title="Justificatifs manquants">
-            <Alert variant="warning" className="mb-3">
-              {justifsManquants.length} dépense
-              {justifsManquants.length > 1 ? 's' : ''} sans justificatif rattaché.
-            </Alert>
-            <ul className="divide-y divide-border-soft rounded-lg border border-border-soft overflow-hidden">
-              {justifsManquants.map((e) => (
-                <li key={e.id}>
-                  <Link
-                    href={`/ecritures/${e.id}`}
-                    className="flex items-center gap-3 px-3 py-2.5 text-[13px] transition-colors hover:bg-bg-sunken/40"
-                  >
-                    <span className="tabular-nums text-fg-subtle shrink-0">
-                      {e.date_ecriture}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-fg">
-                      {e.description}
-                    </span>
-                    <span className="tabular-nums shrink-0">
-                      <Amount cents={e.amount_cents} tone="negative" />
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </Section>
-        )}
-
-        <Section title="Dépenses récentes">
-          {depotsEnAttente.length === 0 && ecrituresRecentes.length === 0 ? (
-            <EmptyState
-              title="Rien à afficher"
-              description="Aucune dépense ni ticket en attente sur ce camp."
-              className="py-6"
-            />
-          ) : (
-            <ul className="divide-y divide-border-soft rounded-lg border border-border-soft overflow-hidden">
-              {depotsEnAttente.map((d) => (
-                <li
-                  key={d.id}
-                  className="flex items-center gap-3 px-3 py-2.5 text-[13px]"
-                >
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-medium text-amber-900 dark:bg-amber-950/30 dark:text-amber-200 shrink-0">
-                    <span className="size-1.5 rounded-full bg-amber-500" aria-hidden />
-                    ticket en attente
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-fg">
-                    {d.titre}
-                    {d.submitter_name && (
-                      <span className="text-fg-subtle"> · {d.submitter_name}</span>
-                    )}
-                  </span>
-                  {d.amount_cents !== null && (
-                    <span className="tabular-nums shrink-0">
-                      <Amount cents={d.amount_cents} />
-                    </span>
-                  )}
-                </li>
-              ))}
-              {ecrituresRecentes.map((e) => (
-                <li
-                  key={e.id}
-                  className="flex items-center gap-3 px-3 py-2.5 text-[13px]"
-                >
-                  <span className="inline-flex items-center rounded-full bg-bg-sunken px-2 py-0.5 text-[10.5px] font-medium text-fg-muted shrink-0">
-                    en banque
-                  </span>
-                  <span className="tabular-nums text-fg-subtle shrink-0">
-                    {e.date_ecriture}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-fg">
-                    {e.description}
-                  </span>
-                  <span className="tabular-nums shrink-0">
-                    <Amount
-                      cents={e.amount_cents}
-                      tone={e.type === 'recette' ? 'positive' : 'negative'}
-                    />
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-      </div>
+            <Section title="Paiements reçus">
+              {recettes.length === 0 ? (
+                <EmptyState
+                  title="Aucun paiement"
+                  description="Aucune recette encaissée sur ce camp pour l'instant."
+                  className="py-6"
+                />
+              ) : (
+                <ul className="divide-y divide-border-soft rounded-lg border border-border-soft overflow-hidden">
+                  {recettes.map((e) => (
+                    <li key={e.id} className="flex items-center gap-3 px-3 py-2.5 text-[13px]">
+                      <span className="tabular-nums text-fg-subtle shrink-0">{e.date_ecriture}</span>
+                      <span className="min-w-0 flex-1 truncate text-fg">
+                        {e.description}
+                        {e.category_name && <span className="text-fg-subtle"> · {e.category_name}</span>}
+                      </span>
+                      <span className="tabular-nums shrink-0">
+                        <Amount cents={e.amount_cents} tone="positive" />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Section>
+          </div>
+        }
+      />
     </div>
   );
 }
