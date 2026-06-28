@@ -7,15 +7,19 @@ import {
   type NavGroup,
 } from './nav-config';
 
-function group(key: 'process' | 'comptabilite' | 'administration'): NavGroup {
+function group(key: 'process' | 'activites' | 'comptabilite' | 'administration'): NavGroup {
   const g = DESKTOP_GROUPS.find((x) => x.key === key);
   if (!g) throw new Error(`groupe ${key} absent`);
   return g;
 }
 
 describe('nav-config — structure des groupes', () => {
-  it('expose trois groupes : process, comptabilite, administration', () => {
-    expect(DESKTOP_GROUPS.map((g) => g.key)).toEqual(['process', 'comptabilite', 'administration']);
+  it('expose quatre groupes : process, activites, comptabilite, administration', () => {
+    expect(DESKTOP_GROUPS.map((g) => g.key)).toEqual(['process', 'activites', 'comptabilite', 'administration']);
+  });
+
+  it('le groupe activités contient Camps', () => {
+    expect(group('activites').items.map((i) => i.href)).toEqual(['/camps']);
   });
 
   it('le groupe comptabilité contient Écritures, Caisse, Rapprochement', () => {
@@ -30,23 +34,27 @@ describe('nav-config — structure des groupes', () => {
 });
 
 describe('nav-config — desktop, filtrage par rôle', () => {
-  it('le trésorier voit les 4 process + comptabilité + administration (système)', () => {
+  it('le trésorier voit process (sans Camps) + activités + comptabilité + administration', () => {
     const process = visibleItemsForRole(group('process').items, 'tresorier').map((i) => i.href);
-    expect(process).toEqual(['/depot', '/camps', '/remboursements', '/abandons']);
+    expect(process).toEqual(['/depot', '/remboursements', '/abandons']);
+    const activites = visibleItemsForRole(group('activites').items, 'tresorier').map((i) => i.href);
+    expect(activites).toEqual(['/camps']);
     const compta = visibleItemsForRole(group('comptabilite').items, 'tresorier').map((i) => i.href);
     expect(compta).toEqual(['/ecritures', '/caisse', '/inbox']);
     const admin = visibleItemsForRole(group('administration').items, 'tresorier').map((i) => i.href);
     expect(admin).toContain('/import');
   });
 
-  it('le chef ne voit aucun item de comptabilité ni d’administration', () => {
+  it('le chef voit Camps (activités) mais aucun item de comptabilité ni d’administration', () => {
+    expect(visibleItemsForRole(group('activites').items, 'chef').map((i) => i.href)).toEqual(['/camps']);
     expect(visibleItemsForRole(group('comptabilite').items, 'chef')).toHaveLength(0);
     expect(visibleItemsForRole(group('administration').items, 'chef')).toHaveLength(0);
   });
 
-  it('le membre voit Déposer/Demandes/Abandons mais PAS Camps', () => {
+  it('le membre voit Déposer/Demandes/Abandons mais PAS Camps (ni activités)', () => {
     const process = visibleItemsForRole(group('process').items, 'membre').map((i) => i.href);
     expect(process).toEqual(['/depot', '/remboursements', '/abandons']);
+    expect(visibleItemsForRole(group('activites').items, 'membre')).toHaveLength(0);
     expect(visibleItemsForRole(group('comptabilite').items, 'membre')).toHaveLength(0);
     expect(visibleItemsForRole(group('administration').items, 'membre')).toHaveLength(0);
   });
@@ -71,13 +79,17 @@ describe('nav-config — resolveNavItem (role-switch)', () => {
 });
 
 describe('nav-config — mobile', () => {
-  it('le trésorier voit Déposer / Demandes / Abandons / Plus', () => {
+  it('le trésorier voit Déposer / Demandes / Abandons / Camps / Plus', () => {
     expect(visibleTabsForRole('tresorier').map((t) => t.key)).toEqual([
-      'depot', 'demandes', 'abandons', 'plus',
+      'depot', 'demandes', 'abandons', 'camps', 'plus',
     ]);
   });
 
-  it('le membre voit Déposer / Demandes / Abandons, sans Plus', () => {
+  it('le chef voit Camps en mobile, sans Plus', () => {
+    expect(visibleTabsForRole('chef').map((t) => t.key)).toEqual(['depot', 'demandes', 'abandons', 'camps']);
+  });
+
+  it('le membre voit Déposer / Demandes / Abandons, sans Camps ni Plus', () => {
     expect(visibleTabsForRole('membre').map((t) => t.key)).toEqual(['depot', 'demandes', 'abandons']);
   });
 });

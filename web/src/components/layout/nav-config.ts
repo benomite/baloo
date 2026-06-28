@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 
 export type Role = 'tresorier' | 'RG' | 'chef' | 'membre';
-export type GroupKey = 'process' | 'comptabilite' | 'administration';
+export type GroupKey = 'process' | 'activites' | 'comptabilite' | 'administration';
 
 const ADMIN: Role[] = ['tresorier', 'RG'];
 const MEMBERS: Role[] = ['tresorier', 'RG', 'chef', 'membre'];
@@ -55,9 +55,17 @@ export const DESKTOP_GROUPS: NavGroup[] = [
     title: 'Process',
     items: [
       { href: '/depot', adminHref: '/depots', label: 'Déposer', adminLabel: 'Dépôts', icon: Paperclip, roles: MEMBERS },
-      { href: '/camps', label: 'Camps', icon: Tent, roles: CAMPS },
       { href: '/remboursements', label: 'Mes demandes', adminLabel: 'Remboursements', icon: HandCoins, roles: MEMBERS },
       { href: '/abandons', label: 'Abandons', icon: Gift, roles: MEMBERS },
+    ],
+  },
+  {
+    // Gestion par activité (camps, et plus tard l'année). À part des
+    // démarches perso (Process) : c'est de la gestion d'unité, visible chefs.
+    key: 'activites',
+    title: 'Activités',
+    items: [
+      { href: '/camps', label: 'Camps', icon: Tent, roles: CAMPS },
     ],
   },
   {
@@ -93,7 +101,7 @@ export function resolveNavItem(item: NavItem, role: string): ResolvedNavItem {
 }
 
 export interface MobileTab {
-  key: 'depot' | 'demandes' | 'abandons' | 'plus';
+  key: 'depot' | 'demandes' | 'abandons' | 'camps' | 'plus';
   href: string;
   label: string;
   icon: LucideIcon;
@@ -106,6 +114,7 @@ export const MOBILE_TABS: MobileTab[] = [
   { key: 'depot', href: '/depot', label: 'Déposer', icon: Paperclip, roles: MEMBERS },
   { key: 'demandes', href: '/remboursements', label: 'Demandes', icon: HandCoins, roles: MEMBERS },
   { key: 'abandons', href: '/abandons', label: 'Abandons', icon: Gift, roles: MEMBERS },
+  { key: 'camps', href: '/camps', label: 'Camps', icon: Tent, roles: CAMPS },
   { key: 'plus', href: '#plus', label: 'Plus', icon: Ellipsis, roles: ADMIN },
 ];
 
