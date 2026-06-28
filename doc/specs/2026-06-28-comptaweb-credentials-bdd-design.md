@@ -55,8 +55,7 @@ Ordre : session `/tmp` valide (inchangé) → sinon `getComptawebCredentials()` 
 
 - Affiche l'état via `getComptawebCredentialsStatus` : « Configuré — identifiant `xxx` (modifié le …) » ou « Non configuré — utilise les variables d'environnement ».
 - Formulaire : identifiant (prérempli avec l'existant) + mot de passe (**write-only** : placeholder « laisser vide pour ne pas changer », jamais réaffiché).
-- Server action `saveComptawebCredentials` (admin only) → chiffre + upsert.
-- Bouton **« Tester la connexion »** : server action qui rejoue `performAutomatedLogin` avec les credentials **enregistrés** et renvoie succès/échec (toast). (On teste ce qui est en base : enregistrer puis tester.)
+- Bouton unique **« Enregistrer et tester »** : une server action (admin only) qui (1) chiffre + upsert les credentials, puis (2) rejoue `performAutomatedLogin` avec les credentials enregistrés et renvoie succès/échec (toast). Les credentials sont **enregistrés même si le test échoue** (le test est informatif) ; le message distingue « enregistré et connexion OK » de « enregistré mais connexion échouée : <raison> ».
 - Accès réservé `tresorier` / `RG`.
 
 ## Error handling
