@@ -111,6 +111,23 @@ interface ComptawebOidcParams {
   responseMode: string;
 }
 
+// Construit le `redirect_uri` OIDC à partir de la valeur `paramRedirectUri`
+// extraite du JS de Comptaweb. Historiquement Comptaweb fournissait juste le
+// HOST (`sgdf.production.sirom.net`) → on préfixait le schéma. Depuis 2026-06
+// il fournit l'URL COMPLÈTE (souvent déjà URL-encodée). Préfixer le schéma
+// produisait alors `https://https%3A%2F%2F…` → HTTP 400 côté Keycloak. On gère
+// les deux : si la valeur (décodée) est déjà une URL, on la prend telle quelle.
+export function buildRedirectUri(rawParamRedirectUri: string): string {
+  let value = rawParamRedirectUri;
+  try {
+    value = decodeURIComponent(rawParamRedirectUri);
+  } catch {
+    // Valeur non décodable (% mal formé) : on garde le brut.
+  }
+  if (/^https?:\/\//i.test(value)) return value;
+  return `https://${value}/`;
+}
+
 function extractOidcParams(html: string): ComptawebOidcParams {
   // Les assignations JS apparaissent parfois deux fois (ancienne version commentée
   // puis version active). On filtre les lignes dont le trim commence par //.
@@ -137,7 +154,7 @@ function extractOidcParams(html: string): ComptawebOidcParams {
     state,
     nonce,
     codeChallenge,
-    redirectUri: `https://${redirectUriHost}/`,
+    redirectUri: buildRedirectUri(redirectUriHost),
     responseMode: 'fragment',
   };
 }
