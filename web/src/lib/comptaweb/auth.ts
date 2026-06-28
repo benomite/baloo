@@ -5,30 +5,31 @@
 import { performAutomatedLogin } from './auth-automated';
 import { clearStoredSession, readStoredSession, writeStoredSession } from './session-store';
 import { ComptawebSessionExpiredError } from './http';
+import { resolveComptawebCredentials } from '../services/comptaweb-credentials';
 import type { ComptawebConfig } from './types';
 
 const DEFAULT_BASE_URL = 'https://sgdf.production.sirom.net';
 
 export async function loadConfig(): Promise<ComptawebConfig> {
-  const baseUrl = process.env.COMPTAWEB_BASE_URL ?? DEFAULT_BASE_URL;
+  const envBaseUrl = process.env.COMPTAWEB_BASE_URL ?? DEFAULT_BASE_URL;
 
   const stored = readStoredSession();
-  if (stored) return { baseUrl, cookie: stored.cookieHeader };
+  if (stored) return { baseUrl: envBaseUrl, cookie: stored.cookieHeader };
 
-  const username = process.env.COMPTAWEB_USERNAME;
-  const password = process.env.COMPTAWEB_PASSWORD;
-  if (username && password) {
-    const result = await performAutomatedLogin(username, password, { baseUrl });
-    writeStoredSession({ cookieHeader: result.cookieHeader, capturedAt: result.capturedAt, username });
+  const creds = await resolveComptawebCredentials();
+  if (creds) {
+    const baseUrl = creds.baseUrl ?? DEFAULT_BASE_URL;
+    const result = await performAutomatedLogin(creds.username, creds.password, { baseUrl });
+    writeStoredSession({ cookieHeader: result.cookieHeader, capturedAt: result.capturedAt, username: creds.username });
     return { baseUrl, cookie: result.cookieHeader };
   }
 
   if (process.env.COMPTAWEB_COOKIE) {
-    return { baseUrl, cookie: process.env.COMPTAWEB_COOKIE };
+    return { baseUrl: envBaseUrl, cookie: process.env.COMPTAWEB_COOKIE };
   }
 
   throw new Error(
-    "Aucune session Comptaweb active. Renseigner COMPTAWEB_USERNAME + COMPTAWEB_PASSWORD dans web/.env.local (ou dans l'env Node du process).",
+    'Aucun identifiant Comptaweb. Configure-les dans /admin/parametres (ou COMPTAWEB_USERNAME + COMPTAWEB_PASSWORD).',
   );
 }
 
