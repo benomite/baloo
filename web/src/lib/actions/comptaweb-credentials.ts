@@ -18,7 +18,7 @@ export async function saveAndTestComptawebCredentials(formData: FormData): Promi
   const username = ((formData.get('username') as string | null) ?? '').trim();
   const password = (formData.get('password') as string | null) ?? '';
   if (!username) {
-    redirect('/admin/parametres?cw_error=' + encodeURIComponent('Identifiant requis.'));
+    redirect('/import?cw_error=' + encodeURIComponent('Identifiant requis.'));
   }
 
   // 1. Enregistrer (toujours, même si le test échoue ensuite).
@@ -29,7 +29,7 @@ export async function saveAndTestComptawebCredentials(formData: FormData): Promi
     });
   } catch (err) {
     logError('parametres', 'Enregistrement credentials Comptaweb échoué', err);
-    redirect('/admin/parametres?cw_error=' + encodeURIComponent('Échec de l’enregistrement.'));
+    redirect('/import?cw_error=' + encodeURIComponent('Échec de l’enregistrement.'));
   }
 
   // 2. Tester : on repart d'une session propre pour forcer un vrai login.
@@ -43,6 +43,6 @@ export async function saveAndTestComptawebCredentials(formData: FormData): Promi
     logError('parametres', 'Test connexion Comptaweb échoué', err);
     testOk = false;
   }
-  revalidatePath('/admin/parametres');
-  redirect('/admin/parametres?cw_saved=' + (testOk ? 'ok' : 'failed'));
+  revalidatePath('/import');
+  redirect('/import?cw_saved=' + (testOk ? 'ok' : 'failed'));
 }

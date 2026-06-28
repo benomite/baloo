@@ -32,6 +32,8 @@ import { getDb } from '@/lib/db';
 import { getCurrentContext } from '@/lib/context';
 import { requireAdmin } from '@/lib/auth/access';
 import { uploadComptawebCsv } from '@/lib/actions/comptaweb-import';
+import { getComptawebCredentialsStatus } from '@/lib/services/comptaweb-credentials';
+import { saveAndTestComptawebCredentials } from '@/lib/actions/comptaweb-credentials';
 import {
   getReferentielsCounts,
   getReferentielsDetails,
@@ -45,6 +47,8 @@ import { cn } from '@/lib/utils';
 interface SearchParams {
   error?: string;
   imported?: string;
+  cw_saved?: string;
+  cw_error?: string;
 }
 
 export default async function ImportPage({
@@ -71,6 +75,7 @@ export default async function ImportPage({
     getReferentielsDetails({ groupId: ctx.groupId }),
     getUnitesGroupedByBranche({ groupId: ctx.groupId }),
   ]);
+  const cwStatus = await getComptawebCredentialsStatus();
 
   // Le flash "imported" encode "ecritures_creees|fichier".
   let importedFlash: { count: number; fichier: string } | null = null;
@@ -101,6 +106,37 @@ export default async function ImportPage({
           <code className="font-mono text-[12.5px]">{importedFlash.fichier}</code>.
         </Alert>
       )}
+
+      {params.cw_saved === 'ok' && (
+        <Alert variant="success" className="mb-6">Identifiants Comptaweb enregistrés — connexion réussie.</Alert>
+      )}
+      {params.cw_saved === 'failed' && (
+        <Alert variant="error" className="mb-6">
+          Identifiants enregistrés, mais la connexion a échoué. Vérifie l&apos;identifiant et le mot de passe
+          (ou réessaie plus tard si Comptaweb est indisponible).
+        </Alert>
+      )}
+      {params.cw_error && <Alert variant="error" className="mb-6">{params.cw_error}</Alert>}
+
+      {/* === Bloc 0 : Connexion (prérequis de tout le reste) === */}
+      <Section
+        title="Connexion Comptaweb"
+        subtitle={
+          cwStatus.configured
+            ? `Configuré — identifiant ${cwStatus.username}${cwStatus.updated_at ? ` (modifié le ${cwStatus.updated_at.slice(0, 10)})` : ''}.`
+            : 'Non configuré — utilise les variables d\'environnement.'
+        }
+      >
+        <form action={saveAndTestComptawebCredentials} className="space-y-3 max-w-md">
+          <Field label="Identifiant Comptaweb" htmlFor="cw_username" required>
+            <Input id="cw_username" name="username" required defaultValue={cwStatus.username ?? ''} placeholder="prenom.nom@exemple.fr" />
+          </Field>
+          <Field label="Mot de passe" htmlFor="cw_password" hint="laisser vide pour ne pas changer">
+            <Input id="cw_password" name="password" type="password" placeholder="••••••••" autoComplete="off" />
+          </Field>
+          <PendingButton pendingLabel="Enregistrement et test…">Enregistrer et tester</PendingButton>
+        </form>
+      </Section>
 
       {/* === Bloc 1 : Configurations / Référentiels (usage récurrent) === */}
       <Section
