@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { EcrituresTable } from './ecritures-table';
 import { fetchEcrituresPage, fetchEcritureRow } from '@/lib/actions/ecritures';
+import { useDraftValidation } from './use-draft-validation';
 import type { EcritureFilters } from '@/lib/queries/ecritures';
 import type { Ecriture, Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
 import type { MatchDepot, MatchRemboursement } from '@/lib/services/ecriture-match';
@@ -86,6 +87,12 @@ export function EcrituresInfiniteList({
     if (fresh) setRows((prev) => prev.map((r) => (r.id === id ? fresh : r)));
   }, []);
 
+  // Au succès d'une validation, la ligne quitte « À traiter » (bouclée).
+  const removeRow = useCallback((id: string) => {
+    setRows((prev) => prev.filter((r) => r.id !== id));
+  }, []);
+  const { validatingIds, validate } = useDraftValidation(removeRow);
+
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el || done) return;
@@ -113,6 +120,8 @@ export function EcrituresInfiniteList({
         rejectedMatchKeys={rejectedMatchKeys}
         topCategoryIds={topCategoryIds}
         refreshRow={refreshRow}
+        validatingIds={validatingIds}
+        onValidate={validate}
       />
 
       <div ref={sentinelRef} className="h-px" aria-hidden />

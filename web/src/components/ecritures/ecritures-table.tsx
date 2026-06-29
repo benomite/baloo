@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Landmark, Layers, Tag, Activity, Paperclip } from 'lucide-react';
+import { Landmark, Layers, Tag, Activity, Paperclip, Loader2 } from 'lucide-react';
 import { UniteBadge } from '@/components/shared/unite-badge';
 import { InlineSelect } from '@/components/shared/inline-select';
 import { Amount } from '@/components/shared/amount';
@@ -28,6 +28,10 @@ interface Props {
   topCategoryIds: string[];
   // Rafraîchit une ligne précise après mutation (Lier, etc.).
   refreshRow: (id: string) => void | Promise<void>;
+  // Ids des drafts en cours de matérialisation Comptaweb (ligne verrouillée).
+  validatingIds: Set<string>;
+  // Déclenche la validation d'un draft (le parent verrouille puis retire).
+  onValidate: (id: string) => void;
 }
 
 const MOIS_COURTS = ['janv', 'févr', 'mars', 'avr', 'mai', 'juin', 'juil', 'août', 'sept', 'oct', 'nov', 'déc'];
@@ -89,7 +93,7 @@ type Item =
   | { kind: 'header'; key: string; group: Group }
   | { kind: 'row'; key: string; ecriture: Ecriture; index: number; group: Group | null };
 
-export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes, matchDepots, matchRembs, rejectedMatchKeys, topCategoryIds, refreshRow }: Props) {
+export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes, matchDepots, matchRembs, rejectedMatchKeys, topCategoryIds, refreshRow, validatingIds, onValidate }: Props) {
   const rejectedMatchSet = useMemo(() => new Set(rejectedMatchKeys), [rejectedMatchKeys]);
   // Ouverture du panneau d'édition = état CLIENT pur (pas de navigation
   // `?detail` : elle relançait toute la page → lent, et `useSearchParams`
@@ -315,14 +319,22 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
             const isOpen = openId === e.id;
             const readiness = computeReadiness(e, { categories, unites, modesPaiement, activites });
             const showValider = e.status === 'draft';
+            // Draft en cours de matérialisation Comptaweb : ligne gelée (aucune
+            // interaction possible) + indicateur, jusqu'à ce qu'elle disparaisse.
+            const isValidating = validatingIds.has(e.id);
             // Un remboursement lié vaut justificatif (cf. badge « sans justif »).
             const hasJustif = !!e.has_justificatif || !!e.remboursement_id;
             return (
               <div key={item.key}>
                 <div
-                  className={`group/row flex items-start gap-3 px-3 py-2.5 cursor-pointer transition-colors ${rowBg} ${isOpen ? 'bg-muted/40' : 'hover:bg-muted/30'}`}
+                  className={`group/row flex items-start gap-3 px-3 py-2.5 transition-colors ${
+                    isValidating
+                      ? 'pointer-events-none cursor-wait bg-amber-50/70 dark:bg-amber-950/25'
+                      : `cursor-pointer ${rowBg} ${isOpen ? 'bg-muted/40' : 'hover:bg-muted/30'}`
+                  }`}
                   style={railShadow}
                   onClick={onRowClick(e.id)}
+                  aria-busy={isValidating || undefined}
                 >
                   <input
                     type="checkbox"
@@ -428,15 +440,22 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                   <div className="shrink-0 w-[92px] text-right font-medium tabular-nums self-center">
                     <Amount cents={e.amount_cents} tone={e.type === 'depense' ? 'negative' : 'positive'} />
                   </div>
-                  <div className="shrink-0 w-[88px] flex justify-end self-center" onClick={stop}>
-                    {showValider && (
+                  <div className="shrink-0 w-[92px] flex justify-end self-center" onClick={stop}>
+                    {isValidating ? (
+                      <span
+                        className="inline-flex items-center gap-1 text-[11.5px] font-medium text-amber-700 dark:text-amber-300"
+                        title="Création dans Comptaweb en cours…"
+                      >
+                        <Loader2 size={13} className="animate-spin" />
+                        Création…
+                      </span>
+                    ) : showValider ? (
                       <ValiderCwButton
-                        ecritureId={e.id}
                         disabled={readiness.level === 'incomplete'}
                         missing={readiness.missingFields}
-                        onValidated={() => void refreshRow(e.id)}
+                        onValidate={() => onValidate(e.id)}
                       />
-                    )}
+                    ) : null}
                   </div>
                 </div>
                 {match && (

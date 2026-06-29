@@ -1,44 +1,24 @@
 'use client';
 
-import { useTransition } from 'react';
-import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { syncDraftToComptaweb } from '@/lib/actions/drafts';
 
-// CTA compact « Valider » d'une carte écriture en draft : crée l'écriture
-// dans Comptaweb (irréversible → confirm). `disabled` quand l'écriture est
-// incomplète (gate `computeReadiness` côté appelant) ; `missing` liste les
-// champs manquants pour le tooltip.
+// CTA compact « Valider » d'une carte écriture en draft. Présentational :
+// la validation (push Comptaweb, lent + irréversible) est orchestrée par le
+// parent (`EcrituresInfiniteList`) qui verrouille la ligne pendant l'appel et
+// la retire de « À traiter » au succès. Plus de `window.confirm` ici : le
+// trésorier valide ses lignes en série, une confirmation à chaque clic est un
+// frein (demande terrain 2026-06-29). Le bouton reste gardé par
+// `computeReadiness` côté appelant (`disabled` si l'écriture est incomplète).
 export function ValiderCwButton({
-  ecritureId,
   disabled = false,
   missing = [],
-  onValidated,
+  onValidate,
 }: {
-  ecritureId: string;
   disabled?: boolean;
   missing?: string[];
-  /** Appelé après une validation réussie : permet au parent de re-fetcher la
-   *  ligne pour qu'elle migre vers le groupe des écritures validées. */
-  onValidated?: () => void;
+  /** Déclenche la validation : le parent prend la main (verrou + retrait). */
+  onValidate: () => void;
 }) {
-  const [pending, startTransition] = useTransition();
-
-  const onClick = () =>
-    startTransition(async () => {
-      if (
-        !window.confirm(
-          'Créer cette écriture dans Comptaweb maintenant ? Action irréversible côté Comptaweb (suppression manuelle si erreur).',
-        )
-      )
-        return;
-      const res = await syncDraftToComptaweb(ecritureId, { dryRun: false });
-      if (res.ok) {
-        toast.success(res.message);
-        onValidated?.();
-      } else toast.error(res.message);
-    });
-
   const title = disabled
     ? `À compléter avant de valider : ${missing.join(', ')}`
     : 'Créer cette écriture dans Comptaweb';
@@ -46,10 +26,10 @@ export function ValiderCwButton({
   return (
     <Button
       size="sm"
-      disabled={disabled || pending}
+      disabled={disabled}
       onClick={(e) => {
         e.stopPropagation();
-        onClick();
+        onValidate();
       }}
       title={title}
     >

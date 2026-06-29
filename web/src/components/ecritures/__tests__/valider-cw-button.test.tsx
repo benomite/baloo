@@ -1,53 +1,38 @@
 // @vitest-environment jsdom
 
-// Contrat du bouton « Valider » d'une écriture draft : après une validation
-// réussie (push CW), il doit notifier le parent via `onValidated` pour que la
-// ligne soit re-fetchée et migre vers le groupe des écritures validées.
-// Sans ça, la ligne restait en place jusqu'au rechargement (bug terrain 2026-06).
+// Contrat du bouton « Valider » d'une écriture draft. Depuis 2026-06-29 il est
+// purement présentational : pas de window.confirm (le trésorier valide en
+// série), pas d'appel direct à l'action — il délègue à `onValidate`, et c'est
+// le parent (EcrituresInfiniteList) qui verrouille la ligne puis la retire.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { ValiderCwButton } from '../valider-cw-button';
 
-const syncMock = vi.fn();
-vi.mock('@/lib/actions/drafts', () => ({
-  syncDraftToComptaweb: (...args: unknown[]) => syncMock(...args),
-}));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
-
 describe('ValiderCwButton', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-  });
   afterEach(cleanup);
 
-  it('appelle onValidated après une validation réussie', async () => {
-    syncMock.mockResolvedValue({ ok: true, message: 'Créée' });
-    const onValidated = vi.fn();
-    render(<ValiderCwButton ecritureId="DEP-1" onValidated={onValidated} />);
+  it('appelle onValidate au clic', () => {
+    const onValidate = vi.fn();
+    render(<ValiderCwButton onValidate={onValidate} />);
     fireEvent.click(screen.getByText('Valider'));
-    await waitFor(() => expect(onValidated).toHaveBeenCalledTimes(1));
-    expect(syncMock).toHaveBeenCalledWith('DEP-1', { dryRun: false });
+    expect(onValidate).toHaveBeenCalledTimes(1);
   });
 
-  it("n'appelle pas onValidated si la validation échoue", async () => {
-    syncMock.mockResolvedValue({ ok: false, message: 'Erreur CW' });
-    const onValidated = vi.fn();
-    render(<ValiderCwButton ecritureId="DEP-1" onValidated={onValidated} />);
+  it('ne déclenche pas window.confirm (validation en série)', () => {
+    const confirmSpy = vi.spyOn(window, 'confirm');
+    render(<ValiderCwButton onValidate={vi.fn()} />);
     fireEvent.click(screen.getByText('Valider'));
-    await waitFor(() => expect(syncMock).toHaveBeenCalled());
-    expect(onValidated).not.toHaveBeenCalled();
+    expect(confirmSpy).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 
-  it("n'appelle rien si l'utilisateur annule la confirmation", async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
-    syncMock.mockResolvedValue({ ok: true, message: 'x' });
-    const onValidated = vi.fn();
-    render(<ValiderCwButton ecritureId="DEP-1" onValidated={onValidated} />);
-    fireEvent.click(screen.getByText('Valider'));
-    await new Promise((r) => setTimeout(r, 0));
-    expect(syncMock).not.toHaveBeenCalled();
-    expect(onValidated).not.toHaveBeenCalled();
+  it('est désactivé et n’appelle pas onValidate quand incomplet', () => {
+    const onValidate = vi.fn();
+    render(<ValiderCwButton disabled missing={['catégorie']} onValidate={onValidate} />);
+    const btn = screen.getByText('Valider') as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    fireEvent.click(btn);
+    expect(onValidate).not.toHaveBeenCalled();
   });
 });
