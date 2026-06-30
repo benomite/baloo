@@ -19,13 +19,18 @@ export function ScanDraftsButton() {
             toast.error(`Scan échoué : ${result.erreur}`);
             return;
           }
-          if (result.crees === 0 && result.existants === 0) {
+          if (result.crees === 0 && result.existants === 0 && !result.doublons) {
             toast.info('Aucune ligne bancaire non rapprochée côté Comptaweb.');
             return;
           }
-          toast.success(
-            `Scan : ${result.crees} nouveau${result.crees > 1 ? 'x' : ''} draft${result.crees > 1 ? 's' : ''}, ${result.existants} déjà présent${result.existants > 1 ? 's' : ''}.`,
-          );
+          const parts = [
+            `${result.crees} nouveau${result.crees > 1 ? 'x' : ''} draft${result.crees > 1 ? 's' : ''}`,
+            `${result.existants} déjà présent${result.existants > 1 ? 's' : ''}`,
+          ];
+          if (result.doublons) {
+            parts.push(`${result.doublons} doublon${result.doublons > 1 ? 's' : ''} CW ignoré${result.doublons > 1 ? 's' : ''}`);
+          }
+          toast.success(`Scan : ${parts.join(', ')}.`);
         })
       }
     >

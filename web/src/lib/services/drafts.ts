@@ -1,4 +1,4 @@
-import { getDb } from '../db';
+import { getDb, type DbWrapper } from '../db';
 import { nextId, currentTimestamp } from '../ids';
 import { ensureComptawebEnv } from '../comptaweb/env-loader';
 import {
@@ -80,19 +80,38 @@ export interface ScanDraftsResult {
   crees: number;
   existants: number;
   supprimes: number;
+  // Lignes bancaires ignorées car le paiement est DÉJÀ comptabilisé dans CW
+  // via une autre ligne identique (doublon du flux bancaire, ex. DSP2).
+  doublons?: number;
   erreur?: string;
 }
 
-export async function scanDraftsFromComptaweb({ groupId }: DraftsContext): Promise<ScanDraftsResult> {
+export async function scanDraftsFromComptaweb(
+  { groupId }: DraftsContext,
+  db: DbWrapper = getDb(),
+): Promise<ScanDraftsResult> {
   try {
     const data = await withAutoReLogin((cfg) => listRapprochementBancaire(cfg));
-    const db = getDb();
 
     const findExisting = db.prepare(
       `SELECT id FROM ecritures
        WHERE group_id = ? AND ligne_bancaire_id = ?
          AND (ligne_bancaire_sous_index IS ? OR ligne_bancaire_sous_index = ?)
        LIMIT 1`,
+    );
+    // Jumeau déjà comptabilisé dans CW : même contenu exact (date+montant+type
+    // +description, la description embarquant la réf de transaction unique →
+    // identité fiable) ET relié à CW (comptaweb_ecriture_id non nul). Si présent,
+    // la ligne bancaire courante est un DOUBLON du flux (le paiement est déjà
+    // saisi via une autre ligne) : ne pas régénérer un draft qui serait aussitôt
+    // re-flaggé `agrege_remplace` → boucle d'arbitrage sans fin (bug 2026-06-30,
+    // ligne GABORIAUD remontée 2× en DSP2 pour 1 seul paiement réel).
+    const findCwAccountedTwin = db.prepare(
+      `SELECT id FROM ecritures
+        WHERE group_id = ? AND date_ecriture = ? AND amount_cents = ? AND type = ?
+          AND description = ? AND description <> ''
+          AND comptaweb_ecriture_id IS NOT NULL
+        LIMIT 1`,
     );
     const findMode = db.prepare('SELECT id FROM modes_paiement WHERE comptaweb_id = ? LIMIT 1');
     const findCarte = db.prepare(
@@ -129,6 +148,7 @@ export async function scanDraftsFromComptaweb({ groupId }: DraftsContext): Promi
     let crees = 0;
     let existants = 0;
     let supprimes = 0;
+    let doublons = 0;
 
     for (const ligne of data.ecrituresBancaires) {
       const candidates = candidatesForLine(ligne);
@@ -162,6 +182,10 @@ export async function scanDraftsFromComptaweb({ groupId }: DraftsContext): Promi
         if (existingCand) { existants++; continue; }
         const type = c.montantCentimes < 0 ? 'depense' : 'recette';
         const amountAbs = Math.abs(c.montantCentimes);
+        // Doublon du flux bancaire : paiement déjà comptabilisé dans CW via une
+        // autre ligne identique → ne pas régénérer (sinon boucle d'arbitrage).
+        const twin = await findCwAccountedTwin.get(groupId, c.dateOperation, amountAbs, type, c.libelProposal);
+        if (twin) { doublons++; continue; }
         const cwMode = inferComptawebModeId(c.intituleParent);
         const modeLocal = cwMode !== null
           ? (await findMode.get<{ id: string }>(cwMode))?.id ?? null
@@ -180,7 +204,7 @@ export async function scanDraftsFromComptaweb({ groupId }: DraftsContext): Promi
       }
     }
 
-    return { crees, existants, supprimes };
+    return { crees, existants, supprimes, doublons };
   } catch (err) {
     if (err instanceof ComptawebSessionExpiredError) {
       return { crees: 0, existants: 0, supprimes: 0, erreur: 'Session Comptaweb expirée.' };
