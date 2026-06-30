@@ -725,7 +725,32 @@ export async function ensureBusinessSchema(): Promise<void> {
   // ciblé des brouillons bancaires encore bruts. APRÈS la table ecritures.
   await ensureEcrituresLibelleOrigine(db);
 
+  // Recettes sans justif attendu (demande terrain 2026-06-30) : une entrée
+  // d'argent n'attend pas de justificatif.
+  await ensureRecettesSansJustifAttendu(db);
+
   ensured = true;
+}
+
+/**
+ * Une entrée d'argent (recette) n'attend pas de justificatif (demande terrain
+ * 2026-06-30). Repasse `justif_attendu = 0` sur les recettes qui le portent
+ * encore à 1, SAUF celles qui ont réellement un justif attaché (là, la pièce
+ * existe → on n'y touche pas). Idempotente : ré-applique l'invariant à froid.
+ */
+export async function ensureRecettesSansJustifAttendu(db: DbWrapper): Promise<void> {
+  const cols = await db.prepare('PRAGMA table_info(ecritures)').all<{ name: string }>();
+  if (cols.length === 0) return;
+  await db.exec(`
+    UPDATE ecritures
+    SET justif_attendu = 0
+    WHERE type = 'recette'
+      AND justif_attendu = 1
+      AND NOT EXISTS (
+        SELECT 1 FROM justificatifs j
+        WHERE j.entity_type = 'ecriture' AND j.entity_id = ecritures.id
+      )
+  `);
 }
 
 /**

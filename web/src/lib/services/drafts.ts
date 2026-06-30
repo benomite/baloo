@@ -120,10 +120,10 @@ export async function scanDraftsFromComptaweb(
     const insert = db.prepare(
       `INSERT INTO ecritures (
          id, group_id, unite_id, date_ecriture, description, libelle_origine, amount_cents, type,
-         category_id, mode_paiement_id, activite_id, numero_piece, status,
+         category_id, mode_paiement_id, activite_id, numero_piece, status, justif_attendu,
          comptaweb_synced, ligne_bancaire_id, ligne_bancaire_sous_index,
          comptaweb_ecriture_id, carte_id, notes, created_at, updated_at
-       ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?, NULL, NULL, 'draft', 0, ?, ?, NULL, ?, ?, ?, ?)`,
+       ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?, NULL, NULL, 'draft', ?, 0, ?, ?, NULL, ?, ?, ?, ?)`,
     );
     // Drafts existants d'une ligne, avec les flags du garde-fou de suppression
     // (statut, lien CW, imputation, pièce attachée) — cf. deleteDraftEcriture.
@@ -182,6 +182,9 @@ export async function scanDraftsFromComptaweb(
         if (existingCand) { existants++; continue; }
         const type = c.montantCentimes < 0 ? 'depense' : 'recette';
         const amountAbs = Math.abs(c.montantCentimes);
+        // Une entrée d'argent (recette) n'attend pas de justificatif : pas de
+        // « à justifier », et au push pas de n° pièce de rattachement bidon.
+        const justifAttendu = type === 'recette' ? 0 : 1;
         // Doublon du flux bancaire : paiement déjà comptabilisé dans CW via une
         // autre ligne identique → ne pas régénérer (sinon boucle d'arbitrage).
         const twin = await findCwAccountedTwin.get(groupId, c.dateOperation, amountAbs, type, c.libelProposal);
@@ -201,7 +204,7 @@ export async function scanDraftsFromComptaweb(
           : `Draft généré depuis ligne bancaire ${c.ligneBancaireId}.`;
         // libelle_origine = libellé brut figé (= description initiale) : sert
         // au nudge « titre à renommer » et au rapprochement.
-        await insert.run(id, groupId, c.dateOperation, c.libelProposal, c.libelProposal, amountAbs, type, modeLocal, c.ligneBancaireId, c.sousLigneIndex, carteLocal, notes, now, now);
+        await insert.run(id, groupId, c.dateOperation, c.libelProposal, c.libelProposal, amountAbs, type, modeLocal, justifAttendu, c.ligneBancaireId, c.sousLigneIndex, carteLocal, notes, now, now);
         crees++;
       }
     }
@@ -316,12 +319,16 @@ export async function syncDraftToComptaweb(
     }
 
     let numeropiece = ecr.numero_piece ?? '';
-    if (!numeropiece) {
-      if (hasJust) {
-        const j = await db.prepare("SELECT id FROM justificatifs WHERE entity_type = 'ecriture' AND entity_id = ? ORDER BY uploaded_at LIMIT 1").get<{ id: string }>(ecr.id);
-        if (j) numeropiece = j.id;
-      }
-      if (!numeropiece) numeropiece = ecr.id;
+    if (!numeropiece && hasJust) {
+      const j = await db.prepare("SELECT id FROM justificatifs WHERE entity_type = 'ecriture' AND entity_id = ? ORDER BY uploaded_at LIMIT 1").get<{ id: string }>(ecr.id);
+      if (j) numeropiece = j.id;
+    }
+    // Repli sur l'ID de l'écriture SEULEMENT si un justif est attendu/présent :
+    // le n° pièce sert alors de code de rattachement de la pièce. Une recette
+    // sans justif attendu part SANS n° pièce (pas de pièce bidon orpheline
+    // côté Comptaweb). cf. demande terrain 2026-06-30.
+    if (!numeropiece && (hasJust || ecr.justif_attendu)) {
+      numeropiece = ecr.id;
     }
 
     // Carte associée : selon son type, on envoie vers cartebancaire ou

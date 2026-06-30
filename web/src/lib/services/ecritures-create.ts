@@ -130,8 +130,10 @@ export async function createEcritureAndPushToCw(
   const prefix = payload.type === 'depense' ? 'DEP' : 'REC';
   const id = await nextIdOn(db, prefix);
   const now = currentTimestamp();
+  // Défaut selon le type : une recette (entrée d'argent) n'attend pas de
+  // justificatif ; une dépense, si.
   const justifAttendu = payload.justif_attendu === undefined
-    ? 1
+    ? (payload.type === 'recette' ? 0 : 1)
     : (payload.justif_attendu ? 1 : 0);
 
   // 1. INSERT en `pending_cw` : snapshot du payload, l'écriture est en

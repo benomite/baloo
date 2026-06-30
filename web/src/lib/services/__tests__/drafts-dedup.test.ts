@@ -44,6 +44,7 @@ const SETUP_SQL = `
     activite_id TEXT,
     numero_piece TEXT,
     status TEXT NOT NULL DEFAULT 'draft',
+    justif_attendu INTEGER NOT NULL DEFAULT 1,
     comptaweb_synced INTEGER NOT NULL DEFAULT 0,
     ligne_bancaire_id INTEGER,
     ligne_bancaire_sous_index INTEGER,
@@ -117,11 +118,28 @@ describe('scanDraftsFromComptaweb — garde anti-doublon bancaire', () => {
     expect(await countEcritures(db)).toBe(2);
 
     // libelle_origine est figé au libellé brut (= description) à la création.
+    // Et la recette (montant > 0) n'attend pas de justif (justif_attendu = 0).
     const created = await db
-      .prepare("SELECT description, libelle_origine FROM ecritures WHERE ligne_bancaire_id = 19105999")
-      .get<{ description: string; libelle_origine: string }>();
+      .prepare("SELECT description, libelle_origine, type, justif_attendu FROM ecritures WHERE ligne_bancaire_id = 19105999")
+      .get<{ description: string; libelle_origine: string; type: string; justif_attendu: number }>();
     expect(created?.libelle_origine).toBe(created?.description);
     expect(created?.libelle_origine).toBe('AUTRE FAMILLE 45 FR FRANCE');
+    expect(created?.type).toBe('recette');
+    expect(created?.justif_attendu).toBe(0);
+  });
+
+  it('un brouillon de DÉPENSE attend un justif (justif_attendu = 1)', async () => {
+    const { db } = await setupDb();
+    bankLinesRef.value = [{ id: 19200000, dateOperation: '2026-06-24', montantCentimes: -3200, intitule: 'FNAC PARIS', sousLignes: [] }];
+
+    const res = await scanDraftsFromComptaweb({ groupId: 'val-de-saone' }, db);
+
+    expect(res.crees).toBe(1);
+    const created = await db
+      .prepare("SELECT type, justif_attendu FROM ecritures WHERE ligne_bancaire_id = 19200000")
+      .get<{ type: string; justif_attendu: number }>();
+    expect(created?.type).toBe('depense');
+    expect(created?.justif_attendu).toBe(1);
   });
 
   it('ne déduplique pas une description vide (garde description <> "")', async () => {
