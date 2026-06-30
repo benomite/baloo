@@ -183,6 +183,7 @@ export async function listEcritures(
     `SELECT e.*, u.code as unite_code, u.name as unite_name, u.couleur as unite_couleur,
        c.name as category_name, m.name as mode_paiement_name, a.name as activite_name,
        ca.porteur as carte_porteur, ca.type as carte_type,
+       (CASE WHEN e.status = 'draft' AND e.libelle_origine IS NOT NULL AND e.description = e.libelle_origine THEN 1 ELSE 0 END) as titre_a_renommer,
        EXISTS(SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id) as has_justificatif,
        (SELECT r.id FROM remboursements r WHERE r.ecriture_id = e.id LIMIT 1) as remboursement_id
      FROM ecritures e
@@ -240,6 +241,7 @@ export async function getEcriture({ groupId, scopeUniteId }: EcritureContext, id
     `SELECT e.*, u.code as unite_code, u.name as unite_name, u.couleur as unite_couleur,
        c.name as category_name, m.name as mode_paiement_name, a.name as activite_name,
        ca.porteur as carte_porteur, ca.type as carte_type,
+       (CASE WHEN e.status = 'draft' AND e.libelle_origine IS NOT NULL AND e.description = e.libelle_origine THEN 1 ELSE 0 END) as titre_a_renommer,
        (SELECT r.id FROM remboursements r WHERE r.ecriture_id = e.id LIMIT 1) as remboursement_id
      FROM ecritures e
      LEFT JOIN unites u ON u.id = e.unite_id
@@ -271,7 +273,9 @@ export interface UpdateEcritureInput {
 // Champs autorisés à la mise à jour inline depuis la table /ecritures.
 // Whitelist stricte pour éviter qu'un appelant abuse de updateEcritureField
 // pour modifier date/montant/type sans passer par le form complet.
-const INLINE_FIELDS_SYNC = ['unite_id', 'category_id', 'activite_id', 'mode_paiement_id', 'carte_id'] as const;
+// `description` est un champ sync (= libellé envoyé à Comptaweb) : éditable
+// inline tant que l'écriture est un brouillon, verrouillé une fois dans CW.
+const INLINE_FIELDS_SYNC = ['unite_id', 'category_id', 'activite_id', 'mode_paiement_id', 'carte_id', 'description'] as const;
 const INLINE_FIELDS_INTERNAL = ['justif_attendu', 'notes'] as const;
 export type InlineField = (typeof INLINE_FIELDS_SYNC)[number] | (typeof INLINE_FIELDS_INTERNAL)[number];
 
@@ -365,6 +369,12 @@ export async function updateEcritureField(
   if (!current) return { ok: false, reason: 'not_found' };
   if (isMirrorStatus(current.status) && isSyncField) {
     return { ok: false, reason: 'sync_locked' };
+  }
+
+  // description est NOT NULL et doit rester un libellé : un vide ne vide pas
+  // le titre (sinon contrainte SQL + perte du libellé). On refuse proprement.
+  if (field === 'description' && (value === null || (typeof value === 'string' && value.trim() === ''))) {
+    return { ok: false, reason: 'invalid_field' };
   }
 
   const normalised = value === '' ? null : value;

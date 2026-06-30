@@ -49,6 +49,7 @@ const SETUP_SQL = `
     ligne_bancaire_sous_index INTEGER,
     comptaweb_ecriture_id INTEGER,
     carte_id TEXT,
+    libelle_origine TEXT,
     notes TEXT,
     created_at TEXT NOT NULL DEFAULT '2026-06-25T00:00:00Z',
     updated_at TEXT NOT NULL DEFAULT '2026-06-25T00:00:00Z'
@@ -114,6 +115,13 @@ describe('scanDraftsFromComptaweb — garde anti-doublon bancaire', () => {
     expect(res.crees).toBe(1);
     expect(res.doublons).toBe(0);
     expect(await countEcritures(db)).toBe(2);
+
+    // libelle_origine est figé au libellé brut (= description) à la création.
+    const created = await db
+      .prepare("SELECT description, libelle_origine FROM ecritures WHERE ligne_bancaire_id = 19105999")
+      .get<{ description: string; libelle_origine: string }>();
+    expect(created?.libelle_origine).toBe(created?.description);
+    expect(created?.libelle_origine).toBe('AUTRE FAMILLE 45 FR FRANCE');
   });
 
   it('ne déduplique pas une description vide (garde description <> "")', async () => {

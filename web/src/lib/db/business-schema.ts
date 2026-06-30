@@ -53,6 +53,12 @@ const ECRITURES_COLUMNS_DDL = `
   ligne_bancaire_id INTEGER,
   ligne_bancaire_sous_index INTEGER,
   comptaweb_ecriture_id INTEGER,
+  -- Libellé bancaire BRUT figé à la génération d'un brouillon depuis une
+  -- ligne bancaire (= description initiale, jamais réécrit). Sert à (a)
+  -- détecter qu'un titre n'a pas encore été personnalisé (description ==
+  -- libelle_origine → « à renommer »), (b) référence de rapprochement. Null
+  -- pour les écritures saisies manuellement.
+  libelle_origine TEXT,
   notes TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
@@ -715,7 +721,50 @@ export async function ensureBusinessSchema(): Promise<void> {
   // colonnes/table créées plus haut).
   await ensureReconcileSchema(db);
 
+  // Titres parlants (spec 2026-06-30) : colonne libelle_origine + backfill
+  // ciblé des brouillons bancaires encore bruts. APRÈS la table ecritures.
+  await ensureEcrituresLibelleOrigine(db);
+
   ensured = true;
+}
+
+/**
+ * Titres parlants pour les écritures bancaires (spec
+ * doc/superpowers/specs/2026-06-30-titres-ecritures-bancaires-design.md).
+ * Idempotente. Sur BDD existante :
+ *   - ajoute `ecritures.libelle_origine` (ALTER, nullable) ;
+ *   - backfill CIBLÉ : pose `libelle_origine = description` sur les BROUILLONS
+ *     bancaires (`status='draft'`, `ligne_bancaire_id` non nul) dont la
+ *     description ressemble encore à un libellé bancaire brut. Conservateur :
+ *     n'écrase jamais un libelle_origine déjà posé, épargne les titres déjà
+ *     soignés et les écritures déjà dans CW (mirror — non renommables localement).
+ *
+ * Pattern AGENTS.md : ALTER ADD COLUMN après détection PRAGMA.
+ * Exporté pour les tests.
+ */
+export async function ensureEcrituresLibelleOrigine(db: DbWrapper): Promise<void> {
+  const cols = await db.prepare('PRAGMA table_info(ecritures)').all<{ name: string }>();
+  if (cols.length === 0) return; // table pas encore créée (BDD vierge : CREATE l'inclut)
+  if (!cols.some((c) => c.name === 'libelle_origine')) {
+    await db.exec('ALTER TABLE ecritures ADD COLUMN libelle_origine TEXT');
+  }
+  // LIKE est insensible à la casse (ASCII) en SQLite : marqueurs bancaires
+  // fréquents. On reste conservateur — mieux vaut rater un brut que marquer
+  // « à renommer » un titre déjà personnalisé.
+  await db.exec(`
+    UPDATE ecritures
+    SET libelle_origine = description
+    WHERE libelle_origine IS NULL
+      AND status = 'draft'
+      AND ligne_bancaire_id IS NOT NULL
+      AND (
+        description LIKE '%PAIEMENT%'
+        OR description LIKE '%C. PROC%'
+        OR description LIKE '%FR FRANCE%'
+        OR description LIKE 'VIR %'
+        OR description LIKE '% VIR %'
+      )
+  `);
 }
 
 /**

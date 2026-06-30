@@ -34,7 +34,7 @@ Le MCP Baloo expose les outils suivants :
 
 **Compta opérationnelle** :
 - `vue_ensemble` — état global de la trésorerie (à appeler en début de session).
-- `list_ecritures` / `update_ecriture` — journal des dépenses/recettes (consultation + préparation/enrichissement des brouillons). **Pas de création d'écriture dans Comptaweb via MCP** (ADR-037) : Baloo prépare des brouillons, la matérialisation dans CW est une action humaine via l'UI.
+- `list_ecritures` / `update_ecriture` — journal des dépenses/recettes (consultation + préparation/enrichissement des brouillons). **Pas de création d'écriture dans Comptaweb via MCP** (ADR-037) : Baloo prépare des brouillons, la matérialisation dans CW est une action humaine via l'UI. **Titre parlant** : une écriture avec `titre_a_renommer: 1` a encore son libellé bancaire brut (« PAIEMENT C. PROC … ») ; proposer un titre clair via `update_ecriture(description=...)` fait partie du nettoyage d'un brouillon (non bloquant). Ce titre part dans CW à la validation.
 - `create_remboursement` / `list_remboursements` / `update_remboursement` — suivi remboursements.
 - `create_abandon` / `list_abandons` — abandons de frais.
 - `create_mouvement_caisse` / `list_mouvements_caisse` — caisse espèces.

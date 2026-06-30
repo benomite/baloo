@@ -74,6 +74,9 @@ export interface Ecriture {
   ligne_bancaire_sous_index: number | null;
   comptaweb_ecriture_id: number | null;
   carte_id: string | null;
+  // Libellé bancaire brut figé à la génération d'un brouillon depuis la banque
+  // (null si saisie manuelle). Sert au nudge « titre à renommer » + rapprochement.
+  libelle_origine: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -90,6 +93,9 @@ export interface Ecriture {
   // Renseigné (lecture) si un remboursement pointe cette écriture
   // (remboursements.ecriture_id) — son justif est la feuille de rembt.
   remboursement_id?: string | null;
+  // 1 si le titre est encore le libellé bancaire brut (brouillon non
+  // personnalisé) → nudge « à renommer ». Dérivé en SQL (0/1), lu en truthy.
+  titre_a_renommer?: number;
   // Calculated fields (listing only)
   missing_fields?: string[];
 }

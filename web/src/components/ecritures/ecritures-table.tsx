@@ -1,9 +1,10 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Landmark, Layers, Tag, Activity, Paperclip, Loader2 } from 'lucide-react';
+import { Landmark, Layers, Tag, Activity, Paperclip, Loader2, Pencil } from 'lucide-react';
 import { UniteBadge } from '@/components/shared/unite-badge';
 import { InlineSelect } from '@/components/shared/inline-select';
+import { InlineText } from '@/components/shared/inline-text';
 import { Amount } from '@/components/shared/amount';
 import { BatchEditBar } from './batch-edit-bar';
 import { updateEcritureField } from '@/lib/actions/ecritures';
@@ -351,15 +352,44 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     <div className="text-[9.5px] uppercase tracking-wide text-fg-subtle">{moisCourt(e.date_ecriture)}</div>
                   </div>
                   <div className="flex-1 min-w-0">
-                    {/* Clic = ouvre/ferme le panneau via la ligne (pas de
-                        navigation) ; on laisse l'événement remonter au onClick
-                        de la carte. */}
-                    <span
-                      className="block truncate font-medium text-[13.5px] text-fg hover:underline cursor-pointer"
-                      title={e.description}
-                    >
-                      {e.description}
-                    </span>
+                    {/* Titre. Sur un brouillon (editable), il est éditable
+                        inline : clic = renommer (stopPropagation, n'ouvre pas le
+                        panneau). Un libellé bancaire encore brut (titre_a_renommer)
+                        est affiché en gris italique + crayon → nudge « à préciser »
+                        (ce titre partira dans Comptaweb à la validation). Une
+                        écriture déjà dans CW (mirror) garde son libellé, non
+                        éditable, et le clic remonte pour ouvrir le panneau. */}
+                    {editable ? (
+                      <InlineText
+                        value={e.description}
+                        title={
+                          e.titre_a_renommer
+                            ? 'Libellé bancaire brut — clique pour préciser (ce titre partira dans Comptaweb)'
+                            : 'Cliquer pour renommer'
+                        }
+                        onSave={async (v) => {
+                          const r = await updateEcritureField(e.id, 'description', v);
+                          if (r.ok) void refreshRow(e.id);
+                          return r;
+                        }}
+                        display={
+                          e.titre_a_renommer ? (
+                            <span className="inline-flex items-center gap-1 min-w-0 text-[13.5px] italic text-fg-subtle" title={e.description}>
+                              <Pencil size={11} className="shrink-0 text-amber-500/70" />
+                              <span className="truncate">{e.description}</span>
+                            </span>
+                          ) : (
+                            <span className="block truncate font-medium text-[13.5px] text-fg hover:underline" title={e.description}>
+                              {e.description}
+                            </span>
+                          )
+                        }
+                      />
+                    ) : (
+                      <span className="block truncate font-medium text-[13.5px] text-fg cursor-pointer" title={e.description}>
+                        {e.description}
+                      </span>
+                    )}
                     {/* Imputation complète et cohérente : unité + catégorie +
                         activité (les 3 requises pour valider), éditables inline.
                         Un champ manquant s'affiche en ambre. + présence justif. */}

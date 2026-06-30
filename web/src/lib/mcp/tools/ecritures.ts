@@ -21,7 +21,7 @@ export function registerEcrituresTools(server: McpServer, ctx: McpContext) {
   // lieu de l'ancien flag comptaweb_synced=0.
   server.tool(
     'list_ecritures',
-    'Liste les écritures comptables, filtrables par type, période, statut, catégorie, mode de paiement, carte, ID Comptaweb. Par défaut, renvoie toutes statuts confondus (ajuste avec `status` ou `pending_only`).',
+    'Liste les écritures comptables, filtrables par type, période, statut, catégorie, mode de paiement, carte, ID Comptaweb. Par défaut, renvoie toutes statuts confondus (ajuste avec `status` ou `pending_only`). Chaque écriture porte `titre_a_renommer` (1 = la description est encore le libellé bancaire brut, à personnaliser via update_ecriture) et `libelle_origine` (le libellé bancaire brut figé).',
     {
       type: z.enum(['depense', 'recette']).optional(),
       date_debut: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -115,6 +115,10 @@ export function registerEcrituresTools(server: McpServer, ctx: McpContext) {
       'Une fois l\'écriture dans Comptaweb (mirror/divergent), ces champs deviennent la source de vérité Comptaweb et sont',
       'silencieusement ignorés ici ; seuls notes et justif_attendu (champs Baloo-only) restent modifiables. Pour corriger',
       'une écriture déjà dans CW, modifie côté Comptaweb et la sync Baloo reflétera.',
+      'IMPORTANT — TITRE : si list_ecritures renvoie `titre_a_renommer: 1`, la `description` est encore le libellé bancaire',
+      'BRUT (ex. « PAIEMENT C. PROC … FR FRANCE ») jamais personnalisé. Renseigner un titre parlant (ce qui a été payé / la',
+      'famille / l\'objet) via `description` est une étape importante du nettoyage compta — non bloquante, mais à PROPOSER',
+      'systématiquement quand tu traites un brouillon. Ce titre partira tel quel dans Comptaweb à la validation.',
     ].join(' '),
     {
       id: z.string().describe('ID de l\'écriture (ex: DEP-2026-001 ou REC-2026-005)'),

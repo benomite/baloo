@@ -119,11 +119,11 @@ export async function scanDraftsFromComptaweb(
     );
     const insert = db.prepare(
       `INSERT INTO ecritures (
-         id, group_id, unite_id, date_ecriture, description, amount_cents, type,
+         id, group_id, unite_id, date_ecriture, description, libelle_origine, amount_cents, type,
          category_id, mode_paiement_id, activite_id, numero_piece, status,
          comptaweb_synced, ligne_bancaire_id, ligne_bancaire_sous_index,
          comptaweb_ecriture_id, carte_id, notes, created_at, updated_at
-       ) VALUES (?, ?, NULL, ?, ?, ?, ?, NULL, ?, NULL, NULL, 'draft', 0, ?, ?, NULL, ?, ?, ?, ?)`,
+       ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?, NULL, NULL, 'draft', 0, ?, ?, NULL, ?, ?, ?, ?)`,
     );
     // Drafts existants d'une ligne, avec les flags du garde-fou de suppression
     // (statut, lien CW, imputation, pièce attachée) — cf. deleteDraftEcriture.
@@ -199,7 +199,9 @@ export async function scanDraftsFromComptaweb(
         const notes = c.sousLigneIndex !== null
           ? `Draft généré depuis ligne bancaire ${c.ligneBancaireId} sous-ligne ${c.sousLigneIndex} (intitulé parent: ${c.intituleParent.slice(0, 80)}).`
           : `Draft généré depuis ligne bancaire ${c.ligneBancaireId}.`;
-        await insert.run(id, groupId, c.dateOperation, c.libelProposal, amountAbs, type, modeLocal, c.ligneBancaireId, c.sousLigneIndex, carteLocal, notes, now, now);
+        // libelle_origine = libellé brut figé (= description initiale) : sert
+        // au nudge « titre à renommer » et au rapprochement.
+        await insert.run(id, groupId, c.dateOperation, c.libelProposal, c.libelProposal, amountAbs, type, modeLocal, c.ligneBancaireId, c.sousLigneIndex, carteLocal, notes, now, now);
         crees++;
       }
     }
