@@ -113,6 +113,29 @@ Le pivot conceptuel : la webapp porte la BDD, l'API et les règles métier. Le M
 
 ---
 
+## Backlog — idées cadrées, non planifiées
+
+Fonctionnalités dont le design est arrêté mais qui attendent leur tour. Pas de spec écrite tant qu'on ne les attaque pas ; ce qui suit suffit à repartir.
+
+### BL-001 — Page « Année » (activités hors camp par unité)
+
+**Ouvert le** : 2026-07-02. **Design validé** (brainstorming Benoît). **Priorité** : basse (d'autres chantiers passent avant).
+
+**Besoin** : un équivalent de la page **Camps**, mais pour les **activités hors camp** (week-ends, sorties, temps forts). Entrées créées **par unité**, chacune = nom + unité + **activité choisie librement** (pas de filtrage codé en dur : chaque groupe a sa propre logique — chez Val de Saône « toutes les activités sauf Camps »). **Année en cours**. **Admin-only** pour l'instant (`tresorier`, `RG`). **Sans avances de trésorerie**.
+
+**Design retenu** :
+- **Généraliser la table `camps`** avec une colonne `type` (`'camp'` | `'annee'`), plutôt que dupliquer. Migration : `ALTER TABLE camps ADD COLUMN type TEXT NOT NULL DEFAULT 'camp'` (les camps existants restent `'camp'`). `listCamps`/`createCamp` prennent un `type`.
+- Le dashboard camp (`getCampDashboard`) est **déjà générique** : il filtre la compta par (activité × unité), le mot « camp » n'intervient pas dans le calcul. On réutilise donc **dashboard, budget par (saison, activité, unité), onglets dépenses/recettes, formulaire de création, statut (préparation/en cours/clôturé) + dates**.
+- Page Camps liste `type='camp'` (visible chefs, inchangé) ; nouvelle page **Année** liste `type='annee'` (admin-only).
+- Route `/annee` + `/annee/[id]`, calquées sur `/camps`. Nav : item **« Année »** sous le groupe **« Activités »** (à côté de « Camps »), `roles: ADMIN` (+ tiroir « Plus » en mobile).
+- Différences avec Camps : **masquer la section avances** quand `type='annee'` ; **admin-only** ; **activité libre** au formulaire (toutes les activités proposées, l'utilisateur choisit).
+
+**Tests à prévoir** : `type` par défaut `'camp'` sur les camps existants ; `listCamps` filtre par type ; page Année sans avances ; accès admin-only.
+
+**Fichiers de référence** : `web/src/lib/services/camps.ts`, `web/src/app/(app)/camps/page.tsx`, `web/src/components/camps/camp-tabs.tsx`.
+
+---
+
 ## Règles transverses
 
 - **Chaque phase doit être "arrêtable".** Si on s'arrête après la phase 1, l'auteur a un outil utile en CLI. Si on s'arrête après la phase 2, le groupe entier (chefs, parents) a un outil utile. Si on s'arrête après la phase 3, plusieurs groupes ont un outil utile. Etc.
