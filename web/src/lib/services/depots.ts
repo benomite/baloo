@@ -268,11 +268,12 @@ export async function attachDepotToEcriture(
 
   const depot = await db
     .prepare(
-      `SELECT statut, category_id, unite_id, carte_id, activite_id
+      `SELECT statut, titre, category_id, unite_id, carte_id, activite_id
        FROM depots_justificatifs WHERE id = ? AND group_id = ?`,
     )
     .get<{
       statut: string;
+      titre: string;
       category_id: string | null;
       unite_id: string | null;
       carte_id: string | null;
@@ -327,6 +328,18 @@ export async function attachDepotToEcriture(
       groupId,
     );
   }
+
+  // Titre parlant : si l'écriture porte encore le libellé bancaire brut
+  // (nudge « à renommer » = même condition que le flag `titre_a_renommer`),
+  // elle hérite du `titre` du dépôt — un titre saisi vaut mieux qu'un
+  // « AUCHANSUPERMAR… ». `libelle_origine` (clé de rapprochement) reste intact ;
+  // un titre déjà renommé n'est pas touché ; une écriture déjà dans CW non plus
+  // (status ≠ draft). Demande terrain 2026-07-02.
+  await db.prepare(
+    `UPDATE ecritures SET description = ?, updated_at = ?
+      WHERE id = ? AND group_id = ? AND status = 'draft'
+        AND libelle_origine IS NOT NULL AND description = libelle_origine`,
+  ).run(depot.titre, currentTimestamp(), ecritureId, groupId);
 
   return (await db.prepare('SELECT * FROM depots_justificatifs WHERE id = ?').get<Depot>(depotId))!;
 }
