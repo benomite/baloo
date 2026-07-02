@@ -286,6 +286,42 @@ session stockée expirée, wrapper dans `withAutoReLogin` (re-login auto via
 sans erreur évidente → vérifier `/admin/errors` (le type d'erreur, ex.
 `LibsqlError` vs `ComptawebSessionExpiredError`, oriente vite la cause).
 
+### Sous-lignes DSP2 : montants en VALEUR ABSOLUE, le signe est sur le parent
+
+Le détail DSP2 d'une ligne bancaire (« PAIEMENT C. PROC … », un paiement carte
+regroupant plusieurs commerçants) affiche les montants des sous-lignes en
+**valeur absolue** (`47,94`, `96,75`…), alors que le sens dépense/recette ne
+vit que sur la **ligne parent** (`-186,44`). Invariant à préserver :
+**`montantCentimes` est signé partout**. `parseEcritureBancaire`
+(`ecritures-bancaires.ts`) reporte donc le signe du parent sur chaque
+sous-ligne (`sign * Math.abs(sl)`). Sans ça, `type = montant < 0 ? depense :
+recette` classe toutes les sous-lignes d'un paiement carte en **recette** →
+faux drafts positifs, faux affichage vert en rapprochement, mauvais sens envoyé
+au MCP.
+
+Vu le bug : 2026-07-02 (paiement C. PROC dont les 6 sous-lignes remontaient en
+recette). Fix à la **source** (parsing) → répare d'un coup les drafts,
+`ecritures-from-bancaire`, l'affichage `rapprochement/page.tsx` et le MCP.
+
+### Corriger des drafts déjà mal orientés : self-heal en place, pas de delete
+
+Un draft bancaire déjà créé à tort (ex. sous-ligne DSP2 en recette avant le fix
+ci-dessus) est **reconnu « existant »** au scan suivant (clé
+`ligne_bancaire_id + sous_index`) et n'est donc jamais recréé — il ne se
+corrige pas tout seul par la simple régénération. `scanDraftsFromComptaweb`
+embarque un **self-heal** : quand le `type` d'un draft ne colle plus au sens du
+candidat recalculé, il recale **sur place** `type` + `justif_attendu`
+(compteur `corriges`), en tournant à chaque `sync_run` (via `sync-cycle.ts`).
+
+Pourquoi en place et pas delete+recreate : le `type` d'une écriture bancaire
+est **100% généré** (absent de `INLINE_FIELDS_*`, jamais éditable à la main),
+et la correction ne touche **que** `type` + `justif_attendu`. Tout le reste —
+imputation, **lien dépôt (`depots_justificatifs.ecriture_id`)**, justifs, notes,
+montant absolu, id de l'écriture — reste intact. Donc **rien à réassocier**
+côté dépôts. Seule barrière : ne jamais toucher une écriture déjà matérialisée
+dans Comptaweb (`status ≠ 'draft'` ou `comptaweb_ecriture_id` non nul) — cf.
+garde-fou `corrigeable` dans `drafts.ts`.
+
 ## Git / déploiement
 
 ### Pas de push sans accord explicite

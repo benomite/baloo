@@ -69,12 +69,24 @@ function parseEcritureBancaire($: CheerioAPI, tr: AnyNode): EcritureBancaireNonR
   intituleClone.find('table, button, a').remove();
   const intitule = intituleClone.text().replace(/\s+/g, ' ').trim();
 
+  // Le détail DSP2 affiche les montants des sous-lignes en VALEUR ABSOLUE
+  // (ex. « 47,94 »), alors que le sens (dépense/recette) ne vit que sur la
+  // ligne parent (« -186,44 »). On reporte donc le signe du parent sur chaque
+  // sous-ligne pour préserver l'invariant « montantCentimes est signé » — sinon
+  // toutes les sous-lignes d'un paiement carte ressortent en recette à tort.
+  const montantCentimes = parseMontantFrFlexible(montantText);
+  const sign = montantCentimes < 0 ? -1 : 1;
+  const sousLignes = parseSousLignes($, id).map((sl) => ({
+    ...sl,
+    montantCentimes: sign * Math.abs(sl.montantCentimes),
+  }));
+
   return {
     id,
     dateOperation: parseDateFr(dateText),
-    montantCentimes: parseMontantFrFlexible(montantText),
+    montantCentimes,
     intitule,
-    sousLignes: parseSousLignes($, id),
+    sousLignes,
   };
 }
 

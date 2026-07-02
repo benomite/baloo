@@ -83,6 +83,10 @@ export interface ScanDraftsResult {
   // Lignes bancaires ignorées car le paiement est DÉJÀ comptabilisé dans CW
   // via une autre ligne identique (doublon du flux bancaire, ex. DSP2).
   doublons?: number;
+  // Drafts NUS dont le type (dépense/recette) a été recalé sur le sens du
+  // candidat courant — ex. sous-lignes DSP2 jadis créées à tort en recette
+  // avant le fix de signe 2026-07-02.
+  corriges?: number;
   erreur?: string;
 }
 
@@ -93,12 +97,6 @@ export async function scanDraftsFromComptaweb(
   try {
     const data = await withAutoReLogin((cfg) => listRapprochementBancaire(cfg));
 
-    const findExisting = db.prepare(
-      `SELECT id FROM ecritures
-       WHERE group_id = ? AND ligne_bancaire_id = ?
-         AND (ligne_bancaire_sous_index IS ? OR ligne_bancaire_sous_index = ?)
-       LIMIT 1`,
-    );
     // Jumeau déjà comptabilisé dans CW : même contenu exact (date+montant+type
     // +description, la description embarquant la réf de transaction unique →
     // identité fiable) ET relié à CW (comptaweb_ecriture_id non nul). Si présent,
@@ -131,6 +129,7 @@ export async function scanDraftsFromComptaweb(
       `SELECT e.id AS id,
               e.ligne_bancaire_sous_index AS sousIndex,
               e.status AS status,
+              e.type AS type,
               e.comptaweb_ecriture_id AS cwId,
               (CASE WHEN e.category_id IS NOT NULL OR e.unite_id IS NOT NULL OR e.activite_id IS NOT NULL
                     THEN 1 ELSE 0 END) AS hasImput,
@@ -144,11 +143,19 @@ export async function scanDraftsFromComptaweb(
     const deleteStaleDraft = db.prepare(
       `DELETE FROM ecritures WHERE id = ? AND group_id = ? AND status = 'draft'`,
     );
+    // Self-heal : recale le sens d'un draft NU (+ justif_attendu cohérent) sans
+    // toucher au montant (déjà stocké en absolu). Scopé status='draft' par
+    // défense en profondeur.
+    const correctDraftType = db.prepare(
+      `UPDATE ecritures SET type = ?, justif_attendu = ?, updated_at = ?
+        WHERE id = ? AND group_id = ? AND status = 'draft'`,
+    );
 
     let crees = 0;
     let existants = 0;
     let supprimes = 0;
     let doublons = 0;
+    let corriges = 0;
 
     for (const ligne of data.ecrituresBancaires) {
       const candidates = candidatesForLine(ligne);
@@ -159,7 +166,7 @@ export async function scanDraftsFromComptaweb(
       //    somme des sous-lignes → double comptage). Brouillons NUS seulement
       //    (le garde-fou est dans planStaleLineDrafts).
       const existingRows = await findLineDrafts.all<{
-        id: string; sousIndex: number | null; status: string;
+        id: string; sousIndex: number | null; status: string; type: string;
         cwId: number | null; hasImput: number; hasAttach: number;
       }>(groupId, ligne.id);
       const existing: ExistingLineDraft[] = existingRows.map((r) => ({
@@ -171,20 +178,45 @@ export async function scanDraftsFromComptaweb(
         hasAttachment: r.hasAttach === 1,
       }));
       const canonical = candidates.map((c) => c.sousLigneIndex);
-      for (const staleId of planStaleLineDrafts(canonical, existing)) {
+      const staleIds = new Set(planStaleLineDrafts(canonical, existing));
+      for (const staleId of staleIds) {
         await deleteStaleDraft.run(staleId, groupId);
         supprimes++;
+      }
+      // Index des drafts restants par sous_index, pour retrouver le candidat
+      // existant (et ses garde-fous) sans requête supplémentaire.
+      const bySousIndex = new Map<number | null, (typeof existingRows)[number]>();
+      for (const r of existingRows) {
+        if (!staleIds.has(r.id)) bySousIndex.set(r.sousIndex, r);
       }
 
       // 2. Création des candidats manquants (clé (ligne, sous_index)).
       for (const c of candidates) {
-        const existingCand = await findExisting.get(groupId, c.ligneBancaireId, c.sousLigneIndex, c.sousLigneIndex);
-        if (existingCand) { existants++; continue; }
         const type = c.montantCentimes < 0 ? 'depense' : 'recette';
         const amountAbs = Math.abs(c.montantCentimes);
         // Une entrée d'argent (recette) n'attend pas de justificatif : pas de
         // « à justifier », et au push pas de n° pièce de rattachement bidon.
         const justifAttendu = type === 'recette' ? 0 : 1;
+        const existingCand = bySousIndex.get(c.sousLigneIndex);
+        if (existingCand) {
+          // Self-heal : recale le sens d'un draft LOCAL dont le type ne colle
+          // plus au candidat recalculé (cas des sous-lignes DSP2 créées en
+          // recette avant le fix de signe 2026-07-02). Sûr même sur un draft
+          // imputé/rattaché : le `type` d'une écriture bancaire est 100% généré
+          // (jamais éditable à la main), et la correction ne touche QUE
+          // type + justif_attendu — imputation, lien dépôt, justifs, montant
+          // absolu restent intacts (pas de suppression/recréation, donc rien à
+          // réassocier). Seule barrière : ne jamais toucher une écriture déjà
+          // matérialisée dans Comptaweb (status ≠ draft ou déjà liée à CW).
+          const corrigeable = existingCand.status === 'draft' && existingCand.cwId === null;
+          if (corrigeable && existingCand.type !== type) {
+            await correctDraftType.run(type, justifAttendu, currentTimestamp(), existingCand.id, groupId);
+            corriges++;
+          } else {
+            existants++;
+          }
+          continue;
+        }
         // Doublon du flux bancaire : paiement déjà comptabilisé dans CW via une
         // autre ligne identique → ne pas régénérer (sinon boucle d'arbitrage).
         const twin = await findCwAccountedTwin.get(groupId, c.dateOperation, amountAbs, type, c.libelProposal);
@@ -209,7 +241,7 @@ export async function scanDraftsFromComptaweb(
       }
     }
 
-    return { crees, existants, supprimes, doublons };
+    return { crees, existants, supprimes, doublons, corriges };
   } catch (err) {
     if (err instanceof ComptawebSessionExpiredError) {
       return { crees: 0, existants: 0, supprimes: 0, erreur: 'Session Comptaweb expirée.' };
