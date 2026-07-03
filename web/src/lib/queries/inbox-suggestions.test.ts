@@ -10,13 +10,18 @@ import {
 
 // Fabrique minimale : seuls les champs lus par computeAutoSuggestions
 // comptent (id, amount_cents, date).
-function ecr(id: string, amount: number, date: string): InboxEcriture {
+function ecr(
+  id: string,
+  amount: number,
+  date: string,
+  type: 'depense' | 'recette' = 'depense',
+): InboxEcriture {
   return {
     id,
     date_ecriture: date,
     description: id,
     amount_cents: amount,
-    type: 'depense',
+    type,
     unite_code: null,
     comptaweb_synced: 0,
   };
@@ -47,6 +52,16 @@ describe('computeAutoSuggestions — filtrage des paires rejetées', () => {
     expect(out).toHaveLength(1);
     expect(out[0].ecriture.id).toBe('E1');
     expect(out[0].justif.id).toBe('J1');
+  });
+
+  it('ne propose JAMAIS un dépôt pour une recette (les justifs/dépôts sont pour les dépenses)', () => {
+    // Une recette (entrée d'argent, ex. virement famille) ne doit pas se voir
+    // suggérer un dépôt de justificatif, même si montant + date matchent.
+    const out = computeAutoSuggestions(
+      [ecr('R1', 22600, '2026-07-02', 'recette')],
+      [jus('J1', 22600, '2026-07-01')],
+    );
+    expect(out).toHaveLength(0);
   });
 
   it('ne propose plus une paire explicitement rejetée', () => {

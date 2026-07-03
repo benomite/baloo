@@ -68,6 +68,13 @@ describe('suggestMatchForEcriture', () => {
     const recette = { id: 'ECR1', amount_cents: 4500, date_ecriture: '2026-06-20', type: 'recette' as const };
     expect(suggestMatchForEcriture(recette, [], [remb({ total_cents: 4124, date_paiement: '2026-06-20' })])).toBeNull();
   });
+  it('ne propose JAMAIS un dépôt pour une recette (les justifs/dépôts sont pour les dépenses)', () => {
+    // Une entrée d'argent (virement famille pour un camp) n'attend pas de
+    // justificatif → aucun dépôt suggéré, même à montant/date dans la tolérance.
+    // Terrain 2026-07-03.
+    const recette = { id: 'ECR1', amount_cents: 22600, date_ecriture: '2026-07-02', type: 'recette' as const };
+    expect(suggestMatchForEcriture(recette, [depot({ amount_cents: 22600, date_estimee: '2026-07-01' })], [])).toBeNull();
+  });
   it('propose bien un remboursement pour une dépense de même montant/date', () => {
     const depense = { id: 'ECR1', amount_cents: 4124, date_ecriture: '2026-06-20', type: 'depense' as const };
     expect(suggestMatchForEcriture(depense, [], [remb({ total_cents: 4124, date_paiement: '2026-06-20' })])?.kind).toBe('remboursement');

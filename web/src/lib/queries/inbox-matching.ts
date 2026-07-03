@@ -65,6 +65,10 @@ export function computeAutoSuggestions(
   const used = new Set<string>();
 
   for (const ecr of ecritures) {
+    // Un dépôt de justificatif ne se rattache qu'à une DÉPENSE : une entrée
+    // d'argent (recette : virement famille, adhésion…) n'attend pas de justif.
+    // Cohérent avec computeRembSuggestions (remboursements = dépenses only).
+    if (ecr.type !== 'depense') continue;
     const eAmount = Math.abs(ecr.amount_cents);
     const tol = Math.max(
       AUTO_AMOUNT_TOLERANCE_FLOOR_CENTS,

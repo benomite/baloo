@@ -61,7 +61,12 @@ export function suggestMatchForEcriture(
   // pref : 0 = dépôt, 1 = remboursement → à égalité de date, le dépôt gagne.
   const candidates: { match: EcritureMatch; dist: number; pref: number }[] = [];
 
-  for (const d of depots) {
+  // Un dépôt de justificatif ne se rattache qu'à une DÉPENSE : une entrée
+  // d'argent (recette : virement famille, adhésion…) n'attend pas de justif.
+  // Même logique que les remboursements ci-dessous (cf. bug terrain 2026-07-03,
+  // dépôt « courses weekend » proposé à tort sur des recettes de camp).
+  const depotsCandidates = ecriture.type === 'depense' ? depots : [];
+  for (const d of depotsCandidates) {
     if (d.amount_cents == null || d.date_estimee == null) continue;
     if (rejectedKeys.has(rejetPairKey(ecriture.id, 'depot', d.id))) continue;
     if (!amountMatches(ecriture.amount_cents, d.amount_cents)) continue;
