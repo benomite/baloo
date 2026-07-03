@@ -9,6 +9,7 @@ import {
 } from '../comptaweb';
 import type {
   EcritureBancaireNonRapprochee,
+  EcritureComptableNonRapprochee,
   SousLigneDsp2,
   CreateEcritureInput,
 } from '../comptaweb';
@@ -87,6 +88,9 @@ export interface ScanDraftsResult {
   // candidat courant — ex. sous-lignes DSP2 jadis créées à tort en recette
   // avant le fix de signe 2026-07-02.
   corriges?: number;
+  // Écritures comptables non rapprochées de CW (dont les transferts hors
+  // résultat), transmises telles quelles pour l'import de la sync.
+  ecrituresComptables?: EcritureComptableNonRapprochee[];
   erreur?: string;
 }
 
@@ -241,7 +245,7 @@ export async function scanDraftsFromComptaweb(
       }
     }
 
-    return { crees, existants, supprimes, doublons, corriges };
+    return { crees, existants, supprimes, doublons, corriges, ecrituresComptables: data.ecrituresComptables };
   } catch (err) {
     if (err instanceof ComptawebSessionExpiredError) {
       return { crees: 0, existants: 0, supprimes: 0, erreur: 'Session Comptaweb expirée.' };
