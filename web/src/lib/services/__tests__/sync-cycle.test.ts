@@ -190,7 +190,7 @@ function mockOpts(opts: {
       if (opts.failScrape) throw new Error('CW down');
       return { ecritures: opts.ecritures ?? [] };
     },
-    scanDrafts: opts.scanDrafts ?? (async () => ({ crees: 0, existants: 0 })),
+    scanDrafts: opts.scanDrafts ?? (async () => ({ crees: 0, existants: 0, supprimes: 0 })),
     // Détail par défaut : mono-ventilation = le montant total de la ligne CW
     // (cas courant). Les tests multi-ventilation injectent leur propre scrapeDetail.
     scrapeDetail:
@@ -440,7 +440,7 @@ describe('runSyncCycle — imports et drafts', () => {
   });
 
   it('compte les nouveaux drafts retournés par scanDrafts', async () => {
-    const res = await runSyncCycle(db, 'g1', mockOpts({ scanDrafts: async () => ({ crees: 3, existants: 5 }) }));
+    const res = await runSyncCycle(db, 'g1', mockOpts({ scanDrafts: async () => ({ crees: 3, existants: 5, supprimes: 0 }) }));
     expect(res.new_drafts).toBe(3);
   });
 
@@ -747,7 +747,7 @@ describe('ensureSyncFresh', () => {
     await ensureSyncFresh(db, 'g1', 'mcp', {
       loadConfig: async () => FAKE_CONFIG,
       scrapeListe: async () => { scraperCalled = true; return { ecritures: [] }; },
-      scanDrafts: async () => ({ crees: 0, existants: 0 }),
+      scanDrafts: async () => ({ crees: 0, existants: 0, supprimes: 0 }),
     });
     expect(scraperCalled).toBe(true);
   });
@@ -762,5 +762,70 @@ describe('ensureSyncFresh', () => {
       scrapeListe: async () => { scraperCalled = true; return { ecritures: [] }; },
     });
     expect(scraperCalled).toBe(false);
+  });
+});
+
+// ============================================================
+// runSyncCycle — import des transferts hors résultat (Echelon National)
+// ============================================================
+
+describe('runSyncCycle — import des transferts hors résultat (Echelon National)', () => {
+  let db: DbWrapper;
+  beforeEach(async () => { ({ db } = await setupDb()); });
+
+  it('promeut le draft bancaire matchant en ligne validée cat-flux-structures', async () => {
+    // Draft bancaire local -159 € (03/06), en attente.
+    await db.prepare(
+      `INSERT INTO ecritures (id, group_id, date_ecriture, description, amount_cents, type, status, comptaweb_synced)
+       VALUES ('ECR-368', 'g1', '2026-06-03', 'PRLV SEPA/SCOUTS ET GUIDES DE F ...', 15900, 'depense', 'draft', 0)`,
+    ).run();
+
+    const opts = mockOpts({
+      ecritures: [], // journal /recettedepense vide
+      scanDrafts: async () => ({
+        crees: 0,
+        existants: 0,
+        supprimes: 0,
+        ecrituresComptables: [{
+          id: 2403659, dateEcriture: '2026-06-01', type: 'Dépense',
+          intitule: 'Regroupement de 2 prélèvements nationaux du 01/06/2026 pour la structure',
+          devise: 'EUR', montantCentimes: -15900, numeroPiece: '', modeTransaction: 'Virement', tiers: 'Echelon National',
+        }],
+      }),
+      force: true,
+    });
+
+    const res = await runSyncCycle(db, 'g1', opts);
+
+    expect(res.status).toBe('ok');
+    expect(res.promoted_to_mirror).toBe(1);
+    const e = await db.prepare(
+      'SELECT status, description, category_id, comptaweb_ecriture_id FROM ecritures WHERE id = ?',
+    ).get<{ status: string; description: string; category_id: string; comptaweb_ecriture_id: number }>('ECR-368');
+    expect(e?.status).toBe('mirror');
+    expect(e?.category_id).toBe('cat-flux-structures');
+    expect(e?.comptaweb_ecriture_id).toBe(2403659);
+    expect(e?.description).toContain('Regroupement');
+  });
+
+  it('ignore une écriture comptable ordinaire (tiers ≠ Echelon National)', async () => {
+    const opts = mockOpts({
+      ecritures: [],
+      scanDrafts: async () => ({
+        crees: 0,
+        existants: 0,
+        supprimes: 0,
+        ecrituresComptables: [{
+          id: 2303515, dateEcriture: '2025-09-20', type: 'Dépense', intitule: 'hébergement weekend SCC',
+          devise: 'EUR', montantCentimes: -16250, numeroPiece: 'SA25-13', modeTransaction: 'Chèque', tiers: 'Autre : pas structure SGDF',
+        }],
+      }),
+      force: true,
+    });
+
+    const res = await runSyncCycle(db, 'g1', opts);
+    expect(res.status).toBe('ok');
+    const n = await db.prepare("SELECT COUNT(*) AS n FROM ecritures WHERE comptaweb_ecriture_id = 2303515").get<{ n: number }>();
+    expect(n?.n).toBe(0); // pas importée par cette passe
   });
 });

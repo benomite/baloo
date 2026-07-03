@@ -33,7 +33,7 @@ import type {
   RapprochementBancaireData,
   ScrapeListeEcrituresResult,
 } from '../comptaweb/types';
-import { scanDraftsFromComptaweb } from './drafts';
+import { scanDraftsFromComptaweb, type ScanDraftsResult } from './drafts';
 import {
   reconcile,
   reconcileVentilations,
@@ -44,6 +44,7 @@ import {
   type VentCandidate,
 } from './ecritures-sync-reconcile';
 import { upsertSuggestion } from './cw-link-suggestions';
+import { importHorsResultatTransfers } from './hors-resultat-import';
 import { CATEGORIES_HORS_RESULTAT } from './overview';
 
 // ============================================================================
@@ -69,7 +70,7 @@ export interface SyncCycleOptions {
   /** Injection pour tests : scrape le rapprochement bancaire. */
   scrapeRapprochement?: (cfg: ComptawebConfig) => Promise<RapprochementBancaireData>;
   /** Injection pour tests : scan drafts depuis lignes bancaires. */
-  scanDrafts?: (groupId: string) => Promise<{ crees: number; existants: number; erreur?: string }>;
+  scanDrafts?: (groupId: string) => Promise<ScanDraftsResult>;
   /** Injection pour tests : lit la page détail CW d'une écriture. */
   scrapeDetail?: (cwId: number) => Promise<EcritureDetail>;
   /** Injection pour tests : résout un nom d'activité CW → activite_id Baloo. */
@@ -846,6 +847,25 @@ export async function runSyncCycle(
         cwIntitule: s.cw.intitule,
       });
       if (created) suggestionsCreated++;
+    }
+
+    // 7f. Transferts inter-structures (hors résultat) : ces écritures CW sont
+    //     dans le rapprochement bancaire mais PAS dans /recettedepense. On les
+    //     importe comme lignes validées (mirror), en promouvant le draft
+    //     bancaire matchant s'il existe. Filtre sur tiers 'Echelon National'.
+    const comptables = draftsResult.ecrituresComptables ?? [];
+    const transfers = comptables
+      .filter((c) => c.tiers.trim() === 'Echelon National')
+      .map((c) => ({
+        cwId: c.id,
+        dateEcriture: c.dateEcriture,
+        montantCentimes: c.montantCentimes,
+        intitule: c.intitule,
+      }));
+    if (transfers.length > 0) {
+      const transferRes = await importHorsResultatTransfers(db, { groupId }, transfers);
+      promoted += transferRes.promoted;
+      imported += transferRes.created;
     }
 
     // 8. Détection stale (warning, pas erreur)
