@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { TabLink } from '@/components/shared/tab-link';
 import { listEcritures } from '@/lib/queries/ecritures';
 import { listCategories, listUnites, listModesPaiement, listActivites, listCartes, getTopCategoryIds } from '@/lib/queries/reference';
-import { listDepots, listAllAttachableRemboursements } from '@/lib/services/depots';
+import { listDepots, listAllAttachableRemboursements, splitJustifPaths } from '@/lib/services/depots';
 import { loadRejectedPairKeys } from '@/lib/services/inbox-rejets';
 import type { MatchDepot, MatchRemboursement } from '@/lib/services/ecriture-match';
 import { EcritureFilters } from '@/components/ecritures/ecriture-filters';
@@ -86,6 +86,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     titre: d.titre,
     uniteCode: d.unite_code ?? null,
     categoryName: d.category_name ?? null,
+    justifPaths: splitJustifPaths(d.justif_paths),
   }));
   const matchRembs: MatchRemboursement[] = rawMatchRembs.map((r) => ({
     id: r.id,

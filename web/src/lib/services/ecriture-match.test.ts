@@ -2,19 +2,19 @@ import { describe, it, expect } from 'vitest';
 import { suggestMatchForEcriture } from './ecriture-match';
 import { rejetPairKey } from '../queries/inbox-matching';
 
-const depot = (over = {}) => ({ id: 'DEP1', amount_cents: 5000, date_estimee: '2026-01-10', titre: 'Courses', uniteCode: 'PC', categoryName: 'Intendance', ...over });
+const depot = (over = {}) => ({ id: 'DEP1', amount_cents: 5000, date_estimee: '2026-01-10', titre: 'Courses', uniteCode: 'PC', categoryName: 'Intendance', justifPaths: [] as string[], ...over });
 const remb = (over = {}) => ({ id: 'RBT1', total_cents: 5000, date_depense: '2026-01-10', date_paiement: null, demandeur: 'Alice', uniteCode: 'LJ', status: 'virement_effectue', ...over });
 const ecr = { id: 'ECR1', amount_cents: 5000, date_ecriture: '2026-01-10', type: 'depense' as const };
 
 describe('suggestMatchForEcriture', () => {
   it('match dépôt exact → champs d\'affichage', () => {
     expect(suggestMatchForEcriture(ecr, [depot()], [])).toEqual({
-      kind: 'depot', id: 'DEP1', label: 'Courses', amountCents: 5000, date: '2026-01-10', uniteCode: 'PC', detail: 'Intendance',
+      kind: 'depot', id: 'DEP1', label: 'Courses', amountCents: 5000, date: '2026-01-10', uniteCode: 'PC', detail: 'Intendance', justifPaths: [],
     });
   });
   it('match remboursement → champs d\'affichage', () => {
     expect(suggestMatchForEcriture(ecr, [], [remb()])).toEqual({
-      kind: 'remboursement', id: 'RBT1', label: 'Alice', amountCents: 5000, date: '2026-01-10', uniteCode: 'LJ', detail: 'virement_effectue',
+      kind: 'remboursement', id: 'RBT1', label: 'Alice', amountCents: 5000, date: '2026-01-10', uniteCode: 'LJ', detail: 'virement_effectue', justifPaths: [],
     });
   });
   it('tolérance ±10% / ±15j', () => {
@@ -78,6 +78,14 @@ describe('suggestMatchForEcriture', () => {
   it('propose bien un remboursement pour une dépense de même montant/date', () => {
     const depense = { id: 'ECR1', amount_cents: 4124, date_ecriture: '2026-06-20', type: 'depense' as const };
     expect(suggestMatchForEcriture(depense, [], [remb({ total_cents: 4124, date_paiement: '2026-06-20' })])?.kind).toBe('remboursement');
+  });
+  it('le match dépôt porte les chemins de fichiers (pour voir le justif avant de lier)', () => {
+    const m = suggestMatchForEcriture(ecr, [depot({ justifPaths: ['depot/DEP1/recu1.jpg', 'depot/DEP1/recu2.pdf'] })], []);
+    expect(m?.kind).toBe('depot');
+    expect(m?.justifPaths).toEqual(['depot/DEP1/recu1.jpg', 'depot/DEP1/recu2.pdf']);
+  });
+  it('le match remboursement n\'a pas de chemins de fichiers (hors périmètre)', () => {
+    expect(suggestMatchForEcriture(ecr, [], [remb()])?.justifPaths).toEqual([]);
   });
   it('à égalité de date, préfère le dépôt', () => {
     expect(suggestMatchForEcriture(ecr, [depot()], [remb()])?.kind).toBe('depot');

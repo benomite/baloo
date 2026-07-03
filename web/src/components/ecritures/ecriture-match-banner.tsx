@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { ChevronDown, Link2 } from 'lucide-react';
+import { ChevronDown, Link2, Paperclip } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Amount } from '@/components/shared/amount';
@@ -101,6 +101,28 @@ export function EcritureMatchBanner({
           <dd>{match.uniteCode ?? '—'}</dd>
           <dt className="text-amber-700/80 dark:text-amber-300/70">{isDepot ? 'Catégorie' : 'Statut'}</dt>
           <dd>{match.detail ?? '—'}</dd>
+          {isDepot && match.justifPaths.length > 0 && (
+            <>
+              <dt className="text-amber-700/80 dark:text-amber-300/70">
+                {match.justifPaths.length > 1 ? 'Justifs' : 'Justif'}
+              </dt>
+              <dd className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                {match.justifPaths.map((p, i) => (
+                  <a
+                    key={p}
+                    href={`/api/justificatifs/${p}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-1 font-medium underline decoration-amber-400/60 underline-offset-2 hover:decoration-amber-500"
+                  >
+                    <Paperclip size={11} strokeWidth={2} className="shrink-0" />
+                    {match.justifPaths.length > 1 ? `Voir ${i + 1}` : 'Voir'}
+                  </a>
+                ))}
+              </dd>
+            </>
+          )}
         </dl>
       )}
     </div>

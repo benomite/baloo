@@ -16,6 +16,9 @@ export interface MatchDepot {
   titre: string;
   uniteCode: string | null;
   categoryName: string | null;
+  // Chemins des fichiers justificatifs du dépôt (servis via
+  // /api/justificatifs/<path>) — permettent de voir la pièce avant de lier.
+  justifPaths: string[];
 }
 export interface MatchRemboursement {
   id: string;
@@ -37,6 +40,9 @@ export interface EcritureMatch {
   date: string | null;
   uniteCode: string | null;
   detail: string | null;
+  // Fichiers justificatifs à consulter avant de lier (dépôts uniquement ;
+  // vide pour un remboursement).
+  justifPaths: string[];
 }
 
 const DATE_TOL_DAYS = 15;
@@ -73,7 +79,7 @@ export function suggestMatchForEcriture(
     const dist = dayDiff(ecriture.date_ecriture, d.date_estimee);
     if (dist > DATE_TOL_DAYS) continue;
     candidates.push({
-      match: { kind: 'depot', id: d.id, label: d.titre, amountCents: d.amount_cents, date: d.date_estimee, uniteCode: d.uniteCode, detail: d.categoryName },
+      match: { kind: 'depot', id: d.id, label: d.titre, amountCents: d.amount_cents, date: d.date_estimee, uniteCode: d.uniteCode, detail: d.categoryName, justifPaths: d.justifPaths },
       dist, pref: 0,
     });
   }
@@ -94,7 +100,7 @@ export function suggestMatchForEcriture(
     const dist = dayDiff(ecriture.date_ecriture, refDate);
     if (dist > DATE_TOL_DAYS) continue;
     candidates.push({
-      match: { kind: 'remboursement', id: r.id, label: r.demandeur, amountCents: r.total_cents, date: refDate, uniteCode: r.uniteCode, detail: r.status },
+      match: { kind: 'remboursement', id: r.id, label: r.demandeur, amountCents: r.total_cents, date: refDate, uniteCode: r.uniteCode, detail: r.status, justifPaths: [] },
       dist, pref: 1,
     });
   }
