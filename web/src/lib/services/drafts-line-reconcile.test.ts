@@ -39,9 +39,15 @@ describe('planStaleLineDrafts', () => {
     expect(planStaleLineDrafts([0, 1], existing)).toEqual([]);
   });
 
-  it('garde un draft stale que le trésorier a imputé (préserve son travail)', () => {
+  it('supprime un draft « ligne entière » imputé supplanté par des sous-lignes (grain agrégé invalide)', () => {
     const existing = [draft({ id: 'L', sousLigneIndex: null, hasImputation: true })];
-    expect(planStaleLineDrafts([0, 1], existing)).toEqual([]);
+    expect(planStaleLineDrafts([0, 1], existing)).toEqual(['L']);
+  });
+
+  it('garde un draft de SOUS-LIGNE imputé devenu stale (re-ventilation, vrai travail)', () => {
+    // canonique = [1, 2] : la sous-ligne 0 a disparu de la ventilation DSP2.
+    const existing = [draft({ id: 'SUB0', sousLigneIndex: 0, hasImputation: true })];
+    expect(planStaleLineDrafts([1, 2], existing)).toEqual([]);
   });
 
   it('garde un draft stale avec une pièce attachée', () => {
@@ -62,14 +68,14 @@ describe('planStaleLineDrafts', () => {
     expect(planStaleLineDrafts([null], [draft({ id: 'L', sousLigneIndex: null })])).toEqual([]);
   });
 
-  it('ne supprime que les drafts nus, pas ceux enrichis, dans un mix', () => {
+  it('retire les deux drafts « ligne entière » stale (nu ET imputé) mais garde une pièce attachée', () => {
     const existing = [
       draft({ id: 'PARENT_NU', sousLigneIndex: null }),
       draft({ id: 'PARENT_IMPUTE', sousLigneIndex: null, hasImputation: true }),
-      draft({ id: 'SUB0', sousLigneIndex: 0 }),
+      draft({ id: 'PARENT_PIECE', sousLigneIndex: null, hasAttachment: true }),
     ];
-    // canonique = sous-lignes [0,1] : les deux drafts « ligne entière » sont
-    // stale, mais seul le nu est supprimé.
-    expect(planStaleLineDrafts([0, 1], existing)).toEqual(['PARENT_NU']);
+    // canonique = sous-lignes [0,1] : les trois « ligne entière » sont stale ;
+    // nu et imputé sont retirés (grain agrégé invalide), celui avec pièce reste.
+    expect(planStaleLineDrafts([0, 1], existing)).toEqual(['PARENT_NU', 'PARENT_IMPUTE']);
   });
 });
