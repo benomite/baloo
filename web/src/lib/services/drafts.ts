@@ -134,6 +134,9 @@ export async function scanDraftsFromComptaweb(
               e.ligne_bancaire_sous_index AS sousIndex,
               e.status AS status,
               e.type AS type,
+              e.amount_cents AS amountCents,
+              e.libelle_origine AS libelleOrigine,
+              e.description AS description,
               e.comptaweb_ecriture_id AS cwId,
               (CASE WHEN e.category_id IS NOT NULL OR e.unite_id IS NOT NULL OR e.activite_id IS NOT NULL
                     THEN 1 ELSE 0 END) AS hasImput,
@@ -171,6 +174,7 @@ export async function scanDraftsFromComptaweb(
       //    (le garde-fou est dans planStaleLineDrafts).
       const existingRows = await findLineDrafts.all<{
         id: string; sousIndex: number | null; status: string; type: string;
+        amountCents: number; libelleOrigine: string | null; description: string;
         cwId: number | null; hasImput: number; hasAttach: number;
       }>(groupId, ligne.id);
       const existing: ExistingLineDraft[] = existingRows.map((r) => ({
@@ -187,12 +191,8 @@ export async function scanDraftsFromComptaweb(
         await deleteStaleDraft.run(staleId, groupId);
         supprimes++;
       }
-      // Index des drafts restants par sous_index, pour retrouver le candidat
-      // existant (et ses garde-fous) sans requête supplémentaire.
-      const bySousIndex = new Map<number | null, (typeof existingRows)[number]>();
-      for (const r of existingRows) {
-        if (!staleIds.has(r.id)) bySousIndex.set(r.sousIndex, r);
-      }
+      // Écritures encore vivantes de la ligne (hors stales retirés ce cycle).
+      const liveRows = existingRows.filter((r) => !staleIds.has(r.id));
 
       // 2. Création des candidats manquants (clé (ligne, sous_index)).
       for (const c of candidates) {
@@ -201,7 +201,20 @@ export async function scanDraftsFromComptaweb(
         // Une entrée d'argent (recette) n'attend pas de justificatif : pas de
         // « à justifier », et au push pas de n° pièce de rattachement bidon.
         const justifAttendu = type === 'recette' ? 0 : 1;
-        const existingCand = bySousIndex.get(c.sousLigneIndex);
+        // Reconnaissance « déjà représentée » par CONTENU (montant + libellé
+        // brut), pas par le seul `ligne_bancaire_id` : les ids de lignes CW ne
+        // sont PAS stables, ils sont recyclés entre transactions. Sans ça, une
+        // écriture d'une AUTRE transaction (souvent déjà validée) sous le même
+        // id bloque la création (bug DEGOMME 2026-07-03 : id 19105752 réutilisé,
+        // GABORIAUD validé masquait la nouvelle ligne DEGOMME). `libelle_origine`
+        // = libellé bancaire brut figé (== libelProposal à la création), survit
+        // au renommage « titre parlant ».
+        const existingCand = liveRows.find(
+          (r) =>
+            r.sousIndex === c.sousLigneIndex &&
+            r.amountCents === amountAbs &&
+            (r.libelleOrigine === c.libelProposal || r.description === c.libelProposal),
+        );
         if (existingCand) {
           // Self-heal : recale le sens d'un draft LOCAL dont le type ne colle
           // plus au candidat recalculé (cas des sous-lignes DSP2 créées en
