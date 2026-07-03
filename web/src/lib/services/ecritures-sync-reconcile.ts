@@ -47,6 +47,12 @@ export interface BalooRow {
    * scraper cassé) resterait définitivement sans imputation.
    */
   hasImputation: boolean;
+  /**
+   * Vrai si l'écriture est hors résultat (cat-flux-structures) : elle n'est
+   * jamais dans le journal /recettedepense, donc jamais « disparue du journal ».
+   * Exclue de la détection supprimee_cw.
+   */
+  horsResultat?: boolean;
 }
 
 export interface ReconcilePlan {
@@ -278,8 +284,8 @@ export function reconcile(
         cw,
         needsDetail: row.cwSignature !== cw.signature || !row.hasImputation,
       });
-    } else if (hasRange && row.comptawebEcritureId >= minId && row.comptawebEcritureId <= maxId) {
-      // Reliée, dans la plage couverte, absente → vraie suppression.
+    } else if (hasRange && !row.horsResultat && row.comptawebEcritureId >= minId && row.comptawebEcritureId <= maxId) {
+      // Reliée, dans la plage couverte, absente, ET pas hors-résultat → vraie suppression.
       plan.deletions.push(row.id);
     }
     // Sinon (hors plage) : intouchée.

@@ -44,6 +44,7 @@ import {
   type VentCandidate,
 } from './ecritures-sync-reconcile';
 import { upsertSuggestion } from './cw-link-suggestions';
+import { CATEGORIES_HORS_RESULTAT } from './overview';
 
 // ============================================================================
 // Types publics
@@ -283,6 +284,7 @@ async function loadBalooRows(db: DbWrapper, groupId: string): Promise<BalooRow[]
         dateEcriture: r.date_ecriture,
         cwSignature: r.cw_signature,
         hasImputation: r.activite_id != null || r.unite_id != null || r.category_id != null,
+        horsResultat: r.category_id != null && (CATEGORIES_HORS_RESULTAT as readonly string[]).includes(r.category_id),
       })),
     );
 }
