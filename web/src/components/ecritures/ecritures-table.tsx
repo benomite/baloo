@@ -513,6 +513,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                       isAdmin={isAdmin}
                       focusSection={openFocus ?? undefined}
                       onCollapse={() => setOpenId(null)}
+                      onValidate={(id) => { setOpenId(null); onValidate(id); }}
                       refreshRow={refreshRow}
                       categories={categories}
                       topCategoryIds={topCategoryIds}

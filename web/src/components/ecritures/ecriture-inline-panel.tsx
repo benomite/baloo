@@ -9,11 +9,11 @@ import { PanelReadonlySummary } from '@/components/ecritures/panel-readonly-summ
 import { PanelImputation } from '@/components/ecritures/panel-imputation';
 import { PanelRelance } from '@/components/ecritures/panel-relance';
 import { CwAssistActions, type CwAssistPayload } from '@/components/ecritures/cw-assist-actions';
-import { SyncDraftButton } from '@/components/ecritures/sync-draft-button';
 import { ResyncEcritureButton } from '@/components/ecritures/resync-ecriture-button';
 import { DeleteDraftButton } from '@/components/ecritures/delete-draft-button';
-import { PendingButton } from '@/components/shared/pending-button';
-import { updateEcriture, updateEcritureStatus, updateEcritureField, fetchEcritureDetail } from '@/lib/actions/ecritures';
+import { PanelValiderButton } from '@/components/ecritures/panel-valider-button';
+import { PanelMoreMenu } from '@/components/ecritures/panel-more-menu';
+import { updateEcriture, updateEcritureField, fetchEcritureDetail } from '@/lib/actions/ecritures';
 import { computeReadiness } from '@/lib/sync-readiness';
 import { panelViewModel } from '@/components/ecritures/panel-view-model';
 import { type EcritureJustifsBundle } from '@/lib/queries/justificatifs';
@@ -32,6 +32,7 @@ export function EcritureInlinePanel({
   ecritureId,
   onCollapse,
   refreshRow,
+  onValidate,
   isAdmin = false,
   focusSection,
   reloadSignal,
@@ -48,6 +49,9 @@ export function EcritureInlinePanel({
   ecritureId: string;
   onCollapse: () => void;
   refreshRow?: (id: string) => void | Promise<void>;
+  // Flux de validation optimiste du parent (verrou ligne + retrait au succès).
+  // Fourni quand le panneau est inline sous une ligne ; absent en autonome.
+  onValidate?: (id: string) => void;
   isAdmin?: boolean;
   focusSection?: 'justif';
   // En mode autonome (épinglé) : bump ce signal pour re-fetcher le détail
@@ -209,30 +213,24 @@ export function EcritureInlinePanel({
             </div>
           </details>
 
-          {/* Barre d'action collante */}
+          {/* Barre d'action collante : UN seul « Valider » (= crée dans
+              Comptaweb, comme la ligne). Le reste (prévisualiser, marquer
+              prêt/miroir, repasser brouillon) dans le menu ⋯. */}
           <div className="sticky bottom-0 -mx-3.5 -mb-3.5 mt-1 px-3.5 py-2.5 bg-bg-elevated/95 backdrop-blur border-t border-border-soft flex flex-wrap items-center gap-2">
-            {ecriture.status === 'draft' && (
-              <form action={updateEcritureStatus.bind(null, ecriture.id, 'pending_sync')}>
-                <PendingButton size="sm">Valider</PendingButton>
-              </form>
+            {!ecriture.comptaweb_ecriture_id && (
+              <PanelValiderButton
+                ecritureId={ecriture.id}
+                disabled={readiness.level === 'incomplete'}
+                missing={readiness.missingFields}
+                onValidate={onValidate}
+                onDone={onCollapse}
+              />
             )}
-            {ecriture.status === 'pending_sync' && !ecriture.comptaweb_ecriture_id && (
-              <form action={updateEcritureStatus.bind(null, ecriture.id, 'mirror')}>
-                <PendingButton variant="outline" size="sm">Marquer miroir CW</PendingButton>
-              </form>
-            )}
-            {!ecriture.comptaweb_ecriture_id && <SyncDraftButton ecritureId={ecriture.id} />}
             {ecriture.comptaweb_ecriture_id != null && <ResyncEcritureButton ecritureId={ecriture.id} />}
-            {ecriture.status !== 'draft' && !ecriture.comptaweb_ecriture_id && (
-              <form action={updateEcritureStatus.bind(null, ecriture.id, 'draft')} className="ml-auto">
-                <PendingButton variant="ghost" size="sm">Repasser brouillon</PendingButton>
-              </form>
-            )}
-            {ecriture.status === 'draft' && (
-              <div className="ml-auto">
-                <DeleteDraftButton ecritureId={ecriture.id} />
-              </div>
-            )}
+            <div className="ml-auto flex items-center gap-2">
+              <PanelMoreMenu ecriture={ecriture} onDone={() => void refreshRow?.(ecriture.id)} />
+              {ecriture.status === 'draft' && <DeleteDraftButton ecritureId={ecriture.id} />}
+            </div>
           </div>
         </div>
       )}
