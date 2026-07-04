@@ -11,6 +11,7 @@ import type { MatchDepot, MatchRemboursement } from '@/lib/services/ecriture-mat
 import { EcritureFilters } from '@/components/ecritures/ecriture-filters';
 import { ScanDraftsButton } from '@/components/ecritures/scan-drafts-button';
 import { FullResyncButton } from '@/components/ecritures/full-resync-button';
+import { SyncStatusButton } from '@/components/sync/sync-status-button';
 import { ArbitrageBanner } from '@/components/ecritures/arbitrage-banner';
 import { listSupprimeeCw, listAgregesRemplaces, listLinkSuggestions } from '@/lib/queries/sync-arbitrage';
 import { EcrituresInfiniteList } from '@/components/ecritures/ecritures-infinite-list';
@@ -121,6 +122,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
           </Link>
         }
       >
+        {canLink && <SyncStatusButton variant="inline" />}
         <FullResyncButton />
         <ScanDraftsButton />
         <Link href="/ecritures/nouveau"><Button>Nouvelle écriture</Button></Link>

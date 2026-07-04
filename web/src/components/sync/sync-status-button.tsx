@@ -31,10 +31,17 @@ function relativeFr(iso: string | null | undefined): string {
   return `il y a ${d} j`;
 }
 
-export function SyncStatusButton() {
+export function SyncStatusButton({
+  variant = 'sidebar',
+}: {
+  // 'sidebar' : bouton pleine largeur dans le footer, popover vers le haut.
+  // 'inline'  : chip compact (header page), popover vers le bas.
+  variant?: 'sidebar' | 'inline';
+} = {}) {
   const { status, state, runSync } = useSyncStatus();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const inline = variant === 'inline';
 
   const lastRun = status?.last_run ?? null;
   const lastFinishedAt = lastRun?.finished_at ?? null;
@@ -116,7 +123,11 @@ export function SyncStatusButton() {
         type="button"
         onClick={onClick}
         disabled={disabled}
-        className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-[12px] font-medium transition-colors ${
+        className={`${
+          inline
+            ? 'inline-flex px-2.5 py-2 rounded-md border border-border'
+            : 'w-full flex px-3 py-2 rounded-md'
+        } items-center gap-2 text-[12px] font-medium transition-colors ${
           disabled ? 'cursor-wait opacity-80' : 'hover:bg-fg/[0.05]'
         } ${extraClasses}`}
         title={
@@ -141,6 +152,7 @@ export function SyncStatusButton() {
           input={errorInput}
           whenIso={lastRun?.finished_at ?? lastRun?.started_at ?? null}
           rawMessage={lastRun?.error_message ?? null}
+          placement={inline ? 'down' : 'up'}
           onRetry={retry}
           onClose={() => setOpen(false)}
         />
@@ -153,21 +165,29 @@ function SyncErrorPopover({
   input,
   whenIso,
   rawMessage,
+  placement,
   onRetry,
   onClose,
 }: {
   input: SyncErrorInput;
   whenIso: string | null;
   rawMessage: string | null;
+  placement: 'up' | 'down';
   onRetry: () => void;
   onClose: () => void;
 }) {
   const info = describeSyncError(input);
+  // 'up'   : ancrée au bouton pleine largeur (sidebar footer) → s'ouvre vers le haut.
+  // 'down' : chip compact (header) → s'ouvre vers le bas, largeur fixe, alignée à droite.
+  const posClasses =
+    placement === 'up'
+      ? 'bottom-full left-0 right-0 mb-1.5'
+      : 'top-full right-0 mt-1.5 w-72';
   return (
     <div
       role="dialog"
       aria-label="Détail de la synchronisation"
-      className="absolute bottom-full left-0 right-0 mb-1.5 z-50 rounded-lg border border-border bg-surface shadow-lg p-3 text-[12px]"
+      className={`absolute ${posClasses} z-50 rounded-lg border border-border bg-surface shadow-lg p-3 text-[12px]`}
     >
       <div className="flex items-start gap-2">
         <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-warning" aria-hidden="true" />
