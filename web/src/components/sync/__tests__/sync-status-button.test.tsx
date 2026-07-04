@@ -186,7 +186,7 @@ describe('<SyncStatusButton>', () => {
     });
   });
 
-  it('affiche "Échec sync — réessayer" quand last_run.status=failed', async () => {
+  it('affiche "Échec sync" quand last_run.status=failed', async () => {
     setFetchSequence([
       {
         status: 200,
@@ -200,5 +200,51 @@ describe('<SyncStatusButton>', () => {
     await waitFor(() => {
       expect(screen.getByText(/Échec sync/)).toBeTruthy();
     });
+  });
+
+  it('affiche "Sync interrompue" quand un run est resté bloqué (running + is_running=false)', async () => {
+    setFetchSequence([
+      {
+        status: 200,
+        body: statusBody({
+          stale: false,
+          is_running: false,
+          finished_at: new Date().toISOString(),
+          status: 'running',
+        }),
+      },
+    ]);
+
+    render(<SyncStatusButton />);
+    await waitFor(() => {
+      expect(screen.getByText(/interrompue/i)).toBeTruthy();
+    });
+  });
+
+  it('clic sur un échec ouvre la popover de diagnostic sans relancer la sync', async () => {
+    setFetchSequence([
+      // stale=false → pas d'auto-run au mount, on isole le comportement du clic.
+      {
+        status: 200,
+        body: statusBody({ stale: false, is_running: false, finished_at: new Date().toISOString(), status: 'failed' }),
+      },
+    ]);
+
+    render(<SyncStatusButton />);
+    await waitFor(() => expect(screen.getByText(/Échec sync/)).toBeTruthy());
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Échec sync/ }));
+    });
+
+    // La popover (role dialog) apparaît avec le bouton Réessayer…
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      expect(screen.getByRole('button', { name: /Réessayer/ })).toBeTruthy();
+    });
+    // …et aucun POST /api/sync/run n'a été déclenché par le clic.
+    const fetchMock = vi.mocked(global.fetch);
+    const runCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/sync/run'));
+    expect(runCalls.length).toBe(0);
   });
 });
