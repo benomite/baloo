@@ -8,6 +8,7 @@ import {
   rejectDepot as rejectDepotService,
   attachDepotToEcriture as attachDepotToEcritureService,
   attachDepotToRemboursement as attachDepotToRemboursementService,
+  shareDepotToEcriture as shareDepotToEcritureService,
 } from '../services/depots';
 import { parseAmount } from '../format';
 import { validateJustifAttachment, JustificatifValidationError } from '../services/justificatifs';
@@ -202,6 +203,28 @@ export async function attachDepotFromEcriture(formData: FormData): Promise<void>
   redirect(`/ecritures/${ecritureId}`);
 }
 
+// Partage (paiement scindé) : rattache le justif d'un dépôt DÉJÀ assigné à une
+// 2ᵉ écriture. Même forme que attachDepotFromEcriture (form + redirect détail),
+// mais appelle shareDepotToEcriture (additif, ne touche pas le dépôt).
+export async function shareDepotFromEcriture(formData: FormData): Promise<void> {
+  const ctx = await getCurrentContext();
+  if (!isAdminRole(ctx.role)) {
+    redirect('/ecritures?error=' + encodeURIComponent('Action réservée aux trésoriers / RG.'));
+  }
+  const depotId = formData.get('depot_id') as string | null;
+  const ecritureId = formData.get('ecriture_id') as string | null;
+  if (!depotId || !ecritureId) {
+    redirect('/ecritures?error=' + encodeURIComponent('Dépôt et écriture requis.'));
+  }
+  try {
+    await shareDepotToEcritureService({ groupId: ctx.groupId }, depotId, ecritureId);
+  } catch (err) {
+    redirect(`/ecritures/${ecritureId}?error=` + encodeURIComponent(err instanceof Error ? err.message : String(err)));
+  }
+  revalidatePath(`/ecritures/${ecritureId}`);
+  redirect(`/ecritures/${ecritureId}`);
+}
+
 // Variantes « en place » de la liaison depuis la bannière de correspondance :
 // renvoient un résultat au lieu de rediriger, pour rester dans la vue liste.
 export async function linkDepotToEcriture(
@@ -218,6 +241,23 @@ export async function linkDepotToEcriture(
   revalidatePath('/ecritures');
   revalidatePath('/depots');
   return { ok: true };
+}
+
+// Partage le justif d'un dépôt DÉJÀ rattaché vers une 2ᵉ écriture (paiement
+// scindé). Additif : n'altère ni le dépôt ni son écriture principale.
+export async function shareExistingDepotToEcriture(
+  depotId: string,
+  ecritureId: string,
+): Promise<{ ok: boolean; copied?: number; error?: string }> {
+  const ctx = await getCurrentContext();
+  if (!isAdminRole(ctx.role)) return { ok: false, error: 'Action réservée aux trésoriers / RG.' };
+  try {
+    const { copied } = await shareDepotToEcritureService({ groupId: ctx.groupId }, depotId, ecritureId);
+    revalidatePath('/ecritures');
+    return { ok: true, copied };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 export async function linkRembToEcriture(

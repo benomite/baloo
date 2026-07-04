@@ -6,9 +6,9 @@ import { Alert } from '@/components/ui/alert';
 import { NativeSelect } from '@/components/ui/native-select';
 import { PendingButton } from '@/components/shared/pending-button';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
-import { attachDepotFromEcriture } from '@/lib/actions/depots';
+import { attachDepotFromEcriture, shareDepotFromEcriture } from '@/lib/actions/depots';
 import { type EcritureJustifsBundle } from '@/lib/queries/justificatifs';
-import { type DepotEnriched } from '@/lib/services/depots';
+import { type DepotEnriched, type DepotForSharing } from '@/lib/services/depots';
 import { formatAmount } from '@/lib/format';
 
 // Bloc justificatifs d'une écriture : liste des fichiers rattachés
@@ -23,6 +23,7 @@ export function JustificatifsCard({
   numeroPiece,
   type,
   pendingDepots,
+  shareableDepots = [],
   ecritureAmountCents,
   ecritureDate,
 }: {
@@ -32,6 +33,8 @@ export function JustificatifsCard({
   numeroPiece: string | null;
   type: 'depense' | 'recette';
   pendingDepots: DepotEnriched[];
+  // Dépôts DÉJÀ rattachés ailleurs, proposables au partage (paiement scindé).
+  shareableDepots?: DepotForSharing[];
   ecritureAmountCents: number;
   ecritureDate: string;
 }) {
@@ -195,8 +198,44 @@ export function JustificatifsCard({
           </div>
         </form>
       )}
+
+      {/* Paiement scindé en 2 (souci carte) : réutiliser un justif d'un dépôt
+          DÉJÀ rattaché à une autre écriture. Copie le fichier sur cette
+          écriture sans toucher le dépôt d'origine. */}
+      {shareableDepots.length > 0 && (
+        <form action={shareDepotFromEcriture} className="pt-2 border-t border-border-soft">
+          <input type="hidden" name="ecriture_id" value={entityId} />
+          <Field label="Réutiliser un justif déjà déposé (paiement scindé)" htmlFor={`share-${entityId}`}>
+            <NativeSelect id={`share-${entityId}`} name="depot_id" required defaultValue="">
+              <option value="" disabled>
+                — Choisir un dépôt déjà rattaché —
+              </option>
+              {shareableDepots.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {shareableDepotLabel(d)}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <div className="flex justify-end mt-3">
+            <PendingButton variant="outline" size="sm">
+              Réutiliser ce justif
+            </PendingButton>
+          </div>
+        </form>
+      )}
     </Section>
   );
+}
+
+function shareableDepotLabel(d: DepotForSharing): string {
+  const titre = d.titre.length > 36 ? d.titre.slice(0, 36) + '…' : d.titre;
+  const montant = d.amount_cents !== null ? formatAmount(d.amount_cents) : '—';
+  const date = d.date_estimee ?? '?';
+  const origine = d.ecriture_description
+    ? ` → ${d.ecriture_description.length > 24 ? d.ecriture_description.slice(0, 24) + '…' : d.ecriture_description}`
+    : '';
+  return `${date} · ${montant} · ${titre}${origine}`;
 }
 
 function JustifLink({ filePath, filename }: { filePath: string; filename: string }) {

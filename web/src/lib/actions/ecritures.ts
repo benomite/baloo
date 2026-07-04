@@ -18,7 +18,7 @@ import { getDb } from '../db';
 import { resyncEcritureDetail } from '../services/sync-cycle';
 import { listEcritures, getEcriture, type EcritureFilters } from '../queries/ecritures';
 import { listJustificatifsForEcriture, type EcritureJustifsBundle } from '../queries/justificatifs';
-import { listDepots, type DepotEnriched } from '../services/depots';
+import { listDepots, listRattacheDepotsForSharing, type DepotEnriched, type DepotForSharing } from '../services/depots';
 
 /**
  * Pagination des écritures (chargement progressif côté client). Renvoie la
@@ -165,15 +165,19 @@ export async function fetchEcritureDetail(id: string): Promise<{
   ecriture: Ecriture;
   justifsBundle: EcritureJustifsBundle;
   pendingDepots: DepotEnriched[];
+  // Dépôts DÉJÀ rattachés ailleurs, proposables au partage (paiement scindé).
+  // Uniquement pour les dépenses (une recette n'attend pas de justif).
+  shareableDepots: DepotForSharing[];
 } | null> {
   const { groupId } = await getCurrentContext();
   const ecriture = await getEcriture(id);
   if (!ecriture) return null;
-  const [justifsBundle, pendingDepots] = await Promise.all([
+  const [justifsBundle, pendingDepots, shareableDepots] = await Promise.all([
     listJustificatifsForEcriture(id),
     listDepots({ groupId }, { statut: 'a_traiter' }),
+    ecriture.type === 'depense' ? listRattacheDepotsForSharing({ groupId }) : Promise.resolve([]),
   ]);
-  return { ecriture, justifsBundle, pendingDepots };
+  return { ecriture, justifsBundle, pendingDepots, shareableDepots };
 }
 
 // Recharge UNE écriture avec ses champs d'affichage (unité/catégorie joints,

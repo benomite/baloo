@@ -14,7 +14,7 @@ import { getEcriture } from '@/lib/queries/ecritures';
 import { listJustificatifsForEcriture } from '@/lib/queries/justificatifs';
 import { listCategories, listUnites, listModesPaiement, listActivites, listCartes, getTopCategoryIds } from '@/lib/queries/reference';
 import { updateEcriture, updateEcritureStatus } from '@/lib/actions/ecritures';
-import { listDepots } from '@/lib/services/depots';
+import { listDepots, listRattacheDepotsForSharing } from '@/lib/services/depots';
 import { computeReadiness } from '@/lib/sync-readiness';
 import { sendRelance } from '@/lib/actions/relances';
 import { SyncDraftButton } from '@/components/ecritures/sync-draft-button';
@@ -71,6 +71,9 @@ export default async function EcritureDetailPage({
     { statut: 'a_traiter' },
   );
   if (!ecriture) notFound();
+  // Dépôts déjà rattachés, proposables au partage (paiement scindé) — dépenses seulement.
+  const shareableDepots =
+    ecriture.type === 'depense' ? await listRattacheDepotsForSharing({ groupId: ctx.groupId }) : [];
   const isAdmin = ADMIN_ROLES.includes(ctx.role);
   const totalJustifs =
     justifsBundle.direct.length +
@@ -227,6 +230,7 @@ export default async function EcritureDetailPage({
             numeroPiece={ecriture.numero_piece}
             type={ecriture.type}
             pendingDepots={pendingDepots}
+            shareableDepots={shareableDepots}
             ecritureAmountCents={ecriture.amount_cents}
             ecritureDate={ecriture.date_ecriture}
           />

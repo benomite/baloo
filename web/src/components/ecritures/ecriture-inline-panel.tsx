@@ -14,7 +14,7 @@ import { Alert } from '@/components/ui/alert';
 import { updateEcriture, updateEcritureStatus, fetchEcritureDetail } from '@/lib/actions/ecritures';
 import { computeReadiness } from '@/lib/sync-readiness';
 import { type EcritureJustifsBundle } from '@/lib/queries/justificatifs';
-import { type DepotEnriched } from '@/lib/services/depots';
+import { type DepotEnriched, type DepotForSharing } from '@/lib/services/depots';
 import type {
   Ecriture,
   Category,
@@ -24,7 +24,7 @@ import type {
   Carte,
 } from '@/lib/types';
 
-type Detail = { ecriture: Ecriture; justifsBundle: EcritureJustifsBundle; pendingDepots: DepotEnriched[] };
+type Detail = { ecriture: Ecriture; justifsBundle: EcritureJustifsBundle; pendingDepots: DepotEnriched[]; shareableDepots: DepotForSharing[] };
 
 export function EcritureInlinePanel({
   ecriture: rowEcriture,
@@ -69,7 +69,7 @@ export function EcritureInlinePanel({
   // qu'aux justifs/dépôts (null tant que le fetch n'a pas répondu → spinner).
   const ecriture = rowEcriture;
   const bundle = detail
-    ? { justifsBundle: detail.justifsBundle, pendingDepots: detail.pendingDepots }
+    ? { justifsBundle: detail.justifsBundle, pendingDepots: detail.pendingDepots, shareableDepots: detail.shareableDepots }
     : null;
 
   // Sauvegarde du formulaire puis rafraîchissement de la ligne (les champs
@@ -189,6 +189,7 @@ export function EcritureInlinePanel({
             numeroPiece={ecriture.numero_piece}
             type={ecriture.type}
             pendingDepots={bundle.pendingDepots}
+            shareableDepots={bundle.shareableDepots}
             ecritureAmountCents={ecriture.amount_cents}
             ecritureDate={ecriture.date_ecriture}
           />

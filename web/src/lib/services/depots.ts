@@ -208,6 +208,45 @@ export async function listDepots(
     .all<DepotEnriched>(...values);
 }
 
+export interface DepotForSharing {
+  id: string;
+  titre: string;
+  amount_cents: number | null;
+  date_estimee: string | null;
+  ecriture_id: string | null;
+  ecriture_description: string | null; // écriture principale (A)
+  justif_paths: string | null; // chemins des fichiers, séparés par char(10)
+  justif_count: number;
+}
+
+// Dépôts DÉJÀ rattachés (statut='rattache') qui portent au moins un fichier,
+// pour le sélecteur « rattacher un justif déjà déposé à cette écriture »
+// (paiement scindé). Les fichiers sont retrouvés par le préfixe de chemin
+// `depot/<id>/…` (figé), pas par l'entité justificatifs (re-pointée vers
+// l'écriture A au 1er rattachement). Cf. shareDepotToEcriture.
+export async function listRattacheDepotsForSharing(
+  { groupId }: { groupId: string },
+): Promise<DepotForSharing[]> {
+  await ensureDepotsSchema();
+  return await getDb()
+    .prepare(
+      `SELECT d.id AS id, d.titre AS titre, d.amount_cents AS amount_cents,
+              d.date_estimee AS date_estimee, d.ecriture_id AS ecriture_id,
+              ea.description AS ecriture_description,
+              (SELECT group_concat(file_path, char(10)) FROM justificatifs
+                 WHERE group_id = d.group_id AND file_path LIKE 'depot/' || d.id || '/%') AS justif_paths,
+              (SELECT COUNT(*) FROM justificatifs
+                 WHERE group_id = d.group_id AND file_path LIKE 'depot/' || d.id || '/%') AS justif_count
+       FROM depots_justificatifs d
+       LEFT JOIN ecritures ea ON ea.id = d.ecriture_id
+       WHERE d.group_id = ? AND d.statut = 'rattache'
+         AND EXISTS(SELECT 1 FROM justificatifs
+                      WHERE group_id = d.group_id AND file_path LIKE 'depot/' || d.id || '/%')
+       ORDER BY d.created_at DESC`,
+    )
+    .all<DepotForSharing>(groupId);
+}
+
 export async function getDepot(
   { groupId }: { groupId: string },
   id: string,
@@ -342,6 +381,105 @@ export async function attachDepotToEcriture(
   ).run(depot.titre, currentTimestamp(), ecritureId, groupId);
 
   return (await db.prepare('SELECT * FROM depots_justificatifs WHERE id = ?').get<Depot>(depotId))!;
+}
+
+// Partage le justificatif d'un dépôt DÉJÀ rattaché vers une 2ᵉ écriture
+// (paiement scindé en 2 : 1 justif = 2 écritures). Additif et non destructif :
+// le dépôt et son écriture principale (A) ne bougent pas, on ne fait qu'AJOUTER
+// des lignes `justificatifs` sur l'écriture cible (B) pointant le MÊME blob.
+//
+// Clé : le blob n'est jamais déplacé — son `file_path` reste « depot/<id>/… »
+// même après que le 1er rattachement a re-pointé la ligne vers l'écriture A.
+// On retrouve donc les fichiers du dépôt par `file_path`, puis on crée une
+// nouvelle ligne vers le même blob (aucun ré-upload, aucune duplication de
+// stockage). Demande terrain 2026-07-04.
+export async function shareDepotToEcriture(
+  { groupId }: { groupId: string },
+  depotId: string,
+  ecritureId: string,
+): Promise<{ copied: number }> {
+  await ensureDepotsSchema();
+  const db = getDb();
+
+  const depot = await db
+    .prepare(
+      `SELECT titre, category_id, unite_id, carte_id, activite_id
+       FROM depots_justificatifs WHERE id = ? AND group_id = ?`,
+    )
+    .get<{
+      titre: string;
+      category_id: string | null;
+      unite_id: string | null;
+      carte_id: string | null;
+      activite_id: string | null;
+    }>(depotId, groupId);
+  if (!depot) throw new Error(`Dépôt ${depotId} introuvable.`);
+
+  const ecriture = await db
+    .prepare('SELECT id, status FROM ecritures WHERE id = ? AND group_id = ?')
+    .get<{ id: string; status: string }>(ecritureId, groupId);
+  if (!ecriture) throw new Error(`Écriture ${ecritureId} introuvable dans ce groupe.`);
+
+  // Fichiers du dépôt, identifiés par le préfixe de chemin du blob (figé à la
+  // création), indépendamment de l'entité vers laquelle la ligne pointe
+  // aujourd'hui (le 1er rattachement a re-pointé vers l'écriture A).
+  const pathPrefix = `depot/${depotId}/%`;
+  const sources = await db
+    .prepare(
+      `SELECT file_path, original_filename, mime_type
+       FROM justificatifs WHERE group_id = ? AND file_path LIKE ?`,
+    )
+    .all<{ file_path: string; original_filename: string; mime_type: string | null }>(groupId, pathPrefix);
+  if (sources.length === 0) {
+    throw new Error(`Le dépôt ${depotId} n'a aucun justificatif à partager.`);
+  }
+
+  // Copie chaque fichier absent de l'écriture cible (idempotence : pas deux
+  // fois la même pièce si on reclique).
+  let copied = 0;
+  for (const f of sources) {
+    const already = await db
+      .prepare(
+        `SELECT 1 FROM justificatifs
+         WHERE group_id = ? AND entity_type = 'ecriture' AND entity_id = ? AND file_path = ?`,
+      )
+      .get<{ 1: number }>(groupId, ecritureId, f.file_path);
+    if (already) continue;
+    const id = await nextId('JUS');
+    await db
+      .prepare(
+        `INSERT INTO justificatifs (id, group_id, file_path, original_filename, mime_type, entity_type, entity_id, uploaded_at)
+         VALUES (?, ?, ?, ?, ?, 'ecriture', ?, ?)`,
+      )
+      .run(id, groupId, f.file_path, f.original_filename, f.mime_type, ecritureId, currentTimestamp());
+    copied++;
+  }
+
+  // Héritage imputation + titre sur l'écriture cible, uniquement si draft, à
+  // l'identique de `attachDepotToEcriture` (COALESCE → jamais d'écrasement ;
+  // titre seulement si l'écriture porte encore le libellé bancaire brut).
+  if (ecriture.status === 'draft') {
+    await db
+      .prepare(
+        `UPDATE ecritures SET
+           category_id = COALESCE(category_id, ?),
+           unite_id    = COALESCE(unite_id, ?),
+           carte_id    = COALESCE(carte_id, ?),
+           activite_id = COALESCE(activite_id, ?),
+           updated_at  = ?
+         WHERE id = ? AND group_id = ? AND status = 'draft'`,
+      )
+      .run(depot.category_id, depot.unite_id, depot.carte_id, depot.activite_id, currentTimestamp(), ecritureId, groupId);
+    await db
+      .prepare(
+        `UPDATE ecritures SET description = ?, updated_at = ?
+          WHERE id = ? AND group_id = ? AND status = 'draft'
+            AND libelle_origine IS NOT NULL AND description = libelle_origine`,
+      )
+      .run(depot.titre, currentTimestamp(), ecritureId, groupId);
+  }
+
+  return { copied };
 }
 
 // Liste les écritures candidates pour un rattachement. Une écriture qui a
