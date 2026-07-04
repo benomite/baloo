@@ -1,7 +1,7 @@
 # Refonte du panneau de détail d'une écriture (+ suppression de la page détail)
 
 **Date** : 2026-07-04
-**Statut** : design proposé — en attente de relecture (3 défauts retenus à confirmer, cf. §Décisions)
+**Statut** : design validé (2026-07-04) — direction + 3 défauts confirmés + insight « ligne = poste de travail, panneau = justif d'abord »
 
 ## Problème
 
@@ -24,6 +24,17 @@ Le panneau qui s'ouvre au clic sur une écriture dans la liste (`ecriture-inline
 - Pas de refonte du modèle de données ni du cycle de sync CW.
 - Pas de refonte du wizard de création (`/ecritures/nouveau`) — hors périmètre.
 - Pas d'autosave (on garde une sauvegarde explicite ; cf. §Comportements).
+
+## Insight terrain décisif (2026-07-04)
+
+L'utilisateur **n'ouvre presque jamais le panneau** : il fait tout depuis la **ligne repliée**, dont les raccourcis inline sont excellents. La ligne (`ecritures-table.tsx`) porte déjà : titre éditable (nudge « titre parlant »), **unité / catégorie / activité** en chips `InlineSelect` (ambre si manquant), présence justif, **bouton Valider** (désactivé si incomplet), bannière « Lier » (dépôt/remb) et édition par lot.
+
+Conséquence pour la refonte : **la ligne est le poste de travail ; le panneau est l'exception, centré sur le JUSTIF.** Ce qui pousse à ouvrir le panneau, ce n'est pas l'imputation (faite sur la ligne) mais : gérer le justif (voir/télécharger/ajouter/réutiliser un dépôt/relancer), et plus rarement mode/carte, notes, réparer un statut. Cela réordonne le panneau : **justif d'abord**, imputation reléguée à un rappel, tout le reste derrière `⋯`.
+
+Pistes complémentaires retenues :
+- **Ouverture ciblée (open-to-section)** : cliquer sur la puce « sans justif » de la ligne ouvre le panneau **directement sur le bloc justif**.
+- **Chips partagés** : les rares champs du panneau (mode, carte, rappel unité/cat/activité) réutilisent les **mêmes `InlineSelect`** que la ligne — pas un formulaire `<select>` étranger.
+- **Hors périmètre (2ᵉ temps)** : raccourcis clavier (naviguer/renommer/valider) pour l'usage « au clavier ».
 
 ## Architecture
 
@@ -58,12 +69,11 @@ Aujourd'hui uniquement dans `/ecritures/[id]` :
 - La **puce d'état** remplace la grosse `ReadinessBanner` : `● Brouillon` / `🔒 Synchro CW` / `⚠ À compléter`. Détail readiness (liste des manques) en hint compact sous l'imputation, pas en boîte.
 - `⋯` = menu des actions secondaires (voir §Menu).
 
-### Brouillon issu de la banque (cas courant) — le travail d'abord
-Ordre : **Imputation → Justif → barre d'action**. L'identité (date/type/montant/n° pièce) est **donnée par la banque** → démotée derrière ‹ Détails › (menu `⋯` ou expander). La **description** reste éditable en header (titre parlant).
+### Brouillon issu de la banque (cas courant) — le JUSTIF d'abord
+L'imputation (unité/catégorie/activité) se fait sur la **ligne** ; le panneau s'ouvre donc **sur le justif**. Ordre : **Justif → (rappel imputation compact) → barre d'action**. L'identité (date/type/montant/n° pièce) est donnée par la banque → derrière `⋯`. La **description** reste éditable en header (titre parlant).
 
-- **Imputation** (défaut retenu : **2 colonnes responsive**) : Unité | Catégorie, Activité | Mode, Carte | case « justif attendu » (version compacte, sans les 3 lignes d'aide — un `title`/tooltip suffit).
-- **Justif** compact : liste fichiers + `[+ fichier]` `[Réutiliser]` (+ `[Rattacher dépôt]` si dépôts a_traiter) ; bloc relance repliable si manquant (admin).
-- Hint incomplet : une ligne `⚠ manque : unité, catégorie` (pas une boîte).
+- **Justif** (bloc principal, en premier) : liste des fichiers (voir/télécharger) + `[+ fichier]` `[Réutiliser un justif]` (+ `[Rattacher dépôt]` si dépôts a_traiter) ; bloc **relance** repliable si manquant (admin). Si ouvert via la puce « sans justif », focus direct ici (open-to-section).
+- **Rappel imputation** (compact, secondaire) : les mêmes **chips `InlineSelect`** que la ligne pour unité/catégorie/activité (édition cohérente) **+** mode / carte (absents de la ligne) **+** case « justif attendu » compacte (aide en `title`). 2 colonnes responsive. Une ligne `⚠ manque : unité, catégorie` si incomplet (pas une boîte).
 
 ### Brouillon saisi à la main (pas d'origine banque)
 L'identité **redevient prioritaire** (montant/date/type = le travail) : Identité en 2 colonnes en haut, puis Imputation. Même compacité.
@@ -107,10 +117,11 @@ Regroupe : Éditer l'identité (draft) · Notes · Copier pour CW · Repasser br
 - Verrouillage inchangé : champs sync en lecture seule si `mirror`/`divergent`.
 - Suppression draft : garde-fous serveur inchangés.
 
-## Décisions (défauts retenus, à confirmer)
-1. **Page détail** → *redirection* vers `/ecritures?open=<id>` (vs full-page du panneau / suppression dure).
-2. **Divulgation** → *agressive* (identité banque + notes + secondaire repliés par défaut).
-3. **Imputation** → *2 colonnes responsive*.
+## Décisions (validées 2026-07-04)
+1. **Page détail** → *redirection* vers `/ecritures?open=<id>`.
+2. **Divulgation** → *agressive* (identité banque + notes + secondaire repliés).
+3. **Imputation panneau** → *2 colonnes responsive*, en chips `InlineSelect` partagés avec la ligne.
+4. **Panneau justif-first** : le justif est le bloc principal ; l'imputation est un rappel (faite sur la ligne). Open-to-section depuis la puce « sans justif ».
 
 ## Tests
 - `computeReadiness` / mapping des manques : inchangé (réutilisé), couvert.
