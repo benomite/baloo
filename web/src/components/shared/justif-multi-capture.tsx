@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, UploadCloud } from 'lucide-react';
 import { JustifCapture } from './justif-capture';
+import { acceptJustifFiles } from './justif-accept';
 
 // JustifMultiCapture : permet de joindre PLUSIEURS pièces à un même
 // dépôt, chacune passant par le workflow riche de `JustifCapture`
@@ -38,7 +39,12 @@ export function JustifMultiCapture({
   const [committed, setCommitted] = useState<CommittedFile[]>([]);
   const [draft, setDraft] = useState<File | null>(null);
   const [captureKey, setCaptureKey] = useState(0);
+  const [dragActive, setDragActive] = useState(false);
   const realInputRef = useRef<HTMLInputElement>(null);
+  // Compteur d'entrée/sortie de drag : les événements dragenter/dragleave
+  // se déclenchent aussi sur les enfants ; on ne repasse « inactif » que
+  // lorsque le curseur a vraiment quitté le bloc (compteur revenu à 0).
+  const dragDepth = useRef(0);
 
   const allFiles = useMemo(
     () => [...committed.map((c) => c.file), ...(draft ? [draft] : [])],
@@ -78,14 +84,48 @@ export function JustifMultiCapture({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const pushCommitted = useCallback((f: File) => {
+    // Aperçu seulement pour les images réellement affichables par le
+    // navigateur (type image/* connu). Un type MIME vide → pas d'aperçu,
+    // vignette badge (cf. rendu ci-dessous).
+    const previewUrl = f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined;
+    setCommitted((prev) => [...prev, { id: ++_seq, file: f, previewUrl }]);
+  }, []);
+
   const addAnother = () => {
     if (!draft) return;
-    const previewUrl = draft.type.startsWith('image/')
-      ? URL.createObjectURL(draft)
-      : undefined;
-    setCommitted((prev) => [...prev, { id: ++_seq, file: draft, previewUrl }]);
+    pushCommitted(draft);
     setDraft(null);
     setCaptureKey((k) => k + 1); // remonte une capture vierge
+  };
+
+  // Fichiers déposés (drag & drop) : ajoutés directement comme pièces,
+  // sans passer par le pipeline caméra (recadrage/filtres) — un fichier
+  // glissé est déjà finalisé.
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragActive(false);
+    const dropped = acceptJustifFiles(Array.from(e.dataTransfer.files));
+    for (const f of dropped) pushCommitted(f);
+  };
+
+  const onDragEnter = (e: React.DragEvent) => {
+    if (!Array.from(e.dataTransfer.types).includes('Files')) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setDragActive(true);
+  };
+
+  const onDragOver = (e: React.DragEvent) => {
+    if (!Array.from(e.dataTransfer.types).includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const onDragLeave = () => {
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragActive(false);
   };
 
   const removeCommitted = (id: number) => {
@@ -97,7 +137,22 @@ export function JustifMultiCapture({
   };
 
   return (
-    <div className="space-y-3">
+    <div
+      className={`relative space-y-3 rounded-lg transition-colors ${
+        dragActive ? 'ring-2 ring-brand ring-offset-2 ring-offset-bg' : ''
+      }`}
+      onDrop={onDrop}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+    >
+      {dragActive && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-brand bg-brand-50/70 text-brand backdrop-blur-[1px]">
+          <UploadCloud size={22} strokeWidth={2} />
+          <span className="text-[13px] font-semibold">Déposer les fichiers ici</span>
+          <span className="text-[11.5px] font-medium text-brand/80">Photo, PDF ou scan</span>
+        </div>
+      )}
       <input
         ref={realInputRef}
         type="file"
@@ -127,7 +182,9 @@ export function JustifMultiCapture({
               ) : (
                 <div className="flex h-24 w-full flex-col items-center justify-center gap-1 text-fg-muted">
                   <span className="font-mono text-[10px] uppercase tracking-wide rounded px-2 py-0.5 bg-brand-50 text-brand">
-                    PDF
+                    {c.file.name.includes('.')
+                      ? c.file.name.slice(c.file.name.lastIndexOf('.') + 1).toUpperCase()
+                      : 'FICHIER'}
                   </span>
                   <span className="max-w-full truncate px-2 text-[11px]">{c.file.name}</span>
                 </div>
