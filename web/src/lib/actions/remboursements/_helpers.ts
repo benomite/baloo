@@ -55,16 +55,19 @@ export async function deriveAppUrl(): Promise<string> {
   return host ? `${proto}://${host}` : 'https://localhost';
 }
 
-// Emails des admins (trésorier/RG) ACTIFS du groupe donné. Le filtre
-// `group_id = ?` garantit l'isolation multi-tenant : on ne notifie jamais
-// les admins d'un autre groupe. `db` injectable pour les tests.
-export async function listAdminEmails(
+// Emails des TRÉSORIERS actifs du groupe donné — destinataires des
+// notifications « générales » (nouveau dépôt de justif, nouveau
+// remboursement). Les RG ne sont volontairement PAS notifiés de ces
+// événements courants (choix produit 2026-07-04) ; ils gardent leur accès
+// admin (cf. ADMIN_ROLES, non lié à ces notifs). Le filtre `group_id = ?`
+// garantit l'isolation multi-tenant. `db` injectable pour les tests.
+export async function listTresorierEmails(
   groupId: string,
   db: Pick<ReturnType<typeof getDb>, 'prepare'> = getDb(),
 ): Promise<string[]> {
   const rows = await db
     .prepare(
-      "SELECT email FROM users WHERE group_id = ? AND statut = 'actif' AND role IN ('tresorier', 'RG')",
+      "SELECT email FROM users WHERE group_id = ? AND statut = 'actif' AND role = 'tresorier'",
     )
     .all<{ email: string }>(groupId);
   return rows.map((r) => r.email);

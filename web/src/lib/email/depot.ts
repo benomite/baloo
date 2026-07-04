@@ -1,13 +1,13 @@
 import { sendMail } from './transport';
 import { formatAmount } from '../format';
 
-// Notification « nouveau dépôt de justificatif » aux trésoriers / RG du
-// GROUPE concerné (multi-tenant : la liste des destinataires est résolue
-// par group_id en amont, cf. listAdminEmails). Symétrique de la notif de
+// Notification « nouveau dépôt de justificatif » aux TRÉSORIERS du GROUPE
+// concerné (multi-tenant : la liste des destinataires est résolue par
+// group_id en amont, cf. listTresorierEmails). Symétrique de la notif de
 // création de remboursement.
 
 interface DepotCreatedParams {
-  to: string[]; // emails des admins (trésorier/RG) du groupe concerné
+  to: string[]; // emails des trésoriers du groupe concerné
   depotId: string;
   titre: string;
   deposeur: string;

@@ -13,7 +13,7 @@ import { parseAmount } from '../format';
 import { validateJustifAttachment, JustificatifValidationError } from '../services/justificatifs';
 import { setRembsEcritureLink } from '@/lib/services/remboursement-ecriture-link';
 import { rejectSuggestion } from '@/lib/services/inbox-rejets';
-import { listAdminEmails, deriveAppUrl } from '@/lib/actions/remboursements/_helpers';
+import { listTresorierEmails, deriveAppUrl } from '@/lib/actions/remboursements/_helpers';
 import { sendDepotCreatedEmail } from '@/lib/email/depot';
 import { logError } from '@/lib/log';
 
@@ -95,14 +95,14 @@ export async function createDepot(formData: FormData): Promise<void> {
     redirect('/depot?error=' + encodeURIComponent(err instanceof Error ? err.message : String(err)));
   }
 
-  // Notifie les trésoriers / RG DU GROUPE concerné (multi-tenant : la
-  // liste est scopée par group_id). On exclut le déposeur lui-même.
-  // Fire-and-forget : un échec mail ne doit pas casser le dépôt.
+  // Notifie les TRÉSORIERS DU GROUPE concerné (multi-tenant : la liste est
+  // scopée par group_id ; les RG ne reçoivent plus ces notifs). On exclut le
+  // déposeur lui-même. Fire-and-forget : un échec mail ne doit pas casser le dépôt.
   try {
-    const admins = (await listAdminEmails(ctx.groupId)).filter((e) => e !== ctx.email);
-    if (admins.length > 0) {
+    const destinataires = (await listTresorierEmails(ctx.groupId)).filter((e) => e !== ctx.email);
+    if (destinataires.length > 0) {
       await sendDepotCreatedEmail({
-        to: admins,
+        to: destinataires,
         depotId,
         titre,
         deposeur: ctx.name ?? ctx.email,

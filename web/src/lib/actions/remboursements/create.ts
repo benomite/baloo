@@ -18,7 +18,7 @@ import {
   captureClientMeta,
   deriveAppUrl,
   FormValidationError,
-  listAdminEmails,
+  listTresorierEmails,
   parseIdentiteFromForm,
   parseLignesFromForm,
   resolveLignesWithRate,
@@ -163,11 +163,11 @@ async function createRemboursementFromForm(
     logError('remboursements', 'Signature + génération PDF feuille échouée', err);
   }
 
-  const admins = (await listAdminEmails(ctx.groupId)).filter((e) => e !== ctx.email);
-  if (admins.length > 0 && options.submittedByUserId === ctx.userId && !ADMIN_ROLES.includes(ctx.role)) {
+  const destinataires = (await listTresorierEmails(ctx.groupId)).filter((e) => e !== ctx.email);
+  if (destinataires.length > 0 && options.submittedByUserId === ctx.userId && !ADMIN_ROLES.includes(ctx.role)) {
     try {
       await sendRemboursementCreatedEmail({
-        to: admins,
+        to: destinataires,
         rbtId: created.id,
         demandeur: fullName,
         natureDescription: lignes.length === 1 ? lignes[0].nature : `${lignes.length} lignes de dépense`,
