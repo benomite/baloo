@@ -116,6 +116,7 @@ export function EcritureInlinePanel({
           shareableDepots={detail.shareableDepots}
           ecritureAmountCents={ecriture.amount_cents}
           ecritureDate={ecriture.date_ecriture}
+          defaultOpenActions={focusSection === 'justif'}
         />
       ) : (
         <div className="flex items-center gap-2 text-[12px] text-fg-muted py-3">
