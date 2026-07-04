@@ -341,6 +341,31 @@ côté dépôts. Seule barrière : ne jamais toucher une écriture déjà matér
 dans Comptaweb (`status ≠ 'draft'` ou `comptaweb_ecriture_id` non nul) — cf.
 garde-fou `corrigeable` dans `drafts.ts`.
 
+### Clé de reconnaissance d'un draft bancaire : `sous_index + libelle_origine`, JAMAIS le montant ni l'id CW seul
+
+`scanDraftsFromComptaweb` doit reconnaître qu'une sous-ligne bancaire est
+« déjà représentée » par un draft. Deux pièges appris à la dure sur cette clé :
+
+1. **`ligne_bancaire_id` seul ne suffit pas** : les ids de lignes bancaires CW
+   sont **recyclés** entre transactions. Une écriture d'une autre transaction
+   (souvent déjà validée) sous le même id bloquait la création du bon draft
+   (bug DEGOMME 2026-07-03 : id 19105752 réutilisé, GABORIAUD masquait DEGOMME).
+
+2. **Le montant ne doit PAS entrer dans la clé** : le montant d'un draft
+   bancaire est **éditable** par l'utilisateur, justement pour corriger les
+   erreurs de relevé (cas LECLERCGENAY 2026-07-04 : banque -217,10, dépense
+   réelle -217,12 prouvée par le justif, relevé sous-comptant de 2 cts). Si le
+   montant est dans la clé, dès qu'on le corrige le match échoue et un
+   **doublon** au montant bancaire est recréé au scan suivant.
+
+Clé retenue : **`sous_index` + `libelle_origine`** (libellé bancaire brut figé
+à la création, stable, survit au renommage « titre parlant »). C'est le seul
+discriminant fiable entre deux transactions sous un id recyclé, et il est
+immunisé contre l'édition du montant. Le montant, lui, n'est jamais écrasé sur
+un draft existant (self-heal `type` uniquement). Note : les erreurs de relevé
+bancaire (somme des sous-lignes ≠ total ligne) restent un **arbitrage manuel**
+assumé — Baloo ne « corrige » pas la banque.
+
 ## Git / déploiement
 
 ### Pas de push sans accord explicite

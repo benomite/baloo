@@ -134,7 +134,6 @@ export async function scanDraftsFromComptaweb(
               e.ligne_bancaire_sous_index AS sousIndex,
               e.status AS status,
               e.type AS type,
-              e.amount_cents AS amountCents,
               e.libelle_origine AS libelleOrigine,
               e.description AS description,
               e.comptaweb_ecriture_id AS cwId,
@@ -174,7 +173,7 @@ export async function scanDraftsFromComptaweb(
       //    (le garde-fou est dans planStaleLineDrafts).
       const existingRows = await findLineDrafts.all<{
         id: string; sousIndex: number | null; status: string; type: string;
-        amountCents: number; libelleOrigine: string | null; description: string;
+        libelleOrigine: string | null; description: string;
         cwId: number | null; hasImput: number; hasAttach: number;
       }>(groupId, ligne.id);
       const existing: ExistingLineDraft[] = existingRows.map((r) => ({
@@ -201,18 +200,19 @@ export async function scanDraftsFromComptaweb(
         // Une entrée d'argent (recette) n'attend pas de justificatif : pas de
         // « à justifier », et au push pas de n° pièce de rattachement bidon.
         const justifAttendu = type === 'recette' ? 0 : 1;
-        // Reconnaissance « déjà représentée » par CONTENU (montant + libellé
-        // brut), pas par le seul `ligne_bancaire_id` : les ids de lignes CW ne
-        // sont PAS stables, ils sont recyclés entre transactions. Sans ça, une
-        // écriture d'une AUTRE transaction (souvent déjà validée) sous le même
-        // id bloque la création (bug DEGOMME 2026-07-03 : id 19105752 réutilisé,
-        // GABORIAUD validé masquait la nouvelle ligne DEGOMME). `libelle_origine`
-        // = libellé bancaire brut figé (== libelProposal à la création), survit
-        // au renommage « titre parlant ».
+        // Reconnaissance « déjà représentée » par `sous_index + libellé brut`,
+        // PAS par le `ligne_bancaire_id` seul (ids CW recyclés entre
+        // transactions : bug DEGOMME 2026-07-03, id 19105752 réutilisé,
+        // GABORIAUD validé masquait la nouvelle ligne DEGOMME) NI par le
+        // montant. Le montant d'un draft bancaire est ÉDITABLE (l'utilisateur
+        // corrige les erreurs de relevé — cas LECLERCGENAY 2026-07-04 : banque
+        // 217,10, dépense réelle 217,12) : l'inclure dans la clé recréait un
+        // doublon dès qu'on corrigeait le montant. `libelle_origine` = libellé
+        // bancaire brut figé (== libelProposal à la création), stable, survit au
+        // renommage « titre parlant » → seul discriminant fiable des transactions.
         const existingCand = liveRows.find(
           (r) =>
             r.sousIndex === c.sousLigneIndex &&
-            r.amountCents === amountAbs &&
             (r.libelleOrigine === c.libelProposal || r.description === c.libelProposal),
         );
         if (existingCand) {
