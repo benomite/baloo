@@ -87,6 +87,22 @@ async function insertDraft(
     .run(o.id, o.libelleOrigine, o.libelleOrigine, o.amountCents, LIGNE_ID, o.sousIndex);
 }
 
+// Écriture VALIDÉE (mirror, dans CW) — cas réel : le draft a été validé, son
+// montant corrigé, puis la ligne bancaire reste non rapprochée côté CW. La
+// description a pu être renommée (titre parlant) ; `libelle_origine` reste figé.
+async function insertMirror(
+  db: DbWrapper,
+  o: { id: string; sousIndex: number; libelleOrigine: string; description: string; amountCents: number },
+) {
+  await db
+    .prepare(
+      `INSERT INTO ecritures (id, group_id, date_ecriture, description, libelle_origine, amount_cents,
+         type, status, comptaweb_synced, comptaweb_ecriture_id, ligne_bancaire_id, ligne_bancaire_sous_index)
+       VALUES (?, 'val-de-saone', '2026-06-22', ?, ?, ?, 'depense', 'mirror', 1, 2430378, ?, ?)`,
+    )
+    .run(o.id, o.description, o.libelleOrigine, o.amountCents, LIGNE_ID, o.sousIndex);
+}
+
 async function count(db: DbWrapper): Promise<number> {
   const r = await db.prepare('SELECT COUNT(*) AS n FROM ecritures').get<{ n: number }>();
   return r?.n ?? 0;
@@ -129,6 +145,30 @@ describe('scanDraftsFromComptaweb — montant de draft corrigé (erreur de relev
       .prepare('SELECT amount_cents AS a FROM ecritures WHERE id = ?')
       .get<{ a: number }>('ECR-LECLERC');
     expect(leclerc?.a).toBe(21712);
+  });
+
+  it('écriture VALIDÉE (mirror, renommée, montant corrigé) reconnue → aucun draft parasite (cas ECR-2026-442)', async () => {
+    const db = await setupDb();
+    // Le draft LECLERCGENAY a été validé (mirror), renommé « courses… » et son
+    // montant corrigé à 217,12. La banque affiche toujours 217,10.
+    await insertMirror(db, {
+      id: 'ECR-442',
+      sousIndex: 0,
+      libelleOrigine: 'LECLERCGENAY',
+      description: 'courses weekend de groupe',
+      amountCents: 21712,
+    });
+    bankLinesRef.value = [
+      bankLineWithSousLignes(LIGNE_ID, [{ commercant: 'LECLERCGENAY', montantCentimes: -21710 }]),
+    ];
+
+    const res = await scanDraftsFromComptaweb({ groupId: 'val-de-saone' }, db);
+
+    // Reconnue par sous_index + libelle_origine malgré montant ET description
+    // différents → PAS de draft parasite à 217,10.
+    expect(res.crees).toBe(0);
+    expect(res.existants).toBe(1);
+    expect(await count(db)).toBe(1);
   });
 
   it('re-visite normale (montant non modifié) → toujours reconnu existant', async () => {
