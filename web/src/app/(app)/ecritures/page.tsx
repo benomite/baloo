@@ -174,6 +174,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
           matchRembs={matchRembs}
           rejectedMatchKeys={rejectedMatchKeys}
           topCategoryIds={topCategoryIds}
+          isAdmin={canLink}
         />
       </EcrituresSection>
 
@@ -193,6 +194,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
           matchRembs={matchRembs}
           rejectedMatchKeys={rejectedMatchKeys}
           topCategoryIds={topCategoryIds}
+          isAdmin={canLink}
         />
       </EcrituresSection>
 

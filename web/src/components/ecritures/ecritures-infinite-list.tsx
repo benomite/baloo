@@ -23,6 +23,7 @@ interface Props {
   matchRembs: MatchRemboursement[];
   rejectedMatchKeys: string[];
   topCategoryIds: string[];
+  isAdmin?: boolean;
 }
 
 /**
@@ -46,6 +47,7 @@ export function EcrituresInfiniteList({
   matchRembs,
   rejectedMatchKeys,
   topCategoryIds,
+  isAdmin,
 }: Props) {
   const [rows, setRows] = useState<Ecriture[]>(initialEcritures);
   const [loading, setLoading] = useState(false);
@@ -122,6 +124,7 @@ export function EcrituresInfiniteList({
         refreshRow={refreshRow}
         validatingIds={validatingIds}
         onValidate={validate}
+        isAdmin={isAdmin}
       />
 
       <div ref={sentinelRef} className="h-px" aria-hidden />

@@ -1,35 +1,39 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { AlertTriangle, CheckCircle2, ExternalLink, Landmark, Loader2, Lock, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, Loader2 } from 'lucide-react';
 import { EcritureForm } from '@/components/ecritures/ecriture-form';
 import { JustificatifsCard } from '@/components/ecritures/justificatifs-card';
+import { PanelHeader } from '@/components/ecritures/panel-header';
+import { PanelReadonlySummary } from '@/components/ecritures/panel-readonly-summary';
+import { PanelImputation } from '@/components/ecritures/panel-imputation';
+import { PanelRelance } from '@/components/ecritures/panel-relance';
+import { CwAssistActions, type CwAssistPayload } from '@/components/ecritures/cw-assist-actions';
 import { SyncDraftButton } from '@/components/ecritures/sync-draft-button';
 import { ResyncEcritureButton } from '@/components/ecritures/resync-ecriture-button';
 import { DeleteDraftButton } from '@/components/ecritures/delete-draft-button';
-import { EcritureStatePair } from '@/components/shared/status-badge';
 import { PendingButton } from '@/components/shared/pending-button';
-import { Alert } from '@/components/ui/alert';
-import { updateEcriture, updateEcritureStatus, fetchEcritureDetail } from '@/lib/actions/ecritures';
+import { updateEcriture, updateEcritureStatus, updateEcritureField, fetchEcritureDetail } from '@/lib/actions/ecritures';
 import { computeReadiness } from '@/lib/sync-readiness';
+import { panelViewModel } from '@/components/ecritures/panel-view-model';
 import { type EcritureJustifsBundle } from '@/lib/queries/justificatifs';
 import { type DepotEnriched, type DepotForSharing } from '@/lib/services/depots';
-import type {
-  Ecriture,
-  Category,
-  Unite,
-  ModePaiement,
-  Activite,
-  Carte,
-} from '@/lib/types';
+import type { Ecriture, Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
 
-type Detail = { ecriture: Ecriture; justifsBundle: EcritureJustifsBundle; pendingDepots: DepotEnriched[]; shareableDepots: DepotForSharing[] };
+type Detail = {
+  ecriture: Ecriture;
+  justifsBundle: EcritureJustifsBundle;
+  pendingDepots: DepotEnriched[];
+  shareableDepots: DepotForSharing[];
+};
 
 export function EcritureInlinePanel({
   ecriture: rowEcriture,
+  ecritureId,
   onCollapse,
   refreshRow,
+  isAdmin = false,
+  focusSection,
   categories,
   topCategoryIds,
   unites,
@@ -37,11 +41,14 @@ export function EcritureInlinePanel({
   activites,
   cartes,
 }: {
-  ecriture: Ecriture;
+  // Fournie quand le panneau s'ouvre sous une ligne. Absente en mode autonome
+  // (épinglé via ?open) : on prend alors l'écriture fraîche du fetch.
+  ecriture?: Ecriture;
+  ecritureId: string;
   onCollapse: () => void;
-  // Rafraîchit la ligne après une édition (les champs modifiés réapparaissent
-  // dans la ligne sans recharger la liste).
   refreshRow?: (id: string) => void | Promise<void>;
+  isAdmin?: boolean;
+  focusSection?: 'justif';
   categories: Category[];
   topCategoryIds: string[];
   unites: Unite[];
@@ -49,266 +56,181 @@ export function EcritureInlinePanel({
   activites: Activite[];
   cartes: Carte[];
 }) {
-  // Chargement DIRECT du détail (écriture fraîche + justifs + dépôts) à
-  // l'ouverture — aucune navigation, aucun re-render de toute la page.
-  // Chaque panneau est monté pour UNE écriture (instance fraîche par ligne
-  // ouverte) → un seul fetch au montage. `detail` part à null → spinner.
   const [detail, setDetail] = useState<Detail | null>(null);
   useEffect(() => {
     let cancelled = false;
-    fetchEcritureDetail(rowEcriture.id).then((d) => {
+    fetchEcritureDetail(ecritureId).then((d) => {
       if (!cancelled && d) setDetail(d);
     });
     return () => {
       cancelled = true;
     };
-  }, [rowEcriture.id]);
+  }, [ecritureId]);
 
-  // Écriture affichée = celle de la LIGNE (mise à jour via refreshRow après
-  // édition → le panneau reflète les changements). Le `detail` chargé ne sert
-  // qu'aux justifs/dépôts (null tant que le fetch n'a pas répondu → spinner).
-  const ecriture = rowEcriture;
-  const bundle = detail
-    ? { justifsBundle: detail.justifsBundle, pendingDepots: detail.pendingDepots, shareableDepots: detail.shareableDepots }
-    : null;
+  // Écriture affichée : la ligne si fournie (mise à jour via refreshRow),
+  // sinon l'écriture fraîche du fetch (mode autonome/épinglé).
+  const ecriture = rowEcriture ?? detail?.ecriture ?? null;
 
-  // Sauvegarde du formulaire puis rafraîchissement de la ligne (les champs
-  // modifiés réapparaissent immédiatement dans la ligne).
-  const handleSave = async (formData: FormData) => {
-    await updateEcriture(ecriture.id, formData);
-    await refreshRow?.(ecriture.id);
-  };
-  const totalJustifs = bundle
-    ? bundle.justifsBundle.direct.length +
-      bundle.justifsBundle.viaRemboursement.reduce(
-        (sum, r) => sum + r.justifs.length + r.rib.length,
-        0,
-      )
+  const justifRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focusSection === 'justif' && detail) justifRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [focusSection, detail]);
+
+  if (!ecriture) {
+    return (
+      <div className="rounded-xl border border-border-soft bg-bg-elevated shadow-sm p-4 my-1 flex items-center gap-2 text-[12px] text-fg-muted">
+        <Loader2 size={14} className="animate-spin" /> Chargement…
+      </div>
+    );
+  }
+
+  const vm = panelViewModel(ecriture);
+  const readiness = computeReadiness(ecriture, { categories, unites, modesPaiement, activites });
+  const totalJustifs = detail
+    ? detail.justifsBundle.direct.length +
+      detail.justifsBundle.viaRemboursement.reduce((s, r) => s + r.justifs.length + r.rib.length, 0)
     : null;
-  // On ne signale « justif manquant » que si le bundle est chargé (sinon on
-  // ne sait pas encore) et que l'écriture n'est pas couverte par un
-  // remboursement lié (la feuille fait office de justif).
   const justifMissing =
-    ecriture.type === 'depense' &&
-    ecriture.justif_attendu === 1 &&
-    totalJustifs === 0 &&
-    !ecriture.remboursement_id;
-  const readiness = computeReadiness(ecriture, {
-    categories,
-    unites,
-    modesPaiement,
-    activites,
-  });
+    ecriture.type === 'depense' && ecriture.justif_attendu === 1 && totalJustifs === 0 && !ecriture.remboursement_id;
+
+  const onRename = async (v: string) => {
+    const r = await updateEcritureField(ecriture.id, 'description', v);
+    if (r.ok) void refreshRow?.(ecriture.id);
+    return r;
+  };
+
+  const justifBlock = (
+    <div ref={justifRef}>
+      {detail ? (
+        <JustificatifsCard
+          entityId={ecriture.id}
+          bundle={detail.justifsBundle}
+          justifAttendu={ecriture.justif_attendu === 1}
+          numeroPiece={ecriture.numero_piece}
+          type={ecriture.type}
+          pendingDepots={detail.pendingDepots}
+          shareableDepots={detail.shareableDepots}
+          ecritureAmountCents={ecriture.amount_cents}
+          ecritureDate={ecriture.date_ecriture}
+        />
+      ) : (
+        <div className="flex items-center gap-2 text-[12px] text-fg-muted py-3">
+          <Loader2 size={14} className="animate-spin" /> Chargement des justificatifs…
+        </div>
+      )}
+      {isAdmin && justifMissing && (
+        <div className="mt-2">
+          <PanelRelance ecritureId={ecriture.id} defaultOpen={focusSection === 'justif'} />
+        </div>
+      )}
+    </div>
+  );
+
+  const cwPayload: CwAssistPayload = {
+    date_ecriture: ecriture.date_ecriture,
+    description: ecriture.description,
+    amount_cents: ecriture.amount_cents,
+    type: ecriture.type,
+    category_id: ecriture.category_id,
+    mode_paiement_id: ecriture.mode_paiement_id,
+    unite_id: ecriture.unite_id,
+    activite_id: ecriture.activite_id,
+    carte_id: ecriture.carte_id,
+    numero_piece: ecriture.numero_piece,
+    notes: ecriture.notes,
+    justif_attendu: ecriture.justif_attendu === 1,
+  };
 
   return (
     <div className="rounded-xl border border-border-soft bg-bg-elevated shadow-sm p-3.5 my-1 text-left max-h-[72vh] overflow-y-auto">
-      <div className="flex items-center gap-3 mb-3 pb-3 border-b border-border-soft">
-        <Link
-          href={`/ecritures/${ecriture.id}`}
-          className="font-mono text-[11.5px] text-fg-subtle hover:text-brand hover:underline shrink-0"
-          title={`Ouvrir ${ecriture.id} en page complète`}
-        >
-          {ecriture.id}
-        </Link>
-        <EcritureStatePair
-          // Justifiée par un justif direct OU par un remboursement lié (la
-          // feuille de remboursement fait office de justificatif).
-          hasJustif={!!ecriture.has_justificatif || !!ecriture.remboursement_id}
-          comptawebSynced={ecriture.comptaweb_synced === 1}
-        />
-        <Link
-          href={`/ecritures/${ecriture.id}`}
-          className="inline-flex items-center gap-1 text-[11.5px] text-brand hover:underline"
-        >
-          <ExternalLink size={10} strokeWidth={2} />
-          Page complète
-        </Link>
-        <button
-          type="button"
-          onClick={onCollapse}
-          aria-label="Replier"
-          className="ml-auto inline-flex items-center justify-center size-6 rounded text-fg-subtle hover:bg-muted hover:text-fg transition-colors"
-        >
-          <X size={15} strokeWidth={2} />
-        </button>
-      </div>
+      <PanelHeader ecriture={ecriture} vm={vm} readiness={readiness} onRename={onRename} onCollapse={onCollapse} />
 
-      {/* Origine bancaire */}
-      {ecriture.ligne_bancaire_id && (
-        <Alert variant="info" icon={Landmark} className="mb-3 text-[12.5px]">
-          Issue de la ligne bancaire{' '}
-          <code className="font-mono text-[11.5px] font-medium">
-            #{ecriture.ligne_bancaire_id}
-          </code>
-          {ecriture.ligne_bancaire_sous_index !== null && (
-            <>
-              {' '}sous-ligne{' '}
-              <code className="font-mono text-[11.5px] font-medium">
-                {ecriture.ligne_bancaire_sous_index}
-              </code>
-            </>
-          )}
-          {ecriture.comptaweb_ecriture_id && (
-            <>
-              {' '}· synchronisée Comptaweb (id{' '}
-              <code className="font-mono text-[11.5px] font-medium">
-                {ecriture.comptaweb_ecriture_id}
-              </code>
-              )
-            </>
-          )}
-        </Alert>
-      )}
-
-      {/* ÉTAT — bandeau qui dit clairement où on en est */}
-      <ReadinessBanner
-        readiness={readiness}
-        justifMissing={justifMissing}
-      />
-
-      {/* FORMULAIRE D'ÉDITION (priorité : c'est le travail principal) */}
-      <EcritureForm
-        action={handleSave}
-        categories={categories}
-        topCategoryIds={topCategoryIds}
-        unites={unites}
-        modesPaiement={modesPaiement}
-        activites={activites}
-        cartes={cartes}
-        ecriture={ecriture}
-      />
-
-      {/* JUSTIFICATIFS — après le form. Chargés en différé : « chargement… »
-          tant que le bundle n'a pas atterri. */}
-      <div className="mt-4">
-        {bundle ? (
-          <JustificatifsCard
-            entityId={ecriture.id}
-            bundle={bundle.justifsBundle}
-            justifAttendu={ecriture.justif_attendu === 1}
-            numeroPiece={ecriture.numero_piece}
-            type={ecriture.type}
-            pendingDepots={bundle.pendingDepots}
-            shareableDepots={bundle.shareableDepots}
-            ecritureAmountCents={ecriture.amount_cents}
-            ecritureDate={ecriture.date_ecriture}
-          />
-        ) : (
-          <div className="flex items-center gap-2 text-[12px] text-fg-muted py-3">
-            <Loader2 size={14} className="animate-spin" />
-            Chargement des justificatifs…
-          </div>
-        )}
-      </div>
-
-      {/* CYCLE DE VIE — en bas, après le travail. Séparation visuelle nette. */}
-      <div className="mt-5 pt-3 border-t border-border-soft">
-        <div className="flex items-center gap-1.5 text-[10.5px] uppercase tracking-wide font-medium text-fg-subtle mb-2">
-          Cycle de vie
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {ecriture.status === 'draft' && (
-            <form action={updateEcritureStatus.bind(null, ecriture.id, 'pending_sync')}>
-              <PendingButton variant="outline" size="sm">
-                Valider
-              </PendingButton>
-            </form>
-          )}
-          {ecriture.status === 'pending_sync' && !ecriture.comptaweb_ecriture_id && (
-            <form action={updateEcritureStatus.bind(null, ecriture.id, 'mirror')}>
-              <PendingButton variant="outline" size="sm">
-                Marquer miroir CW
-              </PendingButton>
-            </form>
-          )}
-          {!ecriture.comptaweb_ecriture_id && <SyncDraftButton ecritureId={ecriture.id} />}
-          {ecriture.comptaweb_ecriture_id != null && (
-            <ResyncEcritureButton ecritureId={ecriture.id} />
-          )}
-          {ecriture.status !== 'draft' && !ecriture.comptaweb_ecriture_id && (
-            <form
-              action={updateEcritureStatus.bind(null, ecriture.id, 'draft')}
-              className="ml-auto"
-            >
-              <PendingButton variant="ghost" size="sm">
-                Repasser brouillon
-              </PendingButton>
-            </form>
-          )}
-          {/* Suppression réservée aux brouillons locaux. Garde-fous serveur. */}
-          {ecriture.status === 'draft' && (
-            <div className="ml-auto">
-              <DeleteDraftButton ecritureId={ecriture.id} />
+      {vm.mode === 'readonly' ? (
+        <div className="space-y-4">
+          <PanelReadonlySummary ecriture={ecriture} />
+          {justifBlock}
+          <div className="pt-3 border-t border-border-soft space-y-3">
+            <CwAssistActions payload={cwPayload} />
+            <div className="flex flex-wrap items-center gap-2">
+              {ecriture.comptaweb_ecriture_id != null && <ResyncEcritureButton ecritureId={ecriture.id} />}
             </div>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* JUSTIF D'ABORD (le travail restant se fait sur la ligne) */}
+          {justifBlock}
+
+          {/* Rappel d'imputation en chips — pour un brouillon banque. En saisie
+              manuelle, l'identité est le travail → on passe direct au form. */}
+          {vm.mode === 'edit-bank' && (
+            <PanelImputation
+              ecriture={ecriture}
+              categories={categories}
+              unites={unites}
+              modesPaiement={modesPaiement}
+              activites={activites}
+              cartes={cartes}
+              editable={vm.editable}
+              missingFields={readiness.missingFields}
+              refreshRow={refreshRow}
+            />
           )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
-function ReadinessBanner({
-  readiness,
-  justifMissing,
-}: {
-  readiness: ReturnType<typeof computeReadiness>;
-  justifMissing: boolean;
-}) {
-  // 3 niveaux visuels :
-  //   - synced     → vert tendre, icône lock (immutable)
-  //   - ready      → vert vif, icône check (clic pour sync)
-  //   - incomplete → ambre, icône warning + liste précise
-  if (readiness.level === 'synced') {
-    return (
-      <div className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50/60 dark:border-emerald-900/40 dark:bg-emerald-950/20 px-3 py-2.5">
-        <div className="flex items-center gap-1.5 text-[12.5px] font-medium text-emerald-800 dark:text-emerald-300">
-          <Lock size={13} strokeWidth={2.25} />
-          {readiness.message}
-        </div>
-        <p className="text-[11.5px] text-emerald-700/90 dark:text-emerald-400/80 mt-0.5 ml-5">
-          Les champs synchronisables sont verrouillés.
-        </p>
-      </div>
-    );
-  }
+          {/* Détails / édition complète. Ouvert d'emblée en saisie manuelle
+              (identité prioritaire), replié pour un brouillon banque. */}
+          <details open={vm.showIdentityInline} className="group">
+            <summary className="flex items-center gap-1.5 cursor-pointer list-none text-[12px] font-medium text-fg-muted hover:text-fg py-1">
+              <ChevronDown size={13} className="transition-transform group-open:rotate-180" />
+              {vm.showIdentityInline ? 'Champs de l’écriture' : 'Éditer les champs (date, montant, type, notes…)'}
+            </summary>
+            <div className="pt-2">
+              <EcritureForm
+                action={async (fd) => {
+                  await updateEcriture(ecriture.id, fd);
+                  await refreshRow?.(ecriture.id);
+                }}
+                categories={categories}
+                topCategoryIds={topCategoryIds}
+                unites={unites}
+                modesPaiement={modesPaiement}
+                activites={activites}
+                cartes={cartes}
+                ecriture={ecriture}
+              />
+              <div className="mt-3">
+                <CwAssistActions payload={cwPayload} />
+              </div>
+            </div>
+          </details>
 
-  if (readiness.level === 'ready') {
-    return (
-      <div className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50/60 dark:border-emerald-900/40 dark:bg-emerald-950/20 px-3 py-2.5">
-        <div className="flex items-center gap-1.5 text-[12.5px] font-medium text-emerald-800 dark:text-emerald-300">
-          <CheckCircle2 size={13} strokeWidth={2.25} />
-          {readiness.message}
+          {/* Barre d'action collante */}
+          <div className="sticky bottom-0 -mx-3.5 -mb-3.5 mt-1 px-3.5 py-2.5 bg-bg-elevated/95 backdrop-blur border-t border-border-soft flex flex-wrap items-center gap-2">
+            {ecriture.status === 'draft' && (
+              <form action={updateEcritureStatus.bind(null, ecriture.id, 'pending_sync')}>
+                <PendingButton size="sm">Valider</PendingButton>
+              </form>
+            )}
+            {ecriture.status === 'pending_sync' && !ecriture.comptaweb_ecriture_id && (
+              <form action={updateEcritureStatus.bind(null, ecriture.id, 'mirror')}>
+                <PendingButton variant="outline" size="sm">Marquer miroir CW</PendingButton>
+              </form>
+            )}
+            {!ecriture.comptaweb_ecriture_id && <SyncDraftButton ecritureId={ecriture.id} />}
+            {ecriture.comptaweb_ecriture_id != null && <ResyncEcritureButton ecritureId={ecriture.id} />}
+            {ecriture.status !== 'draft' && !ecriture.comptaweb_ecriture_id && (
+              <form action={updateEcritureStatus.bind(null, ecriture.id, 'draft')} className="ml-auto">
+                <PendingButton variant="ghost" size="sm">Repasser brouillon</PendingButton>
+              </form>
+            )}
+            {ecriture.status === 'draft' && (
+              <div className="ml-auto">
+                <DeleteDraftButton ecritureId={ecriture.id} />
+              </div>
+            )}
+          </div>
         </div>
-        <p className="text-[11.5px] text-emerald-700/90 dark:text-emerald-400/80 mt-0.5 ml-5">
-          Tous les champs requis sont mappés Comptaweb.
-          {justifMissing && ' Justificatif manquant (non bloquant pour la sync).'}
-        </p>
-      </div>
-    );
-  }
-
-  // incomplete
-  return (
-    <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-950/20 px-3 py-2.5">
-      <div className="flex items-center gap-1.5 text-[12.5px] font-medium text-amber-900 dark:text-amber-300 mb-1.5">
-        <AlertTriangle size={13} strokeWidth={2.25} />
-        À compléter avant synchronisation Comptaweb
-      </div>
-      <ul className="ml-5 space-y-0.5 mb-1">
-        {readiness.missingFields.map((m) => (
-          <li
-            key={m}
-            className="text-[12px] text-amber-900 dark:text-amber-200 list-disc list-inside"
-          >
-            {m}
-          </li>
-        ))}
-        {justifMissing && (
-          <li className="text-[12px] text-amber-700 dark:text-amber-300/80 list-disc list-inside italic">
-            justificatif (non bloquant pour sync, mais à fournir)
-          </li>
-        )}
-      </ul>
+      )}
     </div>
   );
 }

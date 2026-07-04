@@ -33,6 +33,8 @@ interface Props {
   validatingIds: Set<string>;
   // Déclenche la validation d'un draft (le parent verrouille puis retire).
   onValidate: (id: string) => void;
+  // Admin (tresorier/RG) : débloque la relance justif dans le panneau.
+  isAdmin?: boolean;
 }
 
 const MOIS_COURTS = ['janv', 'févr', 'mars', 'avr', 'mai', 'juin', 'juil', 'août', 'sept', 'oct', 'nov', 'déc'];
@@ -94,18 +96,26 @@ type Item =
   | { kind: 'header'; key: string; group: Group }
   | { kind: 'row'; key: string; ecriture: Ecriture; index: number; group: Group | null };
 
-export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes, matchDepots, matchRembs, rejectedMatchKeys, topCategoryIds, refreshRow, validatingIds, onValidate }: Props) {
+export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes, matchDepots, matchRembs, rejectedMatchKeys, topCategoryIds, refreshRow, validatingIds, onValidate, isAdmin = false }: Props) {
   const rejectedMatchSet = useMemo(() => new Set(rejectedMatchKeys), [rejectedMatchKeys]);
   // Ouverture du panneau d'édition = état CLIENT pur (pas de navigation
   // `?detail` : elle relançait toute la page → lent, et `useSearchParams`
   // ne se mettait à jour qu'après le serveur, d'où le « refermer » cassé).
   const [openId, setOpenId] = useState<string | null>(null);
+  // Section à mettre en avant à l'ouverture (open-to-section) : 'justif' quand
+  // on ouvre via la puce « sans justif ».
+  const [openFocus, setOpenFocus] = useState<'justif' | null>(null);
   const onRowClick = (id: string) => (ev: React.MouseEvent) => {
     if (ev.metaKey || ev.ctrlKey || ev.button === 1) {
       window.open(`/ecritures/${id}`, '_blank');
       return;
     }
+    setOpenFocus(null);
     setOpenId((prev) => (prev === id ? null : id));
+  };
+  const openJustif = (id: string) => {
+    setOpenFocus('justif');
+    setOpenId(id);
   };
   const stop = (ev: React.MouseEvent | React.PointerEvent) => ev.stopPropagation();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -458,13 +468,15 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                           return r;
                         }}
                       />
-                      <span
-                        className={`inline-flex items-center gap-1 ${hasJustif ? 'text-emerald-700 dark:text-emerald-300' : 'text-fg-subtle'}`}
-                        title={hasJustif ? 'Justificatif présent' : 'Aucun justificatif'}
+                      <button
+                        type="button"
+                        onClick={(ev) => { ev.stopPropagation(); openJustif(e.id); }}
+                        className={`inline-flex items-center gap-1 rounded px-1 -mx-1 hover:bg-muted/60 ${hasJustif ? 'text-emerald-700 dark:text-emerald-300' : 'text-fg-subtle'}`}
+                        title={hasJustif ? 'Voir le justificatif' : 'Ajouter un justificatif'}
                       >
                         <Paperclip size={11} className={`shrink-0 ${hasJustif ? 'text-emerald-600 dark:text-emerald-400' : 'text-fg-subtle/60'}`} />
                         {hasJustif ? 'justif' : 'sans justif'}
-                      </span>
+                      </button>
                     </div>
                   </div>
                   <div className="shrink-0 w-[92px] text-right font-medium tabular-nums self-center">
@@ -497,6 +509,9 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                   <div className="px-3 pb-2">
                     <EcritureInlinePanel
                       ecriture={e}
+                      ecritureId={e.id}
+                      isAdmin={isAdmin}
+                      focusSection={openFocus ?? undefined}
                       onCollapse={() => setOpenId(null)}
                       refreshRow={refreshRow}
                       categories={categories}
