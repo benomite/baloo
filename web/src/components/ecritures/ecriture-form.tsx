@@ -1,7 +1,6 @@
 'use client';
 
 import { Lock } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert } from '@/components/ui/alert';
