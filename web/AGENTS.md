@@ -286,6 +286,25 @@ session stockée expirée, wrapper dans `withAutoReLogin` (re-login auto via
 sans erreur évidente → vérifier `/admin/errors` (le type d'erreur, ex.
 `LibsqlError` vs `ComptawebSessionExpiredError`, oriente vite la cause).
 
+### Un timeout Vercel laisse le run bloqué en `status='running'` (pas `failed`)
+
+`runSyncCycle` n'écrit `status='failed'` + `error_message` que dans son
+`catch`. Si la **lambda est tuée par le timeout** (`maxDuration = 60 s` sur
+`/api/sync/run`, cold start inclus), le `catch` ne tourne jamais : la ligne
+`sync_runs` reste `status='running'` sans message. Après 60 s
+(`RUNNING_LOCK_MS`), `getSyncStatus` renvoie `is_running=false` mais
+`last_run.status='running'` → l'UI tombait alors en « stale », **pas** en
+échec. C'est une part des « échecs » mystérieux côté terrain.
+
+Signalé et expliqué depuis 2026-07-04 : `SyncStatusButton` détecte
+`last_run.status==='running' && is_running===false` comme état **« interrompue »**
+et le passe à `describeSyncError({status:'running'})`. Ce module
+(`components/sync/describe-sync-error.ts`, pur/testable) traduit aussi les
+`err.message` bruts en messages parlants + action (session expirée / creds
+absents / Keycloak-MFA / structure CW changée / 5xx), avec fallback qui
+préserve toujours le message brut. Le libellé « Échec » ouvre désormais une
+**popover** de diagnostic au clic au lieu de relancer aveuglément.
+
 ### Sous-lignes DSP2 : montants en VALEUR ABSOLUE, le signe est sur le parent
 
 Le détail DSP2 d'une ligne bancaire (« PAIEMENT C. PROC … », un paiement carte
