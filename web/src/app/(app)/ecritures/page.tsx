@@ -15,6 +15,7 @@ import { SyncStatusButton } from '@/components/sync/sync-status-button';
 import { ArbitrageBanner } from '@/components/ecritures/arbitrage-banner';
 import { listSupprimeeCw, listAgregesRemplaces, listLinkSuggestions } from '@/lib/queries/sync-arbitrage';
 import { EcrituresInfiniteList } from '@/components/ecritures/ecritures-infinite-list';
+import { PinnedEcriturePanel } from '@/components/ecritures/pinned-ecriture-panel';
 import { EcrituresSection } from '@/components/ecritures/ecritures-section';
 import { getCurrentContext } from '@/lib/context';
 import { requireComptaAccess } from '@/lib/auth/access';
@@ -157,6 +158,19 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
       <ArbitrageBanner supprimees={supprimeesCw} agregesRemplaces={agregesRemplaces} suggestions={linkSuggestions} />
 
       <EcritureFilters categories={categories} unites={unites} cartes={cartes} current={params} />
+
+      {params.open && (
+        <PinnedEcriturePanel
+          ecritureId={params.open}
+          isAdmin={canLink}
+          categories={categories}
+          topCategoryIds={topCategoryIds}
+          unites={unites}
+          modesPaiement={modesPaiement}
+          activites={activites}
+          cartes={cartes}
+        />
+      )}
 
       <EcrituresSection title="À traiter" count={aTraiter.total} defaultCollapsed={false}>
         <EcrituresInfiniteList

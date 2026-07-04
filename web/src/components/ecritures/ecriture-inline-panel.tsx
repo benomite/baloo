@@ -34,6 +34,7 @@ export function EcritureInlinePanel({
   refreshRow,
   isAdmin = false,
   focusSection,
+  reloadSignal,
   categories,
   topCategoryIds,
   unites,
@@ -49,6 +50,9 @@ export function EcritureInlinePanel({
   refreshRow?: (id: string) => void | Promise<void>;
   isAdmin?: boolean;
   focusSection?: 'justif';
+  // En mode autonome (épinglé) : bump ce signal pour re-fetcher le détail
+  // après une édition (pas de refreshRow de ligne dans ce cas).
+  reloadSignal?: number;
   categories: Category[];
   topCategoryIds: string[];
   unites: Unite[];
@@ -65,7 +69,7 @@ export function EcritureInlinePanel({
     return () => {
       cancelled = true;
     };
-  }, [ecritureId]);
+  }, [ecritureId, reloadSignal]);
 
   // Écriture affichée : la ligne si fournie (mise à jour via refreshRow),
   // sinon l'écriture fraîche du fetch (mode autonome/épinglé).
