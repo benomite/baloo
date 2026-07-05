@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Landmark, Layers, Tag, Activity, Paperclip, Loader2, Pencil } from 'lucide-react';
+import { Landmark, Layers, Tag, Activity, Wallet, Paperclip, Loader2, Pencil } from 'lucide-react';
 import { UniteBadge } from '@/components/shared/unite-badge';
 import { InlineSelect } from '@/components/shared/inline-select';
 import { InlineText } from '@/components/shared/inline-text';
@@ -464,6 +464,34 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                         }
                         onSave={async (v) => {
                           const r = await updateEcritureField(e.id, 'activite_id', v);
+                          if (r.ok) void refreshRow(e.id);
+                          return r;
+                        }}
+                      />
+                      {/* Mode de paiement : OBLIGATOIRE pour valider (cf.
+                          computeReadiness) → éditable inline sur la ligne, au
+                          même titre qu'unité/catégorie/activité. Souvent
+                          auto-déduit du libellé bancaire (CB/procurement), mais
+                          pas pour un virement → nudge ambre si manquant. */}
+                      <InlineSelect
+                        value={e.mode_paiement_id}
+                        disabled={!editable}
+                        placeholder="Aucun"
+                        options={modesPaiement.map((m) => ({ value: m.id, label: m.name }))}
+                        display={
+                          e.mode_paiement_name ? (
+                            <span className="inline-flex items-center gap-1 text-fg-muted min-w-0">
+                              <Wallet size={11} className="shrink-0 text-fg-subtle" />
+                              <span className="truncate max-w-[130px]" title={e.mode_paiement_name}>{e.mode_paiement_name}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                              <Wallet size={11} /> + Mode
+                            </span>
+                          )
+                        }
+                        onSave={async (v) => {
+                          const r = await updateEcritureField(e.id, 'mode_paiement_id', v);
                           if (r.ok) void refreshRow(e.id);
                           return r;
                         }}

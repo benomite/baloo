@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { ArrowRight, CreditCard, Paperclip, Plus } from 'lucide-react';
 import { NativeSelect } from '@/components/ui/native-select';
 import { PendingButton } from '@/components/shared/pending-button';
-import { uploadJustificatif } from '@/lib/actions/justificatifs';
+import { JustifUploadZone } from '@/components/ecritures/justif-upload-zone';
 import { attachDepotFromEcriture, shareDepotFromEcriture } from '@/lib/actions/depots';
 import { type EcritureJustifsBundle } from '@/lib/queries/justificatifs';
 import { type DepotEnriched, type DepotForSharing } from '@/lib/services/depots';
@@ -123,16 +123,7 @@ export function JustificatifsCard({
           Ajouter ou rattacher un justif
         </summary>
         <div className="mt-2 space-y-2.5">
-          <form action={uploadJustificatif} className="flex items-center gap-2">
-            <input type="hidden" name="entity_type" value="ecriture" />
-            <input type="hidden" name="entity_id" value={entityId} />
-            <input
-              type="file"
-              name="file"
-              className="min-w-0 flex-1 text-[12.5px] file:mr-2 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:bg-brand-50 file:text-brand file:font-medium file:text-[12px] file:cursor-pointer hover:file:bg-brand-100 file:transition-colors"
-            />
-            <PendingButton variant="outline" size="sm">Ajouter</PendingButton>
-          </form>
+          <JustifUploadZone entityId={entityId} />
 
           {pendingDepots.length > 0 && (
             <form action={attachDepotFromEcriture} className="flex items-center gap-2">

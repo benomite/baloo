@@ -1,6 +1,7 @@
 import Link from 'next/link';
-import { Tag, Activity, CreditCard, Hash, ArrowRight } from 'lucide-react';
+import { Tag, Activity, CreditCard, Hash, ArrowRight, ExternalLink } from 'lucide-react';
 import { UniteBadge } from '@/components/shared/unite-badge';
+import { comptawebEcritureUrl } from '@/lib/comptaweb-url';
 import type { Ecriture } from '@/lib/types';
 
 // Résumé DENSE et lecture seule d'une écriture synchronisée (mirror /
@@ -42,6 +43,17 @@ export function PanelReadonlySummary({ ecriture }: { ecriture: Ecriture }) {
           Justifiée par le remboursement <code className="font-mono">{ecriture.remboursement_id}</code>
           <ArrowRight size={11} strokeWidth={2.25} />
         </Link>
+      )}
+      {ecriture.comptaweb_ecriture_id != null && (
+        <a
+          href={comptawebEcritureUrl(ecriture.comptaweb_ecriture_id)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-[12px] text-brand hover:underline"
+        >
+          Ouvrir dans Comptaweb
+          <ExternalLink size={11} strokeWidth={2.25} />
+        </a>
       )}
     </div>
   );

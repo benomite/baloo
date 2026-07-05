@@ -6,7 +6,6 @@ import { EcritureForm } from '@/components/ecritures/ecriture-form';
 import { JustificatifsCard } from '@/components/ecritures/justificatifs-card';
 import { PanelHeader } from '@/components/ecritures/panel-header';
 import { PanelReadonlySummary } from '@/components/ecritures/panel-readonly-summary';
-import { PanelImputation } from '@/components/ecritures/panel-imputation';
 import { PanelRelance } from '@/components/ecritures/panel-relance';
 import { CwAssistActions, type CwAssistPayload } from '@/components/ecritures/cw-assist-actions';
 import { ResyncEcritureButton } from '@/components/ecritures/resync-ecriture-button';
@@ -167,27 +166,14 @@ export function EcritureInlinePanel({
         </div>
       ) : (
         <div className="space-y-4">
-          {/* JUSTIF D'ABORD (le travail restant se fait sur la ligne) */}
+          {/* JUSTIF D'ABORD : c'est LE rôle du panneau. Toute l'imputation
+              obligatoire (unité/catégorie/activité/mode) se règle sur la LIGNE
+              → pas de section imputation ici. */}
           {justifBlock}
 
-          {/* Rappel d'imputation en chips — pour un brouillon banque. En saisie
-              manuelle, l'identité est le travail → on passe direct au form. */}
-          {vm.mode === 'edit-bank' && (
-            <PanelImputation
-              ecriture={ecriture}
-              categories={categories}
-              unites={unites}
-              modesPaiement={modesPaiement}
-              activites={activites}
-              cartes={cartes}
-              editable={vm.editable}
-              missingFields={readiness.missingFields}
-              refreshRow={refreshRow}
-            />
-          )}
-
-          {/* Détails / édition complète. Ouvert d'emblée en saisie manuelle
-              (identité prioritaire), replié pour un brouillon banque. */}
+          {/* Détails / édition complète (date, montant, type, carte, notes…).
+              Ouvert d'emblée en saisie manuelle (identité = le travail), replié
+              pour un brouillon banque. */}
           <details open={vm.showIdentityInline} className="group">
             <summary className="flex items-center gap-1.5 cursor-pointer list-none text-[12px] font-medium text-fg-muted hover:text-fg py-1">
               <ChevronDown size={13} className="transition-transform group-open:rotate-180" />
