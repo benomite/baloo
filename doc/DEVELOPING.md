@@ -56,6 +56,16 @@ Avant d'introduire une nouvelle dépendance, une nouvelle couche technique ou un
 2. Si elle l'est, **demander confirmation** à l'utilisateur avant de procéder. La roadmap est un garde-fou contre la sur-ingénierie ; la contourner doit être un choix conscient.
 3. Si c'est accepté, créer un ADR pour documenter la décision.
 
+## Backlog produit → issues GitHub (depuis 2026-07-06)
+
+Le **backlog** (features cadrées, non planifiées) vit dans les **issues GitHub** (label `backlog`), plus dans `roadmap.md`. Les **4 phases** sont des **milestones**.
+
+- Consulter le backlog : `gh issue list --label backlog`. Lire une entrée : `gh issue view <N>`.
+- Ajouter une idée cadrée : `gh issue create --label backlog --milestone "Phase 2 — …"` avec le gabarit (besoin / design retenu / points à cadrer / tests / fichiers de référence).
+- Quand on attaque une issue : brainstorming → spec (`doc/superpowers/specs/`) → plan (`doc/superpowers/plans/`) → implémentation. Fermer via `Closes #N` dans le commit/PR.
+- **Restent en markdown** (pas en issues) : ADRs (`decisions.md`), specs/plans de chantier (`doc/superpowers/`), vision et narratif de cap (`roadmap.md`).
+- `gh` est authentifié en local (compte `benomite`, scope `repo`) — utilisable en headless.
+
 ## Sécurité
 
 - Ne jamais commiter de secrets, tokens, clés d'API, RIBs, mails exportés, pièces justificatives. Le `.gitignore` doit rester strict — si on y touche, c'est toujours pour **ajouter** des exclusions, rarement pour en retirer.
