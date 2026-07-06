@@ -19,11 +19,11 @@ const listSchema = z
 export async function GET(request: Request) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
-  const { groupId, scopeUniteId } = ctxR.ctx;
+  const { groupId, scopeUniteIds } = ctxR.ctx;
   const params = Object.fromEntries(new URL(request.url).searchParams);
   const parsed = listSchema.safeParse(params);
   if (!parsed.success) return jsonError('Paramètres invalides.', 400);
-  return Response.json(await listRemboursements({ groupId, scopeUniteId }, parsed.data as RemboursementFilters));
+  return Response.json(await listRemboursements({ groupId, scopeUniteIds }, parsed.data as RemboursementFilters));
 }
 
 const createSchema = z.object({
@@ -40,9 +40,9 @@ const createSchema = z.object({
 export async function POST(request: Request) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
-  const { groupId, scopeUniteId } = ctxR.ctx;
+  const { groupId, scopeUniteIds } = ctxR.ctx;
   const parsed = await parseJsonBody(request, createSchema);
   if ('error' in parsed) return parsed.error;
-  const created = await createRemboursement({ groupId, scopeUniteId }, parsed.data);
+  const created = await createRemboursement({ groupId, scopeUniteIds }, parsed.data);
   return Response.json(created, { status: 201 });
 }

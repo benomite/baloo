@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { getCurrentContext } from '../../context';
+import { resolveScopedUnite } from '../../scope';
 import { getDb } from '../../db';
 import { getRemboursement, addLigne } from '../../services/remboursements';
 import { attachJustificatif } from '../../services/justificatifs';
@@ -64,7 +65,12 @@ async function updateMyRemboursementBody(id: string, formData: FormData): Promis
 
   const ribTexte = (formData.get('rib_texte') as string | null)?.trim() || null;
   const uniteIdRaw = (formData.get('unite_id') as string | null)?.trim() || null;
-  const uniteId = ctx.scopeUniteId || uniteIdRaw;
+  let uniteId: string | null;
+  try {
+    uniteId = resolveScopedUnite(ctx.scopeUniteIds, uniteIdRaw);
+  } catch (e) {
+    throw new FormValidationError(e instanceof Error ? e.message : 'Unité invalide.');
+  }
   const notes = (formData.get('notes') as string | null)?.trim() || null;
 
   // Pré-validation des éventuels nouveaux justifs / RIB avant tout

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'crypto';
 import { getDb } from '../db';
 import { ensureAuthSchema } from './schema';
+import { loadUserUniteIds } from './user-unites';
 
 // API tokens long-vie pour clients programmatiques (MCP `baloo-compta`).
 // Cf. ADR-014.
@@ -46,7 +47,7 @@ export interface ApiTokenContext {
   userId: string;
   groupId: string;
   role: string;
-  scopeUniteId: string | null;
+  scopeUniteIds: string[];
 }
 
 // Vérifie un token Bearer. Renvoie le contexte user+group si valide, sinon
@@ -59,7 +60,7 @@ export async function verifyApiToken(rawToken: string): Promise<ApiTokenContext 
   const row = await db
     .prepare(
       `SELECT t.id, t.user_id, t.expires_at, t.revoked_at,
-              u.group_id, u.statut, u.role, u.scope_unite_id
+              u.group_id, u.statut, u.role
        FROM api_tokens t JOIN users u ON u.id = t.user_id
        WHERE t.token_hash = ?`,
     )
@@ -71,7 +72,6 @@ export async function verifyApiToken(rawToken: string): Promise<ApiTokenContext 
       group_id: string;
       statut: string;
       role: string | null;
-      scope_unite_id: string | null;
     }>(tokenHash);
 
   if (!row) return null;
@@ -92,6 +92,6 @@ export async function verifyApiToken(rawToken: string): Promise<ApiTokenContext 
     userId: row.user_id,
     groupId: row.group_id,
     role: row.role ?? 'tresorier',
-    scopeUniteId: row.scope_unite_id,
+    scopeUniteIds: await loadUserUniteIds(db, row.user_id),
   };
 }

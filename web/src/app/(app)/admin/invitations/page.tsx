@@ -192,7 +192,7 @@ function PendingItem({ inv }: { inv: ListInvitationsItem }) {
         <div className="text-[12px] text-fg-muted truncate">{inv.email}</div>
         <div className="mt-0.5 text-[11.5px] text-fg-subtle">
           {ROLE_LABELS[inv.role] ?? inv.role}
-          {inv.unite_code ? ` · ${inv.unite_code}` : ''}
+          {inv.unites_codes ? ` · ${inv.unites_codes}` : ''}
           <span className="mx-1.5">·</span>
           <span className="tabular-nums">invité le {inv.created_at.slice(0, 10)}</span>
         </div>
@@ -257,7 +257,7 @@ function ActiveItem({
           <div className="text-right text-[11.5px] hidden sm:block">
             <div className="font-medium text-fg">
               {ROLE_LABELS[user.role] ?? user.role}
-              {user.unite_code ? ` · ${user.unite_code}` : ''}
+              {user.unites_codes ? ` · ${user.unites_codes}` : ''}
             </div>
             {user.email_verified && (
               <div className="text-fg-subtle tabular-nums">
@@ -292,19 +292,21 @@ function ActiveItem({
                 ))}
               </NativeSelect>
             </Field>
-            <Field label="Unité (si chef)" htmlFor={`unite-${user.id}`}>
-              <NativeSelect
-                id={`unite-${user.id}`}
-                name="scope_unite_id"
-                defaultValue={user.scope_unite_id ?? ''}
-              >
-                <option value="">— Aucune —</option>
-                {unites.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.code}
-                  </option>
-                ))}
-              </NativeSelect>
+            <Field label="Unités (si chef)">
+              <div className="flex flex-wrap gap-1.5">
+                {unites.map((u) => {
+                  const checked = (user.unites_ids ?? '').split(',').includes(u.id);
+                  return (
+                    <label
+                      key={u.id}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[12.5px] cursor-pointer hover:border-brand"
+                    >
+                      <input type="checkbox" name="scope_unite_ids" value={u.id} defaultChecked={checked} className="h-3.5 w-3.5 rounded border-border-strong text-brand" />
+                      {u.code}
+                    </label>
+                  );
+                })}
+              </div>
             </Field>
             <PendingButton size="sm">Enregistrer</PendingButton>
           </form>
@@ -342,7 +344,7 @@ function InactiveItem({ user }: { user: ListInvitationsItem }) {
           <div className="text-[12px] text-fg-subtle truncate">{user.email}</div>
           <div className="mt-0.5 text-[11.5px] text-fg-subtle">
             ancien {ROLE_LABELS[user.role] ?? user.role}
-            {user.unite_code ? ` · ${user.unite_code}` : ''}
+            {user.unites_codes ? ` · ${user.unites_codes}` : ''}
           </div>
         </div>
       </div>

@@ -9,7 +9,7 @@ import {
 const createSchema = z.object({
   email: z.string().email(),
   role: z.enum(['tresorier', 'RG', 'chef', 'membre']),
-  scope_unite_id: z.string().nullish(),
+  scope_unite_ids: z.array(z.string()).optional(),
   nom_affichage: z.string().nullish(),
 });
 

@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { auth } from './auth/auth';
 import { getDb } from './db';
+import { loadUserUniteIds } from './auth/user-unites';
 
 // Contexte courant côté serveur web (chantier 4, ADR-016).
 //
@@ -25,10 +26,9 @@ export interface CurrentContext {
   email: string;
   name: string | null;
   role: UserRole;
-  // ID de l'unité à laquelle l'accès du user est limité. NULL pour
-  // tresorier/RG (vue globale du groupe), renseigné pour chef / parent
-  // scopés.
-  scopeUniteId: string | null;
+  // Unités auxquelles l'accès du user est limité. VIDE pour tresorier/RG
+  // (vue globale du groupe), une ou plusieurs pour un chef scopé.
+  scopeUniteIds: string[];
 }
 
 interface UserRow {
@@ -37,7 +37,6 @@ interface UserRow {
   name: string | null;
   group_id: string;
   role: string | null;
-  scope_unite_id: string | null;
 }
 
 export async function getCurrentContext(): Promise<CurrentContext> {
@@ -48,7 +47,7 @@ export async function getCurrentContext(): Promise<CurrentContext> {
 
   const row = await getDb()
     .prepare(
-      "SELECT id, email, nom_affichage AS name, group_id, role, scope_unite_id FROM users WHERE id = ? AND statut = 'actif'",
+      "SELECT id, email, nom_affichage AS name, group_id, role FROM users WHERE id = ? AND statut = 'actif'",
     )
     .get<UserRow>(session.user.id);
 
@@ -56,12 +55,14 @@ export async function getCurrentContext(): Promise<CurrentContext> {
     redirect('/login');
   }
 
+  const scopeUniteIds = await loadUserUniteIds(getDb(), row.id);
+
   return {
     userId: row.id,
     groupId: row.group_id,
     email: row.email,
     name: row.name,
     role: row.role ?? 'tresorier',
-    scopeUniteId: row.scope_unite_id,
+    scopeUniteIds,
   };
 }

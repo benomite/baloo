@@ -39,7 +39,9 @@ export default async function DepotPage({ searchParams }: { searchParams: Promis
   const cartes = keepSelectable(cartesAll, null);
 
   const today = new Date().toISOString().split('T')[0];
-  const defaultUnite = params.unite ?? ctx.scopeUniteId ?? '';
+  // Pré-sélection : l'unité de l'URL, sinon l'unique unité du chef (s'il n'en
+  // a qu'une), sinon rien (choix libre / plusieurs unités).
+  const defaultUnite = params.unite ?? (ctx.scopeUniteIds.length === 1 ? ctx.scopeUniteIds[0] : '');
 
   return (
     <div className="max-w-3xl mx-auto">

@@ -51,7 +51,7 @@ const listSchema = z
 export async function GET(request: Request) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
-  const { groupId, scopeUniteId } = ctxR.ctx;
+  const { groupId, scopeUniteIds } = ctxR.ctx;
   const params = Object.fromEntries(new URL(request.url).searchParams);
   const parsed = listSchema.safeParse(params);
   if (!parsed.success) return jsonError('Paramètres invalides.', 400);
@@ -60,7 +60,7 @@ export async function GET(request: Request) {
   const statusIn = resolveStatusFilter({ status, includeDivergent });
   const filters: EcritureFilters = { ...rest, statusIn };
 
-  return Response.json(await listEcritures({ groupId, scopeUniteId }, filters));
+  return Response.json(await listEcritures({ groupId, scopeUniteIds }, filters));
 }
 
 const createSchema = z.object({

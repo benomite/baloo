@@ -1,6 +1,7 @@
 import { getDb } from '../db';
 import { nextId, currentTimestamp } from '../ids';
 import { nullIfEmpty } from '../utils/form';
+import { uniteScopeSql } from '../scope';
 
 // Workflow d'un abandon de frais :
 //   a_traiter (soumis par le donateur)
@@ -24,7 +25,7 @@ export const ABANDON_STATUS_LABELS: Record<AbandonStatus, string> = {
 
 export interface AbandonContext {
   groupId: string;
-  scopeUniteId?: string | null;
+  scopeUniteIds?: string[];
   submittedByUserId?: string | null;
 }
 
@@ -60,15 +61,16 @@ export interface ListAbandonsOptions {
 }
 
 export async function listAbandons(
-  { groupId, scopeUniteId, submittedByUserId }: AbandonContext,
+  { groupId, scopeUniteIds, submittedByUserId }: AbandonContext,
   options: ListAbandonsOptions = {},
 ): Promise<Abandon[]> {
   const conditions: string[] = ['a.group_id = ?'];
   const values: unknown[] = [groupId];
 
-  if (scopeUniteId) {
-    conditions.push('a.unite_id = ?');
-    values.push(scopeUniteId);
+  const scope = uniteScopeSql(scopeUniteIds ?? [], 'a.unite_id');
+  if (scope.sql) {
+    conditions.push(scope.sql);
+    values.push(...scope.params);
   }
   if (submittedByUserId) {
     conditions.push('a.submitted_by_user_id = ?');

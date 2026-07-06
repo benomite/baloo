@@ -61,7 +61,7 @@ export default async function CampsPage({
   const isAdmin = ADMIN_ROLES.includes(ctx.role);
 
   const [camps, unites, activites] = await Promise.all([
-    listCamps({ groupId: ctx.groupId, scopeUniteId: ctx.scopeUniteId }),
+    listCamps({ groupId: ctx.groupId, scopeUniteIds: ctx.scopeUniteIds }),
     isAdmin ? listSelectableUnites() : Promise.resolve([]),
     isAdmin ? listSelectableActivites() : Promise.resolve([]),
   ]);

@@ -76,7 +76,7 @@ export default async function NouvelAbandonPage({
           nom: defaultNom,
           email: ctx.email,
         }}
-        scopeUniteId={ctx.scopeUniteId}
+        scopeUniteIds={ctx.scopeUniteIds}
         natureSuggestions={natureSuggestions}
         showSgdfInfo={true}
         submitLabel="Déclarer l'abandon"

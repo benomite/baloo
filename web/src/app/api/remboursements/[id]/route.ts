@@ -5,9 +5,9 @@ import { jsonError, parseJsonBody, requireApiContext } from '@/lib/api/route-hel
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
-  const { groupId, scopeUniteId } = ctxR.ctx;
+  const { groupId, scopeUniteIds } = ctxR.ctx;
   const { id } = await params;
-  const remboursement = await getRemboursement({ groupId, scopeUniteId }, id);
+  const remboursement = await getRemboursement({ groupId, scopeUniteIds }, id);
   if (!remboursement) return jsonError('Remboursement introuvable.', 404);
   return Response.json(remboursement);
 }
@@ -26,11 +26,11 @@ const patchSchema = z.object({
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
-  const { groupId, scopeUniteId } = ctxR.ctx;
+  const { groupId, scopeUniteIds } = ctxR.ctx;
   const { id } = await params;
   const parsed = await parseJsonBody(request, patchSchema);
   if ('error' in parsed) return parsed.error;
-  const updated = await updateRemboursement({ groupId, scopeUniteId }, id, parsed.data);
+  const updated = await updateRemboursement({ groupId, scopeUniteIds }, id, parsed.data);
   if (!updated) return jsonError('Remboursement introuvable.', 404);
   return Response.json(updated);
 }

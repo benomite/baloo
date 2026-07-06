@@ -35,7 +35,7 @@ export function captureTools(
     userId: 'u-test',
     groupId: 'g-test',
     role: 'tresorier',
-    scopeUniteId: null,
+    scopeUniteIds: [],
     scope: 'mcp:read mcp:write',
     clientId: 'client-test',
     ...ctx,

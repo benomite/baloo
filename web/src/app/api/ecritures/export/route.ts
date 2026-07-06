@@ -55,9 +55,9 @@ export async function GET(request: Request) {
     limit: MAX_ROWS,
   };
 
-  const { groupId, scopeUniteId } = ctxR.ctx;
+  const { groupId, scopeUniteIds } = ctxR.ctx;
   const [{ ecritures }, categories, unites, modesPaiement, activites] = await Promise.all([
-    listEcritures({ groupId, scopeUniteId }, filters),
+    listEcritures({ groupId, scopeUniteIds }, filters),
     listCategories(),
     listUnites({ groupId }),
     listModesPaiement(),

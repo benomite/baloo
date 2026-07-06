@@ -147,6 +147,13 @@ export async function ensureAuthSchema(): Promise<void> {
     await db.exec('ALTER TABLE users ADD COLUMN scope_unite_id TEXT REFERENCES unites(id)');
   }
 
+  // Multi-unités par chef : la table `user_unites` (créée dans business-schema)
+  // devient la source de vérité du scope. Backfill idempotent depuis l'ancien
+  // mono-champ `scope_unite_id` — aucun chef existant ne perd son unité.
+  await db.exec(
+    "INSERT OR IGNORE INTO user_unites (user_id, unite_id) SELECT id, scope_unite_id FROM users WHERE scope_unite_id IS NOT NULL",
+  );
+
   // ADR-019 : migration des rôles applicatifs vers la hiérarchie V2.
   //
   // L'ancien schéma `users` (hérité de compta/src/schema.sql, supprimé au

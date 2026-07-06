@@ -10,7 +10,7 @@ import {
 import { formatAmount, parseAmount } from '@/lib/format';
 
 export function registerCaisseTools(server: McpServer, ctx: McpContext) {
-  const caisseCtx = { groupId: ctx.groupId, scopeUniteId: ctx.scopeUniteId ?? null };
+  const caisseCtx = { groupId: ctx.groupId, scopeUniteIds: ctx.scopeUniteIds ?? null };
 
   server.tool(
     'list_mouvements_caisse',

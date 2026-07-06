@@ -21,13 +21,14 @@
 import { ZodError, type ZodType } from 'zod';
 import { auth } from '../auth/auth';
 import { verifyApiToken } from '../auth/api-tokens';
+import { loadUserUniteIds } from '../auth/user-unites';
 import { getDb } from '../db';
 
 export interface ApiContext {
   userId: string;
   groupId: string;
   role: string;
-  scopeUniteId: string | null;
+  scopeUniteIds: string[];
 }
 
 export interface ApiError {
@@ -62,16 +63,17 @@ export async function requireApiContext(request: Request): Promise<RequireApiCon
 
   // Le user `id` côté session vient de notre adapter (table `users`).
   const row = await getDb()
-    .prepare("SELECT group_id, role, scope_unite_id FROM users WHERE id = ? AND statut = 'actif'")
-    .get<{ group_id: string; role: string | null; scope_unite_id: string | null }>(session.user.id);
+    .prepare("SELECT group_id, role FROM users WHERE id = ? AND statut = 'actif'")
+    .get<{ group_id: string; role: string | null }>(session.user.id);
   if (!row) return { error: jsonError('User inactif ou inconnu.', 401) };
 
+  const scopeUniteIds = await loadUserUniteIds(getDb(), session.user.id);
   return {
     ctx: {
       userId: session.user.id,
       groupId: row.group_id,
       role: row.role ?? 'tresorier',
-      scopeUniteId: row.scope_unite_id,
+      scopeUniteIds,
     },
   };
 }

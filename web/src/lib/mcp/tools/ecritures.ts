@@ -9,7 +9,7 @@ import { parseAmount } from '@/lib/format';
 const ECRITURE_STATUS_ENUM = z.enum(ECRITURE_STATUSES);
 
 export function registerEcrituresTools(server: McpServer, ctx: McpContext) {
-  const ecritureCtx = { groupId: ctx.groupId, scopeUniteId: ctx.scopeUniteId };
+  const ecritureCtx = { groupId: ctx.groupId, scopeUniteIds: ctx.scopeUniteIds };
 
   // ─── list_ecritures (étendu) ───────────────────────────────────────────
   //

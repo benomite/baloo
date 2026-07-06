@@ -17,7 +17,7 @@ import {
 import { formatAmount, parseAmount } from '@/lib/format';
 
 export function registerCampsTools(server: McpServer, ctx: McpContext) {
-  const campCtx = { groupId: ctx.groupId, scopeUniteId: ctx.scopeUniteId ?? null };
+  const campCtx = { groupId: ctx.groupId, scopeUniteIds: ctx.scopeUniteIds ?? null };
 
   server.tool(
     'list_camps',

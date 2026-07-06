@@ -54,7 +54,7 @@ export async function createInvitation(
 
   const email = (formData.get('email') as string | null)?.trim() ?? '';
   const requestedRole = formData.get('role') as string | null;
-  const scopeUniteId = (formData.get('scope_unite_id') as string | null) || null;
+  const scopeUniteIds = formData.getAll('scope_unite_ids').map(String).filter(Boolean);
   const nomAffichage = (formData.get('nom_affichage') as string | null)?.trim() || null;
 
   if (!email) {
@@ -70,7 +70,7 @@ export async function createInvitation(
       {
         email,
         role: requestedRole as InvitationRole,
-        scope_unite_id: scopeUniteId,
+        scope_unite_ids: scopeUniteIds,
         nom_affichage: nomAffichage,
         app_url: await deriveAppUrl(),
       },
@@ -122,7 +122,7 @@ export async function deleteInvitation(userId: string): Promise<void> {
 export async function changeUserRole(userId: string, formData: FormData): Promise<void> {
   const { groupId, userId: currentUserId } = await requireAdmin();
   const role = formData.get('role') as string | null;
-  const scopeUniteId = (formData.get('scope_unite_id') as string | null) || null;
+  const scopeUniteIds = formData.getAll('scope_unite_ids').map(String).filter(Boolean);
 
   if (!role || !VALID_ROLES.includes(role as InvitationRole)) {
     redirect('/admin/invitations?error=' + encodeURIComponent('Rôle invalide.'));
@@ -134,7 +134,7 @@ export async function changeUserRole(userId: string, formData: FormData): Promis
       {
         userId,
         role: role as InvitationRole,
-        scope_unite_id: scopeUniteId,
+        scope_unite_ids: scopeUniteIds,
       },
     );
   } catch (err) {

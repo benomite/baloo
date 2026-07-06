@@ -1,6 +1,7 @@
 import { getDb } from '../db';
 import { nextId, currentTimestamp } from '../ids';
 import { nullIfEmpty } from '../utils/form';
+import { uniteScopeSql } from '../scope';
 import type {
   MouvementCaisse,
   MouvementCaisseStatus,
@@ -11,8 +12,8 @@ import { createDepotEspeces } from './depots-especes';
 
 export interface CaisseContext {
   groupId: string;
-  // Si défini, restreint aux mouvements de cette unité (vue chef).
-  scopeUniteId?: string | null;
+  // Si défini, restreint aux mouvements de CES unités (vue chef multi-unités).
+  scopeUniteIds?: string[];
 }
 
 export interface ListMouvementsCaisseOptions {
@@ -22,7 +23,7 @@ export interface ListMouvementsCaisseOptions {
 }
 
 export async function listMouvementsCaisse(
-  { groupId, scopeUniteId }: CaisseContext,
+  { groupId, scopeUniteIds }: CaisseContext,
   options: ListMouvementsCaisseOptions = {},
 ): Promise<{ mouvements: MouvementCaisse[]; solde: number }> {
   const db = getDb();
@@ -30,9 +31,10 @@ export async function listMouvementsCaisse(
 
   const conditions: string[] = ['m.group_id = ?'];
   const values: unknown[] = [groupId];
-  if (scopeUniteId) {
-    conditions.push('m.unite_id = ?');
-    values.push(scopeUniteId);
+  const scope = uniteScopeSql(scopeUniteIds ?? [], 'm.unite_id');
+  if (scope.sql) {
+    conditions.push(scope.sql);
+    values.push(...scope.params);
   } else if (options.unite_id) {
     conditions.push('m.unite_id = ?');
     values.push(options.unite_id);

@@ -320,6 +320,17 @@ export async function ensureBusinessSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_users_group ON users(group_id);
     CREATE INDEX IF NOT EXISTS idx_users_person ON users(person_id);
 
+    -- user_unites : périmètre d'un chef, N unités par user (source de vérité
+    -- du scope). Aucune ligne = vue globale (tresorier/RG). Remplace le
+    -- mono-champ users.scope_unite_id (conservé, backfillé, mais plus lu pour
+    -- le filtrage). Cf. auth/schema.ts pour la migration + backfill.
+    CREATE TABLE IF NOT EXISTS user_unites (
+      user_id TEXT NOT NULL REFERENCES users(id),
+      unite_id TEXT NOT NULL REFERENCES unites(id),
+      PRIMARY KEY (user_id, unite_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_unites_user ON user_unites(user_id);
+
     -- ============ Métier ======================================
     -- ecritures : colonnes étendues (justif_attendu, ligne_bancaire_*,
     -- comptaweb_ecriture_id, carte_id) intégrées en CREATE.

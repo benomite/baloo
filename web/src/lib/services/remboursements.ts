@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { getDb } from '../db';
 import { nextId, currentTimestamp } from '../ids';
 import { nullIfEmpty } from '../utils/form';
+import { uniteScopeSql } from '../scope';
 import { REMBOURSEMENT_STATUSES, type Remboursement, type RemboursementStatus } from '../types';
 
 // Re-exports legacy : `RBT_STATUTS` / `RbtStatut` étaient les noms
@@ -25,8 +26,8 @@ export interface RemboursementLigne {
 
 export interface RemboursementContext {
   groupId: string;
-  // Chantier 5 : si défini, restreint aux remboursements de cette unité.
-  scopeUniteId?: string | null;
+  // Chantier 5 / multi-unités : restreint aux remboursements de CES unités.
+  scopeUniteIds?: string[];
   // Chantier 2 P2-workflows : si défini, restreint aux remboursements
   // soumis par ce user (vue "mes demandes" pour equipier / chef).
   submittedByUserId?: string | null;
@@ -44,7 +45,7 @@ export interface RemboursementFilters {
 }
 
 export async function listRemboursements(
-  { groupId, scopeUniteId, submittedByUserId }: RemboursementContext,
+  { groupId, scopeUniteIds, submittedByUserId }: RemboursementContext,
   filters: RemboursementFilters = {},
 ): Promise<Remboursement[]> {
   const conditions: string[] = ['r.group_id = ?'];
@@ -55,7 +56,8 @@ export async function listRemboursements(
     conditions.push('r.submitted_by_user_id = ?');
     values.push(submittedByUserId);
   }
-  if (scopeUniteId) { conditions.push('r.unite_id = ?'); values.push(scopeUniteId); }
+  const scope = uniteScopeSql(scopeUniteIds ?? [], 'r.unite_id');
+  if (scope.sql) { conditions.push(scope.sql); values.push(...scope.params); }
   else if (filters.unite_id) { conditions.push('r.unite_id = ?'); values.push(filters.unite_id); }
   if (filters.demandeur) { conditions.push('r.demandeur LIKE ?'); values.push(`%${filters.demandeur}%`); }
   if (filters.search) {
@@ -82,13 +84,14 @@ export async function listRemboursements(
 }
 
 export async function getRemboursement(
-  { groupId, scopeUniteId, submittedByUserId }: RemboursementContext,
+  { groupId, scopeUniteIds, submittedByUserId }: RemboursementContext,
   id: string,
 ): Promise<Remboursement | undefined> {
   const conditions = ['r.id = ?', 'r.group_id = ?'];
   const values: unknown[] = [id, groupId];
   if (submittedByUserId) { conditions.push('r.submitted_by_user_id = ?'); values.push(submittedByUserId); }
-  if (scopeUniteId) { conditions.push('r.unite_id = ?'); values.push(scopeUniteId); }
+  const scope = uniteScopeSql(scopeUniteIds ?? [], 'r.unite_id');
+  if (scope.sql) { conditions.push(scope.sql); values.push(...scope.params); }
   return await getDb()
     .prepare(
       `SELECT r.*, u.code as unite_code, m.name as mode_paiement_name

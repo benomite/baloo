@@ -29,7 +29,9 @@ interface Props {
   // Identité du donateur : préremplie avec l'utilisateur connecté
   // mais toujours modifiable (utile pour saisie pour autrui).
   defaultIdentity: Identity;
-  scopeUniteId?: string | null;
+  // Périmètre unité du user : vide = global (select complet) ; 1 = imposée
+  // (select caché) ; N = choix restreint à ses unités (select obligatoire).
+  scopeUniteIds?: string[];
   // Suggestions de nature (historique du user).
   natureSuggestions?: string[];
   // Afficher l'info-box SGDF de téléchargement du formulaire.
@@ -42,7 +44,7 @@ export function AbandonForm({
   unites,
   today,
   defaultIdentity,
-  scopeUniteId,
+  scopeUniteIds = [],
   natureSuggestions = [],
   showSgdfInfo = false,
   submitLabel = 'Enregistrer le don',
@@ -144,18 +146,29 @@ export function AbandonForm({
             />
           </Field>
         </div>
-        {!scopeUniteId && unites.length > 0 && (
-          <Field label="Unité concernée" htmlFor="unite_id" hint="optionnel">
-            <NativeSelect id="unite_id" name="unite_id" defaultValue="">
-              <option value="">— Aucune / groupe —</option>
-              {unites.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.code} — {u.name}
+        {(() => {
+          // 1 unité → imposée côté serveur, pas de select. Sinon on affiche
+          // un select : complet (global) ou restreint aux unités du chef (N>1,
+          // choix obligatoire).
+          if (scopeUniteIds.length === 1) return null;
+          const allowed = scopeUniteIds.length === 0 ? unites : unites.filter((u) => scopeUniteIds.includes(u.id));
+          if (allowed.length === 0) return null;
+          const requireChoice = scopeUniteIds.length > 1;
+          return (
+            <Field label="Unité concernée" htmlFor="unite_id" hint={requireChoice ? undefined : 'optionnel'}>
+              <NativeSelect id="unite_id" name="unite_id" defaultValue="" required={requireChoice}>
+                <option value="" disabled={requireChoice}>
+                  {requireChoice ? '— Choisir une unité —' : '— Aucune / groupe —'}
                 </option>
-              ))}
-            </NativeSelect>
-          </Field>
-        )}
+                {allowed.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.code} — {u.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+          );
+        })()}
       </Section>
 
       <Section

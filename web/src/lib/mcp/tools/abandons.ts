@@ -9,7 +9,7 @@ import { currentTimestamp } from '@/lib/ids';
 const ABANDON_STATUS = z.enum(['a_traiter', 'valide', 'envoye_national', 'refuse']);
 
 export function registerAbandonTools(server: McpServer, ctx: McpContext) {
-  const abandonCtx = { groupId: ctx.groupId, scopeUniteId: ctx.scopeUniteId ?? null };
+  const abandonCtx = { groupId: ctx.groupId, scopeUniteIds: ctx.scopeUniteIds ?? null };
 
   server.tool(
     'list_abandons',

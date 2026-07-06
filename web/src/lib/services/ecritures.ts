@@ -1,14 +1,15 @@
 import { getDb, type DbWrapper } from '../db';
 import { currentTimestamp } from '../ids';
 import { nullIfEmpty } from '../utils/form';
+import { uniteScopeSql } from '../scope';
 import type { Ecriture, EcritureStatus } from '../types';
 import { isMirrorStatus, pendingStatuses } from './ecritures-status';
 
 export interface EcritureContext {
   groupId: string;
-  // Chantier 5 : si défini, restreint aux écritures de cette unité.
-  // Renseigné pour les users `chef` ; NULL pour `tresorier` / `RG`.
-  scopeUniteId?: string | null;
+  // Chantier 5 / multi-unités : restreint aux écritures de CES unités.
+  // Renseigné pour les users `chef` ; VIDE pour `tresorier` / `RG`.
+  scopeUniteIds?: string[];
 }
 
 export interface EcritureFilters {
@@ -85,16 +86,17 @@ export function computeMissingFields(e: {
 }
 
 export async function listEcritures(
-  { groupId, scopeUniteId }: EcritureContext,
+  { groupId, scopeUniteIds }: EcritureContext,
   filters: EcritureFilters = {},
 ): Promise<{ ecritures: Ecriture[]; total: number }> {
   const conditions: string[] = ['e.group_id = ?'];
   const values: unknown[] = [groupId];
 
-  // Scope chef : ne voit que les écritures de son unité (chantier 5).
+  // Scope chef : ne voit que les écritures de SES unités (multi-unités).
   // Override silencieux du filtre `unite_id` côté UI : un chef ne peut pas
-  // élargir au-delà de son unité même en bidouillant l'URL.
-  if (scopeUniteId) { conditions.push('e.unite_id = ?'); values.push(scopeUniteId); }
+  // élargir au-delà de ses unités même en bidouillant l'URL.
+  const scope = uniteScopeSql(scopeUniteIds ?? [], 'e.unite_id');
+  if (scope.sql) { conditions.push(scope.sql); values.push(...scope.params); }
   else if (filters.unite_id) { conditions.push('e.unite_id = ?'); values.push(filters.unite_id); }
   if (filters.category_id) { conditions.push('e.category_id = ?'); values.push(filters.category_id); }
   if (filters.type) { conditions.push('e.type = ?'); values.push(filters.type); }
@@ -233,10 +235,11 @@ export async function listEcritures(
   return { ecritures: filtered, total };
 }
 
-export async function getEcriture({ groupId, scopeUniteId }: EcritureContext, id: string): Promise<Ecriture | undefined> {
+export async function getEcriture({ groupId, scopeUniteIds }: EcritureContext, id: string): Promise<Ecriture | undefined> {
   const conditions = ['e.id = ?', 'e.group_id = ?'];
   const values: unknown[] = [id, groupId];
-  if (scopeUniteId) { conditions.push('e.unite_id = ?'); values.push(scopeUniteId); }
+  const scope = uniteScopeSql(scopeUniteIds ?? [], 'e.unite_id');
+  if (scope.sql) { conditions.push(scope.sql); values.push(...scope.params); }
   return await getDb().prepare(
     `SELECT e.*, u.code as unite_code, u.name as unite_name, u.couleur as unite_couleur,
        c.name as category_name, m.name as mode_paiement_name, a.name as activite_name,
@@ -399,13 +402,14 @@ export type DeleteDraftResult =
 // entre l'affichage du bouton et le clic). Le `AND status='draft'` du DELETE
 // referme la fenêtre côté SQL.
 export async function deleteDraftEcriture(
-  { groupId, scopeUniteId }: EcritureContext,
+  { groupId, scopeUniteIds }: EcritureContext,
   id: string,
   db: DbWrapper = getDb(),
 ): Promise<DeleteDraftResult> {
   const conditions = ['id = ?', 'group_id = ?'];
   const values: unknown[] = [id, groupId];
-  if (scopeUniteId) { conditions.push('unite_id = ?'); values.push(scopeUniteId); }
+  const scope = uniteScopeSql(scopeUniteIds ?? [], 'unite_id');
+  if (scope.sql) { conditions.push(scope.sql); values.push(...scope.params); }
   const current = await db
     .prepare(`SELECT status FROM ecritures WHERE ${conditions.join(' AND ')}`)
     .get<{ status: string }>(...values);

@@ -17,7 +17,7 @@ export interface TransitionCtx {
   email: string;
   /** Nom d'affichage de l'acteur (peut être null pour un token MCP). */
   name: string | null;
-  scopeUniteId: string | null;
+  scopeUniteIds: string[];
 }
 
 export type TransitionResult =
@@ -102,7 +102,7 @@ export async function applyRemboursementTransition(
   // 5. Mise à jour BDD
   const today = new Date().toISOString().split('T')[0];
   await updateRemboursement(
-    { groupId: ctx.groupId, scopeUniteId: ctx.scopeUniteId },
+    { groupId: ctx.groupId, scopeUniteIds: ctx.scopeUniteIds },
     id,
     {
       status: targetStatus as RemboursementStatus,

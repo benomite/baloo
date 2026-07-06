@@ -48,7 +48,9 @@ interface Props {
   // Identité du bénéficiaire : préremplie avec l'utilisateur connecté
   // mais toujours modifiable.
   defaultIdentity: Identity;
-  scopeUniteId?: string | null;
+  // Périmètre unité du user : vide = global ; 1 = imposée (select caché) ;
+  // N = choix restreint à ses unités (obligatoire).
+  scopeUniteIds?: string[];
   // Pré-remplissage en mode édition.
   initialLignes?: InitialLigne[];
   initialRibTexte?: string | null;
@@ -94,7 +96,7 @@ export function RemboursementForm({
   unites,
   today,
   defaultIdentity,
-  scopeUniteId,
+  scopeUniteIds = [],
   initialLignes,
   initialRibTexte,
   initialNotes,
@@ -331,23 +333,32 @@ export function RemboursementForm({
       </Section>
 
       <Section title="Détails" subtitle="Quelques infos pour aider le trésorier.">
-        {!scopeUniteId && unites.length > 0 && (
-          <Field label="Unité concernée" htmlFor="unite_id" hint="optionnel">
-            <NativeSelect
-              id="unite_id"
-              name="unite_id"
-              value={uniteId}
-              onChange={(e) => setUniteId(e.target.value)}
-            >
-              <option value="">— Aucune / groupe —</option>
-              {unites.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.code} — {u.name}
+        {(() => {
+          if (scopeUniteIds.length === 1) return null;
+          const allowed = scopeUniteIds.length === 0 ? unites : unites.filter((u) => scopeUniteIds.includes(u.id));
+          if (allowed.length === 0) return null;
+          const requireChoice = scopeUniteIds.length > 1;
+          return (
+            <Field label="Unité concernée" htmlFor="unite_id" hint={requireChoice ? undefined : 'optionnel'}>
+              <NativeSelect
+                id="unite_id"
+                name="unite_id"
+                value={uniteId}
+                onChange={(e) => setUniteId(e.target.value)}
+                required={requireChoice}
+              >
+                <option value="" disabled={requireChoice}>
+                  {requireChoice ? '— Choisir une unité —' : '— Aucune / groupe —'}
                 </option>
-              ))}
-            </NativeSelect>
-          </Field>
-        )}
+                {allowed.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.code} — {u.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+          );
+        })()}
         <Field label="Notes" htmlFor="notes" hint="optionnel">
           <Textarea
             id="notes"

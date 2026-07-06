@@ -6,9 +6,9 @@ import { jsonError, parseJsonBody, requireApiContext } from '@/lib/api/route-hel
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
-  const { groupId, scopeUniteId } = ctxR.ctx;
+  const { groupId, scopeUniteIds } = ctxR.ctx;
   const { id } = await params;
-  const ecriture = await getEcriture({ groupId, scopeUniteId }, id);
+  const ecriture = await getEcriture({ groupId, scopeUniteIds }, id);
   if (!ecriture) return jsonError('Écriture introuvable.', 404);
   return Response.json(ecriture);
 }
@@ -33,11 +33,11 @@ const patchSchema = z.object({
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctxR = await requireApiContext(request);
   if ('error' in ctxR) return ctxR.error;
-  const { groupId, scopeUniteId } = ctxR.ctx;
+  const { groupId, scopeUniteIds } = ctxR.ctx;
   const { id } = await params;
   const parsed = await parseJsonBody(request, patchSchema);
   if ('error' in parsed) return parsed.error;
-  const updated = await updateEcriture({ groupId, scopeUniteId }, id, parsed.data);
+  const updated = await updateEcriture({ groupId, scopeUniteIds }, id, parsed.data);
   if (!updated) return jsonError('Écriture introuvable.', 404);
   return Response.json(updated);
 }

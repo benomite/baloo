@@ -37,7 +37,7 @@ const CTX = {
   userId: 'u-tresorier',
   email: 'tresorier@test.com',
   name: 'Trésorier Test',
-  scopeUniteId: null,
+  scopeUniteIds: [],
 };
 
 const FAKE_RBT = {
@@ -111,7 +111,7 @@ describe('applyRemboursementTransition', () => {
     const r = await applyRemboursementTransition(CTX, 'RBT-2026-001', 'valide_tresorier');
     expect(r).toEqual({ ok: true });
     expect(updateRemboursement).toHaveBeenCalledWith(
-      { groupId: 'g-test', scopeUniteId: null },
+      { groupId: 'g-test', scopeUniteIds: [] },
       'RBT-2026-001',
       expect.objectContaining({ status: 'valide_tresorier' }),
     );

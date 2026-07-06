@@ -1,5 +1,6 @@
 import { getDb, type DbWrapper } from '../db';
 import { nextIdOn, currentTimestamp } from '../ids';
+import { uniteScopeSql } from '../scope';
 import { currentExercice, CATEGORIES_HORS_RESULTAT } from './overview';
 import { ensureDepotsSchema } from './depots';
 import { buildCampBudgetRows, type CampBudgetRows, type CatAmount } from './camp-budget';
@@ -53,7 +54,7 @@ export interface Camp {
 
 export interface CampContext {
   groupId: string;
-  scopeUniteId?: string | null;
+  scopeUniteIds?: string[];
 }
 
 export async function createCamp(
@@ -86,7 +87,8 @@ export async function listCamps(ctx: CampContext): Promise<Camp[]> {
   await ensureCampsSchema();
   const conditions = ['c.group_id = ?'];
   const values: unknown[] = [ctx.groupId];
-  if (ctx.scopeUniteId) { conditions.push('c.unite_id = ?'); values.push(ctx.scopeUniteId); }
+  const scope = uniteScopeSql(ctx.scopeUniteIds ?? [], 'c.unite_id');
+  if (scope.sql) { conditions.push(scope.sql); values.push(...scope.params); }
   return await getDb()
     .prepare(`${CAMP_SELECT} WHERE ${conditions.join(' AND ')} ORDER BY COALESCE(c.date_debut, c.created_at) DESC`)
     .all<Camp>(...values);
@@ -98,8 +100,8 @@ export async function getCamp(ctx: CampContext, id: string): Promise<Camp | null
     .prepare(`${CAMP_SELECT} WHERE c.id = ? AND c.group_id = ?`)
     .get<Camp>(id, ctx.groupId);
   if (!camp) return null;
-  // Scope chef : un chef ne voit que les camps de son unité.
-  if (ctx.scopeUniteId && camp.unite_id !== ctx.scopeUniteId) return null;
+  // Scope chef : un chef ne voit que les camps de SES unités.
+  if (ctx.scopeUniteIds?.length && !ctx.scopeUniteIds.includes(camp.unite_id)) return null;
   return camp;
 }
 

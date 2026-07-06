@@ -89,7 +89,7 @@ export default async function EditRemboursementPage({
           nom: r.nom ?? '',
           email: r.email ?? '',
         }}
-        scopeUniteId={ctx.scopeUniteId}
+        scopeUniteIds={ctx.scopeUniteIds}
         initialLignes={lignes.map((l) => ({
           date_depense: l.date_depense,
           amount_cents: l.amount_cents,

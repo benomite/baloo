@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { headers } from 'next/headers';
 import { getCurrentContext } from '../context';
+import { resolveScopedUnite } from '../scope';
 import { getDb } from '../db';
 import {
   createAbandon as createAbandonService,
@@ -156,7 +157,7 @@ export async function createAbandon(formData: FormData): Promise<void> {
         amount_cents,
         date_depense: dateDepense,
         nature,
-        unite_id: ctx.scopeUniteId || (formData.get('unite_id') as string | null) || null,
+        unite_id: resolveScopedUnite(ctx.scopeUniteIds, (formData.get('unite_id') as string | null) || null),
         annee_fiscale: anneeFiscale,
         notes: (formData.get('notes') as string | null)?.trim() || null,
         // Le user connecte a soumis la demande (meme si le donateur designe

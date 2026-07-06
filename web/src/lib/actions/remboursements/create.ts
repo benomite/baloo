@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { getCurrentContext } from '../../context';
+import { resolveScopedUnite } from '../../scope';
 import { getDb } from '../../db';
 import {
   createRemboursement as createRemboursementService,
@@ -36,7 +37,7 @@ async function createRemboursementFromForm(
     groupId: string;
     userId: string;
     email: string;
-    scopeUniteId: string | null;
+    scopeUniteIds: string[];
     name: string | null;
     role: string;
   },
@@ -71,7 +72,12 @@ async function createRemboursementFromForm(
   const fullName = `${prenom} ${nom}`.trim();
   const totalEstime = resolvedLignes.reduce((s, l) => s + l.amount_cents, 0);
   const uniteIdRaw = (formData.get('unite_id') as string | null)?.trim() || null;
-  const uniteId = ctx.scopeUniteId || uniteIdRaw;
+  let uniteId: string | null;
+  try {
+    uniteId = resolveScopedUnite(ctx.scopeUniteIds, uniteIdRaw);
+  } catch (e) {
+    throw new FormValidationError(e instanceof Error ? e.message : 'Unité invalide.');
+  }
 
   let created;
   try {

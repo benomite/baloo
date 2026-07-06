@@ -116,22 +116,18 @@ export function InvitationForm({ action, unites, roles }: Props) {
           </NativeSelect>
         </Field>
         {needsUnit && (
-          <Field
-            label="Unité"
-            htmlFor="scope_unite_id"
-            required
-            hint="le chef d'unité ne voit que son unité"
-          >
-            <NativeSelect id="scope_unite_id" name="scope_unite_id" required defaultValue="">
-              <option value="" disabled>
-                — Choisir une unité —
-              </option>
+          <Field label="Unités du chef" hint="il ne voit/gère que ces unités — coche-en une ou plusieurs">
+            <div className="grid grid-cols-2 gap-1.5">
               {unites.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.code} — {u.name}
-                </option>
+                <label
+                  key={u.id}
+                  className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-[13px] cursor-pointer hover:border-brand"
+                >
+                  <input type="checkbox" name="scope_unite_ids" value={u.id} className="h-4 w-4 rounded border-border-strong text-brand" />
+                  <span>{u.code} — {u.name}</span>
+                </label>
               ))}
-            </NativeSelect>
+            </div>
           </Field>
         )}
         <div className="flex justify-end pt-1">

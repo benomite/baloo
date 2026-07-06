@@ -1,6 +1,6 @@
 import { getDb } from '../db';
 import { currentTimestamp, uniqueId } from '../ids';
-import { nullIfEmpty } from '../utils/form';
+import { loadUserUniteIds, setUserUnites } from '../auth/user-unites';
 import { sendInvitationEmail } from '../email/invitation';
 import { generateInviteLink, buildInviteUrl } from '../auth/invite-links';
 
@@ -23,7 +23,7 @@ export type InvitationRole = (typeof VALID_ROLES)[number];
 export interface CreateInvitationInput {
   email: string;
   role: InvitationRole;
-  scope_unite_id?: string | null;
+  scope_unite_ids?: string[];
   nom_affichage?: string | null;
   app_url: string;
 }
@@ -32,7 +32,7 @@ export interface CreateInvitationResult {
   userId: string;
   email: string;
   role: string;
-  scope_unite_id: string | null;
+  scope_unite_ids: string[];
   email_sent: boolean;
   invite_url: string;
   reused: boolean;
@@ -58,27 +58,28 @@ export async function createInvitation(
     throw new Error(`Rôle invalide : ${input.role}`);
   }
 
-  // Cohérence rôle ↔ scope.
+  // Cohérence rôle ↔ scope : un chef a 1+ unités, les autres aucune.
+  const uniteIds = [...new Set((input.scope_unite_ids ?? []).filter(Boolean))];
   const needsScope = input.role === 'chef';
-  if (needsScope && !input.scope_unite_id) {
-    throw new Error("Le rôle 'chef' nécessite une unité (scope_unite_id).");
+  if (needsScope && uniteIds.length === 0) {
+    throw new Error("Le rôle 'chef' nécessite au moins une unité.");
   }
-  if (!needsScope && input.scope_unite_id) {
+  if (!needsScope && uniteIds.length > 0) {
     throw new Error(`Le rôle '${input.role}' n'a pas de scope unité.`);
   }
 
   // Anti-doublon : si un user existe déjà avec cet email dans le groupe, on
   // le réutilise (idempotent) au lieu d'échouer — on lui régénère un lien.
   const existing = await db
-    .prepare('SELECT id, role, scope_unite_id FROM users WHERE group_id = ? AND email = ? LIMIT 1')
-    .get<{ id: string; role: string; scope_unite_id: string | null }>(groupId, email);
+    .prepare('SELECT id, role FROM users WHERE group_id = ? AND email = ? LIMIT 1')
+    .get<{ id: string; role: string }>(groupId, email);
 
-  // Validation du scope (l'unité doit exister dans le groupe).
-  if (input.scope_unite_id) {
+  // Validation du scope (chaque unité doit exister dans le groupe).
+  for (const uniteId of uniteIds) {
     const unite = await db
       .prepare('SELECT id FROM unites WHERE id = ? AND group_id = ? LIMIT 1')
-      .get<{ id: string }>(input.scope_unite_id, groupId);
-    if (!unite) throw new Error(`Unité ${input.scope_unite_id} introuvable dans ce groupe.`);
+      .get<{ id: string }>(uniteId, groupId);
+    if (!unite) throw new Error(`Unité ${uniteId} introuvable dans ce groupe.`);
   }
 
   // Récupération du nom du groupe et de l'inviteur (pour le mail).
@@ -91,7 +92,7 @@ export async function createInvitation(
 
   let userId: string;
   let effectiveRole: string;
-  let effectiveScope: string | null;
+  let effectiveScopeIds: string[];
   let nomAffichage: string;
   const reused = !!existing;
 
@@ -100,7 +101,7 @@ export async function createInvitation(
     // section « Modifier le rôle »). On ne touche pas à ses données.
     userId = existing.id;
     effectiveRole = existing.role;
-    effectiveScope = existing.scope_unite_id;
+    effectiveScopeIds = await loadUserUniteIds(db, existing.id);
     const u = await db
       .prepare('SELECT nom_affichage FROM users WHERE id = ?')
       .get<{ nom_affichage: string | null }>(existing.id);
@@ -111,11 +112,14 @@ export async function createInvitation(
     const now = currentTimestamp();
     nomAffichage = input.nom_affichage?.trim() || email.split('@')[0];
     effectiveRole = input.role;
-    effectiveScope = nullIfEmpty(input.scope_unite_id) ?? null;
+    effectiveScopeIds = uniteIds;
+    // scope_unite_id (legacy mono-champ) = 1re unité, cohérence d'affichage ;
+    // la source de vérité du scope est user_unites (écrite juste après).
     await db.prepare(
       `INSERT INTO users (id, group_id, person_id, email, nom_affichage, role, scope_unite_id, statut, created_at, updated_at)
        VALUES (?, ?, NULL, ?, ?, ?, ?, 'actif', ?, ?)`,
-    ).run(userId, groupId, email, nomAffichage, input.role, effectiveScope, now, now);
+    ).run(userId, groupId, email, nomAffichage, input.role, uniteIds[0] ?? null, now, now);
+    await setUserUnites(db, userId, uniteIds);
   }
 
   // Génère le lien d'auto-connexion vers le formulaire de remboursement.
@@ -149,7 +153,7 @@ export async function createInvitation(
     userId,
     email,
     role: effectiveRole,
-    scope_unite_id: effectiveScope,
+    scope_unite_ids: effectiveScopeIds,
     email_sent: emailSent,
     invite_url: inviteUrl,
     reused,
@@ -164,6 +168,10 @@ export interface ListInvitationsItem {
   scope_unite_id: string | null;
   unite_code: string | null;
   unite_name: string | null;
+  // Codes de TOUTES les unités du chef (multi-unités), séparés par ", ".
+  unites_codes: string | null;
+  // Ids correspondants, séparés par "," (pour pré-cocher le formulaire).
+  unites_ids: string | null;
   created_at: string;
   email_verified: string | null;
 }
@@ -177,6 +185,8 @@ export async function listPendingInvitations(
     .prepare(
       `SELECT u.id, u.email, u.nom_affichage, u.role, u.scope_unite_id,
               un.code AS unite_code, un.name AS unite_name,
+              (SELECT group_concat(un2.code, ', ') FROM user_unites uu JOIN unites un2 ON un2.id = uu.unite_id WHERE uu.user_id = u.id) AS unites_codes,
+              (SELECT group_concat(uu.unite_id) FROM user_unites uu WHERE uu.user_id = u.id) AS unites_ids,
               u.created_at, u.email_verified
        FROM users u
        LEFT JOIN unites un ON un.id = u.scope_unite_id
@@ -196,6 +206,8 @@ export async function listActiveUsers(
     .prepare(
       `SELECT u.id, u.email, u.nom_affichage, u.role, u.scope_unite_id,
               un.code AS unite_code, un.name AS unite_name,
+              (SELECT group_concat(un2.code, ', ') FROM user_unites uu JOIN unites un2 ON un2.id = uu.unite_id WHERE uu.user_id = u.id) AS unites_codes,
+              (SELECT group_concat(uu.unite_id) FROM user_unites uu WHERE uu.user_id = u.id) AS unites_ids,
               u.created_at, u.email_verified
        FROM users u
        LEFT JOIN unites un ON un.id = u.scope_unite_id
@@ -279,6 +291,8 @@ export async function listInactiveUsers(
     .prepare(
       `SELECT u.id, u.email, u.nom_affichage, u.role, u.scope_unite_id,
               un.code AS unite_code, un.name AS unite_name,
+              (SELECT group_concat(un2.code, ', ') FROM user_unites uu JOIN unites un2 ON un2.id = uu.unite_id WHERE uu.user_id = u.id) AS unites_codes,
+              (SELECT group_concat(uu.unite_id) FROM user_unites uu WHERE uu.user_id = u.id) AS unites_ids,
               u.created_at, u.email_verified
        FROM users u
        LEFT JOIN unites un ON un.id = u.scope_unite_id
@@ -294,10 +308,10 @@ export async function listInactiveUsers(
 // pour gérer la compta).
 export async function setUserRole(
   { groupId, currentUserId }: { groupId: string; currentUserId: string },
-  { userId, role, scope_unite_id }: {
+  { userId, role, scope_unite_ids }: {
     userId: string;
     role: InvitationRole;
-    scope_unite_id?: string | null;
+    scope_unite_ids?: string[];
   },
 ): Promise<void> {
   const db = getDb();
@@ -307,13 +321,10 @@ export async function setUserRole(
   }
 
   const needsScope = role === 'chef';
-  if (needsScope && !scope_unite_id) {
-    throw new Error("Le rôle 'chef' nécessite une unité.");
-  }
-  if (!needsScope && scope_unite_id) {
-    // On nettoie le scope automatiquement plutôt que d'erreur — l'admin
-    // a juste laissé l'ancien scope en changeant de rôle.
-    scope_unite_id = null;
+  // On nettoie le scope automatiquement pour un non-chef plutôt que d'erreur.
+  const uniteIds = needsScope ? [...new Set((scope_unite_ids ?? []).filter(Boolean))] : [];
+  if (needsScope && uniteIds.length === 0) {
+    throw new Error("Le rôle 'chef' nécessite au moins une unité.");
   }
 
   const target = await db
@@ -348,11 +359,11 @@ export async function setUserRole(
     );
   }
 
-  if (scope_unite_id) {
+  for (const uniteId of uniteIds) {
     const unite = await db
       .prepare('SELECT id FROM unites WHERE id = ? AND group_id = ? LIMIT 1')
-      .get<{ id: string }>(scope_unite_id, groupId);
-    if (!unite) throw new Error(`Unité ${scope_unite_id} introuvable dans ce groupe.`);
+      .get<{ id: string }>(uniteId, groupId);
+    if (!unite) throw new Error(`Unité ${uniteId} introuvable dans ce groupe.`);
   }
 
   await db
@@ -361,7 +372,9 @@ export async function setUserRole(
        SET role = ?, scope_unite_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
        WHERE id = ? AND group_id = ?`,
     )
-    .run(role, scope_unite_id ?? null, userId, groupId);
+    .run(role, uniteIds[0] ?? null, userId, groupId);
+  // Source de vérité du scope : user_unites.
+  await setUserUnites(db, userId, uniteIds);
 }
 
 // Désactive un user (statut='ancien'). Conserve les FK (signatures,

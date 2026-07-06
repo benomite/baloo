@@ -74,7 +74,7 @@ export default async function NouveauRemboursementPage({
         unites={unites}
         today={today}
         defaultIdentity={{ prenom, nom, email: ctx.email }}
-        scopeUniteId={ctx.scopeUniteId}
+        scopeUniteIds={ctx.scopeUniteIds}
         initialRibTexte={lastRib}
         tauxKmMillicents={groupe?.taux_km_millicents ?? 354}
       />

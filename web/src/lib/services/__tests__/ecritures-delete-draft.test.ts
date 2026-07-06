@@ -138,7 +138,7 @@ describe('deleteDraftEcriture', () => {
 
   it('REFUSE un draft hors du scope unité d\'un chef', async () => {
     await insertEcriture(db, { status: 'draft', unite_id: 'u-louveteaux' });
-    const res = await deleteDraftEcriture({ groupId: 'val-de-saone', scopeUniteId: 'u-pionniers' }, 'ECR-2026-207', db);
+    const res = await deleteDraftEcriture({ groupId: 'val-de-saone', scopeUniteIds: ['u-pionniers'] }, 'ECR-2026-207', db);
     expect(res).toEqual({ ok: false, reason: 'not_found' });
     expect(await countEcritures(db, 'ECR-2026-207')).toBe(1);
   });

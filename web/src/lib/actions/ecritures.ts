@@ -40,9 +40,9 @@ export async function fetchEcrituresPage(
 // c'est l'invariant du pivot miroir strict.
 
 export async function updateEcriture(id: string, formData: FormData) {
-  const { groupId, scopeUniteId } = await getCurrentContext();
+  const { groupId, scopeUniteIds } = await getCurrentContext();
   await updateEcritureService(
-    { groupId, scopeUniteId },
+    { groupId, scopeUniteIds },
     id,
     {
       date_ecriture: formData.get('date_ecriture') as string,
@@ -76,9 +76,9 @@ export async function updateEcritureStatus(id: string, status: string) {
   if (!(ECRITURE_STATUSES as readonly string[]).includes(status)) {
     throw new Error(`Statut écriture invalide : ${status}. Valeurs autorisées : ${ECRITURE_STATUSES.join(', ')}.`);
   }
-  const { groupId, scopeUniteId } = await getCurrentContext();
+  const { groupId, scopeUniteIds } = await getCurrentContext();
   await updateEcritureStatusService(
-    { groupId, scopeUniteId },
+    { groupId, scopeUniteIds },
     id,
     status as EcritureStatus,
   );
@@ -96,8 +96,8 @@ export async function updateEcritureField(
   field: InlineField,
   value: string | number | null,
 ): Promise<{ ok: boolean; message?: string }> {
-  const { groupId, scopeUniteId } = await getCurrentContext();
-  const result = await updateEcritureFieldService({ groupId, scopeUniteId }, id, field, value);
+  const { groupId, scopeUniteIds } = await getCurrentContext();
+  const result = await updateEcritureFieldService({ groupId, scopeUniteIds }, id, field, value);
   if (!result.ok) {
     if (result.reason === 'not_found') return { ok: false, message: `Écriture ${id} introuvable.` };
     if (result.reason === 'sync_locked') return { ok: false, message: 'Écriture synchronisée Comptaweb — champ non modifiable.' };
@@ -134,8 +134,8 @@ export async function resyncEcritureDepuisCw(
 }
 
 export async function deleteDraft(id: string): Promise<{ ok: boolean; message?: string }> {
-  const { groupId, scopeUniteId } = await getCurrentContext();
-  const res = await deleteDraftEcritureService({ groupId, scopeUniteId }, id);
+  const { groupId, scopeUniteIds } = await getCurrentContext();
+  const res = await deleteDraftEcritureService({ groupId, scopeUniteIds }, id);
   if (!res.ok) {
     const messages: Record<typeof res.reason, string> = {
       not_found: `Brouillon ${id} introuvable.`,
@@ -150,8 +150,8 @@ export async function deleteDraft(id: string): Promise<{ ok: boolean; message?: 
 }
 
 export async function batchUpdateEcritures(ids: string[], patch: BatchPatch): Promise<BatchResult> {
-  const { groupId, scopeUniteId } = await getCurrentContext();
-  const result = await batchUpdateEcrituresService({ groupId, scopeUniteId }, ids, patch);
+  const { groupId, scopeUniteIds } = await getCurrentContext();
+  const result = await batchUpdateEcrituresService({ groupId, scopeUniteIds }, ids, patch);
   if (result.updated > 0) revalidatePath('/ecritures');
   return result;
 }

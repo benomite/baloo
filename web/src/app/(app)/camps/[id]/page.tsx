@@ -112,7 +112,7 @@ export default async function CampDetailPage({
     searchParams,
   ]);
   requireCampsAccess(ctx.role);
-  const campCtx = { groupId: ctx.groupId, scopeUniteId: ctx.scopeUniteId };
+  const campCtx = { groupId: ctx.groupId, scopeUniteIds: ctx.scopeUniteIds };
   const dashboard = await getCampDashboard(campCtx, id);
   if (!dashboard) notFound();
 

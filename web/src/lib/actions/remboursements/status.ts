@@ -17,7 +17,7 @@ export async function updateRemboursementStatus(id: string, status: string, form
       userId: ctx.userId,
       email: ctx.email,
       name: ctx.name,
-      scopeUniteId: ctx.scopeUniteId,
+      scopeUniteIds: ctx.scopeUniteIds,
     },
     id,
     status,

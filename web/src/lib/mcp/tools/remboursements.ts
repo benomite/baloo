@@ -16,7 +16,7 @@ const RBT_STATUS = z.enum(REMBOURSEMENT_STATUSES);
 export function registerRemboursementTools(server: McpServer, ctx: McpContext) {
   const rbtCtx = {
     groupId: ctx.groupId,
-    scopeUniteId: ctx.scopeUniteId ?? null,
+    scopeUniteIds: ctx.scopeUniteIds ?? null,
   };
 
   server.tool(
@@ -102,7 +102,7 @@ export function registerRemboursementTools(server: McpServer, ctx: McpContext) {
           userId: ctx.userId,
           email: userRow?.email ?? '',
           name: userRow?.nom_affichage ?? null,
-          scopeUniteId: ctx.scopeUniteId ?? null,
+          scopeUniteIds: ctx.scopeUniteIds ?? null,
         },
         params.id,
         params.target_status,
