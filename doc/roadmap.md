@@ -136,6 +136,43 @@ Fonctionnalités dont le design est arrêté mais qui attendent leur tour. Pas d
 
 ---
 
+### BL-002 — Écriture à plusieurs ventilations (split manuel d'un paiement)
+
+**Ouvert le** : 2026-07-06. **Design esquissé** (maquette v3 validée par Benoît, section « multi-ventilation »). **Priorité** : **haute pour la rentrée** — nécessaire pour **septembre 2026** (paiements d'inscriptions).
+
+**Besoin (déclencheur rentrée)** : un **seul mouvement bancaire** doit se répartir sur **plusieurs imputations**. Cas concrets de la rentrée :
+- Une famille paie **une somme** couvrant **plusieurs enfants d'unités différentes** (ex. 300 € = 150 LJ + 150 SG, catégorie Participation) → 1 ligne banque, 2 écritures recette.
+- Le **reversement national SGDF** ou un **virement groupé** arrive en un bloc à ventiler par unité/catégorie.
+- Une dépense unique couvre **plusieurs postes** (ex. 250 € = 150 Hébergement/GR + 100 Petit matériel/SG).
+
+Aujourd'hui Baloo sait éclater une ligne bancaire **seulement** si Comptaweb fournit des **sous-lignes DSP2** (paiement carte multi-commerçants). Il n'y a **aucune UI pour découper manuellement** un montant unique en plusieurs ventilations.
+
+**Design retenu (maquette)** :
+- **Ligne parente** = le mouvement (total signé, `libelle_origine`, origine banque, **justif partagé**, badge « N ventilations », caret pour déplier). Le **« Valider »** de la parente n'est actif que si **toutes les ventilations sont complètes** ET **somment exactement au total** (garde anti perte/gain d'argent).
+- **Sous-lignes** = une écriture par ventilation, chacune avec **son montant** + son **imputation éditable inline** (unité / catégorie / activité / mode — mêmes chips que la ligne). Un rail vertical relie les sous-lignes à la parente.
+- Bouton **« + Ajouter une ventilation »** (répartir le montant restant). Un indicateur montre le **reste à ventiler** (total − somme des sous-lignes).
+- Le **justif vit sur la parente** (une facture couvre tout le paiement) — réutilise le partage de justif déjà en place (`shareDepotToEcriture`, feature paiement scindé).
+
+**Levier technique existant (à réutiliser)** :
+- Le **grain canonique d'une écriture Baloo = la ventilation** (ADR-035). Le regroupement d'écritures par paiement existe déjà dans la liste : `EcrituresTable` groupe par `ligne_bancaire_id` (famille `'bank'`) et par `comptaweb_ecriture_id` (famille `'cw'`), avec un **header de groupe** (= la « parente » visuelle). La brique d'affichage est donc là.
+- Les **drafts par sous-ligne** (clé `ligne_bancaire_id + ligne_bancaire_sous_index`) et leur réconciliation (`planStaleLineDrafts`, `drafts.ts`) existent : un split manuel = créer **N drafts sous le même `ligne_bancaire_id`** avec des `sous_index` synthétiques 0..n-1.
+- Le **partage de justif** (BL implicite, déjà livré) couvre le « justif partagé ».
+
+**Inconnue technique n°1 (à trancher avant de coder)** : **comment Comptaweb reçoit N ventilations d'un même paiement ?**
+- `syncDraftToComptaweb` / `createEcriture` (`ecritures-write.ts`) crée aujourd'hui **une écriture mono-ventilation** dans CW (`POST /recettedepense/creer`).
+- Deux options : (a) **N écritures CW distinctes** (simple, mais ne reflète pas le « 1 paiement = 1 écriture à N ventilations » de CW) ; (b) **1 écriture CW avec N ventilations** → il faut voir si le formulaire CW accepte plusieurs lignes de ventilation au POST (à scruter : la page `/recettedepense/creer`). Trancher au moment de la spec ; commencer par (a) si (b) est trop lourd.
+
+**Autres points à cadrer** :
+- **Contrainte de solde** : somme des ventilations = total exact du mouvement (validation + affichage du reste). Arrondis au centime.
+- **Split d'une écriture déjà unique** (pas d'origine banque) vs **split d'une ligne bancaire** : gérer les deux (une saisie manuelle peut aussi se ventiler).
+- **Recettes d'inscription** : souvent des **virements** (pas de sous-lignes DSP2), d'où le besoin du split **manuel**. Vérifier l'ergonomie de saisie rapide en série (rentrée = volume).
+
+**Tests à prévoir** : split crée N écritures sommant au total ; Valider bloqué si somme ≠ total ou ventilation incomplète ; justif partagé visible sur toutes les ventilations ; suppression d'une ventilation re-répartit / signale le reste.
+
+**Fichiers de référence** : `web/src/components/ecritures/ecritures-table.tsx` (groupes `'bank'`/`'cw'`, headers), `web/src/lib/services/drafts.ts` + `drafts-line-reconcile.ts` (grain sous-ligne), `web/src/lib/services/depots.ts` (`shareDepotToEcriture`, justif partagé), `web/src/lib/comptaweb/ecritures-write.ts` (POST création CW — à étendre pour la multi-ventilation). Voir ADR-035 (grain ventilation).
+
+---
+
 ## Règles transverses
 
 - **Chaque phase doit être "arrêtable".** Si on s'arrête après la phase 1, l'auteur a un outil utile en CLI. Si on s'arrête après la phase 2, le groupe entier (chefs, parents) a un outil utile. Si on s'arrête après la phase 3, plusieurs groupes ont un outil utile. Etc.
