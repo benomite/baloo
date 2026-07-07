@@ -90,6 +90,7 @@ const REMBOURSEMENT_STATUS_MAP: Record<string, { tone: StatusTone; label: string
   virement_effectue: { tone: 'progress', label: 'Virement effectué' },
   termine: { tone: 'success', label: 'Terminé' },
   refuse: { tone: 'danger', label: 'Refusé' },
+  converti: { tone: 'neutral', label: 'Converti en dépôt' },
 };
 
 export function RemboursementStatusBadge({ status }: { status: string }) {
@@ -150,6 +151,7 @@ const ABANDON_STATUS_MAP: Record<string, { tone: StatusTone; label: string }> = 
   valide: { tone: 'progress', label: 'Validé' },
   envoye_national: { tone: 'success', label: 'Envoyé au national' },
   refuse: { tone: 'danger', label: 'Refusé' },
+  converti: { tone: 'neutral', label: 'Converti en dépôt' },
 };
 
 export function AbandonStatusBadge({ status }: { status: string }) {

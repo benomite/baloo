@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { PageHeader } from '@/components/layout/page-header';
 import { PendingButton } from '@/components/shared/pending-button';
 import { Input } from '@/components/ui/input';
@@ -47,8 +48,13 @@ export default async function DepotPage({ searchParams }: { searchParams: Promis
     <div className="max-w-3xl mx-auto">
       <PageHeader
         title="Déposer un justificatif"
-        subtitle="Photo ou PDF d'un ticket / facture. Le trésorier rapprochera ensuite le justif avec l'écriture comptable correspondante."
+        subtitle="Le justif d'une dépense déjà payée par le groupe (carte, virement…). Le trésorier le rapproche ensuite avec l'écriture. Ici, rien ne t'est reversé."
       />
+
+      <Alert variant="info" className="mb-6">
+        Tu as <b>avancé de l&apos;argent de ta poche</b> et tu veux être remboursé ?
+        {' '}<Link href="/remboursements/nouveau" className="font-medium underline underline-offset-2">Fais plutôt une demande de remboursement</Link>.
+      </Alert>
 
       {params.error && <Alert variant="error" className="mb-6">{params.error}</Alert>}
       {params.success && (

@@ -40,6 +40,9 @@ export const REMBOURSEMENT_STATUSES = [
   'virement_effectue',
   'termine',
   'refuse',
+  // Terminal : demande soumise par erreur, convertie en dépôt/justif (pas un
+  // rejet → aucune notif de refus). Cf. remboursement-convert.ts.
+  'converti',
 ] as const;
 export type RemboursementStatus = (typeof REMBOURSEMENT_STATUSES)[number];
 

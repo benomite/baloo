@@ -1,4 +1,5 @@
 import { PageHeader } from '@/components/layout/page-header';
+import Link from 'next/link';
 import { Alert } from '@/components/ui/alert';
 import { getCurrentContext } from '@/lib/context';
 import { requireCanSubmit } from '@/lib/auth/access';
@@ -77,6 +78,13 @@ export default async function NouveauRemboursementPage({
         scopeUniteIds={ctx.scopeUniteIds}
         initialRibTexte={lastRib}
         tauxKmMillicents={groupe?.taux_km_millicents ?? 354}
+        introNode={
+          <Alert variant="info">
+            C&apos;est pour <b>te faire rembourser une avance</b> (on te versera de l&apos;argent). Si le groupe a
+            <b> déjà payé</b> et que tu veux juste fournir le justif,{' '}
+            <Link href="/depot" className="font-medium underline underline-offset-2">dépose-le simplement</Link>.
+          </Alert>
+        }
       />
     </div>
   );

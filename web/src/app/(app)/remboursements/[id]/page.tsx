@@ -30,6 +30,7 @@ import {
   patchNotesAndRib,
   updateRemboursementStatus,
 } from '@/lib/actions/remboursements';
+import { convertRembToDepot } from '@/lib/actions/remboursements/convert';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
 import { getCurrentContext } from '@/lib/context';
 import { cn } from '@/lib/utils';
@@ -298,6 +299,9 @@ export default async function RemboursementDetailPage({
               isTresorier={isTresorier}
               isRG={isRG}
               canRefuse={canRefuse}
+              // Rattrapage : convertir une demande soumise par erreur en dépôt.
+              // Pas sur une demande déjà payée/terminée ni déjà convertie.
+              canConvert={!['virement_effectue', 'termine', 'converti'].includes(r.status)}
             />
           )}
         </div>
@@ -459,12 +463,14 @@ function AdminActions({
   isTresorier,
   isRG,
   canRefuse,
+  canConvert,
 }: {
   id: string;
   status: string;
   isTresorier: boolean;
   isRG: boolean;
   canRefuse: boolean;
+  canConvert: boolean;
 }) {
   const hasNextAction =
     (status === 'a_traiter' && isTresorier) ||
@@ -472,7 +478,7 @@ function AdminActions({
     status === 'valide_rg' ||
     status === 'virement_effectue';
 
-  if (!hasNextAction && !canRefuse) return null;
+  if (!hasNextAction && !canRefuse && !canConvert) return null;
 
   return (
     <Section title="Actions" subtitle="Faire avancer la demande dans le workflow.">
@@ -539,6 +545,27 @@ function AdminActions({
               </PendingButton>
             </div>
           </form>
+        </details>
+      )}
+
+      {canConvert && (
+        <details className="rounded-md border border-border-soft bg-bg-sunken/40 px-3 py-2.5 group">
+          <summary className="cursor-pointer text-[13px] font-medium text-fg-muted list-none flex items-center gap-1.5">
+            <Paperclip size={13} strokeWidth={2} />
+            Ce n’était pas un remboursement ? Convertir en dépôt
+          </summary>
+          <div className="mt-2 space-y-2">
+            <p className="text-[12px] text-fg-muted leading-relaxed">
+              Si le déposeur voulait juste fournir un justificatif d’une dépense <b>déjà payée par le groupe</b> (pas
+              être remboursé) : on garde le justificatif (rattaché à l’écriture liée, ou déposé pour rapprochement) et on
+              neutralise la demande — <b>aucun email de refus</b> n’est envoyé.
+            </p>
+            <form action={convertRembToDepot.bind(null, id)} className="flex justify-end">
+              <PendingButton variant="outline" size="sm" pendingLabel="Conversion…">
+                Convertir en dépôt
+              </PendingButton>
+            </form>
+          </div>
         </details>
       )}
     </Section>
