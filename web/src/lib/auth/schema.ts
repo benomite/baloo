@@ -632,8 +632,17 @@ export async function ensureAuthSchema(): Promise<void> {
   // Multi-ventilation (S0, 2026-07-08) : relie N lignes ecritures d'une
   // même pièce AVANT que comptaweb_ecriture_id soit connu. Nullable
   // (mono-catégorie = null). Cf. doc/specs/2026-07-08-ecriture-multi-ventilation-design.md
-  try { await db.exec('ALTER TABLE ecritures ADD COLUMN ventilation_group_id TEXT'); } catch { /* déjà présent */ }
-  try { await db.exec('CREATE INDEX IF NOT EXISTS idx_ecritures_ventilation_group ON ecritures(ventilation_group_id)'); } catch { /* déjà présent */ }
+  const ecrCols = await db
+    .prepare('PRAGMA table_info(ecritures)')
+    .all<{ name: string }>();
+  const hasEcr = (name: string) => ecrCols.some((c) => c.name === name);
+  if (!hasEcr('ventilation_group_id')) {
+    await db.exec('ALTER TABLE ecritures ADD COLUMN ventilation_group_id TEXT');
+  }
+  // CREATE INDEX après l'ALTER.
+  await db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_ecritures_ventilation_group ON ecritures(ventilation_group_id)',
+  );
 
   ensured = true;
 }
