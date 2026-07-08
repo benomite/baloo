@@ -48,6 +48,7 @@ const SETUP_SQL = `
     ligne_bancaire_id INTEGER,
     ligne_bancaire_sous_index INTEGER,
     comptaweb_ecriture_id INTEGER,
+    ventilation_group_id TEXT,
     notes TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
@@ -59,13 +60,13 @@ const VALID_PAYLOAD: EcriturePayload = {
   description: 'Achat fournitures bureau',
   amount_cents: 5000,
   type: 'depense',
-  category_id: 'cat-1',
   mode_paiement_id: 'mp-1',
-  unite_id: 'u-1',
-  activite_id: 'act-1',
   carte_id: null,
   numero_piece: 'FACT-2026-001',
   notes: 'Notes du trésorier',
+  ventilations: [
+    { amount_cents: 5000, category_id: 'cat-1', unite_id: 'u-1', activite_id: 'act-1' },
+  ],
 };
 
 async function setupDb(): Promise<{ client: Client; db: ReturnType<typeof wrapClient> }> {
@@ -306,5 +307,67 @@ describe('createEcritureAndPushToCw', () => {
       .prepare('SELECT comptaweb_synced FROM ecritures WHERE id = ?')
       .get<{ comptaweb_synced: number }>(result.id);
     expect(row?.comptaweb_synced).toBe(0);
+  });
+
+  it('crée N lignes ecritures partageant un ventilation_group_id (succès CW)', async () => {
+    const res = await createEcritureAndPushToCw(db, {
+      group_id: 'g',
+      payload: {
+        date_ecriture: '2026-07-08', description: 'Courses camp', amount_cents: 10000, type: 'depense',
+        mode_paiement_id: 'MODE-CB',
+        ventilations: [
+          { amount_cents: 7000, category_id: 'CAT-INT', unite_id: 'UNI-A', activite_id: 'ACT-1' },
+          { amount_cents: 3000, category_id: 'CAT-MAT', unite_id: 'UNI-A', activite_id: 'ACT-1' },
+        ],
+      },
+      cwScraper: async () => ({ cwNumeroPiece: '999', cwEcritureId: 999 }),
+      cwConfigLoader: async () => ({} as never),
+    });
+    expect(res.status).toBe('pending_sync');
+    const rows = await db.prepare(
+      `SELECT ventilation_group_id, status, cw_numero_piece, amount_cents, category_id
+       FROM ecritures WHERE group_id = 'g' ORDER BY amount_cents DESC`,
+    ).all<{ ventilation_group_id: string; status: string; cw_numero_piece: string; amount_cents: number; category_id: string }>();
+    expect(rows).toHaveLength(2);
+    expect(rows[0].ventilation_group_id).toBe(rows[1].ventilation_group_id);
+    expect(rows[0].ventilation_group_id).toMatch(/^vg_/);
+    expect(rows.every(r => r.status === 'pending_sync')).toBe(true);
+    expect(rows.every(r => r.cw_numero_piece === '999')).toBe(true);
+    expect(rows.map(r => r.amount_cents)).toEqual([7000, 3000]);
+  });
+
+  it('mono-catégorie : ventilation_group_id reste null', async () => {
+    await createEcritureAndPushToCw(db, {
+      group_id: 'g',
+      payload: {
+        date_ecriture: '2026-07-08', description: 'x', amount_cents: 5000, type: 'depense',
+        mode_paiement_id: 'MODE-CB',
+        ventilations: [{ amount_cents: 5000, category_id: 'CAT-INT', unite_id: 'UNI-A', activite_id: 'ACT-1' }],
+      },
+      cwScraper: async () => ({ cwNumeroPiece: '1', cwEcritureId: 1 }),
+      cwConfigLoader: async () => ({} as never),
+    });
+    const row = await db.prepare(`SELECT ventilation_group_id FROM ecritures WHERE group_id='g'`)
+      .get<{ ventilation_group_id: string | null }>();
+    expect(row?.ventilation_group_id).toBeNull();
+  });
+
+  it('échec CW : les N lignes retombent toutes en draft (aucun DELETE)', async () => {
+    await expect(createEcritureAndPushToCw(db, {
+      group_id: 'g',
+      payload: {
+        date_ecriture: '2026-07-08', description: 'x', amount_cents: 10000, type: 'depense',
+        mode_paiement_id: 'MODE-CB',
+        ventilations: [
+          { amount_cents: 7000, category_id: 'CAT-INT', unite_id: 'UNI-A', activite_id: 'ACT-1' },
+          { amount_cents: 3000, category_id: 'CAT-MAT', unite_id: 'UNI-A', activite_id: 'ACT-1' },
+        ],
+      },
+      cwScraper: async () => { throw new Error('CW down'); },
+      cwConfigLoader: async () => ({} as never),
+    })).rejects.toThrow();
+    const rows = await db.prepare(`SELECT status FROM ecritures WHERE group_id='g'`).all<{ status: string }>();
+    expect(rows).toHaveLength(2);
+    expect(rows.every(r => r.status === 'draft')).toBe(true);
   });
 });

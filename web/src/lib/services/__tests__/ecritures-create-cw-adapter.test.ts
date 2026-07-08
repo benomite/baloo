@@ -19,13 +19,33 @@ const VALID_PAYLOAD: EcriturePayload = {
   description: 'Achat fournitures',
   amount_cents: 4250,
   type: 'depense',
-  category_id: 'cat-1',
   mode_paiement_id: 'mp-1',
-  unite_id: 'u-1',
-  activite_id: 'act-1',
   carte_id: null,
   numero_piece: 'FACT-001',
   notes: null,
+  ventilations: [
+    { amount_cents: 4250, category_id: 'cat-1', unite_id: 'u-1', activite_id: 'act-1' },
+  ],
+};
+
+// `fakeDeps` réutilisé dans les tests multi-ventilation ajoutés plus bas
+// (Task 3 du plan S0 multi-ventilation).
+const fakeDeps = {
+  lookupComptawebId: async (
+    _table: 'categories' | 'activites' | 'unites' | 'modes_paiement',
+    id: string | null | undefined,
+  ): Promise<number | null> => {
+    const map: Record<string, number> = {
+      'MODE-CB': 1,
+      'CAT-INT': 10,
+      'CAT-MAT': 20,
+      'UNI-A': 30,
+      'ACT-1': 40,
+    };
+    if (!id) return null;
+    return map[id] ?? null;
+  },
+  lookupCarte: async () => null,
 };
 
 describe('buildCwInputFromPayload', () => {
@@ -76,8 +96,13 @@ describe('buildCwInputFromPayload', () => {
     ).rejects.toThrow(/mapping CW de la catégorie/);
   });
 
-  it('throw une erreur claire si plusieurs mappings manquent (liste consolidée)', async () => {
-    const lookupComptawebId = vi.fn(async () => null);
+  it('throw une erreur claire si plusieurs mappings manquent sur une ventilation (liste consolidée)', async () => {
+    // Mode de paiement mappé (header), mais catégorie/activité/unité de
+    // la ventilation non mappées → message consolidé sur cette ventilation.
+    const lookupComptawebId = vi.fn(async (table: string) => {
+      if (table === 'modes_paiement') return 1;
+      return null;
+    });
 
     await expect(
       buildCwInputFromPayload(VALID_PAYLOAD, {
@@ -86,14 +111,14 @@ describe('buildCwInputFromPayload', () => {
       }),
     // Flag `s` (dotAll) demande ES2018+ (target tsconfig est ES2017).
     // [\s\S] est l'équivalent compatible ES2017.
-    ).rejects.toThrow(/catégorie[\s\S]*activité[\s\S]*unité[\s\S]*mode/);
+    ).rejects.toThrow(/Ventilation 1[\s\S]*catégorie[\s\S]*activité[\s\S]*unité/);
   });
 
-  it('throw si category_id absent (pas juste le mapping)', async () => {
+  it('throw si category_id absent sur une ventilation (pas juste le mapping)', async () => {
     const lookupComptawebId = vi.fn(async () => 1);
     await expect(
       buildCwInputFromPayload(
-        { ...VALID_PAYLOAD, category_id: null },
+        { ...VALID_PAYLOAD, ventilations: [{ ...VALID_PAYLOAD.ventilations[0], category_id: null }] },
         { lookupComptawebId, lookupCarte: async () => null },
       ),
     ).rejects.toThrow(/catégorie/);
@@ -137,26 +162,76 @@ describe('buildCwInputFromPayload', () => {
     const lookupComptawebId = vi.fn(async () => 1);
     const lookupCarte = vi.fn(async () => null);
 
+    // Petit helper : garde amount_cents racine ET ventilation alignés
+    // (invariant somme = total).
+    const withAmount = (cents: number): EcriturePayload => ({
+      ...VALID_PAYLOAD,
+      amount_cents: cents,
+      ventilations: [{ ...VALID_PAYLOAD.ventilations[0], amount_cents: cents }],
+    });
+
     // 1 cent → "0,01"
     let input = await buildCwInputFromPayload(
-      { ...VALID_PAYLOAD, amount_cents: 1 },
+      withAmount(1),
       { lookupComptawebId, lookupCarte },
     );
     expect(input.montant).toBe('0,01');
 
     // 100 cents → "1,00"
     input = await buildCwInputFromPayload(
-      { ...VALID_PAYLOAD, amount_cents: 100 },
+      withAmount(100),
       { lookupComptawebId, lookupCarte },
     );
     expect(input.montant).toBe('1,00');
 
     // 999 cents → "9,99"
     input = await buildCwInputFromPayload(
-      { ...VALID_PAYLOAD, amount_cents: 999 },
+      withAmount(999),
       { lookupComptawebId, lookupCarte },
     );
     expect(input.montant).toBe('9,99');
+  });
+
+  it('mappe N ventilations vers N lignes CW', async () => {
+    const input = await buildCwInputFromPayload(
+      {
+        date_ecriture: '2026-07-08', description: 'Courses camp', amount_cents: 10000,
+        type: 'depense', mode_paiement_id: 'MODE-CB',
+        ventilations: [
+          { amount_cents: 7000, category_id: 'CAT-INT', unite_id: 'UNI-A', activite_id: 'ACT-1' },
+          { amount_cents: 3000, category_id: 'CAT-MAT', unite_id: 'UNI-A', activite_id: 'ACT-1' },
+        ],
+      },
+      fakeDeps,
+    );
+    expect(input.ventilations).toHaveLength(2);
+    expect(input.ventilations[0].montant).toBe('70,00');
+    expect(input.ventilations[1].montant).toBe('30,00');
+  });
+
+  it('refuse si la somme des ventilations ≠ montant total', async () => {
+    await expect(buildCwInputFromPayload(
+      {
+        date_ecriture: '2026-07-08', description: 'x', amount_cents: 10000, type: 'depense',
+        mode_paiement_id: 'MODE-CB',
+        ventilations: [{ amount_cents: 7000, category_id: 'CAT-INT', unite_id: 'UNI-A', activite_id: 'ACT-1' }],
+      },
+      fakeDeps,
+    )).rejects.toThrow(/somme/i);
+  });
+
+  it('erreur claire quand un mapping CW manque sur une ligne précise', async () => {
+    await expect(buildCwInputFromPayload(
+      {
+        date_ecriture: '2026-07-08', description: 'x', amount_cents: 10000, type: 'depense',
+        mode_paiement_id: 'MODE-CB',
+        ventilations: [
+          { amount_cents: 7000, category_id: 'CAT-INT', unite_id: 'UNI-A', activite_id: 'ACT-1' },
+          { amount_cents: 3000, category_id: 'CAT-SANS-MAP', unite_id: 'UNI-A', activite_id: 'ACT-1' },
+        ],
+      },
+      { ...fakeDeps, lookupComptawebId: async (t, id) => (id === 'CAT-SANS-MAP' ? null : 1) },
+    )).rejects.toThrow(/ventilation 2/i);
   });
 });
 

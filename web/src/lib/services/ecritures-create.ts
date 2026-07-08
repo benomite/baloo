@@ -27,6 +27,7 @@
 //     le flow status.
 //   - Promotion pending_sync → mirror via sync incrémentale : Phase 2.
 
+import { randomUUID } from 'node:crypto';
 import type { DbWrapper } from '../db';
 import { nextIdOn, currentTimestamp } from '../ids';
 import { nullIfEmpty } from '../utils/form';
@@ -64,22 +65,34 @@ export class CwLocalUpdateFailedError extends Error {
   }
 }
 
+// Une ventilation = une ligne d'imputation (catégorie/unité/activité +
+// sa part du montant total). Grain canonique d'une écriture Baloo (cf.
+// AGENTS.md "Grain canonique d'une écriture Baloo = la VENTILATION").
+export interface VentilationInput {
+  amount_cents: number;
+  category_id?: string | null;
+  unite_id?: string | null;
+  activite_id?: string | null;
+}
+
 // Payload "Baloo-friendly" : monnaie en cents, IDs Baloo (catégorie,
 // mode paiement, unité, activité, carte). Le scraper se charge de la
-// traduction vers les IDs Comptaweb (Task 8).
+// traduction vers les IDs Comptaweb (Task 8). Multi-ventilation (S0,
+// 2026-07-08) : l'imputation (catégorie/unité/activité) vit désormais
+// par ventilation, pas au niveau racine. `amount_cents` racine reste le
+// TOTAL et doit être égal à la somme des `ventilations[].amount_cents`
+// (invariant validé côté service, adapter CW et route Zod).
 export interface EcriturePayload {
   date_ecriture: string; // ISO YYYY-MM-DD
   description: string;
-  amount_cents: number;
+  amount_cents: number; // TOTAL (= Σ ventilations)
   type: 'depense' | 'recette';
-  category_id?: string | null;
   mode_paiement_id?: string | null;
-  unite_id?: string | null;
-  activite_id?: string | null;
-  carte_id?: string | null;
   numero_piece?: string | null;
+  carte_id?: string | null;
   notes?: string | null;
   justif_attendu?: 0 | 1 | boolean;
+  ventilations: VentilationInput[];
 }
 
 // Résultat du scraper CW : le numéro de pièce que CW retournera dans ses
@@ -128,7 +141,6 @@ export async function createEcritureAndPushToCw(
 ): Promise<CreateEcritureAndPushToCwResult> {
   const { payload, group_id } = opts;
   const prefix = payload.type === 'depense' ? 'DEP' : 'REC';
-  const id = await nextIdOn(db, prefix);
   const now = currentTimestamp();
   // Défaut selon le type : une recette (entrée d'argent) n'attend pas de
   // justificatif ; une dépense, si.
@@ -136,137 +148,168 @@ export async function createEcritureAndPushToCw(
     ? (payload.type === 'recette' ? 0 : 1)
     : (payload.justif_attendu ? 1 : 0);
 
-  // 1. INSERT en `pending_cw` : snapshot du payload, l'écriture est en
-  //    cours d'envoi vers CW. Si le process meurt à ce point, on aura un
-  //    `pending_cw` orphelin — repérable et relançable manuellement.
-  //    Si cet INSERT throw, rien n'a été pushé : on laisse l'erreur
-  //    remonter brute (pas de rollback nécessaire — la ligne n'existe pas).
-  await db
-    .prepare(
-      `INSERT INTO ecritures (
-        id, group_id, date_ecriture, description, amount_cents, type,
-        unite_id, category_id, mode_paiement_id, activite_id, numero_piece,
-        carte_id, justif_attendu, notes, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cw', ?, ?)`,
-    )
-    .run(
-      id,
-      group_id,
-      payload.date_ecriture,
-      payload.description,
-      payload.amount_cents,
-      payload.type,
-      nullIfEmpty(payload.unite_id ?? null),
-      nullIfEmpty(payload.category_id ?? null),
-      nullIfEmpty(payload.mode_paiement_id ?? null),
-      nullIfEmpty(payload.activite_id ?? null),
-      nullIfEmpty(payload.numero_piece ?? null),
-      nullIfEmpty(payload.carte_id ?? null),
-      justifAttendu,
-      nullIfEmpty(payload.notes ?? null),
-      now,
-      now,
-    );
+  const vents = payload.ventilations;
+  if (!vents || vents.length === 0) {
+    throw new Error('Au moins une ventilation est requise.');
+  }
+  const sum = vents.reduce((s, v) => s + v.amount_cents, 0);
+  if (sum !== payload.amount_cents) {
+    throw new Error(`Somme des ventilations ≠ montant total (${sum} vs ${payload.amount_cents}).`);
+  }
+
+  // Group id local UNIQUEMENT si ≥ 2 ventilations : mono-catégorie
+  // (1 ventilation) → comportement inchangé, `ventilation_group_id` null.
+  const groupId = vents.length >= 2 ? `vg_${randomUUID()}` : null;
+
+  // 1. N INSERT en `pending_cw`, une ligne par ventilation, toutes
+  //    partageant `ventilation_group_id`. Si le process meurt à ce
+  //    point, on aura des `pending_cw` orphelins — repérables et
+  //    relançables manuellement. Si un INSERT throw, on laisse l'erreur
+  //    remonter brute (les lignes déjà insérées restent en `pending_cw`,
+  //    pas de rollback partiel nécessaire pour ce cas rarissime — pas de
+  //    DELETE possible de toute façon, cf. CLAUDE.md).
+  const ids: string[] = [];
+  for (const v of vents) {
+    const id = await nextIdOn(db, prefix);
+    ids.push(id);
+    await db
+      .prepare(
+        `INSERT INTO ecritures (
+          id, group_id, date_ecriture, description, amount_cents, type,
+          unite_id, category_id, mode_paiement_id, activite_id, numero_piece,
+          carte_id, justif_attendu, notes, ventilation_group_id, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cw', ?, ?)`,
+      )
+      .run(
+        id,
+        group_id,
+        payload.date_ecriture,
+        payload.description,
+        v.amount_cents,
+        payload.type,
+        nullIfEmpty(v.unite_id ?? null),
+        nullIfEmpty(v.category_id ?? null),
+        nullIfEmpty(payload.mode_paiement_id ?? null),
+        nullIfEmpty(v.activite_id ?? null),
+        nullIfEmpty(payload.numero_piece ?? null),
+        nullIfEmpty(payload.carte_id ?? null),
+        justifAttendu,
+        nullIfEmpty(payload.notes ?? null),
+        groupId,
+        now,
+        now,
+      );
+  }
+  const firstId = ids[0];
 
   // 2. Push CW. Le scraper et le loader sont injectables pour les tests.
   // En prod (Task 8), on injectera l'adapter Comptaweb réel.
   // TODO Task 8 : retirer ces deux garde-fous quand l'adapter (scraper +
   // loader) sera toujours fourni par défaut côté route. En attendant, on
-  // évite de laisser un `pending_cw` orphelin si on est appelé sans
-  // injection : rétrograde en `draft` immédiatement et throw une
-  // `CwPushFailedError` typée pour que le caller reroute proprement.
+  // évite de laisser des `pending_cw` orphelins si on est appelé sans
+  // injection : rétrograde le groupe en `draft` immédiatement et throw
+  // une `CwPushFailedError` typée pour que le caller reroute proprement.
   if (!opts.cwScraper) {
-    await rollbackToDraft(db, id, group_id);
+    await rollbackGroupToDraft(db, ids, group_id);
     throw new CwPushFailedError(
-      id,
+      firstId,
       new Error(
         'createEcritureAndPushToCw: cwScraper non fourni (adapter Comptaweb pas encore branché — Task 8).',
       ),
     );
   }
   if (!opts.cwConfigLoader) {
-    await rollbackToDraft(db, id, group_id);
+    await rollbackGroupToDraft(db, ids, group_id);
     throw new CwPushFailedError(
-      id,
+      firstId,
       new Error('createEcritureAndPushToCw: cwConfigLoader non fourni.'),
     );
   }
 
-  // 2bis. Charger la config et appeler le scraper. SEUL ce bloc justifie
-  // le rollback `draft` : tant qu'on n'a pas la preuve que CW a accepté
-  // la donnée, on peut rétrograder sans risque de doublon. Si CW
-  // accepte (étape 3 ci-dessous), un échec local NE DOIT PAS rétrograder.
+  // 2bis. Charger la config et appeler le scraper (un seul POST CW,
+  // multi-ventilation gérée côté adapter). SEUL ce bloc justifie le
+  // rollback `draft` : tant qu'on n'a pas la preuve que CW a accepté la
+  // donnée, on peut rétrograder sans risque de doublon. Si CW accepte
+  // (étape 3 ci-dessous), un échec local NE DOIT PAS rétrograder.
   let cwResult: CwScraperResult;
   try {
     const config = await opts.cwConfigLoader();
     cwResult = await opts.cwScraper(config, payload);
   } catch (err) {
-    // 3b. CW a planté ou refusé : UPDATE status='draft' (PAS DE DELETE
-    // — règle CLAUDE.md). L'écriture reste en BDD avec son snapshot,
-    // visible dans /inbox. L'user peut la reprendre, réessayer le push,
-    // ou copier-coller dans CW. On throw une `CwPushFailedError` portant
-    // l'`id` du draft (évite au caller une requête non-déterministe
-    // pour le retrouver — race condition entre POST concurrents).
-    await rollbackToDraft(db, id, group_id);
-    throw new CwPushFailedError(id, err);
+    // 3b. CW a planté ou refusé : UPDATE status='draft' sur les N lignes
+    // (PAS DE DELETE — règle CLAUDE.md). Les écritures restent en BDD
+    // avec leur snapshot, visibles dans /inbox. L'user peut les
+    // reprendre, réessayer le push, ou copier-coller dans CW. On throw
+    // une `CwPushFailedError` portant l'`id` de la 1ʳᵉ ligne du groupe
+    // (évite au caller une requête non-déterministe pour la retrouver —
+    // race condition entre POST concurrents).
+    await rollbackGroupToDraft(db, ids, group_id);
+    throw new CwPushFailedError(firstId, err);
   }
 
-  // 3a. Succès CW : UPDATE status='pending_sync', store cw_numero_piece
-  // (+ comptaweb_ecriture_id si fourni). On NE flip PAS
-  // comptaweb_synced à 1 : ce flag passe à 1 uniquement à la promotion
-  // `mirror` par la sync incrémentale (Phase 2).
+  // 3a. Succès CW : UPDATE status='pending_sync' sur les N lignes, store
+  // cw_numero_piece (+ comptaweb_ecriture_id si fourni) — le MÊME
+  // cw_numero_piece pour toutes les ventilations du groupe (un seul
+  // enregistrement CW). On NE flip PAS comptaweb_synced à 1 : ce flag
+  // passe à 1 uniquement à la promotion `mirror` par la sync
+  // incrémentale (Phase 2).
   //
   // 3c. Si cet UPDATE local plante alors que CW a déjà la donnée, on est
-  // dans un état grave : retrocéder en `draft` mènerait à un doublon CW
+  // dans un état grave : rétrocéder en `draft` mènerait à un doublon CW
   // au prochain retry de l'user. On laisse `pending_cw` et on throw une
   // `CwLocalUpdateFailedError` explicite porteuse du cw_numero_piece.
   // La sync Phase 2 finira par retrouver l'écriture par cw_numero_piece.
   try {
-    await db
-      .prepare(
-        `UPDATE ecritures
-           SET status = 'pending_sync',
-               cw_numero_piece = ?,
-               comptaweb_ecriture_id = COALESCE(?, comptaweb_ecriture_id),
-               updated_at = ?
-         WHERE id = ? AND group_id = ?`,
-      )
-      .run(
-        cwResult.cwNumeroPiece,
-        cwResult.cwEcritureId ?? null,
-        currentTimestamp(),
-        id,
-        group_id,
-      );
+    for (const id of ids) {
+      await db
+        .prepare(
+          `UPDATE ecritures
+             SET status = 'pending_sync',
+                 cw_numero_piece = ?,
+                 comptaweb_ecriture_id = COALESCE(?, comptaweb_ecriture_id),
+                 updated_at = ?
+           WHERE id = ? AND group_id = ?`,
+        )
+        .run(
+          cwResult.cwNumeroPiece,
+          cwResult.cwEcritureId ?? null,
+          currentTimestamp(),
+          id,
+          group_id,
+        );
+    }
   } catch (err) {
     console.error('[ecritures-create] CW push OK but local UPDATE failed', {
-      ecriture_id: id,
+      ecriture_ids: ids,
       cw_numero_piece: cwResult.cwNumeroPiece,
       error: err,
     });
-    throw new CwLocalUpdateFailedError(id, cwResult.cwNumeroPiece, err);
+    throw new CwLocalUpdateFailedError(firstId, cwResult.cwNumeroPiece, err);
   }
 
   return {
-    id,
+    id: firstId,
     status: 'pending_sync',
     cw_numero_piece: cwResult.cwNumeroPiece,
   };
 }
 
-// Rétrograde une écriture en `draft`. Scopé `group_id` par symétrie
-// avec l'UPDATE succès et défense en profondeur si jamais un mauvais
-// `id` était passé par erreur — même si en pratique l'`id` est généré
-// localement juste avant et appartient au `group_id` courant.
-async function rollbackToDraft(
+// Rétrograde toutes les lignes d'un groupe (1 seule si mono-ventilation)
+// en `draft`. Scopé `group_id` par symétrie avec l'UPDATE succès et
+// défense en profondeur si jamais un mauvais `id` était passé par
+// erreur — même si en pratique les `ids` sont générés localement juste
+// avant et appartiennent au `group_id` courant.
+async function rollbackGroupToDraft(
   db: DbWrapper,
-  id: string,
+  ids: string[],
   group_id: string,
 ): Promise<void> {
-  await db
-    .prepare(
-      `UPDATE ecritures SET status = 'draft', updated_at = ?
-        WHERE id = ? AND group_id = ?`,
-    )
-    .run(currentTimestamp(), id, group_id);
+  for (const id of ids) {
+    await db
+      .prepare(
+        `UPDATE ecritures SET status = 'draft', updated_at = ?
+          WHERE id = ? AND group_id = ?`,
+      )
+      .run(currentTimestamp(), id, group_id);
+  }
 }

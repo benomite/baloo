@@ -24,9 +24,8 @@
 //    erreur claire. Le user doit mapper d'abord (via /sync-referentiels)
 //    ou utiliser "Tout copier".
 //
-//  - **Une seule ventilation** (montant total = ventilation unique).
-//    Les multi-ventilations CW (ex. dépense partagée entre 2 unités)
-//    ne sont pas supportées via Baloo — passer par Comptaweb direct.
+//  - **Multi-ventilation supporté** : N lignes Baloo → N ventilations CW
+//    (S0, 2026-07-08).
 
 import { createEcriture } from '../comptaweb/ecritures-write';
 import { loadConfig } from '../comptaweb/auth';
@@ -99,28 +98,65 @@ export async function buildCwInputFromPayload(
   const luComptawebId = deps.lookupComptawebId ?? lookupComptawebId;
   const luCarte = deps.lookupCarte ?? lookupCarte;
 
-  const [natureCw, activiteCw, uniteCw, modeCw] = await Promise.all([
-    luComptawebId('categories', payload.category_id),
-    luComptawebId('activites', payload.activite_id),
-    luComptawebId('unites', payload.unite_id),
-    luComptawebId('modes_paiement', payload.mode_paiement_id),
-  ]);
-
-  const missing: string[] = [];
-  if (!payload.category_id) missing.push('catégorie');
-  else if (natureCw === null) missing.push('mapping CW de la catégorie');
-  if (!payload.activite_id) missing.push('activité');
-  else if (activiteCw === null) missing.push('mapping CW de l\'activité');
-  if (!payload.unite_id) missing.push('unité');
-  else if (uniteCw === null) missing.push('mapping CW de l\'unité');
-  if (!payload.mode_paiement_id) missing.push('mode de paiement');
-  else if (modeCw === null) missing.push('mapping CW du mode de paiement');
-
-  if (missing.length > 0) {
+  // En-tête : mode de paiement (obligatoire pour CW).
+  const modeCw = await luComptawebId('modes_paiement', payload.mode_paiement_id);
+  if (!payload.mode_paiement_id) {
     throw new Error(
-      `Impossible d'envoyer à Comptaweb — il manque : ${missing.join(', ')}. ` +
+      `Impossible d'envoyer à Comptaweb — il manque : mode de paiement. ` +
       `Mappe les référentiels (page Sync référentiels) ou utilise "Tout copier".`,
     );
+  }
+  if (modeCw === null) {
+    throw new Error(
+      `Impossible d'envoyer à Comptaweb — il manque : mapping CW du mode de paiement. ` +
+      `Mappe les référentiels (page Sync référentiels) ou utilise "Tout copier".`,
+    );
+  }
+
+  if (!payload.ventilations || payload.ventilations.length === 0) {
+    throw new Error('Au moins une ventilation est requise.');
+  }
+
+  // Invariant somme = total (défense en profondeur — déjà validé côté
+  // service et route, mais l'adapter reste indépendamment sûr).
+  const sum = payload.ventilations.reduce((s, v) => s + v.amount_cents, 0);
+  if (sum !== payload.amount_cents) {
+    throw new Error(
+      `La somme des ventilations (${centsToMontantFr(sum)}) ne correspond pas au montant total (${centsToMontantFr(payload.amount_cents)}).`,
+    );
+  }
+
+  // Résolution par ligne : N ventilations Baloo → N ventilations CW.
+  const ventilations: CreateEcritureInput['ventilations'] = [];
+  for (let i = 0; i < payload.ventilations.length; i++) {
+    const v = payload.ventilations[i];
+    const [natureCw, activiteCw, uniteCw] = await Promise.all([
+      luComptawebId('categories', v.category_id),
+      luComptawebId('activites', v.activite_id),
+      luComptawebId('unites', v.unite_id),
+    ]);
+
+    const missing: string[] = [];
+    if (!v.category_id) missing.push('catégorie');
+    else if (natureCw === null) missing.push('mapping CW de la catégorie');
+    if (!v.activite_id) missing.push('activité');
+    else if (activiteCw === null) missing.push('mapping CW de l\'activité');
+    if (!v.unite_id) missing.push('unité');
+    else if (uniteCw === null) missing.push('mapping CW de l\'unité');
+
+    if (missing.length > 0) {
+      throw new Error(
+        `Ventilation ${i + 1} — il manque : ${missing.join(', ')}. ` +
+        `Mappe les référentiels (page Sync référentiels) ou utilise "Tout copier".`,
+      );
+    }
+
+    ventilations.push({
+      montant: centsToMontantFr(v.amount_cents),
+      natureId: String(natureCw),
+      activiteId: String(activiteCw),
+      brancheprojetId: String(uniteCw),
+    });
   }
 
   const carte = await luCarte(payload.carte_id);
@@ -145,14 +181,7 @@ export async function buildCwInputFromPayload(
     carteprocurementId,
     tiersCategId: DEFAULT_TIERS_CATEG_ID,
     tiersStructureId: DEFAULT_TIERS_STRUCTURE_ID,
-    ventilations: [
-      {
-        montant: montantFr,
-        natureId: String(natureCw),
-        activiteId: String(activiteCw),
-        brancheprojetId: String(uniteCw),
-      },
-    ],
+    ventilations,
   };
 }
 

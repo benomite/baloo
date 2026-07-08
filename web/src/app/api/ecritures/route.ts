@@ -63,20 +63,33 @@ export async function GET(request: Request) {
   return Response.json(await listEcritures({ groupId, scopeUniteIds }, filters));
 }
 
-const createSchema = z.object({
+const ventilationSchema = z.object({
+  amount_cents: z.number().int(),
+  category_id: z.string().nullish(),
+  unite_id: z.string().nullish(),
+  activite_id: z.string().nullish(),
+});
+
+// Multi-ventilation (S0, 2026-07-08) : l'imputation (catégorie/unité/
+// activité) vit désormais dans `ventilations[]`, pas au niveau racine.
+// `amount_cents` racine reste le TOTAL — `.refine` valide l'invariant
+// somme = total en défense en profondeur (déjà validé côté adapter CW
+// et service, cf. AGENTS.md "Grain canonique... = la VENTILATION").
+export const createSchema = z.object({
   date_ecriture: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   description: z.string().min(1),
   amount_cents: z.number().int(),
   type: z.enum(['depense', 'recette']),
-  unite_id: z.string().nullish(),
-  category_id: z.string().nullish(),
   mode_paiement_id: z.string().nullish(),
-  activite_id: z.string().nullish(),
   numero_piece: z.string().nullish(),
   carte_id: z.string().nullish(),
   justif_attendu: z.union([z.boolean(), z.literal(0), z.literal(1)]).optional(),
   notes: z.string().nullish(),
-});
+  ventilations: z.array(ventilationSchema).min(1),
+}).refine(
+  (d) => d.ventilations.reduce((s, v) => s + v.amount_cents, 0) === d.amount_cents,
+  { message: 'La somme des ventilations doit égaler le montant total.', path: ['ventilations'] },
+);
 
 // Task 7 du pivot miroir strict + MCP-first :
 // POST /api/ecritures est la porte d'entrée "user-initiated" (front ou
