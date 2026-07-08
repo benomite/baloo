@@ -407,7 +407,7 @@ function DepotRow({
           </div>
         </details>
 
-        <details className="group/edit relative w-full" name={`actions-${depot.id}`}>
+        <details className="group/edit relative" name={`actions-${depot.id}`}>
           <summary className="cursor-pointer list-none inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium text-fg-muted transition-colors hover:bg-bg-sunken group-open/edit:bg-fg group-open/edit:text-bg">
             <Pencil size={12} strokeWidth={2} />
             Modifier
@@ -415,7 +415,7 @@ function DepotRow({
           </summary>
           <form
             action={updateDepot}
-            className="mt-3 rounded-lg border border-border-soft bg-bg p-3 space-y-3 text-left"
+            className="mt-3 w-[min(36rem,85vw)] rounded-lg border border-border-soft bg-bg p-3 space-y-3 text-left"
           >
             <input type="hidden" name="id" value={depot.id} />
             <Field label="Titre" htmlFor={`edit-titre-${depot.id}`} required className="m-0">
