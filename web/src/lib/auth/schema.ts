@@ -629,5 +629,11 @@ export async function ensureAuthSchema(): Promise<void> {
 
   await migrateKmColumns(db);
 
+  // Multi-ventilation (S0, 2026-07-08) : relie N lignes ecritures d'une
+  // même pièce AVANT que comptaweb_ecriture_id soit connu. Nullable
+  // (mono-catégorie = null). Cf. doc/specs/2026-07-08-ecriture-multi-ventilation-design.md
+  try { await db.exec('ALTER TABLE ecritures ADD COLUMN ventilation_group_id TEXT'); } catch { /* déjà présent */ }
+  try { await db.exec('CREATE INDEX IF NOT EXISTS idx_ecritures_ventilation_group ON ecritures(ventilation_group_id)'); } catch { /* déjà présent */ }
+
   ensured = true;
 }

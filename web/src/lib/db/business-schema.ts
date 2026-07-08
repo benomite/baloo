@@ -53,6 +53,10 @@ const ECRITURES_COLUMNS_DDL = `
   ligne_bancaire_id INTEGER,
   ligne_bancaire_sous_index INTEGER,
   comptaweb_ecriture_id INTEGER,
+  -- Multi-ventilation (S0, 2026-07-08) : relie N lignes ecritures d'une
+  -- même pièce AVANT que comptaweb_ecriture_id soit connu. Nullable
+  -- (mono-catégorie = null). Cf. doc/specs/2026-07-08-ecriture-multi-ventilation-design.md
+  ventilation_group_id TEXT,
   -- Libellé bancaire BRUT figé à la génération d'un brouillon depuis une
   -- ligne bancaire (= description initiale, jamais réécrit). Sert à (a)
   -- détecter qu'un titre n'a pas encore été personnalisé (description ==

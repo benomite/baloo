@@ -76,6 +76,7 @@ export interface Ecriture {
   ligne_bancaire_id: number | null;
   ligne_bancaire_sous_index: number | null;
   comptaweb_ecriture_id: number | null;
+  ventilation_group_id: string | null;
   carte_id: string | null;
   // Libellé bancaire brut figé à la génération d'un brouillon depuis la banque
   // (null si saisie manuelle). Sert au nudge « titre à renommer » + rapprochement.
