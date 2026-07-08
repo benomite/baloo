@@ -6,6 +6,7 @@ import { getCurrentContext } from '../context';
 import {
   createDepot as createDepotService,
   rejectDepot as rejectDepotService,
+  updateDepot as updateDepotService,
   attachDepotToEcriture as attachDepotToEcritureService,
   attachDepotToRemboursement as attachDepotToRemboursementService,
   shareDepotToEcriture as shareDepotToEcritureService,
@@ -138,6 +139,49 @@ export async function rejectDepot(formData: FormData): Promise<void> {
   }
   revalidatePath('/depots');
   redirect('/depots?rejected=' + encodeURIComponent(id));
+}
+
+export async function updateDepot(formData: FormData): Promise<void> {
+  const ctx = await getCurrentContext();
+  if (!isAdminRole(ctx.role)) {
+    redirect('/depots?error=' + encodeURIComponent('Action réservée aux trésoriers / RG.'));
+  }
+  const id = formData.get('id') as string | null;
+  const titre = (formData.get('titre') as string | null)?.trim() ?? '';
+  if (!id || !titre) {
+    redirect('/depots?error=' + encodeURIComponent('Titre obligatoire.'));
+  }
+
+  const amountRaw = (formData.get('amount') as string | null)?.trim() || null;
+  let amount_cents: number | null = null;
+  if (amountRaw) {
+    try {
+      amount_cents = parseAmount(amountRaw);
+    } catch {
+      redirect('/depots?error=' + encodeURIComponent(`Montant invalide : "${amountRaw}". Utilise le format 12,50.`));
+    }
+  }
+
+  try {
+    await updateDepotService(
+      { groupId: ctx.groupId },
+      id,
+      {
+        titre,
+        description: (formData.get('description') as string | null)?.trim() || null,
+        category_id: (formData.get('category_id') as string | null) || null,
+        unite_id: (formData.get('unite_id') as string | null) || null,
+        amount_cents,
+        date_estimee: (formData.get('date_estimee') as string | null) || null,
+        carte_id: (formData.get('carte_id') as string | null) || null,
+        activite_id: (formData.get('activite_id') as string | null) || null,
+      },
+    );
+  } catch (err) {
+    redirect('/depots?error=' + encodeURIComponent(err instanceof Error ? err.message : String(err)));
+  }
+  revalidatePath('/depots');
+  redirect('/depots?updated=' + encodeURIComponent(id));
 }
 
 export async function attachDepotToEcriture(formData: FormData): Promise<void> {

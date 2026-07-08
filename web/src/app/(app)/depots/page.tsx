@@ -1,12 +1,14 @@
 import Link from 'next/link';
-import { ChevronDown, FileText, Link2, Paperclip, Plus, X } from 'lucide-react';
+import { ChevronDown, FileText, Link2, Paperclip, Pencil, Plus, X } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Alert } from '@/components/ui/alert';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Field } from '@/components/shared/field';
 import { Amount } from '@/components/shared/amount';
+import { CategoryPicker } from '@/components/shared/category-picker';
 import { EmptyState } from '@/components/shared/empty-state';
 import { PendingButton } from '@/components/shared/pending-button';
 import { getCurrentContext } from '@/lib/context';
@@ -20,18 +22,22 @@ import {
   splitJustifPaths,
   type DepotEnriched,
 } from '@/lib/services/depots';
+import { listUnites, listCategories, listCartes, getTopCategoryIds, listSelectableActivites } from '@/lib/queries/reference';
 import {
   rejectDepot,
+  updateDepot,
   attachDepotToEcriture,
   attachDepotToRemboursement,
 } from '@/lib/actions/depots';
 import { formatAmount } from '@/lib/format';
+import { keepSelectable, isUnmapped } from '@/lib/selectable';
 import { cn } from '@/lib/utils';
 
 interface SearchParams {
   error?: string;
   rejected?: string;
   attached?: string;
+  updated?: string;
 }
 
 export default async function DepotsPage({
@@ -45,26 +51,32 @@ export default async function DepotsPage({
 
   // Préchargement : suggestions matching ±10 % / ±15 j par dépôt + listes
   // élargies partagées (écritures + remboursements actifs du groupe).
-  const [candidates, allEcritures, rembCandidates, allRembs] = await Promise.all([
-    Promise.all(
-      depots.map((d) =>
-        listCandidateEcritures(
-          { groupId: ctx.groupId },
-          { amount_cents: d.amount_cents, date_estimee: d.date_estimee },
+  const [candidates, allEcritures, rembCandidates, allRembs, unitesAll, categoriesAll, cartesAll, topCategoryIds, activites] =
+    await Promise.all([
+      Promise.all(
+        depots.map((d) =>
+          listCandidateEcritures(
+            { groupId: ctx.groupId },
+            { amount_cents: d.amount_cents, date_estimee: d.date_estimee },
+          ),
         ),
       ),
-    ),
-    listAllAttachableEcritures({ groupId: ctx.groupId }),
-    Promise.all(
-      depots.map((d) =>
-        listCandidateRemboursements(
-          { groupId: ctx.groupId },
-          { amount_cents: d.amount_cents, date_estimee: d.date_estimee },
+      listAllAttachableEcritures({ groupId: ctx.groupId }),
+      Promise.all(
+        depots.map((d) =>
+          listCandidateRemboursements(
+            { groupId: ctx.groupId },
+            { amount_cents: d.amount_cents, date_estimee: d.date_estimee },
+          ),
         ),
       ),
-    ),
-    listAllAttachableRemboursements({ groupId: ctx.groupId }),
-  ]);
+      listAllAttachableRemboursements({ groupId: ctx.groupId }),
+      listUnites(),
+      listCategories(),
+      listCartes(),
+      getTopCategoryIds(5),
+      listSelectableActivites(),
+    ]);
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -100,6 +112,11 @@ export default async function DepotsPage({
           Dépôt <code className="font-mono text-[12.5px] font-medium">{params.attached}</code> rattaché.
         </Alert>
       )}
+      {params.updated && (
+        <Alert variant="success" className="mb-4">
+          Dépôt <code className="font-mono text-[12.5px] font-medium">{params.updated}</code> modifié.
+        </Alert>
+      )}
 
       {depots.length === 0 ? (
         <EmptyState
@@ -117,6 +134,11 @@ export default async function DepotsPage({
               allEcritures={allEcritures}
               rembCandidates={rembCandidates[idx]}
               allRembs={allRembs}
+              unitesAll={unitesAll}
+              categoriesAll={categoriesAll}
+              cartesAll={cartesAll}
+              topCategoryIds={topCategoryIds}
+              activites={activites}
             />
           ))}
         </ul>
@@ -131,12 +153,22 @@ function DepotRow({
   allEcritures,
   rembCandidates,
   allRembs,
+  unitesAll,
+  categoriesAll,
+  cartesAll,
+  topCategoryIds,
+  activites,
 }: {
   depot: DepotEnriched;
   candidates: Awaited<ReturnType<typeof listCandidateEcritures>>;
   allEcritures: Awaited<ReturnType<typeof listAllAttachableEcritures>>;
   rembCandidates: Awaited<ReturnType<typeof listCandidateRemboursements>>;
   allRembs: Awaited<ReturnType<typeof listAllAttachableRemboursements>>;
+  unitesAll: Awaited<ReturnType<typeof listUnites>>;
+  categoriesAll: Awaited<ReturnType<typeof listCategories>>;
+  cartesAll: Awaited<ReturnType<typeof listCartes>>;
+  topCategoryIds: string[];
+  activites: Awaited<ReturnType<typeof listSelectableActivites>>;
 }) {
   const candidateIds = new Set(candidates.map((c) => c.id));
   const others = allEcritures.filter((e) => !candidateIds.has(e.id));
@@ -176,6 +208,14 @@ function DepotRow({
     depot.category_name && { label: depot.category_name },
     depot.carte_label && { label: depot.carte_label },
   ].filter(Boolean) as { label: string; mono?: boolean; accent?: boolean }[];
+
+  // Référentiels du formulaire d'édition : on ne propose que les valeurs
+  // sélectionnables (mappées CW) mais on préserve la valeur courante même
+  // orpheline (keepSelectable). Montant en texte FR sans le symbole €.
+  const editUnites = keepSelectable(unitesAll, depot.unite_id);
+  const editCategories = keepSelectable(categoriesAll, depot.category_id);
+  const editCartes = keepSelectable(cartesAll, depot.carte_id);
+  const amountInput = depot.amount_cents != null ? formatAmount(depot.amount_cents).replace(' €', '') : '';
 
   return (
     <li className="group/row relative px-4 py-3.5 transition-colors hover:bg-bg-sunken/40">
@@ -365,6 +405,90 @@ function DepotRow({
               </form>
             </AttachPanel>
           </div>
+        </details>
+
+        <details className="group/edit relative w-full" name={`actions-${depot.id}`}>
+          <summary className="cursor-pointer list-none inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium text-fg-muted transition-colors hover:bg-bg-sunken group-open/edit:bg-fg group-open/edit:text-bg">
+            <Pencil size={12} strokeWidth={2} />
+            Modifier
+            <ChevronDown size={11} strokeWidth={2.25} className="transition-transform group-open/edit:rotate-180" />
+          </summary>
+          <form
+            action={updateDepot}
+            className="mt-3 rounded-lg border border-border-soft bg-bg p-3 space-y-3 text-left"
+          >
+            <input type="hidden" name="id" value={depot.id} />
+            <Field label="Titre" htmlFor={`edit-titre-${depot.id}`} required className="m-0">
+              <Input id={`edit-titre-${depot.id}`} name="titre" required defaultValue={depot.titre} />
+            </Field>
+            <Field label="Description" htmlFor={`edit-desc-${depot.id}`} hint="optionnel" className="m-0">
+              <Textarea id={`edit-desc-${depot.id}`} name="description" rows={2} defaultValue={depot.description ?? ''} />
+            </Field>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Montant TTC" htmlFor={`edit-amount-${depot.id}`} hint="optionnel" className="m-0">
+                <Input
+                  id={`edit-amount-${depot.id}`}
+                  name="amount"
+                  defaultValue={amountInput}
+                  placeholder="42,50"
+                  inputMode="decimal"
+                  className="tabular-nums"
+                />
+              </Field>
+              <Field label="Date de la dépense" htmlFor={`edit-date-${depot.id}`} className="m-0">
+                <Input
+                  id={`edit-date-${depot.id}`}
+                  name="date_estimee"
+                  type="date"
+                  defaultValue={depot.date_estimee ?? ''}
+                />
+              </Field>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Catégorie" htmlFor={`edit-cat-${depot.id}`} className="m-0">
+                <CategoryPicker
+                  id={`edit-cat-${depot.id}`}
+                  name="category_id"
+                  categories={editCategories.map((c) => ({ id: c.id, name: c.name, unmapped: isUnmapped(c) }))}
+                  topIds={topCategoryIds}
+                  defaultValue={depot.category_id}
+                />
+              </Field>
+              <Field label="Unité" htmlFor={`edit-unite-${depot.id}`} className="m-0">
+                <NativeSelect id={`edit-unite-${depot.id}`} name="unite_id" defaultValue={depot.unite_id ?? ''}>
+                  <option value="">— Aucune —</option>
+                  {editUnites.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.code} — {u.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Activité / camp" htmlFor={`edit-act-${depot.id}`} hint="optionnel" className="m-0">
+                <NativeSelect id={`edit-act-${depot.id}`} name="activite_id" defaultValue={depot.activite_id ?? ''}>
+                  <option value="">— Aucune —</option>
+                  {activites.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              <Field label="Carte utilisée" htmlFor={`edit-carte-${depot.id}`} className="m-0">
+                <NativeSelect id={`edit-carte-${depot.id}`} name="carte_id" defaultValue={depot.carte_id ?? ''}>
+                  <option value="">— Aucune / Espèces / Virement —</option>
+                  {editCartes.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.type === 'cb' ? 'CB' : 'Procurement'} · {c.porteur}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+            </div>
+            <div className="flex justify-end">
+              <PendingButton size="sm">Enregistrer</PendingButton>
+            </div>
+          </form>
         </details>
 
         <details className="group/reject relative" name={`actions-${depot.id}`}>

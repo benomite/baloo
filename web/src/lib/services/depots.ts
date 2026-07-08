@@ -297,6 +297,59 @@ export async function rejectDepot(
   return (await db.prepare('SELECT * FROM depots_justificatifs WHERE id = ?').get<Depot>(id))!;
 }
 
+// Champs métier éditables d'un dépôt (ceux saisis par le déposeur). L'édition
+// ne touche NI au statut, NI aux liens (ecriture_id / remboursement_id), NI aux
+// justifs — seul le contenu descriptif et l'imputation.
+export interface UpdateDepotInput {
+  titre: string;
+  description?: string | null;
+  category_id?: string | null;
+  unite_id?: string | null;
+  amount_cents?: number | null;
+  date_estimee?: string | null;
+  carte_id?: string | null;
+  activite_id?: string | null;
+}
+
+// Édition trésorier d'un dépôt encore « à traiter ». Garde-fou identique à
+// rejectDepot : on refuse d'éditer un dépôt déjà rattaché / rejeté (il n'est
+// plus dans la file à traiter et son imputation est figée dans l'écriture).
+export async function updateDepot(
+  { groupId }: { groupId: string },
+  id: string,
+  input: UpdateDepotInput,
+): Promise<Depot> {
+  await ensureDepotsSchema();
+  if (!input.titre?.trim()) throw new Error('Titre obligatoire.');
+  const db = getDb();
+  const existing = await db
+    .prepare('SELECT statut FROM depots_justificatifs WHERE id = ? AND group_id = ?')
+    .get<{ statut: string }>(id, groupId);
+  if (!existing) throw new Error(`Dépôt ${id} introuvable.`);
+  if (existing.statut !== 'a_traiter') {
+    throw new Error(`Dépôt déjà ${existing.statut}, impossible de modifier.`);
+  }
+  await db.prepare(
+    `UPDATE depots_justificatifs
+     SET titre = ?, description = ?, category_id = ?, unite_id = ?, amount_cents = ?,
+         date_estimee = ?, carte_id = ?, activite_id = ?, updated_at = ?
+     WHERE id = ? AND group_id = ?`,
+  ).run(
+    input.titre.trim(),
+    input.description?.trim() || null,
+    input.category_id || null,
+    input.unite_id || null,
+    input.amount_cents ?? null,
+    input.date_estimee || null,
+    input.carte_id || null,
+    input.activite_id || null,
+    currentTimestamp(),
+    id,
+    groupId,
+  );
+  return (await db.prepare('SELECT * FROM depots_justificatifs WHERE id = ?').get<Depot>(id))!;
+}
+
 export async function attachDepotToEcriture(
   { groupId }: { groupId: string },
   depotId: string,
