@@ -205,7 +205,7 @@ export function CwAssistActions({
           </button>
         )}
 
-        {deepLinkUrl && (
+        {deepLinkUrl && !hideCopy && (
           <a
             href={deepLinkUrl}
             target="_blank"

@@ -20,11 +20,7 @@ import { Info } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import { EcritureFormFields } from './ecriture-form';
 import { CwAssistActions, type CwAssistPayload } from './cw-assist-actions';
-import {
-  ventilationsToPayload,
-  ventilationsRemainderCents,
-  type VentilationRow,
-} from './ventilations-form';
+import { ventilationsToPayload, type VentilationRow } from './ventilations-form';
 import { parseAmount } from '@/lib/format';
 import type { Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
 
@@ -181,24 +177,24 @@ export function NouvelleEcritureWizard({
   };
 
   // Gate du bouton "Faire dans CW" : chaque ligne doit être complète
-  // (montant > 0, catégorie, unité et activité choisies), et la somme
-  // des lignes doit couvrir le total. `ventilationsRemainderCents` vaut
-  // ici TOUJOURS 0 (pas de champ "montant total" indépendant dans ce
-  // wizard — cf. commentaire équivalent dans `ecriture-form.tsx`) ; on
-  // l'appelle malgré tout pour rester aligné sur l'invariant de
-  // `/api/ecritures` et permettre une réutilisation future avec un total
-  // externe (ex. montant importé d'une ligne bancaire).
-  const ventTotalCents = vents.reduce((s, v) => s + parseAmount(v.amount || '0'), 0);
-  const remainder = ventilationsRemainderCents(ventTotalCents, vents);
-  const hasIncompleteLine = vents.some(
-    (v) =>
+  // (montant fini et > 0, catégorie, unité et activité choisies). Pas de
+  // terme "reste à ventiler" ici : le total (`amount_cents`) est dérivé
+  // des lignes (Σ ventilations, cf. `readPayloadFromForm`), donc le reste
+  // est TOUJOURS 0 par construction dans ce wizard — ce cas ne peut
+  // jamais désactiver le submit (cf. commentaire équivalent dans
+  // `ecriture-form.tsx`, où l'affichage correspondant a été retiré).
+  const hasIncompleteLine = vents.some((v) => {
+    const cents = parseAmount(v.amount || '0');
+    return (
       !v.amount ||
-      parseAmount(v.amount) <= 0 ||
+      !Number.isFinite(cents) ||
+      cents <= 0 ||
       !v.category_id ||
       !v.unite_id ||
-      !v.activite_id,
-  );
-  const submitDisabled = remainder !== 0 || hasIncompleteLine;
+      !v.activite_id
+    );
+  });
+  const submitDisabled = hasIncompleteLine;
 
   return (
     <div className="space-y-6">

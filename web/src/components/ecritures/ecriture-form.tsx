@@ -11,9 +11,7 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { PendingButton } from '@/components/shared/pending-button';
 import { CategoryPicker } from '@/components/shared/category-picker';
 import { keepSelectable, isUnmapped } from '@/lib/selectable';
-import { formatAmount, parseAmount } from '@/lib/format';
-import { cn } from '@/lib/utils';
-import { ventilationsRemainderCents, type VentilationRow } from './ventilations-form';
+import type { VentilationRow } from './ventilations-form';
 import type { Category, Unite, ModePaiement, Activite, Carte, Ecriture } from '@/lib/types';
 
 // Corps réutilisable du formulaire : tous les champs SANS l'élément
@@ -97,13 +95,14 @@ export function EcritureFormFields({
   };
   // Total = Σ des lignes (pas de champ "montant total" indépendant dans
   // ce wizard, cf. schema `/api/ecritures` : amount_cents racine = Σ
-  // ventilations). Le reste est donc TOUJOURS 0 par construction ici —
-  // on garde l'appel au helper partagé (même invariant que la route API)
-  // comme garde-fou défensif et pour rester cohérent si ce répéteur est
-  // un jour réutilisé avec un total externe (ex. montant importé d'une
-  // ligne bancaire à réconcilier).
-  const ventTotalCents = ventRows.reduce((s, r) => s + parseAmount(r.amount || '0'), 0);
-  const ventRemainder = ventilationsRemainderCents(ventTotalCents, ventRows);
+  // ventilations). Le reste à ventiler est donc TOUJOURS 0 par
+  // construction ici et n'a rien à afficher — pas de compteur "reste à
+  // ventiler" en mode wizard. Ce compteur ne prendra sens que le jour où
+  // ce répéteur sera réutilisé avec un total FIXÉ indépendamment (ex.
+  // montant importé d'une ligne bancaire à réconcilier / dépôt) : à ce
+  // moment-là, réintroduire l'affichage ci-dessous en le gardant à
+  // `mode !== 'wizard'` (ou équivalent), via `ventilationsRemainderCents`
+  // (gardé dans `ventilations-form.ts` pour ce futur appelant).
 
   return (
     <div className="space-y-6">
@@ -265,14 +264,6 @@ export function EcritureFormFields({
           >
             + Ajouter une ventilation
           </button>
-          <div
-            className={cn(
-              'text-[13px] font-medium',
-              ventRemainder !== 0 ? 'text-destructive' : 'text-fg-muted',
-            )}
-          >
-            Reste à ventiler : {formatAmount(ventRemainder)}
-          </div>
         </Section>
       )}
 

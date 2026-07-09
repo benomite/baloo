@@ -90,7 +90,10 @@ describe('NouvelleEcritureWizard — répéteur de ventilations', () => {
       target: { value: 'act-1' },
     });
 
-    expect(screen.getByText(/Reste à ventiler : 0,00/)).toBeTruthy();
+    // Pas de compteur "reste à ventiler" en mode wizard (Fix S0 final
+    // review) : le total est dérivé de la somme des lignes, il est donc
+    // toujours 0 par construction — rien à afficher.
+    expect(screen.queryByText(/Reste à ventiler/)).toBeNull();
     const submit = screen.getByTestId('cw-assist-submit') as HTMLButtonElement;
     expect(submit.disabled).toBe(false);
   });
