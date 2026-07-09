@@ -77,7 +77,10 @@ export interface DbWrapper {
 
 // Type executor : soit le client direct, soit une transaction en cours.
 // Les deux exposent `execute`/`executeMultiple` avec la même signature.
-type Executor = Pick<Client, 'execute' | 'executeMultiple'>;
+// `transaction` est optionnel : un `Client` racine l'expose, une
+// `Transaction` libsql en cours ne l'expose PAS (pas de sub-transactions
+// imbriquées) — ce qui nous sert de garde-fou naturel plus bas.
+type Executor = Pick<Client, 'execute' | 'executeMultiple'> & Partial<Pick<Client, 'transaction'>>;
 
 // Exporté pour les tests : permet de construire un `DbWrapper` autour
 // d'un `Client` libsql ad hoc (typiquement un `createClient({ url:
@@ -113,10 +116,22 @@ function wrap(executor: Executor): DbWrapper {
       return r.rows.map((row) => toPlainRow(row)!);
     },
     async transaction<T>(fn: (db: DbWrapper) => Promise<T>): Promise<T> {
+      // Ouvre la transaction sur CET `executor` (celui capturé par la
+      // closure `wrap()`), pas sur le singleton global `getClient()` :
+      // sinon un `DbWrapper` construit via `wrapClient()` autour d'un
+      // client ad hoc (tests avec `file::memory:`) exécuterait sa
+      // transaction sur une base complètement différente (le singleton
+      // prod/dev), en silence. En prod, `getDb()` = `wrap(getClient())`
+      // donc ce changement ne modifie pas le comportement existant.
+      //
       // Une transaction libsql ne peut être ouverte que sur le client
-      // racine — pas de sub-transactions imbriquées.
-      const root = getClient();
-      const tx: Transaction = await root.transaction('write');
+      // racine — pas de sub-transactions imbriquées. `executor.transaction`
+      // est absent sur une `Transaction` en cours (cf. type `Executor`
+      // ci-dessus), donc cette garde couvre aussi le cas imbriqué.
+      if (!executor.transaction) {
+        throw new Error('db.transaction: sub-transactions imbriquées non supportées.');
+      }
+      const tx: Transaction = await executor.transaction('write');
       try {
         const txDb = wrap(tx);
         const result = await fn(txDb);

@@ -162,44 +162,48 @@ export async function createEcritureAndPushToCw(
   const groupId = vents.length >= 2 ? `vg_${randomUUID()}` : null;
 
   // 1. N INSERT en `pending_cw`, une ligne par ventilation, toutes
-  //    partageant `ventilation_group_id`. Si le process meurt à ce
-  //    point, on aura des `pending_cw` orphelins — repérables et
-  //    relançables manuellement. Si un INSERT throw, on laisse l'erreur
-  //    remonter brute (les lignes déjà insérées restent en `pending_cw`,
-  //    pas de rollback partiel nécessaire pour ce cas rarissime — pas de
-  //    DELETE possible de toute façon, cf. CLAUDE.md).
+  //    partageant `ventilation_group_id`. Le groupe doit se comporter
+  //    comme UNE écriture atomique : tout dans une seule
+  //    `db.transaction(...)` (pattern `batchUpdateEcritures`,
+  //    ecritures.ts) pour éviter un groupe "splitté" entre statuts si un
+  //    INSERT échoue en cours de boucle. `nextIdOn` est appelé avec le
+  //    handle de transaction (pas `db`) : la génération d'id et les
+  //    INSERT commitent ensemble, sinon deux ids pourraient se chevaucher
+  //    en cas de rollback partiel.
   const ids: string[] = [];
-  for (const v of vents) {
-    const id = await nextIdOn(db, prefix);
-    ids.push(id);
-    await db
-      .prepare(
-        `INSERT INTO ecritures (
-          id, group_id, date_ecriture, description, amount_cents, type,
-          unite_id, category_id, mode_paiement_id, activite_id, numero_piece,
-          carte_id, justif_attendu, notes, ventilation_group_id, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cw', ?, ?)`,
-      )
-      .run(
-        id,
-        group_id,
-        payload.date_ecriture,
-        payload.description,
-        v.amount_cents,
-        payload.type,
-        nullIfEmpty(v.unite_id ?? null),
-        nullIfEmpty(v.category_id ?? null),
-        nullIfEmpty(payload.mode_paiement_id ?? null),
-        nullIfEmpty(v.activite_id ?? null),
-        nullIfEmpty(payload.numero_piece ?? null),
-        nullIfEmpty(payload.carte_id ?? null),
-        justifAttendu,
-        nullIfEmpty(payload.notes ?? null),
-        groupId,
-        now,
-        now,
-      );
-  }
+  await db.transaction(async (txDb) => {
+    for (const v of vents) {
+      const id = await nextIdOn(txDb, prefix);
+      ids.push(id);
+      await txDb
+        .prepare(
+          `INSERT INTO ecritures (
+            id, group_id, date_ecriture, description, amount_cents, type,
+            unite_id, category_id, mode_paiement_id, activite_id, numero_piece,
+            carte_id, justif_attendu, notes, ventilation_group_id, status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cw', ?, ?)`,
+        )
+        .run(
+          id,
+          group_id,
+          payload.date_ecriture,
+          payload.description,
+          v.amount_cents,
+          payload.type,
+          nullIfEmpty(v.unite_id ?? null),
+          nullIfEmpty(v.category_id ?? null),
+          nullIfEmpty(payload.mode_paiement_id ?? null),
+          nullIfEmpty(v.activite_id ?? null),
+          nullIfEmpty(payload.numero_piece ?? null),
+          nullIfEmpty(payload.carte_id ?? null),
+          justifAttendu,
+          nullIfEmpty(payload.notes ?? null),
+          groupId,
+          now,
+          now,
+        );
+    }
+  });
   const firstId = ids[0];
 
   // 2. Push CW. Le scraper et le loader sont injectables pour les tests.
@@ -210,20 +214,22 @@ export async function createEcritureAndPushToCw(
   // injection : rétrograde le groupe en `draft` immédiatement et throw
   // une `CwPushFailedError` typée pour que le caller reroute proprement.
   if (!opts.cwScraper) {
-    await rollbackGroupToDraft(db, ids, group_id);
-    throw new CwPushFailedError(
+    const originalErr = new CwPushFailedError(
       firstId,
       new Error(
         'createEcritureAndPushToCw: cwScraper non fourni (adapter Comptaweb pas encore branché — Task 8).',
       ),
     );
+    await safeRollbackGroupToDraft(db, ids, group_id);
+    throw originalErr;
   }
   if (!opts.cwConfigLoader) {
-    await rollbackGroupToDraft(db, ids, group_id);
-    throw new CwPushFailedError(
+    const originalErr = new CwPushFailedError(
       firstId,
       new Error('createEcritureAndPushToCw: cwConfigLoader non fourni.'),
     );
+    await safeRollbackGroupToDraft(db, ids, group_id);
+    throw originalErr;
   }
 
   // 2bis. Charger la config et appeler le scraper (un seul POST CW,
@@ -243,8 +249,9 @@ export async function createEcritureAndPushToCw(
     // une `CwPushFailedError` portant l'`id` de la 1ʳᵉ ligne du groupe
     // (évite au caller une requête non-déterministe pour la retrouver —
     // race condition entre POST concurrents).
-    await rollbackGroupToDraft(db, ids, group_id);
-    throw new CwPushFailedError(firstId, err);
+    const originalErr = new CwPushFailedError(firstId, err);
+    await safeRollbackGroupToDraft(db, ids, group_id);
+    throw originalErr;
   }
 
   // 3a. Succès CW : UPDATE status='pending_sync' sur les N lignes, store
@@ -260,24 +267,26 @@ export async function createEcritureAndPushToCw(
   // `CwLocalUpdateFailedError` explicite porteuse du cw_numero_piece.
   // La sync Phase 2 finira par retrouver l'écriture par cw_numero_piece.
   try {
-    for (const id of ids) {
-      await db
-        .prepare(
-          `UPDATE ecritures
-             SET status = 'pending_sync',
-                 cw_numero_piece = ?,
-                 comptaweb_ecriture_id = COALESCE(?, comptaweb_ecriture_id),
-                 updated_at = ?
-           WHERE id = ? AND group_id = ?`,
-        )
-        .run(
-          cwResult.cwNumeroPiece,
-          cwResult.cwEcritureId ?? null,
-          currentTimestamp(),
-          id,
-          group_id,
-        );
-    }
+    await db.transaction(async (txDb) => {
+      for (const id of ids) {
+        await txDb
+          .prepare(
+            `UPDATE ecritures
+               SET status = 'pending_sync',
+                   cw_numero_piece = ?,
+                   comptaweb_ecriture_id = COALESCE(?, comptaweb_ecriture_id),
+                   updated_at = ?
+             WHERE id = ? AND group_id = ?`,
+          )
+          .run(
+            cwResult.cwNumeroPiece,
+            cwResult.cwEcritureId ?? null,
+            currentTimestamp(),
+            id,
+            group_id,
+          );
+      }
+    });
   } catch (err) {
     console.error('[ecritures-create] CW push OK but local UPDATE failed', {
       ecriture_ids: ids,
@@ -295,21 +304,49 @@ export async function createEcritureAndPushToCw(
 }
 
 // Rétrograde toutes les lignes d'un groupe (1 seule si mono-ventilation)
-// en `draft`. Scopé `group_id` par symétrie avec l'UPDATE succès et
-// défense en profondeur si jamais un mauvais `id` était passé par
-// erreur — même si en pratique les `ids` sont générés localement juste
-// avant et appartiennent au `group_id` courant.
+// en `draft`, atomiquement (même pattern `db.transaction` que le reste
+// du fichier — un groupe doit basculer en bloc, jamais splitté).
+// Scopé `group_id` par symétrie avec l'UPDATE succès et défense en
+// profondeur si jamais un mauvais `id` était passé par erreur — même si
+// en pratique les `ids` sont générés localement juste avant et
+// appartiennent au `group_id` courant.
 async function rollbackGroupToDraft(
   db: DbWrapper,
   ids: string[],
   group_id: string,
 ): Promise<void> {
-  for (const id of ids) {
-    await db
-      .prepare(
-        `UPDATE ecritures SET status = 'draft', updated_at = ?
-          WHERE id = ? AND group_id = ?`,
-      )
-      .run(currentTimestamp(), id, group_id);
+  await db.transaction(async (txDb) => {
+    for (const id of ids) {
+      await txDb
+        .prepare(
+          `UPDATE ecritures SET status = 'draft', updated_at = ?
+            WHERE id = ? AND group_id = ?`,
+        )
+        .run(currentTimestamp(), id, group_id);
+    }
+  });
+}
+
+// Wrapper des 3 call-sites de rollback : le contrat de récupération
+// (`route.ts` → `cw_write_failed` + `fallback_status:'draft'`) dépend de
+// ce que l'erreur qui remonte au caller soit TOUJOURS la
+// `CwPushFailedError` d'origine, jamais une exception du rollback
+// lui-même. Si `rollbackGroupToDraft` throw (transaction KO), on le
+// logue (état alors non pire qu'avant cette task : groupe resté en
+// `pending_cw`, repérable et rejouable manuellement) mais on avale
+// l'erreur pour laisser l'appelant lancer l'erreur d'origine.
+async function safeRollbackGroupToDraft(
+  db: DbWrapper,
+  ids: string[],
+  group_id: string,
+): Promise<void> {
+  try {
+    await rollbackGroupToDraft(db, ids, group_id);
+  } catch (rollbackErr) {
+    console.error('[ecritures-create] rollbackGroupToDraft failed', {
+      ecriture_ids: ids,
+      group_id,
+      error: rollbackErr,
+    });
   }
 }

@@ -28,6 +28,7 @@ import {
 // Inclut les colonnes touchées par le flux (status, cw_numero_piece,
 // comptaweb_ecriture_id) et les FK référencées dans le payload.
 const SETUP_SQL = `
+  DROP TABLE IF EXISTS ecritures;
   CREATE TABLE ecritures (
     id TEXT PRIMARY KEY,
     group_id TEXT NOT NULL,
@@ -69,8 +70,67 @@ const VALID_PAYLOAD: EcriturePayload = {
   ],
 };
 
+// Enrobe un `DbWrapper` réel pour faire échouer certains `prepare(sql)`
+// (matchés par `shouldThrow`) — sur le wrapper ET, récursivement, sur le
+// `txDb` injecté par `db.transaction(...)`. Nécessaire depuis que le
+// service ouvre ses propres `db.transaction(...)` : sans ce relais, un
+// mock qui n'intercepte que le `prepare` de premier niveau ne voit
+// jamais les requêtes faites via `txDb.prepare(...)` à l'intérieur
+// d'une transaction (le `txDb` réel n'est pas le même objet).
+function makeFlakyDb(realDb: DbWrapper, shouldThrow: (sql: string) => boolean): DbWrapper {
+  const flakyPrepareOn = (target: DbWrapper) => (sql: string): Statement => {
+    if (shouldThrow(sql)) {
+      return {
+        async run() {
+          throw new Error('libsql network error');
+        },
+        async get() {
+          throw new Error('libsql network error');
+        },
+        async all() {
+          throw new Error('libsql network error');
+        },
+      };
+    }
+    return target.prepare(sql);
+  };
+  return {
+    prepare: flakyPrepareOn(realDb),
+    exec: realDb.exec.bind(realDb),
+    pragma: realDb.pragma.bind(realDb),
+    async transaction<T>(fn: (txDb: DbWrapper) => Promise<T>): Promise<T> {
+      return realDb.transaction(async (txDb) => {
+        const flakyTxDb: DbWrapper = {
+          prepare: flakyPrepareOn(txDb),
+          exec: txDb.exec.bind(txDb),
+          pragma: txDb.pragma.bind(txDb),
+          transaction: txDb.transaction.bind(txDb),
+        };
+        return fn(flakyTxDb);
+      });
+    },
+  };
+}
+
 async function setupDb(): Promise<{ client: Client; db: ReturnType<typeof wrapClient> }> {
-  const client = createClient({ url: 'file::memory:' });
+  // `?cache=shared` : le service fait maintenant PLUSIEURS
+  // `db.transaction()` séquentiels sur le même client (INSERT groupe,
+  // puis UPDATE succès OU rollback). En local sqlite3 (libsql), chaque
+  // `client.transaction()` ouvre une connexion distincte ; sans cache
+  // partagé, une `file::memory:` "nue" repart d'une base VIDE à chaque
+  // nouvelle connexion (`no such table`), alors qu'un fichier réel
+  // (prod/dev) ou Turso ne pose pas ce problème. `cache=shared` fait
+  // persister l'état entre connexions successives du même process,
+  // comme un vrai fichier.
+  //
+  // Contrepartie : `cache=shared` sur `file::memory:` mappe TOUS les
+  // clients de ce process sur la MÊME base anonyme (le paramétrage
+  // libsql n'accepte pas de nom personnalisé en query string pour
+  // isoler chaque test — `mode=`/`vfs=` sont rejetés par son parseur
+  // d'URL). D'où le `DROP TABLE IF EXISTS` en tête de `SETUP_SQL` :
+  // repart d'un état propre à chaque test sans dépendre d'un nommage
+  // par test (les tests de ce fichier tournent séquentiellement).
+  const client = createClient({ url: 'file::memory:?cache=shared' });
   await client.execute('PRAGMA foreign_keys = OFF');
   await client.executeMultiple(SETUP_SQL);
   return { client, db: wrapClient(client) };
@@ -152,30 +212,10 @@ describe('createEcritureAndPushToCw', () => {
     // ramassera l'écriture par cw_numero_piece et la promouvra.
 
     // On wrappe le `db` : tout prepare contenant "status = 'pending_sync'"
-    // (l'UPDATE post-scraping) throw. Les autres prepares (nextIdOn,
-    // INSERT pending_cw) passent normalement.
+    // (l'UPDATE post-scraping, exécuté dans une transaction) throw. Les
+    // autres prepares (nextIdOn, INSERT pending_cw) passent normalement.
     const originalDb = db;
-    const flakyDb: DbWrapper = {
-      prepare(sql: string): Statement {
-        if (sql.includes("status = 'pending_sync'")) {
-          return {
-            async run() {
-              throw new Error('libsql network error');
-            },
-            async get() {
-              throw new Error('libsql network error');
-            },
-            async all() {
-              throw new Error('libsql network error');
-            },
-          };
-        }
-        return originalDb.prepare(sql);
-      },
-      exec: originalDb.exec.bind(originalDb),
-      pragma: originalDb.pragma.bind(originalDb),
-      transaction: originalDb.transaction.bind(originalDb),
-    };
+    const flakyDb = makeFlakyDb(originalDb, (sql) => sql.includes("status = 'pending_sync'"));
 
     const scraperMock: CwScraper = vi.fn().mockResolvedValue({
       cwNumeroPiece: 'CW-2026-XYZ',
@@ -352,22 +392,79 @@ describe('createEcritureAndPushToCw', () => {
     expect(row?.ventilation_group_id).toBeNull();
   });
 
-  it('échec CW : les N lignes retombent toutes en draft (aucun DELETE)', async () => {
-    await expect(createEcritureAndPushToCw(db, {
-      group_id: 'g',
-      payload: {
-        date_ecriture: '2026-07-08', description: 'x', amount_cents: 10000, type: 'depense',
-        mode_paiement_id: 'MODE-CB',
-        ventilations: [
-          { amount_cents: 7000, category_id: 'CAT-INT', unite_id: 'UNI-A', activite_id: 'ACT-1' },
-          { amount_cents: 3000, category_id: 'CAT-MAT', unite_id: 'UNI-A', activite_id: 'ACT-1' },
-        ],
-      },
-      cwScraper: async () => { throw new Error('CW down'); },
-      cwConfigLoader: async () => ({} as never),
-    })).rejects.toThrow();
+  it('échec CW : les N lignes retombent toutes en draft (aucun DELETE), erreur = CwPushFailedError', async () => {
+    let caught: unknown;
+    try {
+      await createEcritureAndPushToCw(db, {
+        group_id: 'g',
+        payload: {
+          date_ecriture: '2026-07-08', description: 'x', amount_cents: 10000, type: 'depense',
+          mode_paiement_id: 'MODE-CB',
+          ventilations: [
+            { amount_cents: 7000, category_id: 'CAT-INT', unite_id: 'UNI-A', activite_id: 'ACT-1' },
+            { amount_cents: 3000, category_id: 'CAT-MAT', unite_id: 'UNI-A', activite_id: 'ACT-1' },
+          ],
+        },
+        cwScraper: async () => { throw new Error('CW down'); },
+        cwConfigLoader: async () => ({} as never),
+      });
+    } catch (err) {
+      caught = err;
+    }
+    // Contrat de récupération (route.ts → cw_write_failed +
+    // fallback_status:'draft') : l'erreur qui remonte doit TOUJOURS être
+    // la CwPushFailedError d'origine, jamais autre chose (ex. une
+    // exception issue du rollback lui-même).
+    expect(caught).toBeInstanceOf(CwPushFailedError);
     const rows = await db.prepare(`SELECT status FROM ecritures WHERE group_id='g'`).all<{ status: string }>();
     expect(rows).toHaveLength(2);
     expect(rows.every(r => r.status === 'draft')).toBe(true);
+  });
+
+  it('rollback qui échoue ne masque pas la CwPushFailedError d\'origine', async () => {
+    // Simule : scraper KO (déclenche safeRollbackGroupToDraft) PUIS la
+    // transaction du rollback elle-même KO. Le contrat exige que
+    // l'erreur remontée au caller reste la CwPushFailedError d'origine
+    // (jamais l'exception du rollback), avec la défaillance du rollback
+    // seulement loguée. 1er appel db.transaction = le N-INSERT (doit
+    // réussir normalement) ; 2e appel = rollbackGroupToDraft (simulé KO).
+    let transactionCalls = 0;
+    const flakyDb: DbWrapper = {
+      prepare: db.prepare.bind(db),
+      exec: db.exec.bind(db),
+      pragma: db.pragma.bind(db),
+      async transaction<T>(fn: (txDb: DbWrapper) => Promise<T>): Promise<T> {
+        transactionCalls += 1;
+        if (transactionCalls === 2) {
+          throw new Error('transaction KO (rollback)');
+        }
+        return db.transaction(fn);
+      },
+    };
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let caught: unknown;
+    try {
+      await createEcritureAndPushToCw(flakyDb, {
+        group_id: 'g',
+        payload: VALID_PAYLOAD,
+        cwScraper: async () => { throw new Error('CW down'); },
+        cwConfigLoader: async () => ({} as never),
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(CwPushFailedError);
+    expect((caught as CwPushFailedError).message).toBe('CW down');
+    // La défaillance du rollback a bien été loguée (pas silencieuse).
+    // Assertion AVANT `mockRestore()` : celui-ci réinitialise aussi
+    // l'historique d'appels du spy (comme `mockReset`), donc vérifier
+    // après aurait toujours vu 0 appel.
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[ecritures-create] rollbackGroupToDraft failed',
+      expect.anything(),
+    );
+    errorSpy.mockRestore();
   });
 });
