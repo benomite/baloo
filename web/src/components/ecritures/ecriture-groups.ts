@@ -105,12 +105,7 @@ export function buildEcritureGroups(rows: Ecriture[]): Item[] {
         id: e.ventilation_group_id,
         label: entries[0].description,
         sublabel: entries[0].date_ecriture,
-        // Pas de signedTotal ici : toutes les ventilations d'un même groupe
-        // local partagent forcément le même `type` (un split ne mélange pas
-        // dépense et recette), donc la somme brute des `amount_cents` est
-        // déjà la grandeur affichée — cf. test « ≥2 lignes même
-        // ventilation_group_id ».
-        totalCents: entries.reduce((sum, e2) => sum + e2.amount_cents, 0),
+        totalCents: signedTotal(entries),
         count: entries.length,
       };
     }

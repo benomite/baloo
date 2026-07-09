@@ -26,12 +26,31 @@ describe('buildEcritureGroups — clé ventilation_group_id', () => {
     const headers = items.filter(i => i.kind === 'header');
     expect(headers).toHaveLength(1);
     expect(headers[0].kind === 'header' && headers[0].group.kind).toBe('ventil');
-    expect(headers[0].kind === 'header' && headers[0].group.totalCents).toBe(10000);
+    // signedTotal : dépense → négatif (cf. ecriture-groups.ts `signedTotal`).
+    expect(headers[0].kind === 'header' && headers[0].group.totalCents).toBe(-10000);
     expect(items.filter(i => i.kind === 'row')).toHaveLength(2);
   });
 
   it('une seule ligne avec ventilation_group_id null → pas de header', () => {
     const items = buildEcritureGroups([ecr({ id: 'E1', ventilation_group_id: null })]);
     expect(items.filter(i => i.kind === 'header')).toHaveLength(0);
+  });
+
+  it('une seule ligne avec un ventilation_group_id non-null (pas de partenaire) → pas de header (garde ≥2)', () => {
+    const items = buildEcritureGroups([ecr({ id: 'E1', ventilation_group_id: 'vg_solo' })]);
+    expect(items.filter(i => i.kind === 'header')).toHaveLength(0);
+    const rows = items.filter(i => i.kind === 'row');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind === 'row' && rows[0].group).toBeNull();
+  });
+
+  it('ligne groupée bancaire (≥2 sous-lignes) ET porteuse d\'un ventilation_group_id → priorité bank sur ventil', () => {
+    const items = buildEcritureGroups([
+      ecr({ id: 'E1', ligne_bancaire_id: 42, ventilation_group_id: 'vg_2', amount_cents: 7000 }),
+      ecr({ id: 'E2', ligne_bancaire_id: 42, ventilation_group_id: 'vg_2', amount_cents: 3000 }),
+    ]);
+    const headers = items.filter(i => i.kind === 'header');
+    expect(headers).toHaveLength(1);
+    expect(headers[0].kind === 'header' && headers[0].group.kind).toBe('bank');
   });
 });

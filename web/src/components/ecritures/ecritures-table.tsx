@@ -206,13 +206,6 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
               const style = GROUP_STYLE[g.kind];
               const allEntriesInGroup = groupEntries(g);
               const editableInGroup = allEntriesInGroup.filter(isEditable);
-              // Le signe de `totalCents` n'est fiable (dépense négative /
-              // recette positive) que pour 'bank'/'cw' (cf. signedTotal dans
-              // ecriture-groups.ts). Pour 'ventil', c'est une somme brute des
-              // `amount_cents` (toujours ≥ 0, cf. test dédié) — le sens vient
-              // du `type` des entrées, à part.
-              const amountTone: 'signed' | 'negative' | 'positive' =
-                g.kind === 'ventil' ? (allEntriesInGroup[0]?.type === 'depense' ? 'negative' : 'positive') : 'signed';
               return (
                 <div
                   key={`h-${gk}`}
@@ -246,7 +239,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     {g.count} {g.kind === 'bank' ? 'sous-ligne' : 'ventilation'}{g.count > 1 ? 's' : ''}
                   </span>
                   <span className="ml-auto font-semibold tabular-nums">
-                    <Amount cents={g.totalCents} tone={amountTone} />
+                    <Amount cents={g.totalCents} tone="signed" />
                   </span>
                 </div>
               );
