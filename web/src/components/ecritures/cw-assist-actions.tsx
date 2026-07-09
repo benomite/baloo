@@ -32,6 +32,10 @@ export interface CwAssistPayload {
   amount_cents: number;
   description: string;
   type: 'depense' | 'recette';
+  // Multi-ventilation (S0) : `category_id`/`unite_id`/`activite_id` ici
+  // ne reflètent QUE la 1ʳᵉ ventilation, pour le mode dégradé "Copier" /
+  // deep-link en mono-ligne (cf. `hideCopy`). L'imputation réelle envoyée
+  // à `/api/ecritures` vit uniquement dans `ventilations[]`.
   category_id?: string | null;
   mode_paiement_id?: string | null;
   unite_id?: string | null;
@@ -40,6 +44,13 @@ export interface CwAssistPayload {
   numero_piece?: string | null;
   notes?: string | null;
   justif_attendu?: boolean;
+  /** Ventilations (multi-catégorie) — porté jusqu'à `onSubmitToCw`. */
+  ventilations?: {
+    amount_cents: number;
+    category_id: string | null;
+    unite_id: string | null;
+    activite_id: string | null;
+  }[];
 }
 
 export interface CwAssistSubmitOk {
@@ -69,6 +80,19 @@ export interface CwAssistActionsProps {
    * bouton n'apparaît pas (mode dégradé pour la page d'édition sans CW write).
    */
   onSubmitToCw?: (payload: CwAssistPayload) => Promise<CwAssistSubmitResult>;
+  /**
+   * Désactive le bouton "Faire dans Comptaweb pour moi" (ex. reste à
+   * ventiler ≠ 0 ou ligne de ventilation incomplète — cf. le répéteur
+   * du wizard `/ecritures/nouveau`, Task 7). Le bouton reste visible
+   * (pas caché) pour que l'utilisateur comprenne qu'il manque une info.
+   */
+  submitDisabled?: boolean;
+  /**
+   * Cache le bouton "Tout copier" (et le deep-link). Utilisé quand le
+   * payload a plus d'une ventilation : un copier-coller qui ne reflète
+   * que le total + la 1ʳᵉ ventilation serait trompeur (cf. brief Task 7).
+   */
+  hideCopy?: boolean;
   /** Override du format clipboard. Par défaut, un texte multi-lignes lisible. */
   formatForClipboard?: (payload: CwAssistPayload) => string;
   /**
@@ -114,6 +138,8 @@ export function CwAssistActions({
   payload,
   deepLinkUrl,
   onSubmitToCw,
+  submitDisabled,
+  hideCopy,
   formatForClipboard,
   onSuccess,
   onError,
@@ -164,7 +190,7 @@ export function CwAssistActions({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={submitState.kind === 'pending'}
+            disabled={submitState.kind === 'pending' || !!submitDisabled}
             className={cn(
               'inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-[13px] font-medium transition-all',
               'bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-60 disabled:pointer-events-none',
@@ -195,27 +221,29 @@ export function CwAssistActions({
           </a>
         )}
 
-        <button
-          type="button"
-          onClick={handleCopy}
-          className={cn(
-            'inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-[13px] font-medium transition-all',
-            'border-border bg-background hover:bg-muted',
-          )}
-          data-testid="cw-assist-copy"
-        >
-          {copyState === 'copied' ? (
-            <>
-              <CheckCircle2 size={14} strokeWidth={2.25} className="text-emerald-600" />
-              <span data-testid="cw-assist-copy-feedback">Copié</span>
-            </>
-          ) : (
-            <>
-              <Copy size={14} strokeWidth={2.25} />
-              Tout copier
-            </>
-          )}
-        </button>
+        {!hideCopy && (
+          <button
+            type="button"
+            onClick={handleCopy}
+            className={cn(
+              'inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-[13px] font-medium transition-all',
+              'border-border bg-background hover:bg-muted',
+            )}
+            data-testid="cw-assist-copy"
+          >
+            {copyState === 'copied' ? (
+              <>
+                <CheckCircle2 size={14} strokeWidth={2.25} className="text-emerald-600" />
+                <span data-testid="cw-assist-copy-feedback">Copié</span>
+              </>
+            ) : (
+              <>
+                <Copy size={14} strokeWidth={2.25} />
+                Tout copier
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {submitState.kind === 'success' && (

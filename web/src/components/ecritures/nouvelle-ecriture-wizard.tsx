@@ -14,12 +14,17 @@
 // par `fetch('/api/ecritures')` — le même endpoint que le MCP. Pattern
 // cohérent avec la spec "MCP et front passent par les mêmes endpoints".
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Info } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import { EcritureFormFields } from './ecriture-form';
 import { CwAssistActions, type CwAssistPayload } from './cw-assist-actions';
+import {
+  ventilationsToPayload,
+  ventilationsRemainderCents,
+  type VentilationRow,
+} from './ventilations-form';
 import { parseAmount } from '@/lib/format';
 import type { Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
 
@@ -33,29 +38,41 @@ interface Props {
 }
 
 /**
- * Extrait le payload "Baloo-friendly" depuis un `<form>` DOM. Centralisé
+ * Extrait le payload "Baloo-friendly" depuis un `<form>` DOM + l'état
+ * contrôlé `vents` du répéteur de ventilations (Task 7, S0). Centralisé
  * pour que les 3 boutons (submit, copy, deeplink) voient la même chose.
+ *
+ * `vents` porte l'imputation (catégorie/unité/activité + montant par
+ * ligne) — ce n'est plus lu depuis le FormData : `category_id`/
+ * `unite_id`/`activite_id` n'existent plus comme champs racine dans le
+ * DOM du wizard (cf. `EcritureFormFields` mode='wizard').
  */
-function readPayloadFromForm(form: HTMLFormElement): CwAssistPayload {
+function readPayloadFromForm(form: HTMLFormElement, vents: VentilationRow[]): CwAssistPayload {
   const fd = new FormData(form);
   const get = (k: string): string | null => {
     const v = fd.get(k);
     return typeof v === 'string' && v.length > 0 ? v : null;
   };
-  const montantStr = (fd.get('montant') as string) ?? '';
+  const ventilations = ventilationsToPayload(vents);
+  const amount_cents = ventilations.reduce((s, v) => s + v.amount_cents, 0);
+  // Mode dégradé "Copier" / deep-link (`CwAssistActions`, `hideCopy`) :
+  // pertinent uniquement en mono-ventilation, on y reflète alors la
+  // ligne unique. Sinon `null` — les boutons concernés sont masqués.
+  const single = ventilations.length === 1 ? ventilations[0] : null;
   return {
     date_ecriture: (fd.get('date_ecriture') as string) ?? '',
     description: (fd.get('description') as string) ?? '',
-    amount_cents: parseAmount(montantStr),
+    amount_cents,
     type: ((fd.get('type') as string) ?? 'depense') as 'depense' | 'recette',
-    category_id: get('category_id'),
+    category_id: single?.category_id ?? null,
+    unite_id: single?.unite_id ?? null,
+    activite_id: single?.activite_id ?? null,
     mode_paiement_id: get('mode_paiement_id'),
-    unite_id: get('unite_id'),
-    activite_id: get('activite_id'),
     carte_id: get('carte_id'),
     numero_piece: get('numero_piece'),
     notes: get('notes'),
     justif_attendu: fd.has('justif_attendu'),
+    ventilations,
   };
 }
 
@@ -69,20 +86,36 @@ export function NouvelleEcritureWizard({
 }: Props) {
   const formRef = useRef<HTMLFormElement | null>(null);
   const router = useRouter();
+  // Répéteur de ventilations (Task 7, S0) : levé ici (pas dans
+  // `EcritureFormFields`) parce que ce composant en a besoin pour
+  // construire le body POST et pour désactiver le bouton "Faire dans CW"
+  // (cf. `submitDisabled` plus bas).
+  const [vents, setVents] = useState<VentilationRow[]>(() => [
+    { id: 'v0', amount: '', category_id: null, unite_id: null, activite_id: null },
+  ]);
   // On garde un payload dans le state pour que `CwAssistActions` puisse le
   // lire au moment du clic. On le rafraîchit à chaque interaction du form
-  // (onChange / onInput).
+  // (onChange / onInput) et à chaque changement de `vents`.
   const [payload, setPayload] = useState<CwAssistPayload>(() => ({
     date_ecriture: new Date().toISOString().split('T')[0],
     description: '',
     amount_cents: 0,
     type: 'depense',
     justif_attendu: true,
+    ventilations: [],
   }));
 
   const refreshPayload = () => {
-    if (formRef.current) setPayload(readPayloadFromForm(formRef.current));
+    if (formRef.current) setPayload(readPayloadFromForm(formRef.current, vents));
   };
+
+  // `vents` change en dehors des events DOM natifs du <form> (state React
+  // contrôlé) — `onChange`/`onInput` ne se déclenchent donc pas pour lui.
+  // On resynchronise `payload` explicitement à chaque changement.
+  useEffect(() => {
+    refreshPayload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vents]);
 
   const noopAction = () => {
     // Le form n'utilise plus de server action — c'est le bouton "Faire
@@ -94,19 +127,21 @@ export function NouvelleEcritureWizard({
     // Garde-fou : description / montant obligatoires côté zod sur la
     // route. On laisse le 400 remonter, le message d'erreur sera affiché
     // par `CwAssistActions` dans la zone error.
+    //
+    // Multi-ventilation (S0) : plus de category_id/unite_id/activite_id
+    // racine — l'imputation vit uniquement dans `ventilations[]` (cf.
+    // schema Zod `/api/ecritures`, .refine somme = amount_cents).
     const body = {
       date_ecriture: p.date_ecriture,
       description: p.description,
       amount_cents: p.amount_cents,
       type: p.type,
-      unite_id: p.unite_id ?? undefined,
-      category_id: p.category_id ?? undefined,
       mode_paiement_id: p.mode_paiement_id ?? undefined,
-      activite_id: p.activite_id ?? undefined,
       numero_piece: p.numero_piece ?? undefined,
       carte_id: p.carte_id ?? undefined,
       justif_attendu: !!p.justif_attendu,
       notes: p.notes ?? undefined,
+      ventilations: p.ventilations ?? [],
     };
     const res = await fetch('/api/ecritures', {
       method: 'POST',
@@ -145,6 +180,26 @@ export function NouvelleEcritureWizard({
     };
   };
 
+  // Gate du bouton "Faire dans CW" : chaque ligne doit être complète
+  // (montant > 0, catégorie, unité et activité choisies), et la somme
+  // des lignes doit couvrir le total. `ventilationsRemainderCents` vaut
+  // ici TOUJOURS 0 (pas de champ "montant total" indépendant dans ce
+  // wizard — cf. commentaire équivalent dans `ecriture-form.tsx`) ; on
+  // l'appelle malgré tout pour rester aligné sur l'invariant de
+  // `/api/ecritures` et permettre une réutilisation future avec un total
+  // externe (ex. montant importé d'une ligne bancaire).
+  const ventTotalCents = vents.reduce((s, v) => s + parseAmount(v.amount || '0'), 0);
+  const remainder = ventilationsRemainderCents(ventTotalCents, vents);
+  const hasIncompleteLine = vents.some(
+    (v) =>
+      !v.amount ||
+      parseAmount(v.amount) <= 0 ||
+      !v.category_id ||
+      !v.unite_id ||
+      !v.activite_id,
+  );
+  const submitDisabled = remainder !== 0 || hasIncompleteLine;
+
   return (
     <div className="space-y-6">
       <Alert variant="info" icon={Info}>
@@ -165,17 +220,25 @@ export function NouvelleEcritureWizard({
         className="space-y-6"
       >
         <EcritureFormFields
+          mode="wizard"
           categories={categories}
           topCategoryIds={topCategoryIds}
           unites={unites}
           modesPaiement={modesPaiement}
           activites={activites}
           cartes={cartes}
+          vents={vents}
+          setVents={setVents}
         />
       </form>
 
       <CwAssistActions
         payload={payload}
+        submitDisabled={submitDisabled}
+        // Copier/deeplink masqués dès qu'il y a >1 ventilation : un
+        // copier-coller qui ne reflète que le total + la 1ʳᵉ ligne
+        // serait trompeur (cf. brief Task 7).
+        hideCopy={vents.length > 1}
         onSubmitToCw={handleSubmitToCw}
         onSuccess={(r) => {
           // Pattern miroir : l'écriture est en `pending_sync` côté Baloo.

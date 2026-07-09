@@ -1,5 +1,6 @@
 'use client';
 
+import { useRef, type Dispatch, type SetStateAction } from 'react';
 import { Lock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -10,6 +11,9 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { PendingButton } from '@/components/shared/pending-button';
 import { CategoryPicker } from '@/components/shared/category-picker';
 import { keepSelectable, isUnmapped } from '@/lib/selectable';
+import { formatAmount, parseAmount } from '@/lib/format';
+import { cn } from '@/lib/utils';
+import { ventilationsRemainderCents, type VentilationRow } from './ventilations-form';
 import type { Category, Unite, ModePaiement, Activite, Carte, Ecriture } from '@/lib/types';
 
 // Corps réutilisable du formulaire : tous les champs SANS l'élément
@@ -28,6 +32,9 @@ export function EcritureFormFields({
   activites,
   cartes,
   ecriture,
+  mode = 'edit',
+  vents,
+  setVents,
 }: {
   categories: Category[];
   topCategoryIds: string[];
@@ -36,6 +43,22 @@ export function EcritureFormFields({
   activites: Activite[];
   cartes: Carte[];
   ecriture?: Ecriture;
+  /**
+   * 'edit' (défaut) : formulaire mono-ventilation historique — grain
+   * d'une écriture Baloo = 1 ventilation (cf. AGENTS.md), utilisé par
+   * `EcritureForm` (page édition, server action `updateEcriture`) qui
+   * lit `montant`/`category_id`/`unite_id`/`activite_id` via FormData.
+   * 'wizard' : répéteur multi-ventilation (Task 7, S0) utilisé par
+   * `NouvelleEcritureWizard` (`/ecritures/nouveau`) — `amount_cents`
+   * racine part vers `/api/ecritures` en tant que Σ des `ventilations[]`
+   * (plus de category_id/unite_id/activite_id racine, cf. schema Zod de
+   * la route). Nécessite `vents`/`setVents` (état contrôlé par le
+   * parent, qui en a besoin pour construire le payload et pour désactiver
+   * le bouton "Faire dans CW").
+   */
+  mode?: 'edit' | 'wizard';
+  vents?: VentilationRow[];
+  setVents?: Dispatch<SetStateAction<VentilationRow[]>>;
 }) {
   const amountStr = ecriture
     ? `${Math.floor(ecriture.amount_cents / 100)},${String(ecriture.amount_cents % 100).padStart(2, '0')}`
@@ -55,6 +78,32 @@ export function EcritureFormFields({
   const selectableCartes = keepSelectable(cartes, ecriture?.carte_id);
   const decorate = (item: { name: string; comptaweb_id: number | null }): string =>
     item.comptaweb_id === null ? `${item.name} (non sync)` : item.name;
+
+  // Répéteur de ventilations (mode 'wizard' uniquement) : `vents` est
+  // contrôlé par le parent (`NouvelleEcritureWizard`) — on met à jour via
+  // `setVents`, jamais d'état local ici, pour que le parent voie chaque
+  // ligne en temps réel (payload POST + gate du bouton "Faire dans CW").
+  const ventRows = vents ?? [];
+  const nextVentIdRef = useRef(1); // 'v0' est déjà pris par la ligne initiale du wizard.
+  const addVentRow = () => {
+    const id = `v${nextVentIdRef.current++}`;
+    setVents?.((prev) => [...prev, { id, amount: '', category_id: null, unite_id: null, activite_id: null }]);
+  };
+  const removeVentRow = (id: string) => {
+    setVents?.((prev) => (prev.length > 1 ? prev.filter((r) => r.id !== id) : prev));
+  };
+  const updateVentRow = (id: string, patch: Partial<VentilationRow>) => {
+    setVents?.((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  };
+  // Total = Σ des lignes (pas de champ "montant total" indépendant dans
+  // ce wizard, cf. schema `/api/ecritures` : amount_cents racine = Σ
+  // ventilations). Le reste est donc TOUJOURS 0 par construction ici —
+  // on garde l'appel au helper partagé (même invariant que la route API)
+  // comme garde-fou défensif et pour rester cohérent si ce répéteur est
+  // un jour réutilisé avec un total externe (ex. montant importé d'une
+  // ligne bancaire à réconcilier).
+  const ventTotalCents = ventRows.reduce((s, r) => s + parseAmount(r.amount || '0'), 0);
+  const ventRemainder = ventilationsRemainderCents(ventTotalCents, ventRows);
 
   return (
     <div className="space-y-6">
@@ -99,17 +148,19 @@ export function EcritureFormFields({
           />
         </Field>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Montant" htmlFor="montant" required hint="format 42,50">
-            <Input
-              id="montant"
-              name="montant"
-              required
-              placeholder="42,50"
-              defaultValue={amountStr}
-              disabled={locked}
-              inputMode="decimal"
-            />
-          </Field>
+          {mode === 'edit' && (
+            <Field label="Montant" htmlFor="montant" required hint="format 42,50">
+              <Input
+                id="montant"
+                name="montant"
+                required
+                placeholder="42,50"
+                defaultValue={amountStr}
+                disabled={locked}
+                inputMode="decimal"
+              />
+            </Field>
+          )}
           <Field label="N° pièce" htmlFor="numero_piece" hint="code Comptaweb si reçu">
             <Input
               id="numero_piece"
@@ -122,55 +173,162 @@ export function EcritureFormFields({
         </div>
       </Section>
 
+      {mode === 'wizard' && (
+        <Section
+          title="Ventilation"
+          subtitle="Un montant + une imputation par ligne. Ajoute une ligne pour répartir sur plusieurs catégories."
+        >
+          {ventRows.map((row, i) => (
+            <div
+              key={row.id}
+              className="rounded-lg border border-border bg-bg-sunken/40 p-3 space-y-3"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+                  Ventilation {i + 1}
+                </span>
+                {ventRows.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeVentRow(row.id)}
+                    className="text-[12px] font-medium text-destructive hover:underline"
+                  >
+                    Supprimer
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field label="Montant" htmlFor={`ventilations.${i}.amount`} required hint="format 42,50">
+                  <Input
+                    id={`ventilations.${i}.amount`}
+                    name={`ventilations.${i}.amount`}
+                    required
+                    placeholder="42,50"
+                    inputMode="decimal"
+                    value={row.amount}
+                    onChange={(e) => updateVentRow(row.id, { amount: e.target.value })}
+                  />
+                </Field>
+                <Field label="Catégorie" htmlFor={`ventilations.${i}.category_id`} required>
+                  <CategoryPicker
+                    id={`ventilations.${i}.category_id`}
+                    name={`ventilations.${i}.category_id`}
+                    categories={selectableCategories.map((c) => ({
+                      id: c.id,
+                      name: c.name,
+                      unmapped: isUnmapped(c),
+                    }))}
+                    topIds={topCategoryIds}
+                    defaultValue={row.category_id ?? ''}
+                    onChange={(value) => updateVentRow(row.id, { category_id: value || null })}
+                  />
+                </Field>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field label="Unité" htmlFor={`ventilations.${i}.unite_id`} required>
+                  <NativeSelect
+                    id={`ventilations.${i}.unite_id`}
+                    name={`ventilations.${i}.unite_id`}
+                    value={row.unite_id ?? ''}
+                    onChange={(e) => updateVentRow(row.id, { unite_id: e.target.value || null })}
+                  >
+                    <option value="">— Aucune —</option>
+                    {selectableUnites.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.code} — {u.name}{isUnmapped(u) ? ' (non sync)' : ''}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </Field>
+                <Field label="Activité" htmlFor={`ventilations.${i}.activite_id`} required>
+                  <NativeSelect
+                    id={`ventilations.${i}.activite_id`}
+                    name={`ventilations.${i}.activite_id`}
+                    value={row.activite_id ?? ''}
+                    onChange={(e) => updateVentRow(row.id, { activite_id: e.target.value || null })}
+                  >
+                    <option value="">— Aucune —</option>
+                    {selectableActivites.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {decorate(a)}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </Field>
+              </div>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={addVentRow}
+            className="text-[13px] font-medium text-brand hover:underline"
+          >
+            + Ajouter une ventilation
+          </button>
+          <div
+            className={cn(
+              'text-[13px] font-medium',
+              ventRemainder !== 0 ? 'text-destructive' : 'text-fg-muted',
+            )}
+          >
+            Reste à ventiler : {formatAmount(ventRemainder)}
+          </div>
+        </Section>
+      )}
+
       <Section
         title="Imputation"
         subtitle="Où va cette écriture dans la comptabilité du groupe."
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Unité" htmlFor="unite_id">
-            <NativeSelect
-              id="unite_id"
-              name="unite_id"
-              defaultValue={ecriture?.unite_id ?? ''}
-              disabled={locked}
-            >
-              <option value="">— Aucune —</option>
-              {selectableUnites.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.code} — {u.name}{isUnmapped(u) ? ' (non sync)' : ''}
-                </option>
-              ))}
-            </NativeSelect>
-          </Field>
-          <Field label="Catégorie" htmlFor="category_id">
-            <CategoryPicker
-              id="category_id"
-              name="category_id"
-              categories={selectableCategories.map((c) => ({
-                id: c.id,
-                name: c.name,
-                unmapped: isUnmapped(c),
-              }))}
-              topIds={topCategoryIds}
-              defaultValue={ecriture?.category_id ?? ''}
-              disabled={locked}
-            />
-          </Field>
-          <Field label="Activité" htmlFor="activite_id">
-            <NativeSelect
-              id="activite_id"
-              name="activite_id"
-              defaultValue={ecriture?.activite_id ?? ''}
-              disabled={locked}
-            >
-              <option value="">— Aucune —</option>
-              {selectableActivites.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {decorate(a)}
-                </option>
-              ))}
-            </NativeSelect>
-          </Field>
+          {mode === 'edit' && (
+            <>
+              <Field label="Unité" htmlFor="unite_id">
+                <NativeSelect
+                  id="unite_id"
+                  name="unite_id"
+                  defaultValue={ecriture?.unite_id ?? ''}
+                  disabled={locked}
+                >
+                  <option value="">— Aucune —</option>
+                  {selectableUnites.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.code} — {u.name}{isUnmapped(u) ? ' (non sync)' : ''}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              <Field label="Catégorie" htmlFor="category_id">
+                <CategoryPicker
+                  id="category_id"
+                  name="category_id"
+                  categories={selectableCategories.map((c) => ({
+                    id: c.id,
+                    name: c.name,
+                    unmapped: isUnmapped(c),
+                  }))}
+                  topIds={topCategoryIds}
+                  defaultValue={ecriture?.category_id ?? ''}
+                  disabled={locked}
+                />
+              </Field>
+              <Field label="Activité" htmlFor="activite_id">
+                <NativeSelect
+                  id="activite_id"
+                  name="activite_id"
+                  defaultValue={ecriture?.activite_id ?? ''}
+                  disabled={locked}
+                >
+                  <option value="">— Aucune —</option>
+                  {selectableActivites.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {decorate(a)}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+            </>
+          )}
           <Field label="Mode de paiement" htmlFor="mode_paiement_id">
             <NativeSelect
               id="mode_paiement_id"

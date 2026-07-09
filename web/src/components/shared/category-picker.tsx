@@ -34,6 +34,7 @@ export function CategoryPicker({
   allowEmpty = true,
   emptyLabel = 'Aucune',
   disabled = false,
+  onChange,
 }: {
   categories: CategoryOption[];
   topIds: string[];
@@ -43,8 +44,20 @@ export function CategoryPicker({
   allowEmpty?: boolean;
   emptyLabel?: string;
   disabled?: boolean;
+  /**
+   * Optionnel : notifie le parent à chaque changement, en plus de l'état
+   * interne. Ajouté pour le répéteur de ventilations (Task 7) qui a
+   * besoin de lever la sélection catégorie dans un état contrôlé
+   * (`vents`) — la valeur "source de vérité" reste le hidden input
+   * (`name`) lu via FormData dans les usages historiques non concernés.
+   */
+  onChange?: (value: string) => void;
 }) {
-  const [value, setValue] = useState<string>(defaultValue ?? '');
+  const [value, setValueState] = useState<string>(defaultValue ?? '');
+  const setValue = (v: string) => {
+    setValueState(v);
+    onChange?.(v);
+  };
 
   const byId = new Map(categories.map((c) => [c.id, c]));
   const topCats = topIds
@@ -61,6 +74,7 @@ export function CategoryPicker({
         name={name}
         defaultValue={defaultValue ?? ''}
         disabled={disabled}
+        onChange={(e) => onChange?.(e.target.value)}
       >
         {allowEmpty && <option value="">— {emptyLabel} —</option>}
         {categories.map((c) => (
