@@ -13,6 +13,7 @@ import { EcritureMatchBanner } from './ecriture-match-banner';
 import { EcritureInlinePanel } from './ecriture-inline-panel';
 import { computeReadiness } from '@/lib/sync-readiness';
 import { ValiderCwButton } from './valider-cw-button';
+import { buildEcritureGroups, groupKey, type Group, type GroupKind, type Item } from './ecriture-groups';
 import type { Ecriture, Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
 
 interface Props {
@@ -43,58 +44,40 @@ function moisCourt(dateIso: string): string {
   return MOIS_COURTS[m - 1] ?? '';
 }
 
-// Extrait l'intitulé parent bancaire depuis les notes de draft
-// (format "… (intitulé parent: PAIEMENT C. PROC XXX).").
-function parseIntituleParent(notes: string | null): string | null {
-  if (!notes) return null;
-  const m = notes.match(/intitulé parent:\s*([^)]+)\)?/);
-  return m ? m[1].trim().replace(/\s*\.\.\.$/, '') : null;
-}
-
-// Deux familles de regroupement, disjointes en pratique :
-//   - 'bank' : sous-lignes d'un même paiement bancaire (ligne_bancaire_id) —
-//     typiquement des brouillons issus du rapprochement, sans id Comptaweb.
-//   - 'cw'   : ventilations d'une même écriture Comptaweb (comptaweb_ecriture_id) —
-//     une écriture CW « 1171 € » éclatée en plusieurs lignes (568 Formation,
-//     431 Participation, …), chacune une écriture Baloo distincte (grain
-//     ventilation, cf. ADR-035).
-type GroupKind = 'bank' | 'cw';
-
-interface Group {
-  kind: GroupKind;
-  id: number;
-  label: string;
-  sublabel: string;
-  totalCents: number; // signé (dépenses négatives, recettes positives)
-  count: number;
-}
-
-const groupKey = (kind: GroupKind, id: number) => `${kind}-${id}`;
-
-function signedTotal(entries: Ecriture[]): number {
-  return entries.reduce((sum, e) => sum + (e.type === 'depense' ? -e.amount_cents : e.amount_cents), 0);
-}
-
-// Accent visuel par famille de groupe (rail du header + teinte). Le rail des
-// LIGNES, lui, reste piloté par la couleur d'unité (lecture branche au scroll).
-const GROUP_STYLE: Record<GroupKind, { rail: string; headerBg: string; rowBg: string; rowRail: string }> = {
+// Accent visuel par famille de groupe (rail du header + teinte, libellé +
+// icône du bandeau). Le rail des LIGNES, lui, reste piloté par la couleur
+// d'unité (lecture branche au scroll). Trois familles (cf. ecriture-groups.ts
+// pour le détail bank/cw/ventil) :
+//   - 'bank'   : sous-lignes d'un même paiement bancaire.
+//   - 'cw'     : ventilations d'une même écriture Comptaweb (ADR-035).
+//   - 'ventil' : ventilations d'une même écriture locale avant matérialisation
+//     Comptaweb (ventilation_group_id) — pendant local du groupe 'cw'.
+const GROUP_STYLE: Record<GroupKind, { rail: string; headerBg: string; rowBg: string; rowRail: string; label: string; iconClass: string }> = {
   bank: {
     rail: 'rgb(148 163 184 / 0.55)', // slate
     headerBg: 'bg-muted/40 hover:bg-muted/60',
     rowBg: 'bg-slate-50/70 dark:bg-slate-900/30',
     rowRail: 'rgb(148 163 184 / 0.55)',
+    label: 'Ligne bancaire',
+    iconClass: 'text-muted-foreground',
   },
   cw: {
     rail: 'rgb(79 70 229 / 0.62)', // indigo — « regroupé par écriture Comptaweb »
     headerBg: 'bg-indigo-50/60 hover:bg-indigo-100/60 dark:bg-indigo-950/25 dark:hover:bg-indigo-950/40',
     rowBg: 'bg-indigo-50/35 dark:bg-indigo-950/15',
     rowRail: 'rgb(99 102 241 / 0.5)',
+    label: 'Écriture Comptaweb',
+    iconClass: 'text-indigo-500 dark:text-indigo-400',
+  },
+  ventil: {
+    rail: 'rgb(20 184 166 / 0.6)', // teal — regroupement local, pré-Comptaweb
+    headerBg: 'bg-teal-50/60 hover:bg-teal-100/60 dark:bg-teal-950/25 dark:hover:bg-teal-950/40',
+    rowBg: 'bg-teal-50/35 dark:bg-teal-950/15',
+    rowRail: 'rgb(45 212 191 / 0.5)',
+    label: 'Ventilation',
+    iconClass: 'text-teal-500 dark:text-teal-400',
   },
 };
-
-type Item =
-  | { kind: 'header'; key: string; group: Group }
-  | { kind: 'row'; key: string; ecriture: Ecriture; index: number; group: Group | null };
 
 export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes, matchDepots, matchRembs, rejectedMatchKeys, topCategoryIds, refreshRow, validatingIds, onValidate, isAdmin = false }: Props) {
   const rejectedMatchSet = useMemo(() => new Set(rejectedMatchKeys), [rejectedMatchKeys]);
@@ -126,65 +109,17 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
   const editableIds = useMemo(() => ecritures.filter(isEditable).map((e) => e.id), [ecritures]);
   const allEditableSelected = editableIds.length > 0 && editableIds.every((id) => selected.has(id));
 
-  // Pré-calcul des deux familles de groupes + items rendus (header + rows).
-  const items = useMemo<Item[]>(() => {
-    const byBank = new Map<number, Ecriture[]>();
-    const byCw = new Map<number, Ecriture[]>();
-    for (const e of ecritures) {
-      if (e.ligne_bancaire_id) {
-        (byBank.get(e.ligne_bancaire_id) ?? byBank.set(e.ligne_bancaire_id, []).get(e.ligne_bancaire_id)!).push(e);
-      }
-      if (e.comptaweb_ecriture_id != null) {
-        (byCw.get(e.comptaweb_ecriture_id) ?? byCw.set(e.comptaweb_ecriture_id, []).get(e.comptaweb_ecriture_id)!).push(e);
-      }
-    }
-    const isBankGrouped = (id: number): boolean => {
-      const b = byBank.get(id) ?? [];
-      return b.length > 1 || (b.length === 1 && b[0].ligne_bancaire_sous_index !== null);
-    };
-    const isCwGrouped = (id: number): boolean => (byCw.get(id)?.length ?? 0) >= 2;
-
-    const groupFor = (e: Ecriture): Group | null => {
-      if (e.ligne_bancaire_id && isBankGrouped(e.ligne_bancaire_id)) {
-        const entries = byBank.get(e.ligne_bancaire_id)!;
-        return {
-          kind: 'bank',
-          id: e.ligne_bancaire_id,
-          label: parseIntituleParent(entries[0].notes) ?? `Ligne bancaire #${e.ligne_bancaire_id}`,
-          sublabel: `#${e.ligne_bancaire_id}`,
-          totalCents: signedTotal(entries),
-          count: entries.length,
-        };
-      }
-      if (e.comptaweb_ecriture_id != null && isCwGrouped(e.comptaweb_ecriture_id)) {
-        const entries = byCw.get(e.comptaweb_ecriture_id)!;
-        return {
-          kind: 'cw',
-          id: e.comptaweb_ecriture_id,
-          label: entries[0].description,
-          sublabel: entries[0].numero_piece ? `pièce ${entries[0].numero_piece}` : `écriture CW #${e.comptaweb_ecriture_id}`,
-          totalCents: signedTotal(entries),
-          count: entries.length,
-        };
-      }
-      return null;
-    };
-
-    const seen = new Set<string>();
-    const out: Item[] = [];
-    for (let i = 0; i < ecritures.length; i++) {
-      const e = ecritures[i];
-      const group = groupFor(e);
-      if (group) {
-        const gk = groupKey(group.kind, group.id);
-        if (!seen.has(gk)) {
-          seen.add(gk);
-          out.push({ kind: 'header', key: `h-${gk}`, group });
-        }
-      }
-      out.push({ kind: 'row', key: e.id, ecriture: e, index: i, group });
-    }
-    return out;
+  // Pré-calcul des trois familles de groupes + items rendus (header + rows).
+  // Logique pure extraite dans ecriture-groups.ts (testée indépendamment du
+  // rendu — cf. ecriture-groups.test.ts).
+  const items = useMemo<Item[]>(() => buildEcritureGroups(ecritures), [ecritures]);
+  // Index de chaque écriture dans `ecritures` — nécessaire pour toggleRow
+  // (sélection shift-clic par plage), que buildEcritureGroups n'expose pas
+  // (Item n'a pas de champ `index`, cf. interface imposée par le module).
+  const indexById = useMemo(() => {
+    const m = new Map<string, number>();
+    ecritures.forEach((e, i) => m.set(e.id, i));
+    return m;
   }, [ecritures]);
 
   const toggleRow = (index: number, shift: boolean) => {
@@ -227,8 +162,14 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
     });
   };
 
+  // 'ventil' est mappé sur la même branche que 'cw' : regroupement logique
+  // local (pré-Comptaweb), pas un regroupement bancaire.
   const groupEntries = (g: Group): Ecriture[] =>
-    ecritures.filter((e) => (g.kind === 'bank' ? e.ligne_bancaire_id === g.id : e.comptaweb_ecriture_id === g.id));
+    ecritures.filter((e) => {
+      if (g.kind === 'bank') return String(e.ligne_bancaire_id) === g.id;
+      if (g.kind === 'cw') return String(e.comptaweb_ecriture_id) === g.id;
+      return e.ventilation_group_id === g.id;
+    });
 
   const selectGroup = (g: Group) => {
     const bucket = groupEntries(g).filter(isEditable);
@@ -263,10 +204,18 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
               const gk = groupKey(g.kind, g.id);
               const isCollapsed = collapsed.has(gk);
               const style = GROUP_STYLE[g.kind];
-              const editableInGroup = groupEntries(g).filter(isEditable);
+              const allEntriesInGroup = groupEntries(g);
+              const editableInGroup = allEntriesInGroup.filter(isEditable);
+              // Le signe de `totalCents` n'est fiable (dépense négative /
+              // recette positive) que pour 'bank'/'cw' (cf. signedTotal dans
+              // ecriture-groups.ts). Pour 'ventil', c'est une somme brute des
+              // `amount_cents` (toujours ≥ 0, cf. test dédié) — le sens vient
+              // du `type` des entrées, à part.
+              const amountTone: 'signed' | 'negative' | 'positive' =
+                g.kind === 'ventil' ? (allEntriesInGroup[0]?.type === 'depense' ? 'negative' : 'positive') : 'signed';
               return (
                 <div
-                  key={item.key}
+                  key={`h-${gk}`}
                   className={`flex items-center gap-2.5 px-3 py-2 cursor-pointer text-xs text-muted-foreground ${style.headerBg}`}
                   onClick={() => toggleGroup(g)}
                   style={isCollapsed ? undefined : { boxShadow: `inset 3px 0 0 0 ${style.rail}` }}
@@ -284,13 +233,11 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                   )}
                   <span className="text-xs">{isCollapsed ? '▶' : '▼'}</span>
                   {g.kind === 'bank' ? (
-                    <Landmark size={13} className="text-muted-foreground" />
+                    <Landmark size={13} className={style.iconClass} />
                   ) : (
-                    <Layers size={13} className="text-indigo-500 dark:text-indigo-400" />
+                    <Layers size={13} className={style.iconClass} />
                   )}
-                  <span className="font-medium">
-                    {g.kind === 'bank' ? 'Ligne bancaire' : 'Écriture Comptaweb'}
-                  </span>
+                  <span className="font-medium">{style.label}</span>
                   <code className="text-[11px]">{g.sublabel}</code>
                   <span>·</span>
                   <span className="truncate max-w-md">{g.label}</span>
@@ -299,7 +246,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     {g.count} {g.kind === 'bank' ? 'sous-ligne' : 'ventilation'}{g.count > 1 ? 's' : ''}
                   </span>
                   <span className="ml-auto font-semibold tabular-nums">
-                    <Amount cents={g.totalCents} tone="signed" />
+                    <Amount cents={g.totalCents} tone={amountTone} />
                   </span>
                 </div>
               );
@@ -336,7 +283,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
             // Un remboursement lié vaut justificatif (cf. badge « sans justif »).
             const hasJustif = !!e.has_justificatif || !!e.remboursement_id;
             return (
-              <div key={item.key}>
+              <div key={e.id}>
                 <div
                   className={`group/row flex items-start gap-3 px-3 py-2.5 transition-colors ${
                     isValidating
@@ -353,7 +300,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     aria-label={`Sélectionner ${e.id}`}
                     checked={isSelected}
                     onClick={stop}
-                    onChange={(ev) => toggleRow(item.index, (ev.nativeEvent as MouseEvent).shiftKey)}
+                    onChange={(ev) => toggleRow(indexById.get(e.id) ?? -1, (ev.nativeEvent as MouseEvent).shiftKey)}
                     disabled={!editable}
                     title={editable ? 'Shift+clic pour sélectionner une plage' : 'Écriture synchronisée Comptaweb — non modifiable'}
                   />
