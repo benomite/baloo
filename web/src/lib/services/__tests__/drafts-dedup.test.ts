@@ -51,6 +51,7 @@ const SETUP_SQL = `
     comptaweb_ecriture_id INTEGER,
     carte_id TEXT,
     libelle_origine TEXT,
+    ventilation_group_id TEXT,
     notes TEXT,
     created_at TEXT NOT NULL DEFAULT '2026-06-25T00:00:00Z',
     updated_at TEXT NOT NULL DEFAULT '2026-06-25T00:00:00Z'

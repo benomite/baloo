@@ -77,6 +77,36 @@ function candidatesForLine(l: EcritureBancaireNonRapprochee): Candidate[] {
   ];
 }
 
+// Recale le sens (type) + justif_attendu sur TOUTES les lignes du groupe de
+// ventilation (self-heal). Sans `vg` (ligne non ventilée) → ne touche que
+// `headId`. Ne touche QUE type + justif_attendu (identité bancaire/imputation
+// /liens intacts), et seulement les lignes `draft` pas encore dans CW.
+export async function correctGroupDraftType(
+  db: DbWrapper,
+  groupId: string,
+  headId: string,
+  vg: string | null,
+  type: 'depense' | 'recette',
+  justifAttendu: number,
+): Promise<void> {
+  const ts = currentTimestamp();
+  if (vg) {
+    await db
+      .prepare(
+        `UPDATE ecritures SET type = ?, justif_attendu = ?, updated_at = ?
+          WHERE group_id = ? AND ventilation_group_id = ? AND status = 'draft' AND comptaweb_ecriture_id IS NULL`,
+      )
+      .run(type, justifAttendu, ts, groupId, vg);
+  } else {
+    await db
+      .prepare(
+        `UPDATE ecritures SET type = ?, justif_attendu = ?, updated_at = ?
+          WHERE id = ? AND group_id = ? AND status = 'draft' AND comptaweb_ecriture_id IS NULL`,
+      )
+      .run(type, justifAttendu, ts, headId, groupId);
+  }
+}
+
 export interface ScanDraftsResult {
   crees: number;
   existants: number;
@@ -137,6 +167,7 @@ export async function scanDraftsFromComptaweb(
               e.libelle_origine AS libelleOrigine,
               e.description AS description,
               e.comptaweb_ecriture_id AS cwId,
+              e.ventilation_group_id AS ventilationGroupId,
               (CASE WHEN e.category_id IS NOT NULL OR e.unite_id IS NOT NULL OR e.activite_id IS NOT NULL
                     THEN 1 ELSE 0 END) AS hasImput,
               (CASE WHEN EXISTS(SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id)
@@ -149,14 +180,6 @@ export async function scanDraftsFromComptaweb(
     const deleteStaleDraft = db.prepare(
       `DELETE FROM ecritures WHERE id = ? AND group_id = ? AND status = 'draft'`,
     );
-    // Self-heal : recale le sens d'un draft NU (+ justif_attendu cohérent) sans
-    // toucher au montant (déjà stocké en absolu). Scopé status='draft' par
-    // défense en profondeur.
-    const correctDraftType = db.prepare(
-      `UPDATE ecritures SET type = ?, justif_attendu = ?, updated_at = ?
-        WHERE id = ? AND group_id = ? AND status = 'draft'`,
-    );
-
     let crees = 0;
     let existants = 0;
     let supprimes = 0;
@@ -174,7 +197,7 @@ export async function scanDraftsFromComptaweb(
       const existingRows = await findLineDrafts.all<{
         id: string; sousIndex: number | null; status: string; type: string;
         libelleOrigine: string | null; description: string;
-        cwId: number | null; hasImput: number; hasAttach: number;
+        cwId: number | null; ventilationGroupId: string | null; hasImput: number; hasAttach: number;
       }>(groupId, ligne.id);
       const existing: ExistingLineDraft[] = existingRows.map((r) => ({
         id: r.id,
@@ -227,7 +250,10 @@ export async function scanDraftsFromComptaweb(
           // matérialisée dans Comptaweb (status ≠ draft ou déjà liée à CW).
           const corrigeable = existingCand.status === 'draft' && existingCand.cwId === null;
           if (corrigeable && existingCand.type !== type) {
-            await correctDraftType.run(type, justifAttendu, currentTimestamp(), existingCand.id, groupId);
+            // Groupe de ventilation (split manuel) : les N lignes partagent la
+            // même sous-ligne bancaire → le sens se recale sur TOUTES, pas
+            // seulement sur la ligne reconnue par `.find`.
+            await correctGroupDraftType(db, groupId, existingCand.id, existingCand.ventilationGroupId, type, justifAttendu);
             corriges++;
           } else {
             existants++;

@@ -28,7 +28,7 @@ async function setup(): Promise<DbWrapper> {
       description TEXT, amount_cents INTEGER, type TEXT, category_id TEXT, mode_paiement_id TEXT,
       activite_id TEXT, numero_piece TEXT, status TEXT, justif_attendu INTEGER, comptaweb_synced INTEGER,
       ligne_bancaire_id INTEGER, ligne_bancaire_sous_index INTEGER, comptaweb_ecriture_id INTEGER,
-      carte_id TEXT, libelle_origine TEXT, notes TEXT, created_at TEXT, updated_at TEXT);
+      carte_id TEXT, libelle_origine TEXT, ventilation_group_id TEXT, notes TEXT, created_at TEXT, updated_at TEXT);
     CREATE TABLE justificatifs (id TEXT, entity_type TEXT, entity_id TEXT);
     CREATE TABLE depots_justificatifs (id TEXT, ecriture_id TEXT);
     CREATE TABLE remboursements (id TEXT, ecriture_id TEXT);

@@ -37,7 +37,7 @@ const SETUP_SQL = `
     numero_piece TEXT, status TEXT NOT NULL DEFAULT 'draft',
     justif_attendu INTEGER NOT NULL DEFAULT 1, comptaweb_synced INTEGER NOT NULL DEFAULT 0,
     ligne_bancaire_id INTEGER, ligne_bancaire_sous_index INTEGER,
-    comptaweb_ecriture_id INTEGER, carte_id TEXT, libelle_origine TEXT, notes TEXT,
+    comptaweb_ecriture_id INTEGER, carte_id TEXT, libelle_origine TEXT, ventilation_group_id TEXT, notes TEXT,
     created_at TEXT NOT NULL DEFAULT '2026-06-25T00:00:00Z',
     updated_at TEXT NOT NULL DEFAULT '2026-06-25T00:00:00Z'
   );
