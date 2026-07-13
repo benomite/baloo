@@ -307,7 +307,7 @@ export function EcritureFormFields({
                     <div className="flex h-10 items-center rounded-lg border border-border bg-bg-sunken/60 px-3 text-[13px] text-fg-muted">
                       Catégories multiples
                     </div>
-                    <input type="hidden" name="category_id" value={ecriture?.category_id ?? ''} />
+                    <input type="hidden" name="category_id" defaultValue={ecriture?.category_id ?? ''} />
                   </>
                 ) : (
                   <CategoryPicker
