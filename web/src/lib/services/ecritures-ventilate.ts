@@ -7,6 +7,7 @@ import { getDb, type DbWrapper } from '../db';
 import { nextIdOn, currentTimestamp } from '../ids';
 import { deleteDraftEcriture, type EcritureContext } from './ecritures';
 import type { VentilationInput } from './ecritures-create';
+import { uniteScopeSql } from '../scope';
 
 export type VentilateReason =
   | 'not_found' | 'not_draft' | 'in_cw' | 'sum_mismatch' | 'incomplete' | 'child_has_attachments';
@@ -37,13 +38,20 @@ export async function ventilateDraft(
   ventilations: VentilationInput[],
   db: DbWrapper = getDb(),
 ): Promise<VentilateDraftResult> {
+  // Scope multi-unités : un chef ne peut agir que sur les écritures de SES
+  // unités. Si la tête est hors scope, le SELECT ne renvoie rien → not_found
+  // (cohérent avec `deleteDraftEcriture` / `getEcriture`).
+  const headConditions = ['id = ?', 'group_id = ?'];
+  const headValues: unknown[] = [headId, ctx.groupId];
+  const headScope = uniteScopeSql(ctx.scopeUniteIds ?? [], 'unite_id');
+  if (headScope.sql) { headConditions.push(headScope.sql); headValues.push(...headScope.params); }
   const head = await db.prepare(
     `SELECT id, group_id, date_ecriture, description, amount_cents, type, mode_paiement_id,
             numero_piece, carte_id, justif_attendu, notes, ligne_bancaire_id,
             ligne_bancaire_sous_index, libelle_origine, ventilation_group_id,
             comptaweb_ecriture_id, status
-       FROM ecritures WHERE id = ? AND group_id = ?`,
-  ).get<HeadRow>(headId, ctx.groupId);
+       FROM ecritures WHERE ${headConditions.join(' AND ')}`,
+  ).get<HeadRow>(...headValues);
   if (!head) return { ok: false, reason: 'not_found' };
   if (head.status !== 'draft') return { ok: false, reason: 'not_draft' };
   if (head.comptaweb_ecriture_id !== null) return { ok: false, reason: 'in_cw' };
@@ -75,7 +83,11 @@ export async function ventilateDraft(
         if (m.id === head.id) continue;
         const del = await deleteDraftEcriture(ctx, m.id, txDb);
         if (!del.ok) {
-          throw new VentilateError(del.reason === 'has_attachments' ? 'child_has_attachments' : 'not_draft');
+          const mapped: VentilateReason =
+            del.reason === 'has_attachments' ? 'child_has_attachments'
+            : del.reason === 'not_found' ? 'not_found'
+            : 'not_draft';
+          throw new VentilateError(mapped);
         }
       }
       // 2. Mettre à jour la tête avec la 1ʳᵉ ventilation + le vg.

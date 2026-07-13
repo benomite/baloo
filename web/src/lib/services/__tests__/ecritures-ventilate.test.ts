@@ -57,7 +57,7 @@ beforeAll(async () => {
   `);
 });
 
-afterAll(() => { testClient.close(); });
+afterAll(async () => { await testClient.close(); });
 
 async function setup(): Promise<DbWrapper> {
   idCounter = 0;
@@ -112,6 +112,15 @@ describe('ventilateDraft', () => {
       { amount_cents: 700, category_id: null, unite_id: 'u-farfa', activite_id: 'a-camps' }, V(364, 'c-pharma'),
     ]);
     expect(res).toMatchObject({ ok: false, reason: 'incomplete' });
+  });
+
+  it('masque une tête hors scope multi-unités (not_found)', async () => {
+    // La tête E1 est sur u-farfa ; un chef scopé sur une autre unité ne
+    // doit pas pouvoir la ventiler (même en devinant son id).
+    const res = await ventilateDraft({ groupId: 'g1', scopeUniteIds: ['u-autre'] }, 'E1', [V(700, 'c-int'), V(364, 'c-pharma')]);
+    expect(res).toMatchObject({ ok: false, reason: 'not_found' });
+    const n = await testDb.prepare("SELECT COUNT(*) n FROM ecritures WHERE group_id='g1'").get<{ n: number }>();
+    expect(n?.n).toBe(1); // rien touché
   });
 
   it('refuse mirror / déjà dans CW', async () => {
