@@ -33,6 +33,7 @@ export function EcritureFormFields({
   mode = 'edit',
   vents,
   setVents,
+  multiCategory = false,
 }: {
   categories: Category[];
   topCategoryIds: string[];
@@ -41,6 +42,14 @@ export function EcritureFormFields({
   activites: Activite[];
   cartes: Carte[];
   ecriture?: Ecriture;
+  /**
+   * L'écriture fait partie d'un groupe de ventilation multi-catégories
+   * (≥ 2 détails). Le champ « Catégorie » unique deviendrait trompeur : on
+   * affiche « Catégories multiples » (lecture seule) et on préserve la
+   * catégorie propre de la tête via un input caché (pas de perte de donnée
+   * au submit — cf. règle no-DELETE/UPSERT).
+   */
+  multiCategory?: boolean;
   /**
    * 'edit' (défaut) : formulaire mono-ventilation historique — grain
    * d'une écriture Baloo = 1 ventilation (cf. AGENTS.md), utilisé par
@@ -290,18 +299,30 @@ export function EcritureFormFields({
                 </NativeSelect>
               </Field>
               <Field label="Catégorie" htmlFor="category_id">
-                <CategoryPicker
-                  id="category_id"
-                  name="category_id"
-                  categories={selectableCategories.map((c) => ({
-                    id: c.id,
-                    name: c.name,
-                    unmapped: isUnmapped(c),
-                  }))}
-                  topIds={topCategoryIds}
-                  defaultValue={ecriture?.category_id ?? ''}
-                  disabled={locked}
-                />
+                {multiCategory ? (
+                  <>
+                    {/* Groupe multi-ventilations : catégorie propre à chaque
+                        ligne → pas de catégorie unique éditable ici. On garde
+                        celle de la tête en caché pour ne rien écraser au save. */}
+                    <div className="flex h-10 items-center rounded-lg border border-border bg-bg-sunken/60 px-3 text-[13px] text-fg-muted">
+                      Catégories multiples
+                    </div>
+                    <input type="hidden" name="category_id" value={ecriture?.category_id ?? ''} />
+                  </>
+                ) : (
+                  <CategoryPicker
+                    id="category_id"
+                    name="category_id"
+                    categories={selectableCategories.map((c) => ({
+                      id: c.id,
+                      name: c.name,
+                      unmapped: isUnmapped(c),
+                    }))}
+                    topIds={topCategoryIds}
+                    defaultValue={ecriture?.category_id ?? ''}
+                    disabled={locked}
+                  />
+                )}
               </Field>
               <Field label="Activité" htmlFor="activite_id">
                 <NativeSelect
@@ -397,6 +418,7 @@ export function EcritureForm({
   activites,
   cartes,
   ecriture,
+  multiCategory = false,
 }: {
   action: (formData: FormData) => void;
   categories: Category[];
@@ -406,6 +428,7 @@ export function EcritureForm({
   activites: Activite[];
   cartes: Carte[];
   ecriture?: Ecriture;
+  multiCategory?: boolean;
 }) {
   return (
     <form action={action} className="space-y-6">
@@ -417,6 +440,7 @@ export function EcritureForm({
         activites={activites}
         cartes={cartes}
         ecriture={ecriture}
+        multiCategory={multiCategory}
       />
       <div className="flex justify-end pt-2">
         <PendingButton size="lg" pendingLabel="Enregistrement…">

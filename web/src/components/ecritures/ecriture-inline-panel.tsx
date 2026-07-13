@@ -1,8 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ChevronDown, Loader2 } from 'lucide-react';
 import { EcritureForm } from '@/components/ecritures/ecriture-form';
+import { VentilationEditor } from '@/components/ecritures/ventilation-editor';
+import type { DetailRow, ResolvedVentilation } from '@/components/ecritures/ventilate-editor-model';
+import { formatAmount } from '@/lib/format';
 import { JustificatifsCard } from '@/components/ecritures/justificatifs-card';
 import { PanelHeader } from '@/components/ecritures/panel-header';
 import { PanelReadonlySummary } from '@/components/ecritures/panel-readonly-summary';
@@ -35,6 +39,7 @@ export function EcritureInlinePanel({
   isAdmin = false,
   focusSection,
   reloadSignal,
+  groupEntries,
   categories,
   topCategoryIds,
   unites,
@@ -56,6 +61,11 @@ export function EcritureInlinePanel({
   // En mode autonome (épinglé) : bump ce signal pour re-fetcher le détail
   // après une édition (pas de refreshRow de ligne dans ce cas).
   reloadSignal?: number;
+  // Lignes-sœurs du groupe de ventilation courant (mode inline sous une ligne
+  // groupée). Sert à préremplir l'éditeur de ventilation avec les N détails
+  // déjà éclatés. Absent en mode épinglé → l'éditeur retombe sur la seule
+  // écriture courante.
+  groupEntries?: Ecriture[];
   categories: Category[];
   topCategoryIds: string[];
   unites: Unite[];
@@ -64,6 +74,11 @@ export function EcritureInlinePanel({
   cartes: Carte[];
 }) {
   const [detail, setDetail] = useState<Detail | null>(null);
+  const router = useRouter();
+  // Mode ventilation : bascule vers l'éditeur de détails groupés.
+  const [ventilating, setVentilating] = useState(false);
+  const [ventSaving, setVentSaving] = useState(false);
+  const [ventError, setVentError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     fetchEcritureDetail(ecritureId).then((d) => {
@@ -93,6 +108,65 @@ export function EcritureInlinePanel({
 
   const vm = panelViewModel(ecriture);
   const readiness = computeReadiness(ecriture, { categories, unites, modesPaiement, activites });
+
+  // --- Ventilation d'un draft --------------------------------------------
+  // Un brouillon local (jamais matérialisé dans Comptaweb) peut être éclaté en
+  // N détails groupés (ventilation_group_id). Membres = lignes-sœurs du groupe
+  // si fournies (filtrées sur le même ventilation_group_id), sinon la seule
+  // écriture courante.
+  const ventGroupId = ecriture.ventilation_group_id;
+  const ventMembers =
+    ventGroupId && groupEntries && groupEntries.length > 0
+      ? groupEntries.filter((e) => e.ventilation_group_id === ventGroupId)
+      : [ecriture];
+  const isMultiCategory = ventMembers.length >= 2;
+  const canVentilate = vm.editable && ecriture.status === 'draft' && ecriture.comptaweb_ecriture_id === null;
+  const ventTotalCents = ventMembers.reduce((s, m) => s + m.amount_cents, 0);
+  const ventInitialDefaults = { unite_id: ecriture.unite_id, activite_id: ecriture.activite_id };
+  const ventInitialRows: DetailRow[] = ventMembers.map((m) => ({
+    id: m.id,
+    amount: formatAmount(m.amount_cents),
+    category_id: m.category_id,
+    override:
+      m.unite_id === ecriture.unite_id && m.activite_id === ecriture.activite_id
+        ? null
+        : { unite_id: m.unite_id, activite_id: m.activite_id },
+  }));
+
+  // onSave DOIT catcher ses propres erreurs : l'éditeur l'appelle via
+  // `void onSave(...)` (jamais awaité). Un rejet non catché = unhandled.
+  const handleVentilate = async (ventilations: ResolvedVentilation[]) => {
+    setVentSaving(true);
+    setVentError(null);
+    try {
+      const res = await fetch(`/api/ecritures/${ecriture.id}/ventilations`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ventilations }),
+      });
+      if (!res.ok) {
+        let msg = 'La ventilation a échoué.';
+        try {
+          const data = await res.json();
+          if (data && typeof data.error === 'string') msg = data.error;
+        } catch {
+          // corps non JSON : on garde le message générique.
+        }
+        setVentError(msg);
+        return;
+      }
+      setVentilating(false);
+      // Un split change le NOMBRE de lignes (nouvelles sœurs) : refreshRow(id)
+      // ne suffit pas → router.refresh() recharge la liste serveur. On garde
+      // refreshRow pour rafraîchir la ligne d'origine dans la foulée.
+      void refreshRow?.(ecriture.id);
+      router.refresh();
+    } catch {
+      setVentError('La ventilation a échoué (erreur réseau).');
+    } finally {
+      setVentSaving(false);
+    }
+  };
   const totalJustifs = detail
     ? detail.justifsBundle.direct.length +
       detail.justifsBundle.viaRemboursement.reduce((s, r) => s + r.justifs.length + r.rib.length, 0)
@@ -171,6 +245,52 @@ export function EcritureInlinePanel({
               → pas de section imputation ici. */}
           {justifBlock}
 
+          {/* Ventilation : un draft local peut être éclaté en N détails groupés
+              (plusieurs catégories sur un même total figé). Déclencheur discret
+              tant qu'on n'y touche pas ; l'éditeur prend la main au clic. */}
+          {canVentilate && (
+            <div className="border-t border-border-soft pt-3">
+              {ventilating ? (
+                <div className="space-y-3">
+                  <VentilationEditor
+                    totalCents={ventTotalCents}
+                    initialDefaults={ventInitialDefaults}
+                    initialRows={ventInitialRows}
+                    categories={categories}
+                    unites={unites}
+                    activites={activites}
+                    onSave={handleVentilate}
+                    saving={ventSaving}
+                  />
+                  {ventError && (
+                    <p className="text-[12px] text-destructive" role="alert">
+                      {ventError}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVentilating(false);
+                      setVentError(null);
+                    }}
+                    className="text-[12px] font-medium text-fg-muted hover:text-fg hover:underline"
+                  >
+                    Annuler la ventilation
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  data-testid="ventilate-trigger"
+                  onClick={() => setVentilating(true)}
+                  className="text-[13px] font-medium text-brand hover:underline"
+                >
+                  + Ajouter un détail
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Détails / édition complète (date, montant, type, carte, notes…).
               Ouvert d'emblée en saisie manuelle (identité = le travail), replié
               pour un brouillon banque. */}
@@ -192,6 +312,7 @@ export function EcritureInlinePanel({
                 activites={activites}
                 cartes={cartes}
                 ecriture={ecriture}
+                multiCategory={isMultiCategory}
               />
               <div className="mt-3">
                 <CwAssistActions payload={cwPayload} />
