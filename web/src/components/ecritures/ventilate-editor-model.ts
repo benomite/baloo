@@ -1,22 +1,15 @@
-// Logique pure de l'éditeur de ventilation d'un draft (modèle « défauts
-// globaux + lignes légères », cf. spec 2026-07-13). Aucune dépendance
-// React/DOM : résout les lignes UI en ventilations résolues, calcule le
-// reste à ventiler (total FIGÉ) et l'état d'activation du bouton d'enreg.
+// Logique pure de la grille d'imputation (spec 2026-07-13 v2). Lignes
+// AUTONOMES : chaque ligne porte ses 3 dimensions CW (catégorie, unité,
+// activité) + un montant. Total FIGÉ. Aucune dépendance React/DOM.
 
 import { parseAmount } from '@/lib/format';
 
-export interface DefaultImputation {
-  unite_id: string | null;
-  activite_id: string | null;
-}
-
-// Une ligne de détail : catégorie + montant, et une surcharge optionnelle
-// unité/activité (le ⚙). `override === null` → hérite du bloc « défaut ».
-export interface DetailRow {
+export interface VentLine {
   id: string;
   amount: string;
   category_id: string | null;
-  override: DefaultImputation | null;
+  unite_id: string | null;
+  activite_id: string | null;
 }
 
 export interface ResolvedVentilation {
@@ -26,31 +19,27 @@ export interface ResolvedVentilation {
   activite_id: string | null;
 }
 
-export function resolveVentilations(defaults: DefaultImputation, rows: DetailRow[]): ResolvedVentilation[] {
-  return rows.map((r) => {
-    const imp = r.override ?? defaults;
-    return {
-      amount_cents: parseAmount(r.amount || '0'),
-      category_id: r.category_id || null,
-      unite_id: imp.unite_id || null,
-      activite_id: imp.activite_id || null,
-    };
-  });
+export function resolveVentilations(rows: VentLine[]): ResolvedVentilation[] {
+  return rows.map((r) => ({
+    amount_cents: parseAmount(r.amount || '0'),
+    category_id: r.category_id || null,
+    unite_id: r.unite_id || null,
+    activite_id: r.activite_id || null,
+  }));
 }
 
-export function editorRemainderCents(totalCents: number, rows: DetailRow[]): number {
+export function editorRemainderCents(totalCents: number, rows: VentLine[]): number {
   return totalCents - rows.reduce((s, r) => s + parseAmount(r.amount || '0'), 0);
 }
 
-export function isMultiCategory(rows: DetailRow[]): boolean {
+export function isMultiCategory(rows: VentLine[]): boolean {
   return rows.length >= 2;
 }
 
-export function canSaveVentilation(totalCents: number, defaults: DefaultImputation, rows: DetailRow[]): boolean {
+export function canSaveVentilation(totalCents: number, rows: VentLine[]): boolean {
   if (rows.length < 1) return false;
   if (editorRemainderCents(totalCents, rows) !== 0) return false;
-  const resolved = resolveVentilations(defaults, rows);
-  return resolved.every(
+  return resolveVentilations(rows).every(
     (v) => v.amount_cents !== 0 && v.category_id !== null && v.unite_id !== null && v.activite_id !== null,
   );
 }
