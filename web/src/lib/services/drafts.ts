@@ -291,6 +291,7 @@ interface DraftRow {
   justif_attendu: number;
   carte_id: string | null;
   comptaweb_ecriture_id: number | null;
+  ventilation_group_id: string | null;
 }
 
 interface CarteRow {
@@ -329,14 +330,24 @@ export async function syncDraftToComptaweb(
     const ecr = await db.prepare(
       `SELECT id, group_id, date_ecriture, description, amount_cents, type,
               unite_id, category_id, activite_id, mode_paiement_id, numero_piece, status, justif_attendu, carte_id,
-              comptaweb_ecriture_id
+              comptaweb_ecriture_id, ventilation_group_id
        FROM ecritures WHERE id = ? AND group_id = ?`,
     ).get<DraftRow>(ecritureId, groupId);
     if (!ecr) return { ok: false, message: `Écriture ${ecritureId} introuvable.`, dryRun: opts.dryRun !== false };
 
-    const natureCw = await lookupComptawebId('categories', ecr.category_id);
-    const activiteCw = await lookupComptawebId('activites', ecr.activite_id);
-    const uniteCw = await lookupComptawebId('unites', ecr.unite_id);
+    // Grain envoyé à Comptaweb = le GROUPE de ventilation entier (pas la
+    // seule ligne cliquée) : une écriture CW porte N ventilations en 1 pièce.
+    // Sans groupe (cas mono-ventilation, largement majoritaire), on retombe
+    // sur une liste à 1 élément = la tête — comportement strictement identique
+    // à avant.
+    const groupRows = ecr.ventilation_group_id
+      ? await db.prepare(
+          `SELECT id, amount_cents, category_id, activite_id, unite_id
+             FROM ecritures WHERE group_id = ? AND ventilation_group_id = ?`,
+        ).all<{ id: string; amount_cents: number; category_id: string | null; activite_id: string | null; unite_id: string | null }>(groupId, ecr.ventilation_group_id)
+      : [{ id: ecr.id, amount_cents: ecr.amount_cents, category_id: ecr.category_id, activite_id: ecr.activite_id, unite_id: ecr.unite_id }];
+    const totalCents = groupRows.reduce((s, r) => s + r.amount_cents, 0);
+
     const modeCw = await lookupComptawebId('modes_paiement', ecr.mode_paiement_id);
     const justRow = await db.prepare("SELECT COUNT(*) as n FROM justificatifs WHERE entity_type = 'ecriture' AND entity_id = ?").get<{ n: number }>(ecr.id);
     const hasJust = (justRow?.n ?? 0) > 0;
@@ -350,14 +361,32 @@ export async function syncDraftToComptaweb(
     if (ecr.comptaweb_ecriture_id !== null) {
       missing.push(`déjà créée dans Comptaweb (id ${ecr.comptaweb_ecriture_id})`);
     }
-    if (!ecr.category_id) missing.push('nature');
-    else if (natureCw === null) missing.push('mapping nature');
-    if (!ecr.activite_id) missing.push('activité');
-    else if (activiteCw === null) missing.push('mapping activité');
-    if (!ecr.unite_id) missing.push('unité');
-    else if (uniteCw === null) missing.push('mapping unité');
     if (!ecr.mode_paiement_id) missing.push('mode');
     else if (modeCw === null) missing.push('mapping mode');
+
+    // Résolution des mappings CW par LIGNE du groupe (nature/activité/unité
+    // peuvent différer d'une ligne à l'autre), agrégées en ventilations CW.
+    // Préfixe « Ventilation N — » sur les erreurs seulement s'il y a
+    // effectivement plusieurs lignes (pas de bruit sur le cas mono-ligne).
+    const ventilations: CreateEcritureInput['ventilations'] = [];
+    for (const [i, r] of groupRows.entries()) {
+      const natureCw = await lookupComptawebId('categories', r.category_id);
+      const activiteCw = await lookupComptawebId('activites', r.activite_id);
+      const uniteCw = await lookupComptawebId('unites', r.unite_id);
+      const prefix = groupRows.length > 1 ? `Ventilation ${i + 1} — ` : '';
+      if (!r.category_id) missing.push(`${prefix}nature`);
+      else if (natureCw === null) missing.push(`${prefix}mapping nature`);
+      if (!r.activite_id) missing.push(`${prefix}activité`);
+      else if (activiteCw === null) missing.push(`${prefix}mapping activité`);
+      if (!r.unite_id) missing.push(`${prefix}unité`);
+      else if (uniteCw === null) missing.push(`${prefix}mapping unité`);
+      ventilations.push({
+        montant: (r.amount_cents / 100).toFixed(2).replace('.', ','),
+        natureId: natureCw !== null ? String(natureCw) : '',
+        activiteId: activiteCw !== null ? String(activiteCw) : '',
+        brancheprojetId: uniteCw !== null ? String(uniteCw) : '',
+      });
+    }
     // Le justif physique n'est plus requis pour sync : Comptaweb ne gère pas
     // les fichiers, seul un code suffit. Si on n'a rien, on retombe sur l'ID
     // de l'écriture (stable, unique, permet de rattacher le justif plus tard).
@@ -392,7 +421,7 @@ export async function syncDraftToComptaweb(
       type: ecr.type,
       libel: ecr.description,
       dateecriture: isoToFr(ecr.date_ecriture),
-      montant: (ecr.amount_cents / 100).toFixed(2).replace('.', ','),
+      montant: (totalCents / 100).toFixed(2).replace('.', ','),
       numeropiece: numeropiece || undefined,
       modetransactionId: modeCw !== null ? String(modeCw) : '',
       comptebancaireId: DEFAULT_COMPTE_BANCAIRE_ID,
@@ -400,12 +429,7 @@ export async function syncDraftToComptaweb(
       carteprocurementId,
       tiersCategId: DEFAULT_TIERS_CATEG_ID,
       tiersStructureId: DEFAULT_TIERS_STRUCTURE_ID,
-      ventilations: [{
-        montant: (ecr.amount_cents / 100).toFixed(2).replace('.', ','),
-        natureId: natureCw !== null ? String(natureCw) : '',
-        activiteId: activiteCw !== null ? String(activiteCw) : '',
-        brancheprojetId: uniteCw !== null ? String(uniteCw) : '',
-      }],
+      ventilations,
     };
 
     const result = await withAutoReLogin((cfg) => createEcriture(cfg, input, { dryRun }));
@@ -419,10 +443,27 @@ export async function syncDraftToComptaweb(
     // Phase 2 introduira `pending_cw` → `mirror` via le sync de retour ;
     // pour l'instant on reste sur le mapping 1:1 ancien `saisie_comptaweb`
     // → `mirror`.
-    await db.prepare(
-      `UPDATE ecritures SET status = 'mirror', comptaweb_synced = 1,
-       comptaweb_ecriture_id = ?, numero_piece = ?, updated_at = ? WHERE id = ?`,
-    ).run(result.ecritureId ?? null, numeropiece, currentTimestamp(), ecr.id);
+    if (groupRows.length > 1) {
+      // Groupe de ventilation : les N lignes forment 1 SEULE pièce CW, donc
+      // elles doivent basculer en `mirror` ENSEMBLE ou pas du tout — d'où la
+      // transaction. (Le cas mono-ligne, très largement majoritaire et déjà
+      // couvert par les tests existants, reste un UPDATE simple ci-dessous :
+      // `db.transaction()` sur une BDD `file::memory:` nue ouvrirait sinon une
+      // connexion vide, cf. AGENTS.md.)
+      await db.transaction(async (txDb) => {
+        for (const r of groupRows) {
+          await txDb.prepare(
+            `UPDATE ecritures SET status = 'mirror', comptaweb_synced = 1,
+             comptaweb_ecriture_id = ?, numero_piece = ?, updated_at = ? WHERE id = ? AND group_id = ?`,
+          ).run(result.ecritureId ?? null, numeropiece, currentTimestamp(), r.id, groupId);
+        }
+      });
+    } else {
+      await db.prepare(
+        `UPDATE ecritures SET status = 'mirror', comptaweb_synced = 1,
+         comptaweb_ecriture_id = ?, numero_piece = ?, updated_at = ? WHERE id = ?`,
+      ).run(result.ecritureId ?? null, numeropiece, currentTimestamp(), ecr.id);
+    }
     return { ok: true, message: `Synchronisé vers Comptaweb (id ${result.ecritureId}).`, dryRun: false, ecritureId: result.ecritureId };
   } catch (err) {
     if (err instanceof ComptawebSessionExpiredError) return { ok: false, message: 'Session Comptaweb expirée.', dryRun: opts.dryRun !== false };

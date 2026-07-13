@@ -41,7 +41,7 @@ async function setup(): Promise<DbWrapper> {
       amount_cents INTEGER, type TEXT, unite_id TEXT, category_id TEXT, activite_id TEXT,
       mode_paiement_id TEXT, numero_piece TEXT, status TEXT, justif_attendu INTEGER,
       carte_id TEXT, comptaweb_ecriture_id INTEGER, comptaweb_synced INTEGER DEFAULT 0,
-      updated_at TEXT
+      ventilation_group_id TEXT, updated_at TEXT
     );
     CREATE TABLE justificatifs (id TEXT, entity_type TEXT, entity_id TEXT, uploaded_at TEXT);
     CREATE TABLE categories (id TEXT, comptaweb_id INTEGER);
