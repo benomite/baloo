@@ -160,9 +160,15 @@ export function buildEcritureGroups(rows: Ecriture[]): Item[] {
   const out: Item[] = [];
   for (const e of rows) {
     const group = groupFor(e);
-    if (group && (group.kind === 'cw' || group.kind === 'ventil')) {
-      // Groupe multi-ventilation → UNE ligne consolidée, émise une seule fois
-      // (à la 1ʳᵉ occurrence du groupe). Pas de header, pas de rows membres.
+    // Consolidation réservée aux groupes `ventil` (ventilation locale d'un
+    // draft, count ≥2) : eux seuls portent un `ventilation_group_id` qui relie
+    // les membres → le panneau peut réafficher les N lignes. Les groupes `cw`
+    // (pièce Comptaweb importée) n'ont PAS forcément de `ventilation_group_id` :
+    // les consolider masquerait des ventilations dans l'UI (le panneau ne
+    // saurait pas retrouver les membres). Ils restent donc en header + membres
+    // (lecture de toutes les ventilations), comme les groupes `bank`.
+    if (group && group.kind === 'ventil') {
+      // UNE ligne consolidée, émise une seule fois (1ʳᵉ occurrence du groupe).
       const gk = groupKey(group.kind, group.id);
       if (!seen.has(gk)) {
         seen.add(gk);
@@ -172,7 +178,7 @@ export function buildEcritureGroups(rows: Ecriture[]): Item[] {
       continue;
     }
     if (group) {
-      // Groupe bancaire (vrais multi-sous-lignes DSP2) : header + rows membres.
+      // Groupe `cw` ou `bank` : header une seule fois + rows membres.
       const gk = groupKey(group.kind, group.id);
       if (!seen.has(gk)) {
         seen.add(gk);

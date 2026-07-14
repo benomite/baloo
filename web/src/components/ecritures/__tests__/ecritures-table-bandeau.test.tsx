@@ -174,7 +174,10 @@ describe('EcrituresTable — bandeau replié 2 lignes', () => {
     expect(screen.queryByText('Dons')).toBeNull();
   });
 
-  it('(b bis) une pièce Comptaweb multi-ventilée (cw ≥ 2) est consolidée en UNE ligne, SANS Valider (déjà dans CW)', () => {
+  it('(b bis) une pièce Comptaweb multi-ventilée (cw ≥ 2) N\'EST PAS consolidée : header + N lignes membres (toutes les ventilations visibles), chaque membre « Catégories multiples »', () => {
+    // Régression review : une pièce CW importée n'a pas forcément de
+    // ventilation_group_id → la consolider masquerait des ventilations
+    // (panneau ne retrouve pas les membres). On garde header + membres.
     const a = makeEcriture({
       status: 'pending_sync',
       comptaweb_ecriture_id: 999,
@@ -193,9 +196,15 @@ describe('EcrituresTable — bandeau replié 2 lignes', () => {
     });
     const { container } = renderTable([a, b]);
 
+    // Les DEUX ventilations sont rendues (2 colonnes droite) — rien de masqué.
     const rights = container.querySelectorAll('[data-testid^="row-right-"]');
-    expect(rights.length).toBe(1);
-    expect(screen.getAllByText('Catégories multiples').length).toBe(1);
+    expect(rights.length).toBe(2);
+    expect(screen.getByTestId(`row-right-${a.id}`)).toBeTruthy();
+    expect(screen.getByTestId(`row-right-${b.id}`)).toBeTruthy();
+    // Un en-tête de groupe cw est présent (« ventilations »).
+    expect(screen.getByText(/ventilation/)).toBeTruthy();
+    // Chaque membre porte « Catégories multiples » (isMultiCategoryRow).
+    expect(screen.getAllByText('Catégories multiples').length).toBe(2);
     // Déjà matérialisée dans Comptaweb → aucun bouton Valider.
     expect(screen.queryByRole('button', { name: 'Valider' })).toBeNull();
   });

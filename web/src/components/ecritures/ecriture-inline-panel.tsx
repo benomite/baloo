@@ -113,14 +113,12 @@ export function EcritureInlinePanel({
 
   // --- Ventilation d'un draft --------------------------------------------
   // Un brouillon local (jamais matérialisé dans Comptaweb) peut être éclaté en
-  // N détails groupés (ventilation_group_id). Membres = lignes-sœurs du groupe
-  // si fournies (filtrées sur le même ventilation_group_id), sinon la seule
-  // écriture courante.
-  const ventGroupId = ecriture.ventilation_group_id;
-  const ventMembers =
-    ventGroupId && groupEntries && groupEntries.length > 0
-      ? groupEntries.filter((e) => e.ventilation_group_id === ventGroupId)
-      : [ecriture];
+  // N détails groupés (ventilation_group_id). Membres = lignes-sœurs fournies
+  // par la table (`groupEntries` = tous les membres du groupe), sinon la seule
+  // écriture courante. On NE conditionne PAS sur `ventilation_group_id` : une
+  // pièce Comptaweb importée peut être multi-ventilée SANS ce champ (défensif),
+  // et pour un aggregate `ventil` la table passe déjà tous les membres.
+  const ventMembers = groupEntries && groupEntries.length > 1 ? groupEntries : [ecriture];
   const isMultiCategory = ventMembers.length >= 2;
   const canVentilate = vm.editable && ecriture.status === 'draft' && ecriture.comptaweb_ecriture_id === null;
   const ventTotalCents = ventMembers.reduce((s, m) => s + m.amount_cents, 0);

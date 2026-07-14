@@ -646,7 +646,6 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                       ecritureId={e.id}
                       isAdmin={isAdmin}
                       focusSection={openFocus ?? undefined}
-                      groupEntries={group && group.kind === 'ventil' ? groupEntries(group) : undefined}
                       onCollapse={() => setOpenId(null)}
                       onValidate={(id) => { setOpenId(null); onValidate(id); }}
                       refreshRow={refreshRow}
