@@ -13,8 +13,8 @@ import {
   type BatchResult,
 } from '../services/ecritures';
 import { ECRITURE_STATUSES, type EcritureStatus, type Ecriture } from '../types';
-import { parseAmount } from '../format';
 import { getDb } from '../db';
+import { buildEcriturePatchFromForm } from './ecriture-form-patch';
 import { resyncEcritureDetail } from '../services/sync-cycle';
 import { listEcritures, getEcriture, type EcritureFilters } from '../queries/ecritures';
 import { listJustificatifsForEcriture, type EcritureJustifsBundle } from '../queries/justificatifs';
@@ -41,23 +41,16 @@ export async function fetchEcrituresPage(
 
 export async function updateEcriture(id: string, formData: FormData) {
   const { groupId, scopeUniteIds } = await getCurrentContext();
+  // Le mapping FormData → patch est extrait dans `buildEcriturePatchFromForm`
+  // (module pur, testé) : depuis Task 5, `EcritureForm` ne soumet plus
+  // l'imputation (unité/catégorie/activité — vit dans `ImputationGrid`), et
+  // un mapping inconditionnel écraserait ces champs en NULL à chaque save
+  // (cf. AGENTS.md "FormData vs FK"). Le helper traite une clé ABSENTE du
+  // FormData comme "ne pas toucher" (`undefined`), jamais comme "vider".
   await updateEcritureService(
     { groupId, scopeUniteIds },
     id,
-    {
-      date_ecriture: formData.get('date_ecriture') as string,
-      description: formData.get('description') as string,
-      amount_cents: parseAmount(formData.get('montant') as string),
-      type: formData.get('type') as 'depense' | 'recette',
-      unite_id: (formData.get('unite_id') as string) || null,
-      category_id: (formData.get('category_id') as string) || null,
-      mode_paiement_id: (formData.get('mode_paiement_id') as string) || null,
-      activite_id: (formData.get('activite_id') as string) || null,
-      numero_piece: (formData.get('numero_piece') as string) || null,
-      carte_id: (formData.get('carte_id') as string) || null,
-      justif_attendu: formData.has('justif_attendu') ? 1 : 0,
-      notes: (formData.get('notes') as string) || null,
-    },
+    buildEcriturePatchFromForm(formData),
   );
 
   revalidatePath('/ecritures');

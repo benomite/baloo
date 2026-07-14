@@ -33,7 +33,6 @@ export function EcritureFormFields({
   mode = 'edit',
   vents,
   setVents,
-  multiCategory = false,
 }: {
   categories: Category[];
   topCategoryIds: string[];
@@ -43,18 +42,16 @@ export function EcritureFormFields({
   cartes: Carte[];
   ecriture?: Ecriture;
   /**
-   * L'écriture fait partie d'un groupe de ventilation multi-catégories
-   * (≥ 2 détails). Le champ « Catégorie » unique deviendrait trompeur : on
-   * affiche « Catégories multiples » (lecture seule) et on préserve la
-   * catégorie propre de la tête via un input caché (pas de perte de donnée
-   * au submit — cf. règle no-DELETE/UPSERT).
-   */
-  multiCategory?: boolean;
-  /**
-   * 'edit' (défaut) : formulaire mono-ventilation historique — grain
-   * d'une écriture Baloo = 1 ventilation (cf. AGENTS.md), utilisé par
-   * `EcritureForm` (page édition, server action `updateEcriture`) qui
-   * lit `montant`/`category_id`/`unite_id`/`activite_id` via FormData.
+   * 'edit' (défaut) : champs d'identité (date/montant/type/carte/notes)
+   * pour une écriture existante, utilisé par `EcritureForm` (panneau
+   * d'édition, server action `updateEcriture`). Depuis Task 5 (nettoyage
+   * post-`ImputationGrid`), l'imputation (unité/catégorie/activité) n'est
+   * PLUS soumise par ce formulaire — elle vit exclusivement dans
+   * `ImputationGrid` (cf. `ecriture-inline-panel.tsx`). Le mapping
+   * FormData → patch (`buildEcriturePatchFromForm`,
+   * `lib/actions/ecriture-form-patch.ts`) traite ces trois clés absentes
+   * comme "ne pas toucher", jamais comme "vider" — piège data-loss déjà
+   * documenté dans AGENTS.md ("FormData vs FK").
    * 'wizard' : répéteur multi-ventilation (Task 7, S0) utilisé par
    * `NouvelleEcritureWizard` (`/ecritures/nouveau`) — `amount_cents`
    * racine part vers `/api/ecritures` en tant que Σ des `ventilations[]`
@@ -277,70 +274,10 @@ export function EcritureFormFields({
       )}
 
       <Section
-        title="Imputation"
-        subtitle="Où va cette écriture dans la comptabilité du groupe."
+        title="Paiement"
+        subtitle="Comment ça a été payé. L'imputation (unité, catégorie, activité) se règle juste au-dessus, dans la grille."
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {mode === 'edit' && (
-            <>
-              <Field label="Unité" htmlFor="unite_id">
-                <NativeSelect
-                  id="unite_id"
-                  name="unite_id"
-                  defaultValue={ecriture?.unite_id ?? ''}
-                  disabled={locked}
-                >
-                  <option value="">— Aucune —</option>
-                  {selectableUnites.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.code} — {u.name}{isUnmapped(u) ? ' (non sync)' : ''}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </Field>
-              <Field label="Catégorie" htmlFor="category_id">
-                {multiCategory ? (
-                  <>
-                    {/* Groupe multi-ventilations : catégorie propre à chaque
-                        ligne → pas de catégorie unique éditable ici. On garde
-                        celle de la tête en caché pour ne rien écraser au save. */}
-                    <div className="flex h-10 items-center rounded-lg border border-border bg-bg-sunken/60 px-3 text-[13px] text-fg-muted">
-                      Catégories multiples
-                    </div>
-                    <input type="hidden" name="category_id" defaultValue={ecriture?.category_id ?? ''} />
-                  </>
-                ) : (
-                  <CategoryPicker
-                    id="category_id"
-                    name="category_id"
-                    categories={selectableCategories.map((c) => ({
-                      id: c.id,
-                      name: c.name,
-                      unmapped: isUnmapped(c),
-                    }))}
-                    topIds={topCategoryIds}
-                    defaultValue={ecriture?.category_id ?? ''}
-                    disabled={locked}
-                  />
-                )}
-              </Field>
-              <Field label="Activité" htmlFor="activite_id">
-                <NativeSelect
-                  id="activite_id"
-                  name="activite_id"
-                  defaultValue={ecriture?.activite_id ?? ''}
-                  disabled={locked}
-                >
-                  <option value="">— Aucune —</option>
-                  {selectableActivites.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {decorate(a)}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </Field>
-            </>
-          )}
           <Field label="Mode de paiement" htmlFor="mode_paiement_id">
             <NativeSelect
               id="mode_paiement_id"
@@ -418,7 +355,6 @@ export function EcritureForm({
   activites,
   cartes,
   ecriture,
-  multiCategory = false,
 }: {
   action: (formData: FormData) => void;
   categories: Category[];
@@ -428,7 +364,6 @@ export function EcritureForm({
   activites: Activite[];
   cartes: Carte[];
   ecriture?: Ecriture;
-  multiCategory?: boolean;
 }) {
   return (
     <form action={action} className="space-y-6">
@@ -440,7 +375,6 @@ export function EcritureForm({
         activites={activites}
         cartes={cartes}
         ecriture={ecriture}
-        multiCategory={multiCategory}
       />
       <div className="flex justify-end pt-2">
         <PendingButton size="lg" pendingLabel="Enregistrement…">

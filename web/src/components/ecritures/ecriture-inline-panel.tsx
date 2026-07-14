@@ -295,7 +295,6 @@ export function EcritureInlinePanel({
                 activites={activites}
                 cartes={cartes}
                 ecriture={ecriture}
-                multiCategory={isMultiCategory}
               />
               <div className="mt-3">
                 <CwAssistActions payload={cwPayload} />
