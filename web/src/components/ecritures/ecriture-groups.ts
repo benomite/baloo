@@ -38,6 +38,15 @@ export type Item = HeaderItem | RowItem;
 
 export const groupKey = (kind: GroupKind, id: string): string => `${kind}-${id}`;
 
+// Une ligne est « catégorie multiple » quand elle est l'une des ≥2 ventilations
+// locales d'un même groupe (`ventilation_group_id`) : chaque ventilation porte
+// sa propre catégorie, donc au niveau du groupe la catégorie n'a pas de sens
+// unique → on affiche « Catégories multiples » (non éditable) plutôt que le
+// picker de catégorie de la ligne. Fonction pure (pas de React) — testable.
+export function isMultiCategoryRow(group: Group | null | undefined): boolean {
+  return group != null && group.kind === 'ventil' && group.count >= 2;
+}
+
 function signedTotal(entries: Ecriture[]): number {
   return entries.reduce((sum, e) => sum + (e.type === 'depense' ? -e.amount_cents : e.amount_cents), 0);
 }

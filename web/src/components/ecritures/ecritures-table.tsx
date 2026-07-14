@@ -13,7 +13,7 @@ import { EcritureMatchBanner } from './ecriture-match-banner';
 import { EcritureInlinePanel } from './ecriture-inline-panel';
 import { computeReadiness } from '@/lib/sync-readiness';
 import { ValiderCwButton } from './valider-cw-button';
-import { buildEcritureGroups, groupKey, type Group, type GroupKind, type Item } from './ecriture-groups';
+import { buildEcritureGroups, groupKey, isMultiCategoryRow, type Group, type GroupKind, type Item } from './ecriture-groups';
 import type { Ecriture, Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
 
 interface Props {
@@ -275,6 +275,10 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
             const isValidating = validatingIds.has(e.id);
             // Un remboursement lié vaut justificatif (cf. badge « sans justif »).
             const hasJustif = !!e.has_justificatif || !!e.remboursement_id;
+            // Ligne d'un groupe de ventilation ≥2 : la catégorie varie d'une
+            // ventilation à l'autre → chip « Catégories multiples » non éditable
+            // à la place du picker de catégorie (cf. isMultiCategoryRow).
+            const isMultiCat = isMultiCategoryRow(group);
             return (
               <div key={e.id}>
                 <div
@@ -343,7 +347,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     {/* Imputation complète et cohérente : unité + catégorie +
                         activité (les 3 requises pour valider), éditables inline.
                         Un champ manquant s'affiche en ambre. + présence justif. */}
-                    <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px]" onClick={stop}>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px]" data-testid={`row-chips-${e.id}`} onClick={stop}>
                       <InlineSelect
                         value={e.unite_id}
                         disabled={!editable}
@@ -362,29 +366,40 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                           return r;
                         }}
                       />
-                      <InlineSelect
-                        value={e.category_id}
-                        disabled={!editable}
-                        placeholder="Aucune"
-                        options={categories.map((c) => ({ value: c.id, label: c.name }))}
-                        display={
-                          e.category_name ? (
-                            <span className="inline-flex items-center gap-1 text-fg-muted min-w-0">
-                              <Tag size={11} className="shrink-0 text-fg-subtle" />
-                              <span className="truncate max-w-[160px]" title={e.category_name}>{e.category_name}</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
-                              <Tag size={11} /> + Catégorie
-                            </span>
-                          )
-                        }
-                        onSave={async (v) => {
-                          const r = await updateEcritureField(e.id, 'category_id', v);
-                          if (r.ok) void refreshRow(e.id);
-                          return r;
-                        }}
-                      />
+                      {/* Catégorie : soit le picker inline, soit — quand la ligne
+                          est une ventilation d'un groupe ≥2 — le libellé fixe
+                          « Catégories multiples » (chaque ventilation a sa propre
+                          catégorie, éditée dans le panneau, pas sur le bandeau). */}
+                      {isMultiCat ? (
+                        <span className="inline-flex items-center gap-1 text-fg-muted min-w-0" title="Ventilation multi-catégories — édition dans le panneau">
+                          <Tag size={11} className="shrink-0 text-fg-subtle" />
+                          <span className="truncate max-w-[160px]">Catégories multiples</span>
+                        </span>
+                      ) : (
+                        <InlineSelect
+                          value={e.category_id}
+                          disabled={!editable}
+                          placeholder="Aucune"
+                          options={categories.map((c) => ({ value: c.id, label: c.name }))}
+                          display={
+                            e.category_name ? (
+                              <span className="inline-flex items-center gap-1 text-fg-muted min-w-0">
+                                <Tag size={11} className="shrink-0 text-fg-subtle" />
+                                <span className="truncate max-w-[160px]" title={e.category_name}>{e.category_name}</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                                <Tag size={11} /> + Catégorie
+                              </span>
+                            )
+                          }
+                          onSave={async (v) => {
+                            const r = await updateEcritureField(e.id, 'category_id', v);
+                            if (r.ok) void refreshRow(e.id);
+                            return r;
+                          }}
+                        />
+                      )}
                       <InlineSelect
                         value={e.activite_id}
                         disabled={!editable}
@@ -408,34 +423,6 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                           return r;
                         }}
                       />
-                      {/* Mode de paiement : OBLIGATOIRE pour valider (cf.
-                          computeReadiness) → éditable inline sur la ligne, au
-                          même titre qu'unité/catégorie/activité. Souvent
-                          auto-déduit du libellé bancaire (CB/procurement), mais
-                          pas pour un virement → nudge ambre si manquant. */}
-                      <InlineSelect
-                        value={e.mode_paiement_id}
-                        disabled={!editable}
-                        placeholder="Aucun"
-                        options={modesPaiement.map((m) => ({ value: m.id, label: m.name }))}
-                        display={
-                          e.mode_paiement_name ? (
-                            <span className="inline-flex items-center gap-1 text-fg-muted min-w-0">
-                              <Wallet size={11} className="shrink-0 text-fg-subtle" />
-                              <span className="truncate max-w-[130px]" title={e.mode_paiement_name}>{e.mode_paiement_name}</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
-                              <Wallet size={11} /> + Mode
-                            </span>
-                          )
-                        }
-                        onSave={async (v) => {
-                          const r = await updateEcritureField(e.id, 'mode_paiement_id', v);
-                          if (r.ok) void refreshRow(e.id);
-                          return r;
-                        }}
-                      />
                       <button
                         type="button"
                         onClick={(ev) => { ev.stopPropagation(); openJustif(e.id); }}
@@ -447,25 +434,55 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                       </button>
                     </div>
                   </div>
-                  <div className="shrink-0 w-[92px] text-right font-medium tabular-nums self-center">
-                    <Amount cents={e.amount_cents} tone={e.type === 'depense' ? 'negative' : 'positive'} />
-                  </div>
-                  <div className="shrink-0 w-[92px] flex justify-end self-center" onClick={stop}>
-                    {isValidating ? (
-                      <span
-                        className="inline-flex items-center gap-1 text-[11.5px] font-medium text-amber-700 dark:text-amber-300"
-                        title="Création dans Comptaweb en cours…"
-                      >
-                        <Loader2 size={13} className="animate-spin" />
-                        Création…
-                      </span>
-                    ) : showValider ? (
-                      <ValiderCwButton
-                        disabled={readiness.level === 'incomplete'}
-                        missing={readiness.missingFields}
-                        onValidate={() => onValidate(e.id)}
+                  {/* Colonne droite sur 2 lignes : montant (ligne 1), puis le
+                      groupe « pastille mode de paiement + Valider » (ligne 2).
+                      Le mode de paiement (obligatoire pour valider, cf.
+                      computeReadiness) est édité ici via le même InlineSelect —
+                      pastille compacte plutôt qu'un chip d'imputation à gauche. */}
+                  <div className="shrink-0 flex flex-col items-end gap-1 self-center" data-testid={`row-right-${e.id}`}>
+                    <div className="text-right font-medium tabular-nums">
+                      <Amount cents={e.amount_cents} tone={e.type === 'depense' ? 'negative' : 'positive'} />
+                    </div>
+                    <div className="flex items-center justify-end gap-2 text-[12px]" onClick={stop}>
+                      <InlineSelect
+                        value={e.mode_paiement_id}
+                        disabled={!editable}
+                        placeholder="Aucun"
+                        options={modesPaiement.map((m) => ({ value: m.id, label: m.name }))}
+                        display={
+                          e.mode_paiement_name ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-fg-muted min-w-0">
+                              <Wallet size={11} className="shrink-0 text-fg-subtle" />
+                              <span className="truncate max-w-[110px]" title={e.mode_paiement_name}>{e.mode_paiement_name}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/50 px-2 py-0.5 text-amber-600 dark:text-amber-400">
+                              <Wallet size={11} /> + Mode
+                            </span>
+                          )
+                        }
+                        onSave={async (v) => {
+                          const r = await updateEcritureField(e.id, 'mode_paiement_id', v);
+                          if (r.ok) void refreshRow(e.id);
+                          return r;
+                        }}
                       />
-                    ) : null}
+                      {isValidating ? (
+                        <span
+                          className="inline-flex items-center gap-1 text-[11.5px] font-medium text-amber-700 dark:text-amber-300"
+                          title="Création dans Comptaweb en cours…"
+                        >
+                          <Loader2 size={13} className="animate-spin" />
+                          Création…
+                        </span>
+                      ) : showValider ? (
+                        <ValiderCwButton
+                          disabled={readiness.level === 'incomplete'}
+                          missing={readiness.missingFields}
+                          onValidate={() => onValidate(e.id)}
+                        />
+                      ) : null}
+                    </div>
                   </div>
                 </div>
                 {match && (
