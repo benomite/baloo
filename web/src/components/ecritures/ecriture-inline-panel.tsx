@@ -259,6 +259,7 @@ export function EcritureInlinePanel({
             unites={unites}
             activites={activites}
             editable={vm.editable}
+            canVentilate={canVentilate}
             onMonoFieldChange={handleMonoField}
             onSaveVentilation={canVentilate ? handleVentilate : async () => {}}
             saving={ventSaving}

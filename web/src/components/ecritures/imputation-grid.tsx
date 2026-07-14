@@ -37,7 +37,13 @@ export interface ImputationGridProps {
   categories: Category[];
   unites: Unite[];
   activites: Activite[];
+  /** false → grille en lecture : selects/inputs désactivés, pas de déclencheur d'ajout. */
   editable: boolean;
+  /** false → la ventilation n'est PAS permise (écriture non-draft ou déjà dans CW) :
+   *  ni « + Ajouter un détail » ni bouton « Enregistrer la ventilation ». Le mode
+   *  mono (édition des dimensions) reste dispo selon `editable`. Évite le no-op
+   *  silencieux d'un save non permis. */
+  canVentilate: boolean;
   /** Mono : édition d'un champ de la ligne unique (→ PATCH /field côté panel). */
   onMonoFieldChange: (field: 'unite_id' | 'category_id' | 'activite_id', value: string | null) => void;
   /** Ventilé : enregistrement de N lignes (→ PUT /ventilations côté panel). Ne doit jamais rejeter. */
@@ -74,6 +80,8 @@ export function ImputationGrid({
   categories,
   unites,
   activites,
+  editable,
+  canVentilate,
   onMonoFieldChange,
   onSaveVentilation,
   saving = false,
@@ -174,6 +182,7 @@ export function ImputationGrid({
                 <NativeSelect
                   id={`ig-unite-${line.id}`}
                   value={line.unite_id ?? ''}
+                  disabled={!editable}
                   onChange={(e) => handleFieldChange(line.id, 'unite_id', e.target.value || null)}
                 >
                   <option value="">— Aucune —</option>
@@ -192,6 +201,7 @@ export function ImputationGrid({
                   categories={categoryOptions}
                   topIds={[]}
                   defaultValue={line.category_id ?? ''}
+                  disabled={!editable}
                   onChange={(value) => handleFieldChange(line.id, 'category_id', value || null)}
                 />
               </Field>
@@ -200,6 +210,7 @@ export function ImputationGrid({
                 <NativeSelect
                   id={`ig-act-${line.id}`}
                   value={line.activite_id ?? ''}
+                  disabled={!editable}
                   onChange={(e) => handleFieldChange(line.id, 'activite_id', e.target.value || null)}
                 >
                   <option value="">— Aucune —</option>
@@ -219,6 +230,7 @@ export function ImputationGrid({
                       inputMode="decimal"
                       placeholder="42,50"
                       value={line.amount}
+                      disabled={!editable}
                       onChange={(e) => updateLine(line.id, { amount: e.target.value })}
                     />
                   </Field>
@@ -231,7 +243,7 @@ export function ImputationGrid({
                     type="button"
                     aria-label="Retirer cette ligne"
                     onClick={() => removeLine(line.id)}
-                    disabled={lines.length <= 1}
+                    disabled={!editable || lines.length <= 1}
                     className="h-10 w-10 shrink-0 rounded-lg border border-border bg-bg-elevated text-[15px] text-destructive hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     ✕
@@ -243,9 +255,14 @@ export function ImputationGrid({
         })}
       </div>
 
-      <button type="button" onClick={addDetail} className="text-[13px] font-medium text-brand hover:underline">
-        + Ajouter un détail
-      </button>
+      {/* Déclencheur d'ajout : seulement si l'écriture est éditable ET ventilable
+          (draft hors CW). Sinon on n'expose ni l'ajout ni, plus bas, le bouton
+          d'enregistrement — évite un save no-op silencieux (revue T3). */}
+      {editable && canVentilate && (
+        <button type="button" onClick={addDetail} className="text-[13px] font-medium text-brand hover:underline">
+          + Ajouter un détail
+        </button>
+      )}
 
       {ventilated && (
         <>
@@ -266,9 +283,11 @@ export function ImputationGrid({
                 : `⚠ reste ${formatAmount(remainder)} à ventiler`}
           </div>
 
-          <Button type="button" disabled={!canSave || saving} onClick={handleSave}>
-            Enregistrer la ventilation
-          </Button>
+          {canVentilate && (
+            <Button type="button" disabled={!canSave || saving} onClick={handleSave}>
+              Enregistrer la ventilation
+            </Button>
+          )}
         </>
       )}
     </div>

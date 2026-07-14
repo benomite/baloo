@@ -18,7 +18,7 @@ function setup(over = {}) {
   const onSaveVentilation = vi.fn().mockResolvedValue(undefined);
   render(
     <ImputationGrid totalCents={4124} initialLines={mono} categories={cats} unites={unites}
-      activites={activites} editable onMonoFieldChange={onMonoFieldChange} onSaveVentilation={onSaveVentilation} {...over} />,
+      activites={activites} editable canVentilate onMonoFieldChange={onMonoFieldChange} onSaveVentilation={onSaveVentilation} {...over} />,
   );
   return { onMonoFieldChange, onSaveVentilation };
 }
@@ -97,5 +97,31 @@ describe('ImputationGrid', () => {
     setup({ initialLines: lines, startVentilated: true });
     expect(screen.getAllByLabelText(/Montant/i)).toHaveLength(2);
     expect(screen.getByText(/équilibré/i)).toBeTruthy();
+  });
+
+  it('canVentilate=false : pas de « + Ajouter un détail » ni de bouton « Enregistrer la ventilation »', () => {
+    setup({ canVentilate: false });
+    expect(screen.queryByText('+ Ajouter un détail')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Enregistrer la ventilation/i })).toBeNull();
+    // Le mode mono reste éditable (dimensions accessibles).
+    expect((screen.getByLabelText(/Activité ligne 1/i) as HTMLSelectElement).disabled).toBe(false);
+  });
+
+  it('canVentilate=false + startVentilated : lignes affichées mais aucun bouton d’enregistrement', () => {
+    const lines: VentLine[] = [
+      { id: 'x1', amount: '20,00', category_id: 'c-int', unite_id: 'u-fa', activite_id: 'a-camps' },
+      { id: 'x2', amount: '21,24', category_id: 'c-ph', unite_id: 'u-fa', activite_id: 'a-camps' },
+    ];
+    setup({ initialLines: lines, startVentilated: true, canVentilate: false });
+    expect(screen.getAllByLabelText(/Montant/i)).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: /Enregistrer la ventilation/i })).toBeNull();
+    expect(screen.queryByText('+ Ajouter un détail')).toBeNull();
+  });
+
+  it('editable=false : les selects sont désactivés et pas de déclencheur d’ajout', () => {
+    setup({ editable: false });
+    expect((screen.getByLabelText(/Unité ligne 1/i) as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByLabelText(/Activité ligne 1/i) as HTMLSelectElement).disabled).toBe(true);
+    expect(screen.queryByText('+ Ajouter un détail')).toBeNull();
   });
 });
