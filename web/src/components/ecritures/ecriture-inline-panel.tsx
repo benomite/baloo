@@ -4,11 +4,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, Loader2 } from 'lucide-react';
 import { EcritureForm } from '@/components/ecritures/ecriture-form';
-import { VentilationEditor } from '@/components/ecritures/ventilation-editor';
-import type { DetailRow, ResolvedVentilation } from '@/components/ecritures/ventilate-editor-model';
+import { ImputationGrid } from '@/components/ecritures/imputation-grid';
+import type { VentLine, ResolvedVentilation } from '@/components/ecritures/ventilate-editor-model';
 import { formatAmount } from '@/lib/format';
 import { JustificatifsCard } from '@/components/ecritures/justificatifs-card';
-import { PanelHeader } from '@/components/ecritures/panel-header';
+import { PanelHeader, PanelStatus } from '@/components/ecritures/panel-header';
 import { PanelReadonlySummary } from '@/components/ecritures/panel-readonly-summary';
 import { PanelRelance } from '@/components/ecritures/panel-relance';
 import { CwAssistActions, type CwAssistPayload } from '@/components/ecritures/cw-assist-actions';
@@ -75,10 +75,12 @@ export function EcritureInlinePanel({
 }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const router = useRouter();
-  // Mode ventilation : bascule vers l'éditeur de détails groupés.
-  const [ventilating, setVentilating] = useState(false);
+  // Ventilation (grille d'imputation) : sauvegarde en cours + erreur.
   const [ventSaving, setVentSaving] = useState(false);
   const [ventError, setVentError] = useState<string | null>(null);
+  // Panneau autonome/épinglé = pas de ligne au-dessus (prop `ecriture` absente).
+  // La ligne, quand elle existe, porte déjà titre/date/montant → en-tête réduit.
+  const pinned = rowEcriture === undefined;
   useEffect(() => {
     let cancelled = false;
     fetchEcritureDetail(ecritureId).then((d) => {
@@ -122,19 +124,24 @@ export function EcritureInlinePanel({
   const isMultiCategory = ventMembers.length >= 2;
   const canVentilate = vm.editable && ecriture.status === 'draft' && ecriture.comptaweb_ecriture_id === null;
   const ventTotalCents = ventMembers.reduce((s, m) => s + m.amount_cents, 0);
-  const ventInitialDefaults = { unite_id: ecriture.unite_id, activite_id: ecriture.activite_id };
-  const ventInitialRows: DetailRow[] = ventMembers.map((m) => ({
+  // 1 VentLine par membre du groupe. Le montant est au format saisie FR sans
+  // le suffixe « € » (les inputs Montant de la grille attendent « 42,50 »).
+  const ventInitialLines: VentLine[] = ventMembers.map((m) => ({
     id: m.id,
-    amount: formatAmount(m.amount_cents),
+    amount: formatAmount(m.amount_cents).replace(/\s*€\s*/, '').trim(),
     category_id: m.category_id,
-    override:
-      m.unite_id === ecriture.unite_id && m.activite_id === ecriture.activite_id
-        ? null
-        : { unite_id: m.unite_id, activite_id: m.activite_id },
+    unite_id: m.unite_id,
+    activite_id: m.activite_id,
   }));
 
-  // onSave DOIT catcher ses propres erreurs : l'éditeur l'appelle via
-  // `void onSave(...)` (jamais awaité). Un rejet non catché = unhandled.
+  // MONO : édition d'un champ d'imputation de la ligne unique → PATCH + refresh.
+  const handleMonoField = async (field: 'unite_id' | 'category_id' | 'activite_id', value: string | null) => {
+    await updateEcritureField(ecriture.id, field, value);
+    void refreshRow?.(ecriture.id);
+  };
+
+  // onSave DOIT catcher ses propres erreurs : la grille l'appelle via
+  // `void onSaveVentilation(...)` (jamais awaité). Un rejet non catché = unhandled.
   const handleVentilate = async (ventilations: ResolvedVentilation[]) => {
     setVentSaving(true);
     setVentError(null);
@@ -155,7 +162,6 @@ export function EcritureInlinePanel({
         setVentError(msg);
         return;
       }
-      setVentilating(false);
       // Un split change le NOMBRE de lignes (nouvelles sœurs) : refreshRow(id)
       // ne suffit pas → router.refresh() recharge la liste serveur. On garde
       // refreshRow pour rafraîchir la ligne d'origine dans la foulée.
@@ -225,7 +231,7 @@ export function EcritureInlinePanel({
 
   return (
     <div className="rounded-xl border border-border-soft bg-bg-elevated shadow-sm p-3.5 my-1 text-left max-h-[72vh] overflow-y-auto">
-      <PanelHeader ecriture={ecriture} vm={vm} readiness={readiness} onRename={onRename} onCollapse={onCollapse} />
+      <PanelHeader ecriture={ecriture} vm={vm} pinned={pinned} onRename={onRename} onCollapse={onCollapse} />
 
       {vm.mode === 'readonly' ? (
         <div className="space-y-4">
@@ -240,56 +246,32 @@ export function EcritureInlinePanel({
         </div>
       ) : (
         <div className="space-y-4">
-          {/* JUSTIF D'ABORD : c'est LE rôle du panneau. Toute l'imputation
-              obligatoire (unité/catégorie/activité/mode) se règle sur la LIGNE
-              → pas de section imputation ici. */}
-          {justifBlock}
-
-          {/* Ventilation : un draft local peut être éclaté en N détails groupés
-              (plusieurs catégories sur un même total figé). Déclencheur discret
-              tant qu'on n'y touche pas ; l'éditeur prend la main au clic. */}
-          {canVentilate && (
-            <div className="border-t border-border-soft pt-3">
-              {ventilating ? (
-                <div className="space-y-3">
-                  <VentilationEditor
-                    totalCents={ventTotalCents}
-                    initialDefaults={ventInitialDefaults}
-                    initialRows={ventInitialRows}
-                    categories={categories}
-                    unites={unites}
-                    activites={activites}
-                    onSave={handleVentilate}
-                    saving={ventSaving}
-                  />
-                  {ventError && (
-                    <p className="text-[12px] text-destructive" role="alert">
-                      {ventError}
-                    </p>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setVentilating(false);
-                      setVentError(null);
-                    }}
-                    className="text-[12px] font-medium text-fg-muted hover:text-fg hover:underline"
-                  >
-                    Annuler la ventilation
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  data-testid="ventilate-trigger"
-                  onClick={() => setVentilating(true)}
-                  className="text-[13px] font-medium text-brand hover:underline"
-                >
-                  + Ajouter un détail
-                </button>
-              )}
-            </div>
+          {/* IMPUTATION EN TÊTE : grille unifiée mono/ventilé. En mono, édition
+              champ par champ (PATCH). Ventilable seulement pour un draft local
+              (canVentilate) → sinon la grille reste mono. La `key` inclut
+              `updated_at` pour REMONTER la grille après un PATCH mono (elle ne
+              se resynchronise pas seule depuis `initialLines`). */}
+          <ImputationGrid
+            key={`imp-${ecriture.id}-${ecriture.updated_at}`}
+            totalCents={ventTotalCents}
+            initialLines={ventInitialLines}
+            categories={categories}
+            unites={unites}
+            activites={activites}
+            editable={vm.editable}
+            onMonoFieldChange={handleMonoField}
+            onSaveVentilation={canVentilate ? handleVentilate : async () => {}}
+            saving={ventSaving}
+            startVentilated={isMultiCategory}
+          />
+          {ventError && (
+            <p className="text-[12px] text-destructive" role="alert">
+              {ventError}
+            </p>
           )}
+
+          {/* Justificatifs sous l'imputation. */}
+          {justifBlock}
 
           {/* Détails / édition complète (date, montant, type, carte, notes…).
               Ouvert d'emblée en saisie manuelle (identité = le travail), replié
@@ -320,21 +302,23 @@ export function EcritureInlinePanel({
             </div>
           </details>
 
-          {/* Barre d'action collante : UN seul « Valider » (= crée dans
-              Comptaweb, comme la ligne). Le reste (prévisualiser, marquer
-              prêt/miroir, repasser brouillon) dans le menu ⋯. */}
-          <div className="sticky bottom-0 -mx-3.5 -mb-3.5 mt-1 px-3.5 py-2.5 bg-bg-elevated/95 backdrop-blur border-t border-border-soft flex flex-wrap items-center gap-2">
-            {!ecriture.comptaweb_ecriture_id && (
-              <PanelValiderButton
-                ecritureId={ecriture.id}
-                disabled={readiness.level === 'incomplete'}
-                missing={readiness.missingFields}
-                onValidate={onValidate}
-                onDone={onCollapse}
-              />
-            )}
-            {ecriture.comptaweb_ecriture_id != null && <ResyncEcritureButton ecritureId={ecriture.id} />}
+          {/* Footer collant : à GAUCHE le statut (readiness + origine banque),
+              à DROITE les actions. UN seul « Valider » (= crée dans Comptaweb,
+              comme la ligne). Le reste (prévisualiser, marquer prêt/miroir,
+              repasser brouillon) dans le menu ⋯. */}
+          <div className="sticky bottom-0 -mx-3.5 -mb-3.5 mt-1 px-3.5 py-2.5 bg-bg-elevated/95 backdrop-blur border-t border-border-soft flex flex-wrap items-center gap-x-3 gap-y-2">
+            <PanelStatus ecriture={ecriture} readiness={readiness} />
             <div className="ml-auto flex items-center gap-2">
+              {!ecriture.comptaweb_ecriture_id && (
+                <PanelValiderButton
+                  ecritureId={ecriture.id}
+                  disabled={readiness.level === 'incomplete'}
+                  missing={readiness.missingFields}
+                  onValidate={onValidate}
+                  onDone={onCollapse}
+                />
+              )}
+              {ecriture.comptaweb_ecriture_id != null && <ResyncEcritureButton ecritureId={ecriture.id} />}
               <PanelMoreMenu ecriture={ecriture} onDone={() => void refreshRow?.(ecriture.id)} />
               {ecriture.status === 'draft' && <DeleteDraftButton ecritureId={ecriture.id} />}
             </div>

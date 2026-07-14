@@ -1,14 +1,18 @@
 // @vitest-environment jsdom
 //
-// Test d'INTÉGRATION du branchement de l'éditeur de ventilation dans
-// `EcritureInlinePanel` (Task 7). On teste le câblage UI, pas la logique
-// de résolution (couverte par ventilate-editor-model.test.ts) ni le
-// service serveur (couvert côté API). Les dépendances lourdes du panneau
-// (actions serveur, sous-composants, next/navigation) sont mockées ;
-// `VentilationEditor` reste RÉEL car c'est l'intégration qu'on vérifie.
+// Test d'INTÉGRATION de la restructuration v2 du panneau d'écriture
+// (Task 3) : la grille d'imputation passe EN TÊTE (avant les justificatifs),
+// l'en-tête est conditionnel (pas de titre/date/montant répétés en mode
+// inline), et le statut « banque #… » vit dans le footer.
+//
+// On teste le câblage / la structure DOM, pas la logique interne de la
+// grille (couverte par imputation-grid + ventilate-editor-model) ni les
+// services serveur. Dépendances lourdes mockées ; `PanelHeader` reste RÉEL
+// (c'est le rendu conditionnel de l'en-tête qu'on vérifie) et
+// `ImputationGrid` est stubbé pour un repère DOM stable.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import type { Ecriture, Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
 
 // --- Mocks ------------------------------------------------------------
@@ -16,13 +20,16 @@ import type { Ecriture, Category, Unite, ModePaiement, Activite, Carte } from '@
 const { refresh } = vi.hoisted(() => ({ refresh: vi.fn() }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }));
 
-// Actions serveur (importées par le panneau). fetchEcritureDetail alimente
-// le bloc justificatifs ; on renvoie un bundle vide bien formé.
 const fetchEcritureDetail = vi.fn();
 vi.mock('@/lib/actions/ecritures', () => ({
   updateEcriture: vi.fn(),
   updateEcritureField: vi.fn().mockResolvedValue({ ok: true }),
   fetchEcritureDetail: (...args: unknown[]) => fetchEcritureDetail(...args),
+}));
+
+// Repère DOM stable pour la grille d'imputation.
+vi.mock('@/components/ecritures/imputation-grid', () => ({
+  ImputationGrid: () => <div data-testid="imputation-grid" />,
 }));
 
 // Sous-composants lourds / dépendants d'actions serveur : stubs neutres.
@@ -31,9 +38,6 @@ vi.mock('@/components/ecritures/ecriture-form', () => ({
 }));
 vi.mock('@/components/ecritures/justificatifs-card', () => ({
   JustificatifsCard: () => <div data-testid="justifs-card" />,
-}));
-vi.mock('@/components/ecritures/panel-header', () => ({
-  PanelHeader: () => <div data-testid="panel-header" />,
 }));
 vi.mock('@/components/ecritures/panel-readonly-summary', () => ({
   PanelReadonlySummary: () => <div data-testid="readonly-summary" />,
@@ -117,7 +121,7 @@ function renderPanel(ecriture: Ecriture, extra: Record<string, unknown> = {}) {
   );
 }
 
-describe('EcritureInlinePanel — branchement ventilation', () => {
+describe('EcritureInlinePanel — restructuration v2', () => {
   beforeEach(() => {
     fetchEcritureDetail.mockResolvedValue({
       ecriture: makeEcriture(),
@@ -126,10 +130,7 @@ describe('EcritureInlinePanel — branchement ventilation', () => {
       shareableDepots: [],
     });
     refresh.mockClear();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) }),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) }));
   });
 
   afterEach(() => {
@@ -137,47 +138,50 @@ describe('EcritureInlinePanel — branchement ventilation', () => {
     vi.unstubAllGlobals();
   });
 
-  it('affiche « + Ajouter un détail » sur un draft éditable', async () => {
-    renderPanel(makeEcriture({ status: 'draft', comptaweb_ecriture_id: null }));
-    expect(await screen.findByTestId('ventilate-trigger')).toBeTruthy();
-  });
-
-  it('cache le déclencheur sur une écriture mirror (déjà dans Comptaweb)', async () => {
-    renderPanel(makeEcriture({ status: 'mirror', comptaweb_ecriture_id: 123, comptaweb_synced: 1 }));
-    // Laisse le fetch/effets se stabiliser.
-    await waitFor(() => expect(fetchEcritureDetail).toHaveBeenCalled());
-    expect(screen.queryByTestId('ventilate-trigger')).toBeNull();
-  });
-
-  it('bascule vers VentilationEditor au clic, puis PUT + router.refresh au save', async () => {
+  it('(a) rend la grille d’imputation AVANT les justificatifs (ordre DOM)', async () => {
     renderPanel(makeEcriture({ status: 'draft', comptaweb_ecriture_id: null }));
 
-    const trigger = await screen.findByTestId('ventilate-trigger');
-    fireEvent.click(trigger);
+    const grid = await screen.findByTestId('imputation-grid');
+    const justifs = await screen.findByTestId('justifs-card');
 
-    // L'éditeur est monté (bloc « Imputation par défaut » + bouton d'enreg).
-    expect(await screen.findByText(/Imputation par défaut/i)).toBeTruthy();
-    const save = screen.getByRole('button', { name: /Enregistrer la ventilation/i }) as HTMLButtonElement;
-    // La ligne unique préremplie porte le montant total + catégorie/unité/
-    // activité de la tête → équilibrée et complète → bouton actif d'emblée.
-    await waitFor(() => expect(save.disabled).toBe(false));
+    // La grille précède les justificatifs dans le document.
+    const pos = grid.compareDocumentPosition(justifs);
+    expect(pos & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 
-    fireEvent.click(save);
+  it('(b) en mode inline (rowEcriture fournie), ne répète PAS titre/date/montant dans le corps', async () => {
+    renderPanel(makeEcriture({ status: 'draft', comptaweb_ecriture_id: null }));
+    // On laisse les effets se stabiliser.
+    await screen.findByTestId('imputation-grid');
 
-    await waitFor(() => expect(fetch as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalled());
-    const call = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(call[0]).toBe('/api/ecritures/ECR-1/ventilations');
-    expect(call[1].method).toBe('PUT');
-    const body = JSON.parse(call[1].body as string);
-    expect(Array.isArray(body.ventilations)).toBe(true);
-    expect(body.ventilations).toHaveLength(1);
-    expect(body.ventilations[0]).toMatchObject({
-      amount_cents: 1064,
-      category_id: 'c1',
-      unite_id: 'u1',
-      activite_id: 'a1',
-    });
+    // Le titre de la ligne n'est pas re-rendu (l'en-tête reste minimal en inline).
+    expect(screen.queryByText('Achat fournitures')).toBeNull();
+    // Le bouton fermer (✕) reste présent.
+    expect(screen.getByRole('button', { name: /replier/i })).toBeTruthy();
+  });
 
-    await waitFor(() => expect(refresh).toHaveBeenCalled());
+  it('(b bis) en mode épinglé (pas de rowEcriture), affiche titre + montant dans l’en-tête', async () => {
+    render(
+      <EcritureInlinePanel
+        ecritureId="ECR-1"
+        onCollapse={() => {}}
+        categories={categories}
+        topCategoryIds={[]}
+        unites={unites}
+        modesPaiement={modesPaiement}
+        activites={activites}
+        cartes={cartes}
+      />,
+    );
+
+    // L'écriture vient du fetch (mode autonome/épinglé) → titre présent.
+    expect(await screen.findByText('Achat fournitures')).toBeTruthy();
+  });
+
+  it('(c) rend le statut « banque #… » dans le footer', async () => {
+    renderPanel(makeEcriture({ status: 'draft', comptaweb_ecriture_id: null, ligne_bancaire_id: 4242 }));
+
+    await screen.findByTestId('imputation-grid');
+    await waitFor(() => expect(screen.getByText('#4242')).toBeTruthy());
   });
 });
