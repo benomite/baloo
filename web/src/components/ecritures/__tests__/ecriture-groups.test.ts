@@ -17,40 +17,79 @@ function ecr(over: Partial<Ecriture>): Ecriture {
   } as Ecriture;
 }
 
-describe('buildEcritureGroups — clé ventilation_group_id', () => {
-  it('≥2 lignes même ventilation_group_id → 1 header + N rows', () => {
+describe('buildEcritureGroups — consolidation multi-ventilation', () => {
+  it('cas 1 — ventilation de draft bancaire (même ligne_bancaire_id + sous_index + ventilation_group_id) → 1 aggregate ventil, pas de header/rows bancaires', () => {
     const items = buildEcritureGroups([
-      ecr({ id: 'E1', amount_cents: 7000, ventilation_group_id: 'vg_1' }),
-      ecr({ id: 'E2', amount_cents: 3000, ventilation_group_id: 'vg_1' }),
+      ecr({ id: 'E1', amount_cents: 7000, ligne_bancaire_id: 999, ligne_bancaire_sous_index: 0, ventilation_group_id: 'vg1' }),
+      ecr({ id: 'E2', amount_cents: 3000, ligne_bancaire_id: 999, ligne_bancaire_sous_index: 0, ventilation_group_id: 'vg1' }),
+      ecr({ id: 'E3', amount_cents: 2000, ligne_bancaire_id: 999, ligne_bancaire_sous_index: 0, ventilation_group_id: 'vg1' }),
     ]);
-    const headers = items.filter(i => i.kind === 'header');
-    expect(headers).toHaveLength(1);
-    expect(headers[0].kind === 'header' && headers[0].group.kind).toBe('ventil');
-    // signedTotal : dépense → négatif (cf. ecriture-groups.ts `signedTotal`).
-    expect(headers[0].kind === 'header' && headers[0].group.totalCents).toBe(-10000);
-    expect(items.filter(i => i.kind === 'row')).toHaveLength(2);
+    expect(items).toHaveLength(1);
+    const item = items[0];
+    expect(item.kind).toBe('aggregate');
+    if (item.kind !== 'aggregate') throw new Error('attendu aggregate');
+    expect(item.group.kind).toBe('ventil');
+    expect(item.group.count).toBe(3);
+    // dépenses → signedTotal négatif (cf. signedTotal)
+    expect(item.group.totalCents).toBe(-12000);
+    expect(item.members).toHaveLength(3);
+    expect(item.head.id).toBe('E1');
+    // AUCUN header, AUCUN row
+    expect(items.filter((i) => i.kind === 'header')).toHaveLength(0);
+    expect(items.filter((i) => i.kind === 'row')).toHaveLength(0);
   });
 
-  it('une seule ligne avec ventilation_group_id null → pas de header', () => {
-    const items = buildEcritureGroups([ecr({ id: 'E1', ventilation_group_id: null })]);
-    expect(items.filter(i => i.kind === 'header')).toHaveLength(0);
-  });
-
-  it('une seule ligne avec un ventilation_group_id non-null (pas de partenaire) → pas de header (garde ≥2)', () => {
-    const items = buildEcritureGroups([ecr({ id: 'E1', ventilation_group_id: 'vg_solo' })]);
-    expect(items.filter(i => i.kind === 'header')).toHaveLength(0);
-    const rows = items.filter(i => i.kind === 'row');
-    expect(rows).toHaveLength(1);
-    expect(rows[0].kind === 'row' && rows[0].group).toBeNull();
-  });
-
-  it('ligne groupée bancaire (≥2 sous-lignes) ET porteuse d\'un ventilation_group_id → priorité bank sur ventil', () => {
+  it('cas 2 — vrai multi-sous-lignes bancaire (sous_index distincts, pas de ventilation_group_id) → 1 header bank + N rows (inchangé)', () => {
     const items = buildEcritureGroups([
-      ecr({ id: 'E1', ligne_bancaire_id: 42, ventilation_group_id: 'vg_2', amount_cents: 7000 }),
-      ecr({ id: 'E2', ligne_bancaire_id: 42, ventilation_group_id: 'vg_2', amount_cents: 3000 }),
+      ecr({ id: 'E1', amount_cents: 7000, ligne_bancaire_id: 888, ligne_bancaire_sous_index: 0 }),
+      ecr({ id: 'E2', amount_cents: 3000, ligne_bancaire_id: 888, ligne_bancaire_sous_index: 1 }),
     ]);
-    const headers = items.filter(i => i.kind === 'header');
+    const headers = items.filter((i) => i.kind === 'header');
     expect(headers).toHaveLength(1);
     expect(headers[0].kind === 'header' && headers[0].group.kind).toBe('bank');
+    expect(items.filter((i) => i.kind === 'row')).toHaveLength(2);
+    expect(items.filter((i) => i.kind === 'aggregate')).toHaveLength(0);
+  });
+
+  it('cas 3 — multi-ventilation Comptaweb (même comptaweb_ecriture_id, ≥2) → 1 aggregate cw', () => {
+    const items = buildEcritureGroups([
+      ecr({ id: 'E1', amount_cents: 5680, comptaweb_ecriture_id: 555, numero_piece: '10' }),
+      ecr({ id: 'E2', amount_cents: 4310, comptaweb_ecriture_id: 555, numero_piece: '10' }),
+    ]);
+    expect(items).toHaveLength(1);
+    const item = items[0];
+    expect(item.kind).toBe('aggregate');
+    if (item.kind !== 'aggregate') throw new Error('attendu aggregate');
+    expect(item.group.kind).toBe('cw');
+    expect(item.group.count).toBe(2);
+    expect(item.members).toHaveLength(2);
+  });
+
+  it('cas 4 — mono (pas de groupe) → 1 row group null', () => {
+    const items = buildEcritureGroups([ecr({ id: 'E1' })]);
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe('row');
+    expect(items[0].kind === 'row' && items[0].group).toBeNull();
+  });
+
+  it('une seule ligne avec un ventilation_group_id non-null (pas de partenaire) → 1 row group null (garde ≥2)', () => {
+    const items = buildEcritureGroups([ecr({ id: 'E1', ventilation_group_id: 'vg_solo' })]);
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe('row');
+    expect(items[0].kind === 'row' && items[0].group).toBeNull();
+  });
+
+  it('post-validation — ventilation qui garde ventilation_group_id ET gagne comptaweb_ecriture_id → reste consolidée (aggregate cw)', () => {
+    const items = buildEcritureGroups([
+      ecr({ id: 'E1', amount_cents: 7000, ligne_bancaire_id: 999, ligne_bancaire_sous_index: 0, ventilation_group_id: 'vg1', comptaweb_ecriture_id: 777, status: 'pending_sync' }),
+      ecr({ id: 'E2', amount_cents: 3000, ligne_bancaire_id: 999, ligne_bancaire_sous_index: 0, ventilation_group_id: 'vg1', comptaweb_ecriture_id: 777, status: 'pending_sync' }),
+    ]);
+    expect(items).toHaveLength(1);
+    const item = items[0];
+    expect(item.kind).toBe('aggregate');
+    if (item.kind !== 'aggregate') throw new Error('attendu aggregate');
+    // cw prioritaire sur ventil
+    expect(item.group.kind).toBe('cw');
+    expect(item.members).toHaveLength(2);
   });
 });

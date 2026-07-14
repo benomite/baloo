@@ -34,7 +34,17 @@ export interface RowItem {
   group: Group | null;
 }
 
-export type Item = HeaderItem | RowItem;
+// Un groupe multi-ventilation (`cw` ou `ventil`, count ≥ 2) est rendu comme
+// UNE ligne consolidée — pas un en-tête + N lignes. Le détail des N
+// ventilations s'ouvre dans le panneau (grille). Cf. brief consolidation.
+export interface AggregateItem {
+  kind: 'aggregate';
+  group: Group;       // le groupe (cw ou ventil), avec totalCents signé et count
+  head: Ecriture;     // la 1ʳᵉ ligne du groupe (id pour panneau/sélection)
+  members: Ecriture[]; // toutes les ventilations du groupe
+}
+
+export type Item = HeaderItem | RowItem | AggregateItem;
 
 export const groupKey = (kind: GroupKind, id: string): string => `${kind}-${id}`;
 
@@ -67,13 +77,12 @@ function parseIntituleParent(notes: string | null): string | null {
 // en pré-calculant les trois familles de groupes. Fonction pure — aucune
 // dépendance React — pour rester testable sans monter le composant.
 export function buildEcritureGroups(rows: Ecriture[]): Item[] {
-  const byBank = new Map<number, Ecriture[]>();
   const byCw = new Map<number, Ecriture[]>();
   const byVentil = new Map<string, Ecriture[]>();
+  // 1ʳᵉ passe : remplir les familles multi-ventilation (cw / ventil), qui
+  // sont PRIORITAIRES sur la banque. On les connaît donc avant de remplir
+  // `byBank`, ce qui permet d'en exclure les lignes déjà multi-ventilées.
   for (const e of rows) {
-    if (e.ligne_bancaire_id) {
-      (byBank.get(e.ligne_bancaire_id) ?? byBank.set(e.ligne_bancaire_id, []).get(e.ligne_bancaire_id)!).push(e);
-    }
     if (e.comptaweb_ecriture_id != null) {
       (byCw.get(e.comptaweb_ecriture_id) ?? byCw.set(e.comptaweb_ecriture_id, []).get(e.comptaweb_ecriture_id)!).push(e);
     }
@@ -81,25 +90,30 @@ export function buildEcritureGroups(rows: Ecriture[]): Item[] {
       (byVentil.get(e.ventilation_group_id) ?? byVentil.set(e.ventilation_group_id, []).get(e.ventilation_group_id)!).push(e);
     }
   }
+  const isCwGrouped = (id: number): boolean => (byCw.get(id)?.length ?? 0) >= 2;
+  const isVentilGrouped = (id: string): boolean => (byVentil.get(id)?.length ?? 0) >= 2;
+
+  // Une ligne « multi-ventilée » (groupe cw OU ventil ≥2) est retirée de
+  // `byBank` : sinon elle gonflerait le count/total/label « N sous-lignes »
+  // du groupe bancaire (stats fausses) alors qu'elle est rendue consolidée.
+  const isMultiVentiled = (e: Ecriture): boolean =>
+    (e.comptaweb_ecriture_id != null && isCwGrouped(e.comptaweb_ecriture_id)) ||
+    (e.ventilation_group_id != null && isVentilGrouped(e.ventilation_group_id));
+
+  const byBank = new Map<number, Ecriture[]>();
+  for (const e of rows) {
+    if (e.ligne_bancaire_id && !isMultiVentiled(e)) {
+      (byBank.get(e.ligne_bancaire_id) ?? byBank.set(e.ligne_bancaire_id, []).get(e.ligne_bancaire_id)!).push(e);
+    }
+  }
   const isBankGrouped = (id: number): boolean => {
     const b = byBank.get(id) ?? [];
     return b.length > 1 || (b.length === 1 && b[0].ligne_bancaire_sous_index !== null);
   };
-  const isCwGrouped = (id: number): boolean => (byCw.get(id)?.length ?? 0) >= 2;
-  const isVentilGrouped = (id: string): boolean => (byVentil.get(id)?.length ?? 0) >= 2;
 
+  // Priorité : cw → ventil → bank (les groupes multi-ventilation gagnent sur
+  // la banque, cf. brief consolidation).
   const groupFor = (e: Ecriture): Group | null => {
-    if (e.ligne_bancaire_id && isBankGrouped(e.ligne_bancaire_id)) {
-      const entries = byBank.get(e.ligne_bancaire_id)!;
-      return {
-        kind: 'bank',
-        id: String(e.ligne_bancaire_id),
-        label: parseIntituleParent(entries[0].notes) ?? `Ligne bancaire #${e.ligne_bancaire_id}`,
-        sublabel: `#${e.ligne_bancaire_id}`,
-        totalCents: signedTotal(entries),
-        count: entries.length,
-      };
-    }
     if (e.comptaweb_ecriture_id != null && isCwGrouped(e.comptaweb_ecriture_id)) {
       const entries = byCw.get(e.comptaweb_ecriture_id)!;
       return {
@@ -122,14 +136,43 @@ export function buildEcritureGroups(rows: Ecriture[]): Item[] {
         count: entries.length,
       };
     }
+    if (e.ligne_bancaire_id && isBankGrouped(e.ligne_bancaire_id)) {
+      const entries = byBank.get(e.ligne_bancaire_id)!;
+      return {
+        kind: 'bank',
+        id: String(e.ligne_bancaire_id),
+        label: parseIntituleParent(entries[0].notes) ?? `Ligne bancaire #${e.ligne_bancaire_id}`,
+        sublabel: `#${e.ligne_bancaire_id}`,
+        totalCents: signedTotal(entries),
+        count: entries.length,
+      };
+    }
     return null;
+  };
+
+  const membersFor = (group: Group): Ecriture[] => {
+    if (group.kind === 'cw') return byCw.get(Number(group.id))!;
+    if (group.kind === 'ventil') return byVentil.get(group.id)!;
+    return byBank.get(Number(group.id))!;
   };
 
   const seen = new Set<string>();
   const out: Item[] = [];
   for (const e of rows) {
     const group = groupFor(e);
+    if (group && (group.kind === 'cw' || group.kind === 'ventil')) {
+      // Groupe multi-ventilation → UNE ligne consolidée, émise une seule fois
+      // (à la 1ʳᵉ occurrence du groupe). Pas de header, pas de rows membres.
+      const gk = groupKey(group.kind, group.id);
+      if (!seen.has(gk)) {
+        seen.add(gk);
+        const members = membersFor(group);
+        out.push({ kind: 'aggregate', group, head: members[0], members });
+      }
+      continue;
+    }
     if (group) {
+      // Groupe bancaire (vrais multi-sous-lignes DSP2) : header + rows membres.
       const gk = groupKey(group.kind, group.id);
       if (!seen.has(gk)) {
         seen.add(gk);

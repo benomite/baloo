@@ -245,6 +245,155 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
               );
             }
 
+            // Groupe multi-ventilation (cw ou ventil, ≥2) → UNE ligne
+            // consolidée. Montant = total du groupe, imputation agrégée
+            // (uniforme ou « … multiples »), chips NON éditables (édition dans
+            // le panneau, qui reçoit les N ventilations via groupEntries).
+            if (item.kind === 'aggregate') {
+              const { group: g, head, members } = item;
+              const style = GROUP_STYLE[g.kind];
+              const isSelected = selected.has(head.id);
+              const isOpen = openId === head.id;
+              const isValidating = validatingIds.has(head.id);
+              const editable = isEditable(head);
+              const uniformUnite = members.every((m) => m.unite_id != null && m.unite_id === head.unite_id);
+              const uniformActivite = members.every((m) => m.activite_id != null && m.activite_id === head.activite_id);
+              const uniformMode = members.every((m) => m.mode_paiement_id === head.mode_paiement_id);
+              const someJustif = members.some((m) => !!m.has_justificatif || !!m.remboursement_id);
+              const railColor = (uniformUnite && head.unite_couleur) || style.rowRail;
+              const railShadow = railColor ? { boxShadow: `inset 3px 0 0 0 ${railColor}` } : undefined;
+              const rowBg = isSelected ? 'bg-primary/5' : style.rowBg;
+              const showValider = head.status === 'draft' && head.comptaweb_ecriture_id == null;
+              const anyIncomplete = members.some(
+                (m) => computeReadiness(m, { categories, unites, modesPaiement, activites }).level === 'incomplete',
+              );
+              return (
+                <div key={`agg-${groupKey(g.kind, g.id)}`}>
+                  <div
+                    className={`group/row flex items-start gap-3 px-3 py-2.5 transition-colors ${
+                      isValidating
+                        ? 'pointer-events-none cursor-wait bg-amber-50/70 dark:bg-amber-950/25'
+                        : `cursor-pointer ${rowBg} ${isOpen ? 'bg-muted/40' : 'hover:bg-muted/30'}`
+                    }`}
+                    style={railShadow}
+                    onClick={onRowClick(head.id)}
+                    aria-busy={isValidating || undefined}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-1.5"
+                      aria-label={`Sélectionner ${head.id}`}
+                      checked={isSelected}
+                      onClick={stop}
+                      onChange={(ev) => toggleRow(indexById.get(head.id) ?? -1, (ev.nativeEvent as MouseEvent).shiftKey)}
+                      disabled={!editable}
+                      title={editable ? 'Groupe de ventilations' : 'Écriture synchronisée Comptaweb — non modifiable'}
+                    />
+                    <div className="shrink-0 w-10 text-center leading-none pt-0.5">
+                      <div className="text-[15px] font-semibold tabular-nums text-fg">{head.date_ecriture.slice(8, 10)}</div>
+                      <div className="text-[9.5px] uppercase tracking-wide text-fg-subtle">{moisCourt(head.date_ecriture)}</div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      {/* Titre = titre du groupe (lecture seule ; l'édition du
+                          titre se fait dans le panneau). */}
+                      <span className="block truncate font-medium text-[13.5px] text-fg cursor-pointer" title={head.description}>
+                        {head.description}
+                      </span>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px]" data-testid={`row-chips-${head.id}`} onClick={stop}>
+                        {/* Unité : uniforme → badge ; sinon « Unités multiples ». */}
+                        {uniformUnite ? (
+                          <UniteBadge code={head.unite_code} name={head.unite_name} couleur={head.unite_couleur} />
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-fg-muted min-w-0" title="Ventilations sur plusieurs unités — détail dans le panneau">
+                            <Layers size={11} className="shrink-0 text-fg-subtle" />
+                            <span className="truncate max-w-[160px]">Unités multiples</span>
+                          </span>
+                        )}
+                        {/* Catégorie : toujours « Catégories multiples ». */}
+                        <span className="inline-flex items-center gap-1 text-fg-muted min-w-0" title="Ventilation multi-catégories — édition dans le panneau">
+                          <Tag size={11} className="shrink-0 text-fg-subtle" />
+                          <span className="truncate max-w-[160px]">Catégories multiples</span>
+                        </span>
+                        {/* Activité : uniforme → nom ; sinon « Activités multiples ». */}
+                        <span className="inline-flex items-center gap-1 text-fg-muted min-w-0" title={uniformActivite ? undefined : 'Ventilations sur plusieurs activités'}>
+                          <Activity size={11} className="shrink-0 text-fg-subtle" />
+                          <span className="truncate max-w-[160px]">{uniformActivite ? head.activite_name : 'Activités multiples'}</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(ev) => { ev.stopPropagation(); openJustif(head.id); }}
+                          className={`inline-flex items-center gap-1 rounded px-1 -mx-1 hover:bg-muted/60 ${someJustif ? 'text-emerald-700 dark:text-emerald-300' : 'text-fg-subtle'}`}
+                          title={someJustif ? 'Voir les justificatifs' : 'Ajouter un justificatif'}
+                        >
+                          <Paperclip size={11} className={`shrink-0 ${someJustif ? 'text-emerald-600 dark:text-emerald-400' : 'text-fg-subtle/60'}`} />
+                          {someJustif ? 'justif' : 'sans justif'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="shrink-0 flex flex-col items-end gap-1 self-center" data-testid={`row-right-${head.id}`}>
+                      <div className="text-right font-medium tabular-nums">
+                        <Amount cents={g.totalCents} tone="signed" />
+                      </div>
+                      <div className="flex items-center justify-end gap-2 text-[12px]" onClick={stop}>
+                        {/* Mode : uniforme non nul → pastille ; uniforme nul →
+                            nudge « + Mode » ; sinon « Modes multiples ». */}
+                        {uniformMode && head.mode_paiement_id ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-fg-muted min-w-0">
+                            <Wallet size={11} className="shrink-0 text-fg-subtle" />
+                            <span className="truncate max-w-[110px]" title={head.mode_paiement_name ?? undefined}>{head.mode_paiement_name}</span>
+                          </span>
+                        ) : uniformMode ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/50 px-2 py-0.5 text-amber-600 dark:text-amber-400">
+                            <Wallet size={11} /> + Mode
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-fg-muted min-w-0">
+                            <Wallet size={11} className="shrink-0 text-fg-subtle" />
+                            <span className="truncate max-w-[110px]">Modes multiples</span>
+                          </span>
+                        )}
+                        {isValidating ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-[11.5px] font-medium text-amber-700 dark:text-amber-300"
+                            title="Création dans Comptaweb en cours…"
+                          >
+                            <Loader2 size={13} className="animate-spin" />
+                            Création…
+                          </span>
+                        ) : showValider ? (
+                          <ValiderCwButton
+                            disabled={anyIncomplete}
+                            missing={anyIncomplete ? ['une ou plusieurs ventilations incomplètes'] : []}
+                            onValidate={() => onValidate(head.id)}
+                          />
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                  {isOpen && (
+                    <div className="px-3 pb-2">
+                      <EcritureInlinePanel
+                        ecriture={head}
+                        ecritureId={head.id}
+                        isAdmin={isAdmin}
+                        focusSection={openFocus ?? undefined}
+                        groupEntries={members}
+                        onCollapse={() => setOpenId(null)}
+                        onValidate={(id) => { setOpenId(null); onValidate(id); }}
+                        refreshRow={refreshRow}
+                        categories={categories}
+                        topCategoryIds={topCategoryIds}
+                        unites={unites}
+                        modesPaiement={modesPaiement}
+                        activites={activites}
+                        cartes={cartes}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
             const e = item.ecriture;
             const editable = isEditable(e);
             const isSelected = selected.has(e.id);

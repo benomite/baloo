@@ -130,40 +130,51 @@ describe('EcrituresTable — bandeau replié 2 lignes', () => {
     expect(within(chips).queryByText('Week-end')).not.toBeNull();
   });
 
-  it('(b) affiche « Catégories multiples » à la place du picker de catégorie pour une ligne d\'un groupe de ventilation ≥ 2', () => {
+  it('(b) une ventilation (ventil ≥ 2) est consolidée en UNE ligne : un seul « Catégories multiples », le total du groupe, un seul Valider', () => {
     const a = makeEcriture({
       ventilation_group_id: 'vg-1',
+      ligne_bancaire_id: 999,
+      ligne_bancaire_sous_index: 0,
       category_id: 'cat-1',
       category_name: 'Cotisations',
       description: 'Facture composite',
     });
     const b = makeEcriture({
       ventilation_group_id: 'vg-1',
+      ligne_bancaire_id: 999,
+      ligne_bancaire_sous_index: 0,
       category_id: 'cat-2',
       category_name: 'Dons',
       description: 'Facture composite',
     });
-    renderTable([a, b]);
+    const { container } = renderTable([a, b]);
 
-    // Deux lignes du groupe → deux libellés « Catégories multiples ».
-    const labels = screen.getAllByText('Catégories multiples');
-    expect(labels.length).toBe(2);
+    // UNE seule ligne consolidée (une seule colonne droite), sur la tête = a.
+    const rights = container.querySelectorAll('[data-testid^="row-right-"]');
+    expect(rights.length).toBe(1);
+    expect(screen.getByTestId(`row-right-${a.id}`)).toBeTruthy();
+    expect(screen.queryByTestId(`row-right-${b.id}`)).toBeNull();
 
-    // Les catégories individuelles ne sont PAS affichées comme chip éditable.
-    const chipsA = screen.getByTestId(`row-chips-${a.id}`);
-    const chipsB = screen.getByTestId(`row-chips-${b.id}`);
-    expect(within(chipsA).queryByText('Cotisations')).toBeNull();
-    expect(within(chipsB).queryByText('Dons')).toBeNull();
+    // Un seul libellé « Catégories multiples » (pas un par membre).
+    expect(screen.getAllByText('Catégories multiples').length).toBe(1);
+    // Pas d'en-tête « sous-lignes » bancaire.
+    expect(screen.queryByText(/sous-ligne/)).toBeNull();
 
-    // « Catégories multiples » vit bien dans la rangée de chips.
-    expect(within(chipsA).queryByText('Catégories multiples')).not.toBeNull();
+    // Le total du groupe (2 × 42,50 en dépense = -85,00) est affiché.
+    const right = screen.getByTestId(`row-right-${a.id}`);
+    expect(within(right).getByText(/85,00/)).toBeTruthy();
+    // Un montant de membre isolé (42,50) ne doit pas s'afficher seul.
+    expect(screen.queryByText(/^-?42,50/)).toBeNull();
+
+    // Un SEUL bouton Valider (draft) — pas un par ventilation.
+    expect(screen.getAllByRole('button', { name: 'Valider' }).length).toBe(1);
+
+    // Les catégories individuelles ne sont PAS affichées comme chip.
+    expect(within(right).queryByText('Cotisations')).toBeNull();
+    expect(screen.queryByText('Dons')).toBeNull();
   });
 
-  it('(b bis) affiche « Catégories multiples » pour une ligne d\'un groupe Comptaweb (cw) de ≥ 2 membres', () => {
-    // Groupe cw : pièce déjà multi-ventilée dans Comptaweb, encore éditable
-    // pendant la fenêtre pending_sync → le libellé « Catégories multiples »
-    // doit s'appliquer aussi (modifier la catégorie localement ne répercute
-    // rien côté CW).
+  it('(b bis) une pièce Comptaweb multi-ventilée (cw ≥ 2) est consolidée en UNE ligne, SANS Valider (déjà dans CW)', () => {
     const a = makeEcriture({
       status: 'pending_sync',
       comptaweb_ecriture_id: 999,
@@ -180,13 +191,36 @@ describe('EcrituresTable — bandeau replié 2 lignes', () => {
       category_name: 'Dons',
       description: 'Pièce CW composite',
     });
-    renderTable([a, b]);
+    const { container } = renderTable([a, b]);
 
-    const labels = screen.getAllByText('Catégories multiples');
-    expect(labels.length).toBe(2);
-    const chipsA = screen.getByTestId(`row-chips-${a.id}`);
-    expect(within(chipsA).queryByText('Cotisations')).toBeNull();
-    expect(within(chipsA).queryByText('Catégories multiples')).not.toBeNull();
+    const rights = container.querySelectorAll('[data-testid^="row-right-"]');
+    expect(rights.length).toBe(1);
+    expect(screen.getAllByText('Catégories multiples').length).toBe(1);
+    // Déjà matérialisée dans Comptaweb → aucun bouton Valider.
+    expect(screen.queryByRole('button', { name: 'Valider' })).toBeNull();
+  });
+
+  it('(b ter) un groupe consolidé dont un membre est incomplet a son Valider désactivé', () => {
+    const a = makeEcriture({
+      ventilation_group_id: 'vg-2',
+      ligne_bancaire_id: 777,
+      ligne_bancaire_sous_index: 0,
+      category_id: 'cat-1',
+      category_name: 'Cotisations',
+      description: 'Facture composite',
+    });
+    // b incomplet : pas de catégorie.
+    const b = makeEcriture({
+      ventilation_group_id: 'vg-2',
+      ligne_bancaire_id: 777,
+      ligne_bancaire_sous_index: 0,
+      category_id: null,
+      category_name: null,
+      description: 'Facture composite',
+    });
+    renderTable([a, b]);
+    const valider = screen.getByRole('button', { name: 'Valider' });
+    expect((valider as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('affiche le nudge « + Mode » à droite quand le mode est absent', () => {
