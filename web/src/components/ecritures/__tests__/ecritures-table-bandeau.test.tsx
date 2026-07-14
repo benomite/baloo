@@ -159,6 +159,36 @@ describe('EcrituresTable — bandeau replié 2 lignes', () => {
     expect(within(chipsA).queryByText('Catégories multiples')).not.toBeNull();
   });
 
+  it('(b bis) affiche « Catégories multiples » pour une ligne d\'un groupe Comptaweb (cw) de ≥ 2 membres', () => {
+    // Groupe cw : pièce déjà multi-ventilée dans Comptaweb, encore éditable
+    // pendant la fenêtre pending_sync → le libellé « Catégories multiples »
+    // doit s'appliquer aussi (modifier la catégorie localement ne répercute
+    // rien côté CW).
+    const a = makeEcriture({
+      status: 'pending_sync',
+      comptaweb_ecriture_id: 999,
+      numero_piece: 'CW-999',
+      category_id: 'cat-1',
+      category_name: 'Cotisations',
+      description: 'Pièce CW composite',
+    });
+    const b = makeEcriture({
+      status: 'pending_sync',
+      comptaweb_ecriture_id: 999,
+      numero_piece: 'CW-999',
+      category_id: 'cat-2',
+      category_name: 'Dons',
+      description: 'Pièce CW composite',
+    });
+    renderTable([a, b]);
+
+    const labels = screen.getAllByText('Catégories multiples');
+    expect(labels.length).toBe(2);
+    const chipsA = screen.getByTestId(`row-chips-${a.id}`);
+    expect(within(chipsA).queryByText('Cotisations')).toBeNull();
+    expect(within(chipsA).queryByText('Catégories multiples')).not.toBeNull();
+  });
+
   it('affiche le nudge « + Mode » à droite quand le mode est absent', () => {
     renderTable([makeEcriture({ mode_paiement_id: null, mode_paiement_name: null })]);
     const right = screen.getByTestId('row-right-ec-1');

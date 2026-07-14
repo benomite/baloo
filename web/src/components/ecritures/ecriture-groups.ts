@@ -39,12 +39,16 @@ export type Item = HeaderItem | RowItem;
 export const groupKey = (kind: GroupKind, id: string): string => `${kind}-${id}`;
 
 // Une ligne est « catégorie multiple » quand elle est l'une des ≥2 ventilations
-// locales d'un même groupe (`ventilation_group_id`) : chaque ventilation porte
-// sa propre catégorie, donc au niveau du groupe la catégorie n'a pas de sens
-// unique → on affiche « Catégories multiples » (non éditable) plutôt que le
-// picker de catégorie de la ligne. Fonction pure (pas de React) — testable.
+// d'un même groupe (peu importe la famille : `ventil` local OU `cw` déjà
+// matérialisé dans Comptaweb) : chaque ventilation porte sa propre catégorie,
+// donc au niveau du groupe la catégorie n'a pas de sens unique → on affiche
+// « Catégories multiples » (non éditable) plutôt que le picker de catégorie de
+// la ligne. Pour un groupe `cw` encore éditable (fenêtre pending_sync), le
+// picker serait trompeur : modifier la catégorie localement ne répercute rien
+// côté CW. Un groupe mono (count 1, ou groupe bank d'une seule sous-ligne)
+// garde son picker. Fonction pure (pas de React) — testable.
 export function isMultiCategoryRow(group: Group | null | undefined): boolean {
-  return group != null && group.kind === 'ventil' && group.count >= 2;
+  return group != null && group.count >= 2;
 }
 
 function signedTotal(entries: Ecriture[]): number {
