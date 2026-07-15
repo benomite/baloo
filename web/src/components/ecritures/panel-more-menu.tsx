@@ -96,7 +96,7 @@ export function PanelMoreMenu({
       {open && (
         <div
           role="menu"
-          className="absolute bottom-full right-0 mb-1.5 z-50 min-w-[16rem] rounded-lg border border-border bg-surface shadow-lg p-1 text-[12.5px]"
+          className="absolute bottom-full right-0 mb-1.5 z-50 min-w-[16rem] rounded-lg border border-border bg-bg-elevated shadow-lg p-1 text-[12.5px]"
         >
           {items.map((it) => (
             <button

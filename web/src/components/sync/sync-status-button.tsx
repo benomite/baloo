@@ -187,7 +187,7 @@ function SyncErrorPopover({
     <div
       role="dialog"
       aria-label="Détail de la synchronisation"
-      className={`absolute ${posClasses} z-50 rounded-lg border border-border bg-surface shadow-lg p-3 text-[12px]`}
+      className={`absolute ${posClasses} z-50 rounded-lg border border-border bg-bg-elevated shadow-lg p-3 text-[12px]`}
     >
       <div className="flex items-start gap-2">
         <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-warning" aria-hidden="true" />
