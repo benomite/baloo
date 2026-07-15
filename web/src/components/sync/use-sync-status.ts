@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { shouldDrainAgain } from './drain-decision';
 
 export type ButtonState = 'idle' | 'running' | 'error';
 
@@ -31,6 +32,7 @@ export interface SyncRunRow {
   divergent_detected: number;
   error_message: string | null;
   duration_ms: number | null;
+  remaining: number | null;
 }
 
 export interface SyncStatusPayload {
@@ -47,6 +49,7 @@ export function useSyncStatus() {
   const router = useRouter();
   const [status, setStatus] = useState<SyncStatusPayload | null>(null);
   const [state, setState] = useState<ButtonState>('idle');
+  const [remaining, setRemaining] = useState(0);
   const pollHandleRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const clearPoll = useCallback(() => {
@@ -79,9 +82,24 @@ export function useSyncStatus() {
   const runSync = useCallback(
     async (force: boolean) => {
       setState('running');
-      const url = force ? '/api/sync/run?force=1' : '/api/sync/run';
-      try {
-        const res = await fetch(url, { method: 'POST' });
+      // Un run côté serveur est désormais synchrone et borné (K détails/cycle,
+      // ADR robustesse sync) : plus besoin de polling — on boucle ici tant
+      // qu'il reste du travail (`remaining > 0`), avec garde-fou anti-boucle
+      // (shouldDrainAgain). On annule un éventuel polling de mount en cours.
+      clearPoll();
+      let prev: number | null = null;
+      let noProgress = 0;
+      // Butée dure de sécurité : jamais atteinte en pratique, shouldDrainAgain
+      // stoppe bien avant (MAX_NO_PROGRESS cycles sans progrès ou remaining=0).
+      for (let guard = 0; guard < 50; guard++) {
+        const url = guard === 0 && !force ? '/api/sync/run' : '/api/sync/run?force=1';
+        let res: Response;
+        try {
+          res = await fetch(url, { method: 'POST' });
+        } catch {
+          setState('error');
+          return;
+        }
         // 429 = throttled / already_running. Pas une erreur : on refetch
         // pour afficher le bon état (un run pourrait être en cours).
         if (res.status === 429) {
@@ -92,20 +110,18 @@ export function useSyncStatus() {
           setState('error');
           return;
         }
-        // Le run est lancé. Polling jusqu'à finished.
-        clearPoll();
-        pollHandleRef.current = setInterval(async () => {
-          const s = await fetchStatus();
-          if (!s) return;
-          if (!s.is_running) {
-            clearPoll();
-            // Re-render des server components côté Next.
-            router.refresh();
-          }
-        }, POLL_INTERVAL_MS);
-      } catch {
-        setState('error');
+        const result = (await res.json().catch(() => null)) as { remaining?: number } | null;
+        const next = result?.remaining ?? 0;
+        setRemaining(next);
+        const decision = shouldDrainAgain(prev, next, noProgress);
+        prev = next;
+        noProgress = decision.noProgress;
+        if (!decision.drain) break;
       }
+      setRemaining(0);
+      await fetchStatus();
+      // Re-render des server components côté Next.
+      router.refresh();
     },
     [fetchStatus, clearPoll, router],
   );
@@ -146,5 +162,5 @@ export function useSyncStatus() {
     return () => document.removeEventListener('visibilitychange', onVis);
   }, [fetchStatus]);
 
-  return { status, state, runSync };
+  return { status, state, runSync, remaining };
 }

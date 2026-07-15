@@ -38,7 +38,7 @@ export function SyncStatusButton({
   // 'inline'  : chip compact (header page), popover vers le bas.
   variant?: 'sidebar' | 'inline';
 } = {}) {
-  const { status, state, runSync } = useSyncStatus();
+  const { status, state, runSync, remaining } = useSyncStatus();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const inline = variant === 'inline';
@@ -63,7 +63,7 @@ export function SyncStatusButton({
   let extraClasses = 'text-fg-muted';
 
   if (state === 'running') {
-    label = 'Synchronisation…';
+    label = remaining > 0 ? `Synchronisation… (${remaining} restantes)` : 'Synchronisation…';
     Icon = RefreshCw;
     extraClasses = 'text-brand';
   } else if (clientError || lastFailed) {
