@@ -81,6 +81,8 @@ export interface SyncCycleOptions {
   resolveCategoryId?: (nature: string) => Promise<string | null>;
   /** Injection pour tests : maintenant (ms epoch). Sinon Date.now(). */
   now?: () => number;
+  /** Injection pour tests : plafond de scrapeDetail par cycle. */
+  maxDetailFetches?: number;
 }
 
 export interface SyncCycleResult {
@@ -95,6 +97,7 @@ export interface SyncCycleResult {
   imported_from_cw: number;
   link_suggestions_created: number;
   detail_fetches: number;
+  remaining: number;
   scope: SyncScope;
   duration_ms: number;
   error_message?: string;
@@ -139,6 +142,11 @@ export interface SyncStatus {
 const THROTTLE_MS = 15 * 60 * 1000; // 15 min
 const RUNNING_LOCK_MS = 60 * 1000; // 60 s : au-delà on considère le run zombie
 const STALE_PENDING_SYNC_MS = 60 * 60 * 1000; // 1 h
+
+/** Plafond de lectures détail CW par cycle : borne le temps d'un run bien
+ *  sous maxDuration=60s. Le reste est drainé aux cycles suivants (remaining).
+ *  Cf. spec 2026-07-15. Overridable pour tests. */
+const MAX_DETAIL_FETCHES_PER_CYCLE = 12;
 
 // ============================================================================
 // getSyncStatus
@@ -702,6 +710,7 @@ export async function runSyncCycle(
     imported_from_cw: 0,
     link_suggestions_created: 0,
     detail_fetches: 0,
+    remaining: 0,
     scope,
     duration_ms: 0,
     ...over,
@@ -764,31 +773,44 @@ export async function runSyncCycle(
     // ventilation). On collecte d'abord l'ensemble des cwId à traiter.
     const snapByCwId = new Map<number, CwSnapshotRow>();
     for (const row of snapshot) snapByCwId.set(row.cwId, row);
-    const toProcess = new Set<number>();
 
-    // 7a. Promotions (draft reconnu dans CW par match contenu) : on relie le
-    //     draft au cwId (status mirror provisoire) puis on traite le cwId au
-    //     grain ventilation (mono → update du draft ; multi → le draft
-    //     agrégat devient orphelin et les ventilations sont créées).
+    // Collecte priorisée des cwId nécessitant une lecture détail. L'ordre
+    // reflète la visibilité utilisateur : promotions (deviennent mirror),
+    // imports (nouvelles lignes), enrichissements, agrégats legacy. On
+    // tronque ensuite à K : le reste (remaining) est drainé au cycle suivant.
+    const detailQueue: number[] = [];
+    const enqueued = new Set<number>();
+    const enqueue = (cwId: number) => {
+      if (!enqueued.has(cwId)) {
+        enqueued.add(cwId);
+        detailQueue.push(cwId);
+      }
+    };
+
+    // 7a. Promotions (draft reconnu dans CW par match contenu) : la LIAISON
+    //     est posée dans tous les cas (draft→cwId correct). Seul le fetch
+    //     détail est plafonné → enqueue.
     for (const p of plan.promotions) {
       await db
         .prepare(
           `UPDATE ecritures SET comptaweb_ecriture_id = ?, status = 'mirror', comptaweb_synced = 1, updated_at = ? WHERE id = ?`,
         )
         .run(p.cw.cwId, now, p.ecritureId);
-      toProcess.add(p.cw.cwId);
+      enqueue(p.cw.cwId);
       promoted++;
-    }
-
-    // 7b. Updates : seules les écritures à enrichir (signature changée ou
-    //     imputation vide) déclenchent un traitement de leur cwId.
-    for (const u of plan.updates) {
-      if (u.needsDetail) toProcess.add(u.cw.cwId);
     }
 
     // 7c. Imports : cwId sans écriture Baloo reliée → à traiter (absorbera
     //     les écritures CSV non reliées, ou créera les ventilations).
-    for (const cw of plan.imports) toProcess.add(cw.cwId);
+    //     Priorité 2 (avant les updates) : nouvelles lignes visibles pour
+    //     l'utilisateur, cf. spec priorité 2026-07-15.
+    for (const cw of plan.imports) enqueue(cw.cwId);
+
+    // 7b. Updates : seules les écritures à enrichir (signature changée ou
+    //     imputation vide) déclenchent un traitement de leur cwId.
+    for (const u of plan.updates) {
+      if (u.needsDetail) enqueue(u.cw.cwId);
+    }
 
     // 7c-bis. Agrégats legacy : un cwId déjà relié+imputé (donc needsDetail
     //   faux) mais dont des « ventilations détachées » (écritures non reliées
@@ -798,7 +820,7 @@ export async function runSyncCycle(
     //   une fois les ventilations reliées, plus de détachées → plus de
     //   retraitement (convergence).
     for (const row of snapshot) {
-      if (toProcess.has(row.cwId)) continue;
+      if (enqueued.has(row.cwId)) continue;
       const piece = row.numeroPiece.trim();
       const loose = piece
         ? await db
@@ -814,8 +836,14 @@ export async function runSyncCycle(
                  AND status IN ('draft','pending_sync','mirror','divergent') LIMIT 1`,
             )
             .get(groupId, row.date, row.type, row.intitule);
-      if (loose) toProcess.add(row.cwId);
+      if (loose) enqueue(row.cwId);
     }
+
+    // Troncature au budget : les K premiers sont traités ce cycle, le reste
+    // devient `remaining` (drainé au prochain cycle, idempotent).
+    const budget = opts.maxDetailFetches ?? MAX_DETAIL_FETCHES_PER_CYCLE;
+    const toProcess = detailQueue.slice(0, budget);
+    const remaining = detailQueue.length - toProcess.length;
 
     // 7d. Traitement ventilation de chaque cwId retenu.
     for (const cwId of toProcess) {
@@ -888,7 +916,7 @@ export async function runSyncCycle(
            promoted_to_mirror = ?, new_drafts = ?, updated_drafts = 0,
            divergent_detected = 0,
            updated_mirror = ?, supprimee_cw_detected = ?, imported_from_cw = ?,
-           link_suggestions_created = ?, detail_fetches = ?,
+           link_suggestions_created = ?, detail_fetches = ?, remaining = ?,
            error_message = ?, duration_ms = ?
          WHERE id = ?`,
       )
@@ -901,6 +929,7 @@ export async function runSyncCycle(
         imported,
         suggestionsCreated,
         detailFetches,
+        remaining,
         warningMessage,
         durationMs,
         syncRunId,
@@ -918,6 +947,7 @@ export async function runSyncCycle(
       imported_from_cw: imported,
       link_suggestions_created: suggestionsCreated,
       detail_fetches: detailFetches,
+      remaining,
       scope,
       duration_ms: durationMs,
       error_message: warningMessage ?? undefined,
