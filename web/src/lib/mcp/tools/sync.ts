@@ -22,7 +22,7 @@ import {
 export function registerSyncTools(server: McpServer, ctx: McpContext) {
   server.tool(
     'sync_run',
-    "Lance un cycle de réconciliation avec Comptaweb (source de vérité) pour le groupe courant : aligne les écritures mirror sur CW (CW écrase les champs comptables), promeut les drafts/pending_sync matchés, passe en 'supprimee_cw' les écritures disparues de CW (dans la plage couverte), importe les écritures CW absentes, et crée des suggestions de lien pour les matches ambigus. scope='recent' (défaut, écritures récentes) ou 'exercice' (tout l'exercice, plus lourd). Respecte le throttle 15 min sauf force=true ; le verrou de concurrence (60s) n'est jamais bypassé.",
+    "Lance un cycle de réconciliation avec Comptaweb (source de vérité) pour le groupe courant : aligne les écritures mirror sur CW (CW écrase les champs comptables), promeut les drafts/pending_sync matchés, passe en 'supprimee_cw' les écritures disparues de CW (dans la plage couverte), importe les écritures CW absentes, et crée des suggestions de lien pour les matches ambigus. scope='recent' (défaut, écritures récentes) ou 'exercice' (tout l'exercice, plus lourd). Respecte le throttle 15 min sauf force=true ; le verrou de concurrence (60s) n'est jamais bypassé. Un cycle est BORNÉ dans le temps : si la réponse contient remaining > 0, du travail reste à traiter (drainage incomplet) — rappeler sync_run (avec force=true pour bypasser le throttle) jusqu'à obtenir remaining === 0.",
     {
       force: z
         .boolean()
@@ -48,7 +48,7 @@ export function registerSyncTools(server: McpServer, ctx: McpContext) {
 
   server.tool(
     'sync_status',
-    "Retourne l'état de la sync Comptaweb pour le groupe courant : dernier run (id, status, started_at, finished_at, counts), si un run est en cours, si les données sont stales (>15 min) et jusqu'à quand le throttle bloque les nouveaux sync.",
+    "Retourne l'état de la sync Comptaweb pour le groupe courant : dernier run (id, status, started_at, finished_at, counts, dont remaining : nombre d'écritures encore à enrichir depuis ce run), si un run est en cours, si les données sont stales (>15 min) et jusqu'à quand le throttle bloque les nouveaux sync. Si last_run.remaining > 0, relancer sync_run (force=true) pour continuer le drainage.",
     {},
     async () => {
       const status = await getSyncStatus(getDb(), ctx.groupId);

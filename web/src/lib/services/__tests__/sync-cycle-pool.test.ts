@@ -4,13 +4,23 @@
 // Réutilise le harnais de sync-cycle.test.ts / sync-cycle-plafond.test.ts
 // (setupDb, makeRow, mockOpts) plutôt que de le dupliquer intégralement.
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
 import { wrapClient, type DbWrapper } from '../../db';
 import { ensureSyncRunsSchema, ensureReconcileSchema } from '../../db/business-schema';
 import { runSyncCycle, type SyncCycleOptions } from '../sync-cycle';
 import type { ComptawebConfig, CwEcritureRow, ScrapeListeEcrituresResult } from '../../comptaweb/types';
 import type { EcritureDetail } from '../../comptaweb';
+import { logError } from '../../log';
+
+// Fix revue finale (feat/sync-robuste) : l'échec phase 1 → phase 2 doit
+// re-throw la raison ORIGINALE (pas un message générique fabriqué). On mocke
+// `logError` pour intercepter les 2 appels (phase 1 pool, phase 2
+// resolveVentilations) sans toucher la BDD réelle via getDb() (persistance
+// fire-and-forget de logError).
+vi.mock('../../log', () => ({
+  logError: vi.fn(),
+}));
 
 // ---------------- Setup BDD (identique à sync-cycle-plafond.test.ts) ----------------
 
@@ -192,6 +202,47 @@ describe('runSyncCycle — pool parallèle (concurrence 4) de fetch détail', ()
     // Les 4 autres écritures (hors FAILING_CW) sont bien importées.
     expect(res.imported_from_cw).toBe(4);
 
+    const failed = await db
+      .prepare(`SELECT id FROM ecritures WHERE comptaweb_ecriture_id = ?`)
+      .get<{ id: string }>(FAILING_CW);
+    expect(failed).toBeUndefined();
+  });
+
+  it("propage la raison ORIGINALE de l'échec de la phase 1 à la phase 2 (pas de message générique fabriqué)", async () => {
+    const FAILING_CW = 1002;
+    const ecritures = listeOf(5); // ids 1000..1004
+    const originalError = new Error('CW 500 - session Comptaweb expirée');
+    const scrapeDetail = async (cwId: number) => {
+      if (cwId === FAILING_CW) throw originalError;
+      return ventilationsFor(cwId);
+    };
+
+    vi.mocked(logError).mockClear();
+
+    const res = await runSyncCycle(
+      db,
+      'g1',
+      mockOpts({ ecritures, scrapeDetail, force: true, maxDetailFetches: 12 }),
+    );
+    expect(res.status).toBe('ok');
+
+    const calls = vi.mocked(logError).mock.calls;
+
+    // Phase 1 (pool) : log direct de la raison réelle.
+    const phase1Call = calls.find((c) => c[1] === 'scrapeEcritureDetail failed (pool)');
+    expect(phase1Call?.[2]).toBe(originalError);
+
+    // Phase 2 (resolveVentilations catch) : ne doit PAS avoir fabriqué le
+    // message générique 'detail fetch failed (pool)' — la raison d'origine
+    // (même texte) doit avoir été re-throwée puis logguée ici.
+    const phase2Call = calls.find((c) => c[1] === 'scrapeEcritureDetail failed');
+    expect(phase2Call).toBeTruthy();
+    const propagated = phase2Call?.[2];
+    expect(propagated).toBeInstanceOf(Error);
+    expect((propagated as Error).message).toBe(originalError.message);
+    expect((propagated as Error).message).not.toContain('detail fetch failed (pool)');
+
+    // Comportement inchangé : l'écriture en échec reste non traitée.
     const failed = await db
       .prepare(`SELECT id FROM ecritures WHERE comptaweb_ecriture_id = ?`)
       .get<{ id: string }>(FAILING_CW);

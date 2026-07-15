@@ -855,7 +855,11 @@ export async function runSyncCycle(
     // Cache : cwId → détail OK ; les échecs sont marqués et re-throwés en
     // phase 2 (→ resolveVentilations les catch → écriture laissée intacte).
     const detailCache = new Map<number, EcritureDetail>();
-    const detailFailed = new Set<number>();
+    // Map (pas Set) : on garde la raison ORIGINALE de l'échec pour la
+    // re-throw en phase 2, sinon resolveVentilations logue un 2e message
+    // générique dans /admin/errors qui masque la vraie cause (cf. revue
+    // finale feat/sync-robuste).
+    const detailFailed = new Map<number, unknown>();
     const settled = await mapWithConcurrency(
       toProcess,
       DETAIL_FETCH_CONCURRENCY,
@@ -865,7 +869,7 @@ export async function runSyncCycle(
       const cwId = toProcess[i];
       if (r.status === 'fulfilled') detailCache.set(cwId, r.value);
       else {
-        detailFailed.add(cwId);
+        detailFailed.set(cwId, r.reason);
         logError('sync-cycle', 'scrapeEcritureDetail failed (pool)', r.reason, { cwId });
       }
     });
@@ -876,7 +880,10 @@ export async function runSyncCycle(
     const cachedResolvers: Resolvers = {
       ...resolvers,
       scrapeDetail: async (cwId: number) => {
-        if (detailFailed.has(cwId)) throw new Error('detail fetch failed (pool)');
+        if (detailFailed.has(cwId)) {
+          const reason = detailFailed.get(cwId);
+          throw reason instanceof Error ? reason : new Error(String(reason));
+        }
         const d = detailCache.get(cwId);
         if (d) return d;
         return resolvers.scrapeDetail(cwId); // filet (ne devrait pas arriver)

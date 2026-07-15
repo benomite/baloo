@@ -132,7 +132,14 @@ export function useSyncStatus() {
     (async () => {
       const s = await fetchStatus();
       if (cancelled || !s) return;
-      if (s.stale && !s.is_running) {
+      // Reprend le drainage aussi quand il reste du travail (`remaining > 0`)
+      // même si le run n'est pas encore stale : un onglet fermé mid-drain et
+      // rouvert dans les 15 min, ou un arrêt par le garde-fou anti-boucle,
+      // ou un reliquat laissé par un run MCP, ne doivent pas attendre le
+      // throttle pour reprendre. La boucle de runSync se charge de forcer
+      // les relances suivantes.
+      const hasRemainder = (s.last_run?.remaining ?? 0) > 0;
+      if ((s.stale || hasRemainder) && !s.is_running) {
         await runSync(false);
       } else if (s.is_running) {
         // Un run est en cours côté serveur : on poll jusqu'à finished.

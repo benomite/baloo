@@ -42,7 +42,7 @@ function setFetchSequence(seq: Array<MockResponse | ((url: string, init?: Reques
   }) as unknown as typeof fetch;
 }
 
-function statusBody(opts: Partial<{ stale: boolean; is_running: boolean; finished_at: string | null; status: string }>) {
+function statusBody(opts: Partial<{ stale: boolean; is_running: boolean; finished_at: string | null; status: string; remaining: number | null }>) {
   return {
     group_id: 'g1',
     last_run: opts.finished_at !== undefined
@@ -59,6 +59,7 @@ function statusBody(opts: Partial<{ stale: boolean; is_running: boolean; finishe
           divergent_detected: 0,
           error_message: null,
           duration_ms: 1000,
+          remaining: opts.remaining ?? null,
         }
       : null,
     is_running: opts.is_running ?? false,
@@ -132,6 +133,29 @@ describe('<SyncStatusButton>', () => {
       const fetchMock = vi.mocked(global.fetch);
       const calls = fetchMock.mock.calls.map((c) => String(c[0]));
       expect(calls.some((u) => u.includes('/api/sync/status'))).toBe(true);
+      expect(calls.some((u) => u === '/api/sync/run')).toBe(true);
+    });
+  });
+
+  it('au mount, reprend le drainage si remaining > 0 même sans être stale (Fix revue finale)', async () => {
+    setFetchSequence([
+      // 1. Status au mount : PAS stale, mais un reliquat de run précédent
+      //    (onglet fermé mid-drain, ou remainder laissé par un run MCP).
+      { status: 200, body: statusBody({ stale: false, is_running: false, finished_at: new Date().toISOString(), remaining: 3 }) },
+      // 2. POST /api/sync/run (auto, sans force) : draine le reliquat.
+      { status: 202, body: { ...runOkBody, remaining: 0 } },
+      // 3. Refetch status final (dans runSync, après la boucle de drainage).
+      { status: 200, body: statusBody({ stale: false, is_running: false, finished_at: new Date().toISOString(), remaining: 0 }) },
+    ]);
+
+    render(<SyncStatusButton />);
+
+    await waitFor(() => {
+      const fetchMock = vi.mocked(global.fetch);
+      const calls = fetchMock.mock.calls.map((c) => String(c[0]));
+      // Le POST /api/sync/run doit avoir été déclenché automatiquement au
+      // mount, sans clic, alors que stale=false (seul remaining>0 justifie
+      // la reprise du drainage).
       expect(calls.some((u) => u === '/api/sync/run')).toBe(true);
     });
   });
