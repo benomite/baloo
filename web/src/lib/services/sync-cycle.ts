@@ -21,6 +21,7 @@
 import type { DbWrapper } from '../db';
 import { nextIdOn, currentTimestamp } from '../ids';
 import { logError } from '../log';
+import { mapWithConcurrency } from './concurrency';
 import { loadConfig as defaultLoadConfig } from '../comptaweb/auth';
 import {
   scrapeListeEcritures as defaultScrapeListe,
@@ -147,6 +148,10 @@ const STALE_PENDING_SYNC_MS = 60 * 60 * 1000; // 1 h
  *  sous maxDuration=60s. Le reste est drainé aux cycles suivants (remaining).
  *  Cf. spec 2026-07-15. Overridable pour tests. */
 const MAX_DETAIL_FETCHES_PER_CYCLE = 12;
+
+/** Concurrence des lectures détail CW (le coût dominant est le HTTP CW ;
+ *  les writes BDD restent séquentiels). Cf. spec 2026-07-15. */
+const DETAIL_FETCH_CONCURRENCY = 4;
 
 // ============================================================================
 // getSyncStatus
@@ -845,12 +850,45 @@ export async function runSyncCycle(
     const toProcess = detailQueue.slice(0, budget);
     const remaining = detailQueue.length - toProcess.length;
 
-    // 7d. Traitement ventilation de chaque cwId retenu.
+    // 7d. Phase 1 — pré-fetch des détails en parallèle (pool borné). Le HTTP
+    // CW est le coût dominant ; on le parallélise, mais PAS les writes BDD.
+    // Cache : cwId → détail OK ; les échecs sont marqués et re-throwés en
+    // phase 2 (→ resolveVentilations les catch → écriture laissée intacte).
+    const detailCache = new Map<number, EcritureDetail>();
+    const detailFailed = new Set<number>();
+    const settled = await mapWithConcurrency(
+      toProcess,
+      DETAIL_FETCH_CONCURRENCY,
+      (cwId) => resolvers.scrapeDetail(cwId),
+    );
+    settled.forEach((r, i) => {
+      const cwId = toProcess[i];
+      if (r.status === 'fulfilled') detailCache.set(cwId, r.value);
+      else {
+        detailFailed.add(cwId);
+        logError('sync-cycle', 'scrapeEcritureDetail failed (pool)', r.reason, { cwId });
+      }
+    });
+    detailFetches = toProcess.length; // fetch réseau tentés ce cycle
+
+    // Resolvers de phase 2 : scrapeDetail lit le cache (aucun réseau ; un
+    // échec de phase 1 est re-throwé pour être neutralisé proprement).
+    const cachedResolvers: Resolvers = {
+      ...resolvers,
+      scrapeDetail: async (cwId: number) => {
+        if (detailFailed.has(cwId)) throw new Error('detail fetch failed (pool)');
+        const d = detailCache.get(cwId);
+        if (d) return d;
+        return resolvers.scrapeDetail(cwId); // filet (ne devrait pas arriver)
+      },
+    };
+
+    // Phase 2 — application séquentielle (writes BDD non concurrents).
     for (const cwId of toProcess) {
       const row = snapByCwId.get(cwId);
       if (!row) continue;
-      const counts = await processCwEcriture(db, groupId, metaFromSnapshot(row), resolvers, now);
-      detailFetches += counts.detailFetched;
+      const counts = await processCwEcriture(db, groupId, metaFromSnapshot(row), cachedResolvers, now);
+      // detailFetched compté en phase 1 : ne pas ré-additionner counts.detailFetched.
       updatedMirror += counts.updated;
       imported += counts.created;
       supprimeeCw += counts.orphaned;
