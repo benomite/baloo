@@ -117,6 +117,7 @@ export interface SyncRunRow {
   imported_from_cw: number;
   link_suggestions_created: number;
   detail_fetches: number;
+  remaining: number | null;
   scope: string | null;
   error_message: string | null;
   duration_ms: number | null;

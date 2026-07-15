@@ -866,6 +866,7 @@ export async function ensureSyncRunsSchema(db: DbWrapper): Promise<void> {
       imported_from_cw INTEGER NOT NULL DEFAULT 0,
       link_suggestions_created INTEGER NOT NULL DEFAULT 0,
       detail_fetches INTEGER NOT NULL DEFAULT 0,
+      remaining INTEGER,
       scope TEXT,
       error_message TEXT,
       duration_ms INTEGER,
@@ -918,6 +919,11 @@ export async function ensureReconcileSchema(db: DbWrapper): Promise<void> {
     }
     if (!srHas('scope')) {
       await db.exec('ALTER TABLE sync_runs ADD COLUMN scope TEXT');
+    }
+    // remaining : reste-à-traiter du dernier cycle (spec 2026-07-15). Nullable
+    // volontairement (vieux runs = NULL = inconnu, PAS 0). Pas de backfill.
+    if (!srHas('remaining')) {
+      await db.exec('ALTER TABLE sync_runs ADD COLUMN remaining INTEGER');
     }
   }
 
