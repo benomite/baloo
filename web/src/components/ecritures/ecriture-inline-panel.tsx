@@ -254,6 +254,8 @@ export function EcritureInlinePanel({
             totalCents={ventTotalCents}
             initialLines={ventInitialLines}
             categories={categories}
+            topCategoryIds={topCategoryIds}
+            sens={ecriture.type}
             unites={unites}
             activites={activites}
             editable={vm.editable}

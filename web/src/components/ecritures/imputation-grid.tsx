@@ -15,6 +15,7 @@ import { Fragment, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { NativeSelect } from '@/components/ui/native-select';
 import { CategoryPicker } from '@/components/shared/category-picker';
+import { isUnmapped } from '@/lib/selectable';
 import { Field } from '@/components/shared/field';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,11 @@ export interface ImputationGridProps {
   /** ≥1 ligne ; en mono le montant est ignoré (colonne masquée). */
   initialLines: VentLine[];
   categories: Category[];
+  /** Favoris (« Fréquentes ») du groupe, passés au picker catégorie. */
+  topCategoryIds: string[];
+  /** Sens de l'écriture (dépense/recette) : filtre les catégories de l'autre sens
+   *  dans le picker. `undefined` → pas de filtre (toutes les catégories). */
+  sens?: 'depense' | 'recette';
   unites: Unite[];
   activites: Activite[];
   /** false → grille en lecture : selects/inputs désactivés, pas de déclencheur d'ajout. */
@@ -78,6 +84,8 @@ export function ImputationGrid({
   totalCents,
   initialLines,
   categories,
+  topCategoryIds,
+  sens,
   unites,
   activites,
   editable,
@@ -90,7 +98,7 @@ export function ImputationGrid({
   const [ventilated, setVentilated] = useState<boolean>(startVentilated);
   const [lines, setLines] = useState<VentLine[]>(initialLines);
 
-  const categoryOptions = categories.map((c) => ({ id: c.id, name: c.name }));
+  const categoryOptions = categories.map((c) => ({ id: c.id, name: c.name, type: c.type, unmapped: isUnmapped(c) }));
 
   const updateLine = (id: string, patch: Partial<VentLine>) => {
     setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -199,7 +207,8 @@ export function ImputationGrid({
                   id={`ig-cat-${line.id}`}
                   name={`ig-cat-${line.id}`}
                   categories={categoryOptions}
-                  topIds={[]}
+                  topIds={topCategoryIds}
+                  sens={sens}
                   defaultValue={line.category_id ?? ''}
                   disabled={!editable}
                   onChange={(value) => handleFieldChange(line.id, 'category_id', value || null)}

@@ -9,7 +9,11 @@ afterEach(() => {
   cleanup();
 });
 
-const cats = [{ id: 'c-int', name: 'Intendance' }, { id: 'c-ph', name: 'Pharmacie' }] as never[];
+const cats = [
+  { id: 'c-int', name: 'Intendance', type: 'depense' },
+  { id: 'c-ph', name: 'Pharmacie', type: 'depense' },
+  { id: 'c-cotis', name: 'Cotisations', type: 'recette' },
+] as never[];
 const unites = [{ id: 'u-fa', name: 'Farfadets', code: 'FA' }] as never[];
 const activites = [{ id: 'a-camps', name: 'Camps' }] as never[];
 const mono: VentLine[] = [{ id: 'l1', amount: '41,24', category_id: null, unite_id: 'u-fa', activite_id: 'a-camps' }];
@@ -19,7 +23,7 @@ function setup(over = {}) {
   const onSaveVentilation = vi.fn().mockResolvedValue(undefined);
   render(
     <ImputationGrid totalCents={4124} initialLines={mono} categories={cats} unites={unites}
-      activites={activites} editable canVentilate onMonoFieldChange={onMonoFieldChange} onSaveVentilation={onSaveVentilation} {...over} />,
+      activites={activites} editable canVentilate topCategoryIds={[]} onMonoFieldChange={onMonoFieldChange} onSaveVentilation={onSaveVentilation} {...over} />,
   );
   return { onMonoFieldChange, onSaveVentilation };
 }
@@ -128,5 +132,15 @@ describe('ImputationGrid', () => {
     expect((screen.getByLabelText(/Unité ligne 1/i) as HTMLSelectElement).disabled).toBe(true);
     expect((screen.getByLabelText(/Activité ligne 1/i) as HTMLSelectElement).disabled).toBe(true);
     expect(screen.queryByText('+ Ajouter un détail')).toBeNull();
+  });
+
+  it('raccourci orange : favoris réels (topCategoryIds) + filtre sens dans le picker catégorie', async () => {
+    setup({ topCategoryIds: ['c-ph'], sens: 'depense' });
+    await userEvent.click(screen.getByLabelText(/Catégorie/i));
+    // (a) « Fréquentes » apparaît : les favoris sont bien transmis (plus topIds=[]).
+    expect(await screen.findByText('Fréquentes')).toBeTruthy();
+    expect(screen.getByText('Pharmacie')).toBeTruthy();
+    // (b) une catégorie recette pure est absente sous sens='depense'.
+    expect(screen.queryByText('Cotisations')).toBeNull();
   });
 });
