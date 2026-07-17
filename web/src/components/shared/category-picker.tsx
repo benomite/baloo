@@ -36,6 +36,7 @@ export function CategoryPicker({
   disabled = false,
   onChange,
   sens,
+  ariaLabel,
 }: {
   categories: CategoryOption[];
   topIds: string[];
@@ -56,6 +57,10 @@ export function CategoryPicker({
   /** Filtre par sens (dépense/recette) : masque les catégories de l'autre
    *  sens (garde `les_deux` et la valeur déjà sélectionnée). */
   sens?: 'depense' | 'recette';
+  /** Nom accessible explicite. Par défaut absent → l'association `<label
+   *  htmlFor={id}>` du Field porte le nom (ex. « Catégorie ligne 1 »), sans
+   *  être écrasée par un aria-label générique. */
+  ariaLabel?: string;
 }) {
   const [value, setValueState] = useState<string>(defaultValue ?? '');
   const setValue = (v: string) => {
@@ -89,7 +94,7 @@ export function CategoryPicker({
       <input type="hidden" name={name} value={value} />
       <Combobox
         id={id}
-        ariaLabel="Catégorie"
+        ariaLabel={ariaLabel}
         items={items}
         value={value}
         onValueChange={setValue}
