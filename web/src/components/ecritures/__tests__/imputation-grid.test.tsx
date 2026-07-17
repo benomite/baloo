@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ImputationGrid } from '../imputation-grid';
 import type { VentLine } from '../ventilate-editor-model';
 
@@ -60,8 +61,12 @@ describe('ImputationGrid', () => {
     const montants = screen.getAllByLabelText(/Montant/i);
     fireEvent.change(montants[0], { target: { value: '31,24' } });
     fireEvent.change(montants[1], { target: { value: '10,00' } });
-    fireEvent.change(screen.getAllByLabelText(/Catégorie/i)[0], { target: { value: 'c-int' } });
-    fireEvent.change(screen.getAllByLabelText(/Catégorie/i)[1], { target: { value: 'c-ph' } });
+    // Sélection de catégorie via le combobox (remplace l'ancien <select>) :
+    // ouvrir le déclencheur puis cliquer l'option dans la popup portallée.
+    await userEvent.click(screen.getAllByLabelText(/Catégorie/i)[0]);
+    await userEvent.click(await screen.findByText('Intendance'));
+    await userEvent.click(screen.getAllByLabelText(/Catégorie/i)[1]);
+    await userEvent.click(await screen.findByText('Pharmacie'));
     const save = screen.getByRole('button', { name: /Enregistrer la ventilation/i }) as HTMLButtonElement;
     await waitFor(() => expect(save.disabled).toBe(false));
     fireEvent.click(save);

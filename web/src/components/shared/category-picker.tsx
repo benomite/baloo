@@ -1,17 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { cn } from '@/lib/utils';
-import { NativeSelect } from '@/components/ui/native-select';
+import { Combobox, type ComboboxItem } from '@/components/ui/combobox';
 
-// Sélecteur de catégorie en deux étages :
-// - chips rapides pour les N catégories favorites (les plus utilisées
-//   par le groupe, calculées côté serveur)
-// - select déroulant pour le reste, replié par défaut
+// Sélecteur de catégorie en combobox recherchable (Base UI via le
+// wrapper `Combobox`), avec deux sections : "Fréquentes" (les N
+// catégories les plus utilisées par le groupe, calculées côté serveur)
+// puis "Toutes" (le reste, ordre d'entrée).
 //
 // La valeur sélectionnée est portée par un input hidden, donc compatible
-// avec les server actions (FormData). Si `topIds` est vide, dégrade vers
-// un simple select complet.
+// avec les server actions (FormData).
 
 export interface CategoryOption {
   id: string;
@@ -19,6 +17,8 @@ export interface CategoryOption {
   /** True si l'item n'a pas de comptaweb_id (héritage local pur).
    *  Affiché avec un suffixe "(non sync)" pour informer l'utilisateur. */
   unmapped?: boolean;
+  /** Sens de la catégorie ; sert au filtre `sens`. */
+  type?: 'depense' | 'recette' | 'les_deux';
 }
 
 function decorate(c: CategoryOption): string {
@@ -35,6 +35,7 @@ export function CategoryPicker({
   emptyLabel = 'Aucune',
   disabled = false,
   onChange,
+  sens,
 }: {
   categories: CategoryOption[];
   topIds: string[];
@@ -52,6 +53,9 @@ export function CategoryPicker({
    * (`name`) lu via FormData dans les usages historiques non concernés.
    */
   onChange?: (value: string) => void;
+  /** Filtre par sens (dépense/recette) : masque les catégories de l'autre
+   *  sens (garde `les_deux` et la valeur déjà sélectionnée). */
+  sens?: 'depense' | 'recette';
 }) {
   const [value, setValueState] = useState<string>(defaultValue ?? '');
   const setValue = (v: string) => {
@@ -60,113 +64,40 @@ export function CategoryPicker({
   };
 
   const byId = new Map(categories.map((c) => [c.id, c]));
-  const topCats = topIds
-    .map((tid) => byId.get(tid))
-    .filter((c): c is CategoryOption => Boolean(c));
-  const topIdSet = new Set(topCats.map((c) => c.id));
-  const otherCats = categories.filter((c) => !topIdSet.has(c.id));
+  const topIdSet = new Set(topIds);
 
-  // Si pas de favoris (groupe vierge), un select complet suffit.
-  if (topCats.length === 0) {
-    return (
-      <NativeSelect
-        id={id}
-        name={name}
-        defaultValue={defaultValue ?? ''}
-        disabled={disabled}
-        onChange={(e) => onChange?.(e.target.value)}
-      >
-        {allowEmpty && <option value="">— {emptyLabel} —</option>}
-        {categories.map((c) => (
-          <option key={c.id} value={c.id}>
-            {decorate(c)}
-          </option>
-        ))}
-      </NativeSelect>
-    );
+  // Filtre sens : garde matching + 'les_deux'. Exception : la valeur
+  // sélectionnée reste toujours visible (jamais masquer une valeur posée).
+  const passesSens = (c: CategoryOption): boolean =>
+    !sens || c.type == null || c.type === 'les_deux' || c.type === sens || c.id === value;
+
+  const items: ComboboxItem[] = [];
+  if (allowEmpty) items.push({ value: '', label: emptyLabel });
+  // Fréquentes (ordre de topIds), filtrées sens
+  for (const tid of topIds) {
+    const c = byId.get(tid);
+    if (c && passesSens(c)) items.push({ value: c.id, label: decorate(c), group: 'Fréquentes' });
+  }
+  // Toutes (le reste, ordre d'entrée), filtrées sens
+  for (const c of categories) {
+    if (topIdSet.has(c.id)) continue;
+    if (passesSens(c)) items.push({ value: c.id, label: decorate(c), group: 'Toutes' });
   }
 
-  // Le select des "autres" ne reflète une valeur que si elle est hors
-  // top. Sinon il reste sur l'option neutre.
-  const selectValue = topIdSet.has(value) || value === '' ? '' : value;
-  const selectedOther = selectValue ? byId.get(selectValue) : null;
-
   return (
-    <div className="space-y-2">
+    <>
       <input type="hidden" name={name} value={value} />
-      <div className="flex flex-wrap gap-1.5" role="radiogroup" id={id}>
-        {allowEmpty && (
-          <Chip
-            active={value === ''}
-            disabled={disabled}
-            onClick={() => setValue('')}
-          >
-            {emptyLabel}
-          </Chip>
-        )}
-        {topCats.map((c) => (
-          <Chip
-            key={c.id}
-            active={value === c.id}
-            disabled={disabled}
-            onClick={() => setValue(c.id)}
-          >
-            {decorate(c)}
-          </Chip>
-        ))}
-        {selectedOther && (
-          <Chip active disabled={disabled} onClick={() => setValue('')}>
-            {decorate(selectedOther)} ✕
-          </Chip>
-        )}
-      </div>
-      {otherCats.length > 0 && (
-        <NativeSelect
-          value={selectValue}
-          onChange={(e) => setValue(e.target.value)}
-          disabled={disabled}
-          aria-label="Autres catégories"
-          className="text-[12.5px]"
-        >
-          <option value="">— Voir toutes les autres catégories —</option>
-          {otherCats.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </NativeSelect>
-      )}
-    </div>
-  );
-}
-
-function Chip({
-  active,
-  disabled,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  disabled: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={active}
-      onClick={onClick}
-      disabled={disabled}
-      className={cn(
-        'rounded-full border px-2.5 py-1 text-[12.5px] font-medium transition-colors',
-        active
-          ? 'border-brand bg-brand text-white shadow-sm'
-          : 'border-border bg-bg-elevated text-fg hover:border-border-strong hover:bg-bg-sunken',
-        disabled && 'cursor-not-allowed opacity-50',
-      )}
-    >
-      {children}
-    </button>
+      <Combobox
+        id={id}
+        ariaLabel="Catégorie"
+        items={items}
+        value={value}
+        onValueChange={setValue}
+        placeholder={`— ${emptyLabel} —`}
+        searchPlaceholder="Rechercher une catégorie…"
+        emptyText="Aucune catégorie trouvée"
+        disabled={disabled}
+      />
+    </>
   );
 }

@@ -18,6 +18,7 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { NouvelleEcritureWizard } from '../nouvelle-ecriture-wizard';
 import type { Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
 
@@ -64,12 +65,10 @@ describe('NouvelleEcritureWizard — répéteur de ventilations', () => {
     expect(submit.disabled).toBe(true);
   });
 
-  it('active le submit une fois la ligne complète (montant + catégorie + unité + activité)', () => {
-    // `topCategoryIds=[]` fait dégrader `CategoryPicker` vers son
-    // fallback <select> simple (pas de chips) — régression trouvée en
-    // écrivant ce test : ce fallback ne notifiait pas `onChange`, donc
-    // la ligne restait "sans catégorie" pour toujours et ce test ne
-    // passait jamais (bouton resté désactivé). Fixé dans CategoryPicker.
+  it('active le submit une fois la ligne complète (montant + catégorie + unité + activité)', async () => {
+    // `CategoryPicker` est désormais un combobox recherchable (plus de
+    // fallback <select> ni de chips) — la sélection se fait en ouvrant
+    // le déclencheur puis en cliquant l'option dans la popup portallée.
     renderWizard();
 
     // `exact: false` : les labels obligatoires portent un suffixe "*"
@@ -80,9 +79,8 @@ describe('NouvelleEcritureWizard — répéteur de ventilations', () => {
     fireEvent.change(screen.getByLabelText('Montant', { exact: false }), {
       target: { value: '42,50' },
     });
-    fireEvent.change(screen.getByLabelText('Catégorie', { exact: false }), {
-      target: { value: 'cat-1' },
-    });
+    await userEvent.click(screen.getByLabelText('Catégorie', { exact: false }));
+    await userEvent.click(await screen.findByText('Camp'));
     fireEvent.change(screen.getByLabelText('Unité', { exact: false }), {
       target: { value: 'uni-1' },
     });
