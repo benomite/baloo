@@ -118,6 +118,7 @@ export default async function DepotPage({ searchParams }: { searchParams: Promis
                   id: c.id,
                   name: c.name,
                   unmapped: isUnmapped(c),
+                  type: c.type,
                 }))}
                 topIds={topCategoryIds}
               />

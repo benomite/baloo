@@ -29,6 +29,7 @@ vi.mock('next/navigation', () => ({
 const CATEGORIES: Category[] = [
   { id: 'cat-1', name: 'Camp', type: 'depense', comptaweb_nature: 'Camp', comptaweb_id: 1 },
   { id: 'cat-2', name: 'Réunions', type: 'depense', comptaweb_nature: 'Réunions', comptaweb_id: 2 },
+  { id: 'cat-3', name: 'Cotisations', type: 'recette', comptaweb_nature: 'Cotisations', comptaweb_id: 3 },
 ];
 const UNITES: Unite[] = [
   { id: 'uni-1', code: 'LJ', name: 'Louveteaux-Jeannettes', couleur: null, branche: null, comptaweb_id: 1 },
@@ -113,5 +114,26 @@ describe('NouvelleEcritureWizard — répéteur de ventilations', () => {
     expect(screen.queryByText('Ventilation 2')).toBeNull();
     expect(screen.queryByText('Supprimer')).toBeNull();
     expect(screen.getByTestId('cw-assist-copy')).toBeTruthy();
+  });
+
+  it('filtre les catégories du CategoryPicker selon le sens (dépense/recette) réactif au champ type', async () => {
+    // Le champ #type est aujourd'hui non-contrôlé — ce test prouve que le
+    // sens transmis au CategoryPicker réagit bien à son onChange (state
+    // React), sans casser le FormData (name="type" inchangé).
+    renderWizard();
+
+    // Par défaut : type = dépense. La catégorie recette pure (Cotisations)
+    // ne doit pas être proposée, les catégories dépense (Camp) si.
+    await userEvent.click(screen.getByLabelText('Catégorie', { exact: false }));
+    expect(await screen.findByText('Camp')).toBeTruthy();
+    expect(screen.queryByText('Cotisations')).toBeNull();
+    await userEvent.keyboard('{Escape}');
+
+    // Bascule le type en recette.
+    await userEvent.selectOptions(screen.getByLabelText('Type', { exact: false }), 'recette');
+
+    await userEvent.click(screen.getByLabelText('Catégorie', { exact: false }));
+    expect(await screen.findByText('Cotisations')).toBeTruthy();
+    expect(screen.queryByText('Camp')).toBeNull();
   });
 });

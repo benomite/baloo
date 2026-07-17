@@ -449,7 +449,7 @@ function DepotRow({
                 <CategoryPicker
                   id={`edit-cat-${depot.id}`}
                   name="category_id"
-                  categories={editCategories.map((c) => ({ id: c.id, name: c.name, unmapped: isUnmapped(c) }))}
+                  categories={editCategories.map((c) => ({ id: c.id, name: c.name, unmapped: isUnmapped(c), type: c.type }))}
                   topIds={topCategoryIds}
                   defaultValue={depot.category_id}
                 />

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, type Dispatch, type SetStateAction } from 'react';
+import { useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { Lock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -67,6 +67,13 @@ export function EcritureFormFields({
   const amountStr = ecriture
     ? `${Math.floor(ecriture.amount_cents / 100)},${String(ecriture.amount_cents % 100).padStart(2, '0')}`
     : '';
+  // Sens réactif : le champ #type reste non-contrôlé côté FormData
+  // (`name="type"` + `defaultValue`, inchangé pour ne pas perturber le
+  // mapping FormData → patch), mais on lève un state juste pour filtrer
+  // le CategoryPicker en direct quand le trésorier bascule dépense/recette.
+  const [sens, setSens] = useState<'depense' | 'recette'>(
+    ecriture?.type === 'recette' ? 'recette' : 'depense',
+  );
   // Lock sync : écriture déjà dans CW (mirror) ou en écart détecté
   // (divergent). Dans les deux cas, on ne touche pas aux champs sync
   // localement — la réconciliation passe par CW.
@@ -136,6 +143,7 @@ export function EcritureFormFields({
               id="type"
               name="type"
               defaultValue={ecriture?.type ?? 'depense'}
+              onChange={(e) => setSens(e.target.value === 'recette' ? 'recette' : 'depense')}
               disabled={locked}
             >
               <option value="depense">Dépense</option>
@@ -222,10 +230,12 @@ export function EcritureFormFields({
                       id: c.id,
                       name: c.name,
                       unmapped: isUnmapped(c),
+                      type: c.type,
                     }))}
                     topIds={topCategoryIds}
                     defaultValue={row.category_id ?? ''}
                     onChange={(value) => updateVentRow(row.id, { category_id: value || null })}
+                    sens={sens}
                   />
                 </Field>
               </div>
