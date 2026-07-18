@@ -71,4 +71,26 @@ describe('Combobox', () => {
     expect(await screen.findByText('Fréquentes')).toBeInTheDocument();
     expect(screen.getByText('Toutes')).toBeInTheDocument();
   });
+
+  it('renderTrigger : utilise le déclencheur custom (puce inline) et ouvre le popover', async () => {
+    const onChange = vi.fn();
+    render(
+      <Combobox
+        items={ITEMS}
+        value=""
+        onValueChange={onChange}
+        searchPlaceholder="Rechercher"
+        ariaLabel="cat"
+        renderTrigger={<span>+ Catégorie</span>}
+      />,
+    );
+    // Le déclencheur affiche le nœud custom, pas la valeur/placeholder par défaut.
+    const trigger = screen.getByRole('combobox');
+    expect(trigger).toHaveTextContent('+ Catégorie');
+    await userEvent.click(trigger);
+    const search = await screen.findByPlaceholderText('Rechercher');
+    await userEvent.type(search, 'char');
+    await userEvent.click(await screen.findByText('Charlie'));
+    expect(onChange).toHaveBeenCalledWith('c');
+  });
 });

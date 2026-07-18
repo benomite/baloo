@@ -27,6 +27,11 @@ export interface ComboboxProps {
   ariaLabel?: string
   /** Classes du déclencheur. */
   className?: string
+  /** Déclencheur custom (ex. puce inline). Quand fourni, remplace le
+   *  déclencheur « champ » par défaut (bordure/h-10/chevron) : le nœud est
+   *  rendu tel quel dans le bouton d'ouverture, à la charge de l'appelant
+   *  de le styler. */
+  renderTrigger?: React.ReactNode
 }
 
 interface ComboboxGroupShape {
@@ -79,6 +84,7 @@ export function Combobox({
   id,
   ariaLabel,
   className,
+  renderTrigger,
 }: ComboboxProps) {
   const groups = React.useMemo(() => toGroups(items), [items])
 
@@ -89,28 +95,45 @@ export function Combobox({
       onValueChange={(next) => onValueChange((next as string | null) ?? "")}
       disabled={disabled}
     >
-      <ComboboxPrimitive.Trigger
-        id={id}
-        aria-label={ariaLabel}
-        disabled={disabled}
-        className={cn(
-          "flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-bg-elevated py-2 pr-2.5 pl-3 text-base sm:text-[13.5px] whitespace-nowrap transition-colors outline-none select-none cursor-pointer",
-          "hover:border-border-strong",
-          "focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20",
-          "disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-muted",
-          "data-placeholder:text-fg-subtle",
-          className
-        )}
-      >
-        <span className="flex-1 truncate text-left">
-          <ComboboxPrimitive.Value placeholder={placeholder} />
-        </span>
-        <ComboboxPrimitive.Icon
-          render={
-            <ChevronsUpDownIcon className="pointer-events-none size-4 shrink-0 text-muted-foreground" />
-          }
-        />
-      </ComboboxPrimitive.Trigger>
+      {renderTrigger ? (
+        <ComboboxPrimitive.Trigger
+          id={id}
+          aria-label={ariaLabel}
+          disabled={disabled}
+          className={cn(
+            "inline-flex max-w-full min-w-0 items-center rounded outline-none -mx-1 px-1 text-left",
+            "focus-visible:ring-2 focus-visible:ring-brand/20",
+            "disabled:cursor-not-allowed",
+            "not-disabled:cursor-pointer",
+            className
+          )}
+        >
+          {renderTrigger}
+        </ComboboxPrimitive.Trigger>
+      ) : (
+        <ComboboxPrimitive.Trigger
+          id={id}
+          aria-label={ariaLabel}
+          disabled={disabled}
+          className={cn(
+            "flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-bg-elevated py-2 pr-2.5 pl-3 text-base sm:text-[13.5px] whitespace-nowrap transition-colors outline-none select-none cursor-pointer",
+            "hover:border-border-strong",
+            "focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20",
+            "disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-muted",
+            "data-placeholder:text-fg-subtle",
+            className
+          )}
+        >
+          <span className="flex-1 truncate text-left">
+            <ComboboxPrimitive.Value placeholder={placeholder} />
+          </span>
+          <ComboboxPrimitive.Icon
+            render={
+              <ChevronsUpDownIcon className="pointer-events-none size-4 shrink-0 text-muted-foreground" />
+            }
+          />
+        </ComboboxPrimitive.Trigger>
+      )}
       <ComboboxPrimitive.Portal>
         <ComboboxPrimitive.Positioner sideOffset={4} className="isolate z-50 outline-none">
           <ComboboxPrimitive.Popup className="isolate z-50 max-h-(--available-height) w-(--anchor-width) min-w-48 origin-(--transform-origin) overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg shadow-fg/[0.06]">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Combobox, type ComboboxItem } from '@/components/ui/combobox';
 
 // Sélecteur de catégorie en combobox recherchable (Base UI via le
@@ -37,6 +37,7 @@ export function CategoryPicker({
   onChange,
   sens,
   ariaLabel,
+  renderTrigger,
 }: {
   categories: CategoryOption[];
   topIds: string[];
@@ -61,6 +62,11 @@ export function CategoryPicker({
    *  htmlFor={id}>` du Field porte le nom (ex. « Catégorie ligne 1 »), sans
    *  être écrasée par un aria-label générique. */
   ariaLabel?: string;
+  /** Déclencheur custom (puce inline sur une ligne d'écriture). Quand fourni,
+   *  le picker s'affiche en puce au lieu du champ pleine largeur. La sélection
+   *  reste pilotée par `onChange` (les usages inline persistent via une action
+   *  serveur, pas via FormData). */
+  renderTrigger?: ReactNode;
 }) {
   const [value, setValueState] = useState<string>(defaultValue ?? '');
   const setValue = (v: string) => {
@@ -95,6 +101,7 @@ export function CategoryPicker({
       <Combobox
         id={id}
         ariaLabel={ariaLabel}
+        renderTrigger={renderTrigger}
         items={items}
         value={value}
         onValueChange={setValue}

@@ -5,6 +5,8 @@ import { Landmark, Layers, Tag, Activity, Wallet, Paperclip, Loader2, Pencil } f
 import { UniteBadge } from '@/components/shared/unite-badge';
 import { InlineSelect } from '@/components/shared/inline-select';
 import { InlineText } from '@/components/shared/inline-text';
+import { CategoryPicker } from '@/components/shared/category-picker';
+import { toast } from 'sonner';
 import { Amount } from '@/components/shared/amount';
 import { BatchEditBar } from './batch-edit-bar';
 import { updateEcritureField } from '@/lib/actions/ecritures';
@@ -525,12 +527,23 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                           <span className="truncate max-w-[160px]">Catégories multiples</span>
                         </span>
                       ) : (
-                        <InlineSelect
-                          value={e.category_id}
+                        <CategoryPicker
+                          key={`row-cat-${e.id}-${e.category_id ?? 'none'}`}
+                          id={`row-cat-${e.id}`}
+                          name={`row-cat-${e.id}`}
+                          categories={categories.map((c) => ({ id: c.id, name: c.name, type: c.type, unmapped: c.comptaweb_id == null }))}
+                          topIds={topCategoryIds}
+                          sens={e.type}
+                          defaultValue={e.category_id ?? ''}
                           disabled={!editable}
-                          placeholder="Aucune"
-                          options={categories.map((c) => ({ value: c.id, label: c.name }))}
-                          display={
+                          onChange={(v) => {
+                            void (async () => {
+                              const r = await updateEcritureField(e.id, 'category_id', v || null);
+                              if (r.ok) void refreshRow(e.id);
+                              else toast.error(r.message ?? 'Mise à jour refusée');
+                            })();
+                          }}
+                          renderTrigger={
                             e.category_name ? (
                               <span className="inline-flex items-center gap-1 text-fg-muted min-w-0">
                                 <Tag size={11} className="shrink-0 text-fg-subtle" />
@@ -542,11 +555,6 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                               </span>
                             )
                           }
-                          onSave={async (v) => {
-                            const r = await updateEcritureField(e.id, 'category_id', v);
-                            if (r.ok) void refreshRow(e.id);
-                            return r;
-                          }}
                         />
                       )}
                       <InlineSelect

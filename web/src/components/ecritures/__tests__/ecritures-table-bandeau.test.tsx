@@ -14,8 +14,10 @@
 // importent des dépendances serveur (`@/lib/actions/*`, `@/lib/db`) — ils ne
 // rendent de toute façon rien sur une ligne repliée non sélectionnée.
 
+import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 vi.mock('@/lib/actions/ecritures', () => ({
   updateEcritureField: vi.fn(async () => ({ ok: true })),
@@ -128,6 +130,19 @@ describe('EcrituresTable — bandeau replié 2 lignes', () => {
     // Les chips de gauche gardent bien unité / catégorie / activité.
     expect(within(chips).queryByText('Cotisations')).not.toBeNull();
     expect(within(chips).queryByText('Week-end')).not.toBeNull();
+  });
+
+  it('(a bis) la catégorie inline (accès rapide) est un combobox recherchable, pas un select à plat', async () => {
+    renderTable([makeEcriture({ category_id: null, category_name: null })]);
+    const chips = screen.getByTestId('row-chips-ec-1');
+    // « + Catégorie » est le déclencheur d'un combobox (rôle combobox), unique
+    // dans les chips (unité/activité restent des boutons InlineSelect).
+    const trigger = within(chips).getByRole('combobox');
+    expect(trigger).toHaveTextContent('+ Catégorie');
+    await userEvent.click(trigger);
+    // Popover recherchable : champ de recherche + options catégorie filtrables.
+    expect(await screen.findByPlaceholderText(/Rechercher une catégorie/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Dons/)).toBeInTheDocument();
   });
 
   it('(b) une ventilation (ventil ≥ 2) est consolidée en UNE ligne : un seul « Catégories multiples », le total du groupe, un seul Valider', () => {
