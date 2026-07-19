@@ -3,6 +3,7 @@ import { currentTimestamp, uniqueId } from '../ids';
 import { loadUserUniteIds, setUserUnites } from '../auth/user-unites';
 import { sendInvitationEmail } from '../email/invitation';
 import { generateInviteLink, buildInviteUrl } from '../auth/invite-links';
+import { callbackUrlForRole } from './remboursements-a-valider';
 
 // Service d'invitation par email (chantier 0.2, ADR-020).
 //
@@ -122,11 +123,12 @@ export async function createInvitation(
     await setUserUnites(db, userId, uniteIds);
   }
 
-  // Génère le lien d'auto-connexion vers le formulaire de remboursement.
+  // Génère le lien d'auto-connexion. Un RG atterrit sur sa file de
+  // validation, les autres rôles sur le formulaire de saisie.
   const { rawToken } = await generateInviteLink(db, {
     userId,
     groupId,
-    callbackUrl: '/remboursements/nouveau',
+    callbackUrl: callbackUrlForRole(effectiveRole),
     createdBy: inviterUserId,
   });
   const inviteUrl = buildInviteUrl(input.app_url, rawToken);
@@ -247,7 +249,7 @@ export async function resendInvitation(
   const { rawToken } = await generateInviteLink(db, {
     userId,
     groupId,
-    callbackUrl: '/remboursements/nouveau',
+    callbackUrl: callbackUrlForRole(user.role),
     createdBy: null,
   });
   await sendInvitationEmail({

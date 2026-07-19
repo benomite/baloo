@@ -12,6 +12,7 @@ import { listRemboursements } from '@/lib/queries/remboursements';
 import { getDb } from '@/lib/db';
 import { getCurrentContext } from '@/lib/context';
 import { requireCanSubmit } from '@/lib/auth/access';
+import { statutAValiderPourRole } from '@/lib/services/remboursements-a-valider';
 
 const ADMIN_ROLES = ['tresorier', 'RG'];
 
@@ -23,14 +24,23 @@ export default async function RemboursementsPage({
   const [ctx, params] = await Promise.all([getCurrentContext(), searchParams]);
   requireCanSubmit(ctx.role);
   const isAdmin = ADMIN_ROLES.includes(ctx.role);
-  const unlinkedFilter = params.unlinked === '1';
 
-  // Compteur "à rattacher" affiché sur le tab pour donner la visibilité
-  // sans devoir cliquer (utile pour le trésorier qui voit l'app
-  // chaque jour). Visible aux admins seulement.
-  const [remboursements, unlinkedCountRow] = await Promise.all([
+  // Onglet « À valider » contextuel au rôle : le trésorier voit ce qu'il
+  // doit valider en premier (a_traiter), le RG ce qu'il doit contresigner
+  // (valide_tresorier). Les rôles qui ne valident rien → pas d'onglet.
+  const validateStatus = statutAValiderPourRole(ctx.role);
+  const showValidateTab = validateStatus !== null;
+  const isValidateTab = showValidateTab && params.tab === 'a-valider';
+  const unlinkedFilter = !isValidateTab && params.unlinked === '1';
+  const statusFilter = isValidateTab ? validateStatus : params.status || undefined;
+
+  // Compteurs affichés sur les tabs pour donner la visibilité sans devoir
+  // cliquer (utile pour le trésorier qui voit l'app chaque jour). Visibles
+  // aux admins seulement. Le scope tresorier/RG = tout le groupe, donc un
+  // COUNT direct par group_id suffit (pas de restriction d'unité).
+  const [remboursements, unlinkedCountRow, validateCountRow] = await Promise.all([
     listRemboursements({
-      status: params.status || undefined,
+      status: statusFilter,
       unite_id: params.unite_id || undefined,
       search: params.search || undefined,
       unlinkedOnly: unlinkedFilter,
@@ -44,8 +54,17 @@ export default async function RemboursementsPage({
           )
           .get<{ n: number }>(ctx.groupId)
       : Promise.resolve(null),
+    showValidateTab
+      ? getDb()
+          .prepare(
+            `SELECT COUNT(*) AS n FROM remboursements
+             WHERE group_id = ? AND status = ?`,
+          )
+          .get<{ n: number }>(ctx.groupId, validateStatus)
+      : Promise.resolve(null),
   ]);
   const unlinkedCount = unlinkedCountRow?.n ?? 0;
+  const validateCount = validateCountRow?.n ?? 0;
 
   return (
     <div>
@@ -65,9 +84,21 @@ export default async function RemboursementsPage({
 
       {isAdmin && (
         <div className="mb-4 flex flex-wrap gap-6 border-b">
-          <TabLink href="/remboursements" active={!unlinkedFilter}>
+          <TabLink href="/remboursements" active={!unlinkedFilter && !isValidateTab}>
             Toutes
           </TabLink>
+          {showValidateTab && (
+            <TabLink href="/remboursements?tab=a-valider" active={isValidateTab}>
+              <span className="inline-flex items-center gap-1.5">
+                À valider
+                {validateCount > 0 && (
+                  <span className="inline-flex items-center justify-center rounded-full bg-brand/10 text-brand dark:bg-brand/20 text-[10.5px] font-semibold px-1.5 min-w-[18px] h-[18px]">
+                    {validateCount}
+                  </span>
+                )}
+              </span>
+            </TabLink>
+          )}
           <TabLink href="/remboursements?unlinked=1" active={unlinkedFilter}>
             <span className="inline-flex items-center gap-1.5">
               À rattacher
@@ -82,7 +113,13 @@ export default async function RemboursementsPage({
       )}
 
       {remboursements.length === 0 ? (
-        unlinkedFilter ? (
+        isValidateTab ? (
+          <EmptyState
+            emoji="✅"
+            title="Rien à valider"
+            description="Aucune demande n'attend ta validation pour le moment."
+          />
+        ) : unlinkedFilter ? (
           <EmptyState
             emoji="🎯"
             title="Tout est rattaché"
