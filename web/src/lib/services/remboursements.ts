@@ -219,6 +219,89 @@ export async function deleteLigne(ligneId: string): Promise<void> {
   await recalcTotal(ligne.remboursement_id);
 }
 
+export interface ReconcileLigneInput {
+  // id d'une ligne existante à conserver/mettre à jour, ou null pour une
+  // nouvelle ligne.
+  id: string | null;
+  date_depense: string;
+  amount_cents: number;
+  nature: string;
+  notes?: string | null;
+  type?: 'depense' | 'km';
+  distance_km_dixiemes?: number | null;
+  taux_km_millicents?: number | null;
+}
+
+// Réconcilie les lignes d'une demande SANS DELETE en masse : les lignes
+// dont l'id est conservé sont mises à jour en place (leurs rattachements
+// justif survivent), les nouvelles sont insérées, et seules les lignes
+// retirées par l'utilisateur sont supprimées (avec leurs paires de
+// liaison justif). Remplace l'ancien DELETE-tout-puis-réinsère qui
+// régénérait les id à chaque édition et cassait les rattachements.
+export async function reconcileLignes(
+  remboursementId: string,
+  lignes: ReconcileLigneInput[],
+): Promise<void> {
+  const db = getDb();
+
+  const existing = await db
+    .prepare('SELECT id FROM remboursement_lignes WHERE remboursement_id = ?')
+    .all<{ id: string }>(remboursementId);
+  const existingIds = new Set(existing.map((r) => r.id));
+
+  const keptIds = new Set(
+    lignes.map((l) => l.id).filter((id): id is string => !!id && existingIds.has(id)),
+  );
+
+  // 1. Supprimer les lignes retirées + leurs paires justif.
+  for (const { id } of existing) {
+    if (keptIds.has(id)) continue;
+    await db.prepare('DELETE FROM remboursement_ligne_justificatifs WHERE ligne_id = ?').run(id);
+    await db.prepare('DELETE FROM remboursement_lignes WHERE id = ?').run(id);
+  }
+
+  // 2. UPDATE les conservées, INSERT les nouvelles.
+  const now = currentTimestamp();
+  for (const l of lignes) {
+    if (l.id && existingIds.has(l.id)) {
+      await db.prepare(
+        `UPDATE remboursement_lignes
+         SET date_depense = ?, amount_cents = ?, nature = ?, notes = ?,
+             type = ?, distance_km_dixiemes = ?, taux_km_millicents = ?
+         WHERE id = ?`,
+      ).run(
+        l.date_depense,
+        l.amount_cents,
+        l.nature,
+        nullIfEmpty(l.notes),
+        l.type ?? 'depense',
+        l.distance_km_dixiemes ?? null,
+        l.taux_km_millicents ?? null,
+        l.id,
+      );
+    } else {
+      await db.prepare(
+        `INSERT INTO remboursement_lignes
+           (id, remboursement_id, date_depense, amount_cents, nature, notes, type, distance_km_dixiemes, taux_km_millicents, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        randomUUID(),
+        remboursementId,
+        l.date_depense,
+        l.amount_cents,
+        l.nature,
+        nullIfEmpty(l.notes),
+        l.type ?? 'depense',
+        l.distance_km_dixiemes ?? null,
+        l.taux_km_millicents ?? null,
+        now,
+      );
+    }
+  }
+
+  await recalcTotal(remboursementId);
+}
+
 // Calcule un hash SHA-256 canonique des données métier d'une demande
 // (signature électronique : si une ligne ou un champ est modifié après
 // signature, le hash recalculé ne matchera plus celui stocké).
