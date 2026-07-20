@@ -266,7 +266,7 @@ export async function reconcileLignes(
     if (l.id && existingIds.has(l.id)) {
       await db.prepare(
         `UPDATE remboursement_lignes
-         SET date_depense = ?, amount_cents = ?, nature = ?, notes = ?,
+         SET date_depense = ?, amount_cents = ?, nature = ?, notes = COALESCE(?, notes),
              type = ?, distance_km_dixiemes = ?, taux_km_millicents = ?
          WHERE id = ?`,
       ).run(

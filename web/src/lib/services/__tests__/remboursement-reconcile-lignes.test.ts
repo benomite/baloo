@@ -101,4 +101,15 @@ describe('reconcileLignes', () => {
     const lignes = await listLignes('RBT-1');
     expect(lignes.map((l) => l.id)).toEqual(['NEW-1']);
   });
+
+  it('préserve les notes existantes d\'une ligne conservée quand l\'input ne les fournit pas', async () => {
+    await testDb.prepare("UPDATE remboursement_lignes SET notes = 'note initiale' WHERE id = 'L1'").run();
+    await reconcileLignes('RBT-1', [
+      { id: 'L1', date_depense: '2026-06-01', amount_cents: 1500, nature: 'A modifié' },
+      { id: 'L2', date_depense: '2026-06-02', amount_cents: 2000, nature: 'B' },
+    ]);
+    const lignes = await listLignes('RBT-1');
+    const l1 = lignes.find((l) => l.id === 'L1')!;
+    expect(l1.notes).toBe('note initiale');
+  });
 });
