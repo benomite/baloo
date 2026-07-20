@@ -49,8 +49,8 @@ describe('resolveLignesWithRate', () => {
   it('calcule le montant des lignes km au taux fourni et fige le taux', () => {
     const resolved = resolveLignesWithRate(
       [
-        { type: 'depense', date: '2026-05-09', nature: 'Courses', amount_cents: 3704, distance_km_dixiemes: null },
-        { type: 'km', date: '2026-05-09', nature: 'Trajet', amount_cents: 0, distance_km_dixiemes: 1200 },
+        { id: null, type: 'depense', date: '2026-05-09', nature: 'Courses', amount_cents: 3704, distance_km_dixiemes: null },
+        { id: null, type: 'km', date: '2026-05-09', nature: 'Trajet', amount_cents: 0, distance_km_dixiemes: 1200 },
       ],
       354,
     );

@@ -103,6 +103,7 @@ export function parseIdentiteFromForm(
 }
 
 export interface LigneInput {
+  id: string | null;               // id d'une ligne existante (édition) ou null
   type: 'depense' | 'km';
   date: string;
   nature: string;
@@ -138,6 +139,8 @@ export function parseLignesFromForm(
 
   const lignes: LigneInput[] = [];
   for (let i = 0; i < ligneCount; i++) {
+    const idRaw = ((formData.get(`ligne_${i}_id`) as string | null) ?? '').trim();
+    const id = idRaw || null;
     const type = ((formData.get(`ligne_${i}_type`) as string | null) ?? 'depense') === 'km' ? 'km' : 'depense';
     const date = (formData.get(`ligne_${i}_date`) as string | null) ?? '';
     const nature = ((formData.get(`ligne_${i}_nature`) as string | null) ?? '').trim();
@@ -153,7 +156,7 @@ export function parseLignesFromForm(
         fail(`Ligne ${i + 1} : distance invalide « ${kmRaw} ».`);
         return null as never;
       }
-      lignes.push({ type: 'km', date, nature, amount_cents: 0, distance_km_dixiemes });
+      lignes.push({ id, type: 'km', date, nature, amount_cents: 0, distance_km_dixiemes });
     } else {
       const montantRaw = ((formData.get(`ligne_${i}_montant`) as string | null) ?? '').trim();
       if (!montantRaw) fail(`Ligne ${i + 1} incomplète.`);
@@ -164,13 +167,14 @@ export function parseLignesFromForm(
         fail(`Ligne ${i + 1} : montant invalide « ${montantRaw} ».`);
         return null as never;
       }
-      lignes.push({ type: 'depense', date, nature, amount_cents, distance_km_dixiemes: null });
+      lignes.push({ id, type: 'depense', date, nature, amount_cents, distance_km_dixiemes: null });
     }
   }
   return lignes;
 }
 
 export interface ResolvedLigne {
+  id: string | null;
   type: 'depense' | 'km';
   date: string;
   nature: string;
@@ -188,6 +192,7 @@ export function resolveLignesWithRate(
   return lignes.map((l) =>
     l.type === 'km'
       ? {
+          id: l.id,
           type: 'km' as const,
           date: l.date,
           nature: l.nature,
@@ -196,6 +201,7 @@ export function resolveLignesWithRate(
           taux_km_millicents: tauxKmMillicents,
         }
       : {
+          id: l.id,
           type: 'depense' as const,
           date: l.date,
           nature: l.nature,

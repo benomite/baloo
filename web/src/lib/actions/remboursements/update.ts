@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { getCurrentContext } from '../../context';
 import { resolveScopedUnite } from '../../scope';
 import { getDb } from '../../db';
-import { getRemboursement, addLigne } from '../../services/remboursements';
+import { getRemboursement, reconcileLignes } from '../../services/remboursements';
 import { attachJustificatif } from '../../services/justificatifs';
 import { getGroupe } from '../../services/groupes';
 import { signAndRefreshRemboursementPdf } from '../../services/remboursement-signing';
@@ -99,17 +99,15 @@ async function updateMyRemboursementBody(id: string, formData: FormData): Promis
     ctx.groupId,
   );
 
-  await getDb().prepare('DELETE FROM remboursement_lignes WHERE remboursement_id = ?').run(id);
-  for (const l of resolvedLignes) {
-    await addLigne(id, {
-      date_depense: l.date,
-      amount_cents: l.amount_cents,
-      nature: l.nature,
-      type: l.type,
-      distance_km_dixiemes: l.distance_km_dixiemes,
-      taux_km_millicents: l.taux_km_millicents,
-    });
-  }
+  await reconcileLignes(id, resolvedLignes.map((l) => ({
+    id: l.id,
+    date_depense: l.date,
+    amount_cents: l.amount_cents,
+    nature: l.nature,
+    type: l.type,
+    distance_km_dixiemes: l.distance_km_dixiemes,
+    taux_km_millicents: l.taux_km_millicents,
+  })));
 
   for (const file of newJustifs) {
     try {
