@@ -22,19 +22,21 @@ import { Amount } from '@/components/shared/amount';
 import { Field } from '@/components/shared/field';
 import { Section } from '@/components/shared/section';
 import { EcritureLinkCard } from '@/components/rembs/ecriture-link-card';
+import { DetailDepensesTable } from '@/components/rembs/detail-depenses-table';
 import { getRemboursement } from '@/lib/queries/remboursements';
 import { listLignes } from '@/lib/services/remboursements';
+import { listAssignationsLignes, computeCouverture } from '@/lib/services/remboursement-justifs';
 import { listSignatures, verifyChain } from '@/lib/services/signatures';
 import { listJustificatifs } from '@/lib/queries/justificatifs';
 import {
   patchNotesAndRib,
   updateRemboursementStatus,
+  assignJustifToLignes,
 } from '@/lib/actions/remboursements';
 import { convertRembToDepot } from '@/lib/actions/remboursements/convert';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
 import { getCurrentContext } from '@/lib/context';
 import { cn } from '@/lib/utils';
-import { formatKmRate, formatDistance } from '@/lib/services/km';
 
 interface SearchParams {
   error?: string;
@@ -67,7 +69,7 @@ export default async function RemboursementDetailPage({
 }) {
   const { id } = await params;
 
-  const [sp, ctx, r, lignes, justificatifs, feuilles, ribFiles, signatures, chain] =
+  const [sp, ctx, r, lignes, justificatifs, feuilles, ribFiles, signatures, chain, assignations] =
     await Promise.all([
       searchParams,
       getCurrentContext(),
@@ -78,8 +80,25 @@ export default async function RemboursementDetailPage({
       listJustificatifs('remboursement_rib', id),
       listSignatures('remboursement', id),
       verifyChain('remboursement', id),
+      listAssignationsLignes(id),
     ]);
   if (!r) notFound();
+
+  // justif_id → ligne_ids et ligne_id → [justifs] (pour pastilles + cases).
+  const couverture = computeCouverture(lignes, assignations);
+  const justifsParLigne: Record<string, { id: string; original_filename: string; file_path: string }[]> = {};
+  const lignesParJustif: Record<string, Set<string>> = {};
+  for (const a of assignations) {
+    const j = justificatifs.find((x) => x.id === a.justificatif_id);
+    if (j) {
+      (justifsParLigne[a.ligne_id] ??= []).push({
+        id: j.id,
+        original_filename: j.original_filename,
+        file_path: j.file_path,
+      });
+    }
+    (lignesParJustif[a.justificatif_id] ??= new Set()).add(a.ligne_id);
+  }
 
   const currentIdx = stepIndex(r.status);
   // Rôles ayant effectivement signé : sert à distinguer une étape de
@@ -189,6 +208,11 @@ export default async function RemboursementDetailPage({
 
           <Section
             title={`Détail des dépenses (${lignes.length})`}
+            subtitle={
+              lignes.length > 0
+                ? `${couverture.justifiees}/${couverture.total} détail${couverture.total > 1 ? 's' : ''} justifié${couverture.justifiees > 1 ? 's' : ''}`
+                : undefined
+            }
             action={
               <div className="text-right">
                 <div className="text-overline text-fg-subtle">Total</div>
@@ -198,38 +222,7 @@ export default async function RemboursementDetailPage({
               </div>
             }
           >
-            <div className="overflow-x-auto -mx-2">
-              <table className="w-full text-[13px]">
-                <thead>
-                  <tr className="border-b border-border-soft text-[11px] uppercase tracking-wide text-fg-subtle">
-                    <th className="py-2 px-2 text-left font-medium">Date</th>
-                    <th className="py-2 px-2 text-left font-medium">Nature</th>
-                    <th className="py-2 px-2 text-right font-medium">Montant</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lignes.map((l) => (
-                    <tr
-                      key={l.id}
-                      className="border-b border-border-soft last:border-b-0"
-                    >
-                      <td className="py-2 px-2 text-fg tabular-nums">{l.date_depense}</td>
-                      <td className="py-2 px-2 text-fg">
-                        {l.nature}
-                        {l.type === 'km' && l.distance_km_dixiemes != null && l.taux_km_millicents != null && (
-                          <span className="block text-[11.5px] text-fg-subtle tabular-nums">
-                            {formatDistance(l.distance_km_dixiemes)} × {formatKmRate(l.taux_km_millicents)}/km
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2 px-2 text-right font-medium">
-                        <Amount cents={l.amount_cents} tone="negative" />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DetailDepensesTable lignes={lignes} justifsParLigne={justifsParLigne} />
           </Section>
 
           <Section
@@ -356,13 +349,40 @@ export default async function RemboursementDetailPage({
                       rel="noopener"
                       className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-fg hover:bg-brand-50 hover:text-brand transition-colors"
                     >
-                      <Paperclip
-                        size={13}
-                        className="shrink-0 text-fg-subtle"
-                        strokeWidth={1.75}
-                      />
+                      <Paperclip size={13} className="shrink-0 text-fg-subtle" strokeWidth={1.75} />
                       <span className="truncate">{j.original_filename}</span>
                     </a>
+                    {isAdmin && lignes.length > 0 && (
+                      <details className="ml-6 mt-0.5">
+                        <summary className="cursor-pointer text-[11.5px] text-fg-subtle hover:text-fg-muted transition-colors">
+                          Rattacher à des lignes ({(lignesParJustif[j.id]?.size ?? 0)})
+                        </summary>
+                        <form
+                          action={assignJustifToLignes.bind(null, id, j.id)}
+                          className="mt-1.5 space-y-1.5 rounded-md border border-border-soft bg-bg-sunken/40 px-2.5 py-2"
+                        >
+                          {lignes.map((l) => (
+                            <label key={l.id} className="flex items-start gap-2 text-[12px] text-fg cursor-pointer">
+                              <input
+                                type="checkbox"
+                                name="ligne_ids"
+                                value={l.id}
+                                defaultChecked={lignesParJustif[j.id]?.has(l.id) ?? false}
+                                className="mt-0.5 h-3.5 w-3.5 rounded border-border-strong text-brand focus-visible:ring-2 focus-visible:ring-brand/30"
+                              />
+                              <span className="tabular-nums">
+                                {l.date_depense} · {l.nature} · {(l.amount_cents / 100).toFixed(2).replace('.', ',')} €
+                              </span>
+                            </label>
+                          ))}
+                          <div className="flex justify-end pt-1">
+                            <PendingButton variant="outline" size="sm">
+                              Enregistrer
+                            </PendingButton>
+                          </div>
+                        </form>
+                      </details>
+                    )}
                   </li>
                 ))}
               </ul>
