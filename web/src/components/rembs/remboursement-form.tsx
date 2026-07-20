@@ -31,6 +31,7 @@ interface Identity {
 }
 
 interface InitialLigne {
+  id?: string;
   date_depense: string;
   amount_cents: number;
   nature: string;
@@ -66,6 +67,7 @@ interface Props {
 
 interface Ligne {
   key: number;
+  dbId: string | null;
   type: 'depense' | 'km';
   date: string;
   montant: string; // dépense
@@ -79,6 +81,7 @@ function newRow(today: string, init?: InitialLigne): Ligne {
     const type = init.type === 'km' ? 'km' : 'depense';
     return {
       key: ++_rowSeq,
+      dbId: init.id ?? null,
       type,
       date: init.date_depense,
       montant: type === 'depense' ? (init.amount_cents / 100).toFixed(2).replace('.', ',') : '',
@@ -88,7 +91,7 @@ function newRow(today: string, init?: InitialLigne): Ligne {
       nature: init.nature,
     };
   }
-  return { key: ++_rowSeq, type: 'depense', date: today, montant: '', km: '', nature: '' };
+  return { key: ++_rowSeq, dbId: null, type: 'depense', date: today, montant: '', km: '', nature: '' };
 }
 
 export function RemboursementForm({
@@ -145,6 +148,17 @@ export function RemboursementForm({
     setLignes((prev) => (prev.length === 1 ? prev : prev.filter((l) => l.key !== key)));
   };
 
+  // Affichage trié par date croissante (date vide → en dernier, pour ne
+  // pas faire sauter une ligne en cours de saisie). L'ordre d'index i des
+  // champs `ligne_{i}_*` = l'ordre de rendu ; `parseLignesFromForm` lit
+  // par index, donc trier la vue est sans impact sur la soumission.
+  const sortedLignes = [...lignes].sort((a, b) => {
+    const da = a.date || '￿';
+    const db = b.date || '￿';
+    if (da !== db) return da < db ? -1 : 1;
+    return a.key - b.key;
+  });
+
   return (
     <form action={formAction} encType="multipart/form-data" className="space-y-6">
       {introNode}
@@ -200,7 +214,7 @@ export function RemboursementForm({
       >
         <input type="hidden" name="ligne_count" value={lignes.length} />
         <div className="space-y-3">
-          {lignes.map((l, i) => {
+          {sortedLignes.map((l, i) => {
             // Mobile : chaque ligne = carte empilée verticalement, tous les
             // champs en pleine largeur avec leur label. Desktop (sm+) : grille
             // tabulaire à colonnes fixes, labels affichés UNIQUEMENT sur la
@@ -213,6 +227,7 @@ export function RemboursementForm({
               key={l.key}
               className="flex flex-col gap-3 rounded-xl border border-border p-3 sm:grid sm:grid-cols-[110px_100px_1fr_140px_auto] sm:items-end sm:gap-3 sm:rounded-none sm:border-0 sm:p-0"
             >
+              <input type="hidden" name={`ligne_${i}_id`} value={l.dbId ?? ''} />
               <Field label="Type" htmlFor={`ligne_${i}_type_sel`} className={hideLabelDesktop}>
                 <NativeSelect
                   id={`ligne_${i}_type_sel`}
