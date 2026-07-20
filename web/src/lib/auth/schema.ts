@@ -411,6 +411,22 @@ export async function ensureAuthSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_rbt_ligne_rbt ON remboursement_lignes(remboursement_id);
   `);
 
+  // Rattachement justif ↔ ligne de détail (spec 2026-07-20). Un justif
+  // (déposé sur la demande, entity_type='remboursement') peut couvrir
+  // plusieurs lignes ; une ligne peut avoir plusieurs justifs. Liaison
+  // plusieurs-à-plusieurs, sans CHECK. Les paires sont supprimées quand
+  // la ligne est retirée (réconciliation) ou réaffectées par le trésorier.
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS remboursement_ligne_justificatifs (
+      ligne_id        TEXT NOT NULL REFERENCES remboursement_lignes(id),
+      justificatif_id TEXT NOT NULL REFERENCES justificatifs(id),
+      created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      PRIMARY KEY (ligne_id, justificatif_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_rlj_ligne ON remboursement_ligne_justificatifs(ligne_id);
+    CREATE INDEX IF NOT EXISTS idx_rlj_justif ON remboursement_ligne_justificatifs(justificatif_id);
+  `);
+
   // Migration des anciennes demandes mono-ligne vers le modèle
   // multi-lignes : pour chaque rbt qui n'a aucune ligne, on crée une
   // ligne reprenant les anciens champs. Idempotent.
