@@ -1,17 +1,20 @@
 import Link from 'next/link';
 import { ArrowRight, Receipt, Unlink } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { NativeSelect } from '@/components/ui/native-select';
 import { PendingButton } from '@/components/shared/pending-button';
-import { Field } from '@/components/shared/field';
 import { Section } from '@/components/shared/section';
 import { Alert } from '@/components/ui/alert';
 import { Amount } from '@/components/shared/amount';
-import { findEcritureCandidatesForRembs } from '@/lib/services/remboursement-ecriture-link';
+import { formatAmount } from '@/lib/format';
+import { type ComboboxItem } from '@/components/ui/combobox';
+import {
+  findEcritureCandidatesForRembs,
+  getEcritureRembsCoverage,
+} from '@/lib/services/remboursement-ecriture-link';
 import {
   linkRemboursementToEcriture,
   unlinkRemboursementFromEcriture,
 } from '@/lib/actions/remboursements';
+import { EcritureLinkPicker } from './ecriture-link-picker';
 
 // Server component : affiché dans la sidebar de la page détail rembs.
 // Réservé aux admins (tresorier / RG).
@@ -39,10 +42,19 @@ export async function EcritureLinkCard({
   amountCents,
 }: EcritureLinkCardProps) {
   if (ecritureId) {
-    return <LinkedView rembsId={rembsId} ecritureId={ecritureId} amountCents={amountCents} />;
+    return <LinkedView rembsId={rembsId} ecritureId={ecritureId} amountCents={amountCents} groupId={groupId} />;
   }
 
   const candidates = await findEcritureCandidatesForRembs(groupId, rembsId);
+  const items: ComboboxItem[] = candidates.map((c) => {
+    const montant = (c.amount_cents / 100).toFixed(2).replace('.', ',');
+    const desc = c.description.length > 40 ? c.description.slice(0, 40) + '…' : c.description;
+    const dejaLie = c.linked_count > 0 ? ` · déjà ${c.linked_count} liée${c.linked_count > 1 ? 's' : ''}` : '';
+    return {
+      value: c.id,
+      label: `${c.date_ecriture} · ${montant} €${c.unite_code ? ` · ${c.unite_code}` : ''} · ${desc}${dejaLie}`,
+    };
+  });
 
   return (
     <Section
@@ -51,31 +63,15 @@ export async function EcritureLinkCard({
     >
       {candidates.length === 0 ? (
         <Alert variant="info" icon={Receipt}>
-          Aucune écriture trouvée avec ce montant exact dans une fenêtre de ±1 an.
-          Le virement n&apos;a peut-être pas encore été importé depuis Comptaweb.
+          Aucune écriture dépense trouvée dans une fenêtre de ±1 an. Le virement n&apos;a
+          peut-être pas encore été importé depuis Comptaweb.
         </Alert>
       ) : (
-        <form action={linkRemboursementToEcriture.bind(null, rembsId)} className="space-y-3">
-          <Field label="Écriture candidate" htmlFor={`ecriture-${rembsId}`}>
-            <NativeSelect id={`ecriture-${rembsId}`} name="ecriture_id" defaultValue="" required>
-              <option value="" disabled>
-                — Choisir une écriture —
-              </option>
-              {candidates.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.id} · {c.date_ecriture} · {(c.amount_cents / 100).toFixed(2).replace('.', ',')}
-                  {c.unite_code ? ` · ${c.unite_code}` : ''} ·{' '}
-                  {c.description.length > 50 ? c.description.slice(0, 50) + '…' : c.description}
-                </option>
-              ))}
-            </NativeSelect>
-          </Field>
-          <div className="flex justify-end">
-            <PendingButton size="sm" pendingLabel="Liaison…">
-              Lier à cette écriture
-            </PendingButton>
-          </div>
-        </form>
+        <EcritureLinkPicker
+          rembsId={rembsId}
+          items={items}
+          action={linkRemboursementToEcriture.bind(null, rembsId)}
+        />
       )}
     </Section>
   );
@@ -85,11 +81,14 @@ async function LinkedView({
   rembsId,
   ecritureId,
   amountCents,
+  groupId,
 }: {
   rembsId: string;
   ecritureId: string;
   amountCents: number;
+  groupId: string;
 }) {
+  const cov = await getEcritureRembsCoverage(groupId, ecritureId);
   return (
     <Section title="Écriture comptable liée">
       <Link
@@ -103,12 +102,23 @@ async function LinkedView({
             <Amount cents={amountCents} tone="negative" />
           </div>
         </div>
-        <ArrowRight
-          size={14}
-          strokeWidth={2}
-          className="text-fg-subtle group-hover:text-brand transition-colors"
-        />
+        <ArrowRight size={14} strokeWidth={2} className="text-fg-subtle group-hover:text-brand transition-colors" />
       </Link>
+
+      {cov.nbDemandes > 1 && (
+        <p className="mt-2 text-[12px] text-fg-muted">
+          Ce virement de {formatAmount(cov.montantVirementCents)} couvre {cov.nbDemandes} demandes ·{' '}
+          {formatAmount(cov.sommeDemandesCents)}
+          {!cov.depasse && cov.resteCents !== 0 && <> · reste {formatAmount(cov.resteCents)}</>}
+        </p>
+      )}
+      {cov.depasse && (
+        <Alert variant="warning" className="mt-2">
+          La somme des demandes liées ({formatAmount(cov.sommeDemandesCents)}) dépasse le virement
+          ({formatAmount(cov.montantVirementCents)}).
+        </Alert>
+      )}
+
       <form action={unlinkRemboursementFromEcriture.bind(null, rembsId)} className="pt-1">
         <PendingButton variant="ghost" size="sm" className="text-fg-muted hover:text-destructive">
           <Unlink size={13} strokeWidth={2} className="mr-1.5" />
