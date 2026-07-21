@@ -11,7 +11,7 @@ const ADMIN_ROLES = ['tresorier', 'RG'];
 // Lie une demande à une écriture comptable. Réservé aux admins.
 //
 // Signature `(rbtId, formData)` pour usage `<form action={...bind(null, id)}>`,
-// le sélecteur d'écriture est un `<select name="ecriture_id">`.
+// le sélecteur d'écriture (Combobox recherchable) poste `ecriture_id`.
 export async function linkRemboursementToEcriture(rbtId: string, formData: FormData): Promise<void> {
   const ctx = await getCurrentContext();
   if (!ADMIN_ROLES.includes(ctx.role)) {

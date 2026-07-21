@@ -62,9 +62,9 @@ export async function lierEcritureJustif(formData: FormData): Promise<void> {
 }
 
 // Lie une écriture de virement orpheline à son remboursement. Pose
-// `remboursements.ecriture_id` via le service partagé (garde-fous :
-// écriture introuvable / déjà liée à un autre rembt). Le lien logique
-// fait disparaître l'écriture des orphelines au rendu suivant.
+// `remboursements.ecriture_id` via le service partagé (garde-fou :
+// écriture introuvable). Le lien logique fait disparaître l'écriture des
+// orphelines au rendu suivant.
 export async function lierEcritureRemboursement(formData: FormData): Promise<void> {
   const ctx = await getCurrentContext();
   if (!isAdminRole(ctx.role)) {
