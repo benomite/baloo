@@ -30,7 +30,6 @@ export function EcritureLinkPicker({
           onValueChange={setValue}
           placeholder="— Choisir une écriture —"
           searchPlaceholder="Rechercher par date, montant, libellé…"
-          ariaLabel="Écriture à lier"
         />
       </Field>
       <div className="flex justify-end">

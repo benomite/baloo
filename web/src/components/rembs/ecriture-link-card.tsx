@@ -22,7 +22,7 @@ import { EcritureLinkPicker } from './ecriture-link-picker';
 // État :
 //   - rembs.ecriture_id défini → affiche l'écriture liée + bouton "Délier".
 //   - rembs.ecriture_id null   → présente le sélecteur des écritures
-//     candidates (montant exact, dépense, fenêtre date ±365j) +
+//     candidates (type dépense, fenêtre date ±365j, montant libre) +
 //     bouton "Lier".
 //
 // Si aucun candidat : message "aucune écriture ne matche, vérifie
