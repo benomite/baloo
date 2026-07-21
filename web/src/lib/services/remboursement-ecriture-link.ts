@@ -122,3 +122,49 @@ export async function setRembsEcritureLink(
 
   return { ok: true, previous: current.ecriture_id };
 }
+
+export interface RembsCoverage {
+  nbDemandes: number;
+  sommeDemandesCents: number;    // Σ |total demande| des demandes liées
+  montantVirementCents: number;  // |montant de l'écriture|
+  resteCents: number;            // montantVirement - sommeDemandes (peut être < 0)
+  depasse: boolean;              // sommeDemandes > montantVirement
+}
+
+// Pur : couverture d'un virement par les demandes qui lui sont liées.
+// Tout en valeur absolue (totaux demande positifs ; le signe éventuel de
+// l'écriture ne doit pas fausser le calcul).
+export function computeRembsCoverage(
+  montantVirementCents: number,
+  rembsTotalsCents: number[],
+): RembsCoverage {
+  const montant = Math.abs(montantVirementCents);
+  const somme = rembsTotalsCents.reduce((s, t) => s + Math.abs(t), 0);
+  return {
+    nbDemandes: rembsTotalsCents.length,
+    sommeDemandesCents: somme,
+    montantVirementCents: montant,
+    resteCents: montant - somme,
+    depasse: somme > montant,
+  };
+}
+
+// Variante BDD : lit le montant de l'écriture + les totaux des demandes
+// liées, puis délègue à computeRembsCoverage.
+export async function getEcritureRembsCoverage(
+  groupId: string,
+  ecritureId: string,
+): Promise<RembsCoverage> {
+  const db = getDb();
+  const ecr = await db
+    .prepare('SELECT amount_cents FROM ecritures WHERE id = ? AND group_id = ?')
+    .get<{ amount_cents: number }>(ecritureId, groupId);
+  const rows = await db
+    .prepare(
+      `SELECT COALESCE(total_cents, amount_cents) AS total
+       FROM remboursements
+       WHERE group_id = ? AND ecriture_id = ?`,
+    )
+    .all<{ total: number }>(groupId, ecritureId);
+  return computeRembsCoverage(ecr?.amount_cents ?? 0, rows.map((r) => r.total ?? 0));
+}
