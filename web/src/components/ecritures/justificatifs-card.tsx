@@ -6,6 +6,7 @@ import { JustifUploadZone } from '@/components/ecritures/justif-upload-zone';
 import { attachDepotFromEcriture, shareDepotFromEcriture } from '@/lib/actions/depots';
 import { type EcritureJustifsBundle } from '@/lib/queries/justificatifs';
 import { type DepotEnriched, type DepotForSharing } from '@/lib/services/depots';
+import { computeRembsCoverage } from '@/lib/services/remboursement-ecriture-link';
 import { formatAmount } from '@/lib/format';
 
 // Bloc justificatifs COMPACT d'une écriture : liste des fichiers rattachés
@@ -60,6 +61,11 @@ export function JustificatifsCard({
   const totalCount = bundle.direct.length + bundle.viaRemboursement.reduce((s, r) => s + r.justifs.length + r.rib.length, 0);
   const openActions = totalCount === 0 || defaultOpenActions;
 
+  const rembsTotals = bundle.viaRemboursement.map((r) => r.totalCents);
+  const coverage = rembsTotals.length > 0
+    ? computeRembsCoverage(ecritureAmountCents, rembsTotals)
+    : null;
+
   return (
     <section>
       <div className="flex items-center gap-2 text-[10.5px] uppercase tracking-wide font-medium text-fg-subtle mb-1.5">
@@ -80,6 +86,23 @@ export function JustificatifsCard({
       )}
 
       {/* Justifs via remboursement lié */}
+      {coverage && (
+        <div
+          className={
+            coverage.depasse
+              ? 'mt-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[12px] text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200'
+              : 'mt-1.5 text-[12px] text-fg-muted'
+          }
+        >
+          {coverage.nbDemandes} demande{coverage.nbDemandes > 1 ? 's' : ''} liée{coverage.nbDemandes > 1 ? 's' : ''} ·{' '}
+          {formatAmount(coverage.sommeDemandesCents)} / {formatAmount(coverage.montantVirementCents)}
+          {coverage.depasse
+            ? ' · dépasse le virement'
+            : coverage.resteCents !== 0
+              ? ` · reste ${formatAmount(coverage.resteCents)}`
+              : ''}
+        </div>
+      )}
       {bundle.viaRemboursement.map((rb) => (
         <div key={rb.remboursementId} className="mt-1.5 rounded-md bg-brand-50/40 border border-brand-100 p-2 space-y-1">
           <Link
