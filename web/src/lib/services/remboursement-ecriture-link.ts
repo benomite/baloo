@@ -11,14 +11,16 @@ export interface EcritureCandidate {
   amount_cents: number;
   unite_code: string | null;
   status: string;
+  linked_count: number;
 }
 
 const DATE_WINDOW_DAYS = 365;
 
 // Liste les écritures candidates pour une rembs : même groupe, type
-// `dépense`, montant exact, fenêtre date ±365j, pas déjà liées à une
-// AUTRE rembs (on garde la candidate si elle est déjà liée à la
-// rembs courante — utile pour afficher l'écriture actuellement liée).
+// `dépense`, fenêtre date ±365j (si date_depense connue). Pas de filtre
+// de montant (virement groupé possible) ni d'exclusion des écritures
+// déjà liées à une autre rembs (many-to-one autorisé : une écriture de
+// virement groupé peut couvrir plusieurs demandes).
 export async function findEcritureCandidatesForRembs(
   groupId: string,
   rembsId: string,
@@ -27,45 +29,48 @@ export async function findEcritureCandidatesForRembs(
 
   const rembs = await db
     .prepare(
-      `SELECT amount_cents, date_depense
+      `SELECT amount_cents, total_cents, date_depense
        FROM remboursements
        WHERE id = ? AND group_id = ?`,
     )
-    .get<{ amount_cents: number; date_depense: string | null }>(rembsId, groupId);
+    .get<{ amount_cents: number; total_cents: number | null; date_depense: string | null }>(rembsId, groupId);
 
-  if (!rembs || !rembs.date_depense) return [];
+  if (!rembs) return [];
+  const target = Math.abs(rembs.total_cents ?? rembs.amount_cents ?? 0);
 
-  const baseDate = new Date(rembs.date_depense).getTime();
-  const fromDate = new Date(baseDate - DATE_WINDOW_DAYS * 86400000)
-    .toISOString()
-    .slice(0, 10);
-  const toDate = new Date(baseDate + DATE_WINDOW_DAYS * 86400000)
-    .toISOString()
-    .slice(0, 10);
+  const conditions: string[] = ["e.group_id = ?", "e.type = 'depense'"];
+  const params: unknown[] = [groupId];
 
+  // Fenêtre date seulement si la demande a une date d'appui.
+  if (rembs.date_depense) {
+    const baseDate = new Date(rembs.date_depense).getTime();
+    const fromDate = new Date(baseDate - DATE_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
+    const toDate = new Date(baseDate + DATE_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
+    conditions.push("e.date_ecriture BETWEEN ? AND ?");
+    params.push(fromDate, toDate);
+  }
+
+  // Plus de filtre de montant ni d'exclusion des écritures déjà liées :
+  // un virement groupé (montant ≠ total demande) et une écriture déjà
+  // rattachée à une autre demande doivent apparaître. Tri : proximité de
+  // montant en tête (match exact d'abord), puis date décroissante.
   return await db
     .prepare(
       `SELECT e.id, e.date_ecriture, e.description, e.amount_cents, e.status,
-              u.code AS unite_code
+              u.code AS unite_code,
+              (SELECT COUNT(*) FROM remboursements r WHERE r.ecriture_id = e.id) AS linked_count
        FROM ecritures e
        LEFT JOIN unites u ON u.id = e.unite_id
-       WHERE e.group_id = ?
-         AND e.type = 'depense'
-         AND e.amount_cents = ?
-         AND e.date_ecriture BETWEEN ? AND ?
-         AND e.id NOT IN (
-           SELECT ecriture_id FROM remboursements
-           WHERE ecriture_id IS NOT NULL AND id != ?
-         )
-       ORDER BY e.date_ecriture, e.id
-       LIMIT 30`,
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY ABS(ABS(e.amount_cents) - ?) ASC, e.date_ecriture DESC
+       LIMIT 300`,
     )
-    .all<EcritureCandidate>(groupId, rembs.amount_cents, fromDate, toDate, rembsId);
+    .all<EcritureCandidate>(...params, target);
 }
 
-// Applique le lien rembs → écriture. Vérifie en passant que :
-//  - l'écriture existe et appartient au même groupe.
-//  - l'écriture n'est pas déjà liée à une autre rembs.
+// Applique le lien rembs → écriture. Vérifie en passant que l'écriture
+// existe et appartient au même groupe (many-to-one autorisé : plusieurs
+// demandes peuvent pointer vers la même écriture de virement groupé).
 // Retourne `{ ok: true }` ou `{ ok: false, error: '...' }` pour que
 // la server action puisse rediriger avec le bon message.
 export async function setRembsEcritureLink(
@@ -85,19 +90,6 @@ export async function setRembsEcritureLink(
       .prepare('SELECT id FROM ecritures WHERE id = ? AND group_id = ?')
       .get<{ id: string }>(ecritureId, groupId);
     if (!ecriture) return { ok: false, error: `Écriture ${ecritureId} introuvable.` };
-
-    const conflict = await db
-      .prepare(
-        `SELECT id FROM remboursements
-         WHERE ecriture_id = ? AND id != ?`,
-      )
-      .get<{ id: string }>(ecritureId, rembsId);
-    if (conflict) {
-      return {
-        ok: false,
-        error: `Écriture déjà liée à la demande ${conflict.id}.`,
-      };
-    }
   }
 
   await db
