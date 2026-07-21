@@ -209,8 +209,8 @@ export default async function RemboursementDetailPage({
           <Section
             title={`Détail des dépenses (${lignes.length})`}
             subtitle={
-              lignes.length > 0
-                ? `${couverture.justifiees}/${couverture.total} détail${couverture.total > 1 ? 's' : ''} justifié${couverture.justifiees > 1 ? 's' : ''}`
+              couverture.justifiees > 0
+                ? `${couverture.justifiees} détail${couverture.justifiees > 1 ? 's' : ''} avec justif rattaché${couverture.justifiees > 1 ? 's' : ''}`
                 : undefined
             }
             action={

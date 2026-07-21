@@ -1,10 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowDown, ArrowUp, Check, TriangleAlert, Paperclip } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, Paperclip } from 'lucide-react';
 import { Amount } from '@/components/shared/amount';
 import { formatKmRate, formatDistance } from '@/lib/services/km';
-import { cn } from '@/lib/utils';
 
 export interface DetailLigne {
   id: string;
@@ -79,7 +78,6 @@ export function DetailDepensesTable({
         <tbody>
           {sorted.map((l) => {
             const justifs = justifsParLigne[l.id] ?? [];
-            const ok = justifs.length > 0;
             return (
               <tr key={l.id} className="border-b border-border-soft last:border-b-0 align-top">
                 <td className="py-2 px-2 text-fg tabular-nums">{l.date_depense}</td>
@@ -92,29 +90,29 @@ export function DetailDepensesTable({
                   )}
                 </td>
                 <td className="py-2 px-2">
-                  <span
-                    className={cn(
-                      'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border',
-                      ok
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200'
-                        : 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200',
-                    )}
-                  >
-                    {ok ? <Check size={11} strokeWidth={2.5} /> : <TriangleAlert size={11} strokeWidth={2.25} />}
-                    {ok ? 'Justif' : 'Manquant'}
-                  </span>
-                  {justifs.map((j) => (
-                    <a
-                      key={j.id}
-                      href={`/api/justificatifs/${j.file_path}`}
-                      target="_blank"
-                      rel="noopener"
-                      className="mt-1 flex items-center gap-1 text-[11.5px] text-fg-muted hover:text-brand transition-colors"
-                    >
-                      <Paperclip size={10} className="shrink-0 text-fg-subtle" strokeWidth={1.75} />
-                      <span className="truncate max-w-[160px]">{j.original_filename}</span>
-                    </a>
-                  ))}
+                  {/* Pas de justif par ligne obligatoire : les justifs sont liés à
+                      la demande. On n'affiche l'info que quand un justif est
+                      explicitement rattaché à cette ligne — jamais d'alerte « manquant ». */}
+                  {justifs.length > 0 && (
+                    <>
+                      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200">
+                        <Check size={11} strokeWidth={2.5} />
+                        Justif
+                      </span>
+                      {justifs.map((j) => (
+                        <a
+                          key={j.id}
+                          href={`/api/justificatifs/${j.file_path}`}
+                          target="_blank"
+                          rel="noopener"
+                          className="mt-1 flex items-center gap-1 text-[11.5px] text-fg-muted hover:text-brand transition-colors"
+                        >
+                          <Paperclip size={10} className="shrink-0 text-fg-subtle" strokeWidth={1.75} />
+                          <span className="truncate max-w-[160px]">{j.original_filename}</span>
+                        </a>
+                      ))}
+                    </>
+                  )}
                 </td>
                 <td className="py-2 px-2 text-right font-medium">
                   <Amount cents={l.amount_cents} tone="negative" />
