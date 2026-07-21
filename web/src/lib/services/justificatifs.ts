@@ -60,6 +60,7 @@ export interface EcritureJustifsBundle {
   viaRemboursement: {
     remboursementId: string;
     demandeur: string | null;
+    totalCents: number;
     justifs: Justificatif[];
     rib: Justificatif[];
   }[];
@@ -86,11 +87,11 @@ export async function listJustificatifsForEcriture(
 
   const linkedRembs = await db
     .prepare(
-      `SELECT id, demandeur FROM remboursements
+      `SELECT id, demandeur, total_cents, amount_cents FROM remboursements
        WHERE group_id = ? AND ecriture_id = ?
        ORDER BY id`,
     )
-    .all<{ id: string; demandeur: string | null }>(groupId, ecritureId);
+    .all<{ id: string; demandeur: string | null; total_cents: number | null; amount_cents: number | null }>(groupId, ecritureId);
 
   const viaRemboursement = await Promise.all(
     linkedRembs.map(async (r) => {
@@ -105,6 +106,7 @@ export async function listJustificatifsForEcriture(
       return {
         remboursementId: r.id,
         demandeur: r.demandeur,
+        totalCents: r.total_cents ?? r.amount_cents ?? 0,
         justifs: all.filter((j) => j.entity_type === 'remboursement'),
         rib: all.filter((j) => j.entity_type === 'remboursement_rib'),
       };
