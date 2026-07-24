@@ -62,8 +62,9 @@ export function JustificatifsCard({
   const openActions = totalCount === 0 || defaultOpenActions;
 
   const rembsTotals = bundle.viaRemboursement.map((r) => r.totalCents);
+  const virementTotal = bundle.ventilationGroupTotalCents || ecritureAmountCents;
   const coverage = rembsTotals.length > 0
-    ? computeRembsCoverage(ecritureAmountCents, rembsTotals)
+    ? computeRembsCoverage(virementTotal, rembsTotals)
     : null;
 
   return (

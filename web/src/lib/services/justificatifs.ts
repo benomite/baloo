@@ -64,6 +64,9 @@ export interface EcritureJustifsBundle {
     justifs: Justificatif[];
     rib: Justificatif[];
   }[];
+  /** Total du virement pour la couverture : Σ des montants du groupe de
+   *  ventilation si l'écriture est ventilée, sinon son propre montant. */
+  ventilationGroupTotalCents: number;
 }
 
 // Liste les justifs visibles depuis la page détail d'une écriture :
@@ -113,7 +116,18 @@ export async function listJustificatifsForEcriture(
     }),
   );
 
-  return { direct, viaRemboursement };
+  const ecr = await db
+    .prepare('SELECT amount_cents, ventilation_group_id FROM ecritures WHERE group_id = ? AND id = ?')
+    .get<{ amount_cents: number; ventilation_group_id: string | null }>(groupId, ecritureId);
+  let ventilationGroupTotalCents = ecr?.amount_cents ?? 0;
+  if (ecr?.ventilation_group_id) {
+    const g = await db
+      .prepare('SELECT COALESCE(SUM(amount_cents), 0) AS t FROM ecritures WHERE group_id = ? AND ventilation_group_id = ?')
+      .get<{ t: number }>(groupId, ecr.ventilation_group_id);
+    ventilationGroupTotalCents = g?.t ?? ventilationGroupTotalCents;
+  }
+
+  return { direct, viaRemboursement, ventilationGroupTotalCents };
 }
 
 export interface AttachJustificatifInput {
