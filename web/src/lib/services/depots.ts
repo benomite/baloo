@@ -180,7 +180,19 @@ export async function listDepots(
   await ensureDepotsSchema();
   const conditions: string[] = ['d.group_id = ?'];
   const values: unknown[] = [groupId];
-  if (options.statut) { conditions.push('d.statut = ?'); values.push(options.statut); }
+  if (options.statut) {
+    conditions.push('d.statut = ?');
+    values.push(options.statut);
+    // Garde défensive : un dépôt « à traiter » qui porte déjà un lien
+    // (écriture ou remboursement) est en réalité rattaché — statut périmé.
+    // On l'exclut de la file à traiter ET des candidats de rattachement
+    // (les 3 appelants de `{statut:'a_traiter'}` veulent des dépôts encore
+    // libres). Le rattachement pose normalement `statut='rattache'` ; ceci
+    // rattrape les cas où le statut n'a pas suivi.
+    if (options.statut === 'a_traiter') {
+      conditions.push('d.ecriture_id IS NULL AND d.remboursement_id IS NULL');
+    }
+  }
   if (options.submitted_by_user_id) {
     conditions.push('d.submitted_by_user_id = ?');
     values.push(options.submitted_by_user_id);
