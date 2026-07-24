@@ -3,6 +3,7 @@ import { ventilateDraft } from './ecritures-ventilate';
 import type { EcritureContext } from './ecritures';
 import type { VentilationInput } from './ecritures-create';
 import { currentTimestamp } from '../ids';
+import { logError } from '../log';
 
 // Service dédié à la liaison `remboursements.ecriture_id`. Trouve les
 // écritures candidates au moment où un trésorier veut associer une
@@ -104,23 +105,15 @@ export async function setRembsEcritureLink(
     )
     .run(ecritureId, new Date().toISOString(), rembsId, groupId);
 
-  // Enrichissement : recopie l'imputation de la demande dans les champs
-  // ENCORE VIDES de l'écriture liée (COALESCE → jamais d'écrasement ;
-  // `status = 'draft'` → on ne touche pas à une écriture déjà dans CW).
-  // NB : la table `remboursements` ne porte que `unite_id` comme imputation
-  // structurée (pas de category_id ni activite_id — juste un champ `nature`
-  // texte libre). On ne propage donc QUE l'unité.
-  if (ecritureId) {
-    const remb = await db
-      .prepare('SELECT unite_id FROM remboursements WHERE id = ? AND group_id = ?')
-      .get<{ unite_id: string | null }>(rembsId, groupId);
-    if (remb?.unite_id) {
-      await db
-        .prepare(
-          `UPDATE ecritures SET unite_id = COALESCE(unite_id, ?), updated_at = ?
-           WHERE id = ? AND group_id = ? AND status = 'draft'`,
-        )
-        .run(remb.unite_id, new Date().toISOString(), ecritureId, groupId);
+  // (Re)ventilation auto du virement selon ses demandes liées. Best-effort :
+  // une erreur ici ne doit jamais faire échouer la liaison. Absorbe l'ancien
+  // enrichissement COALESCE `unite_id` (cas « demande unique jamais ventilée »).
+  const target = ecritureId ?? current.ecriture_id;
+  if (target) {
+    try {
+      await syncEcritureVentilationFromRembs(groupId, target);
+    } catch (err) {
+      logError('remboursements', 'Ventilation auto du virement échouée', err);
     }
   }
 

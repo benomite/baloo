@@ -14,11 +14,15 @@ import { findEcritureCandidatesForRembs, setRembsEcritureLink } from '../rembour
 const SETUP = `
   CREATE TABLE remboursements (
     id TEXT PRIMARY KEY, group_id TEXT, amount_cents INTEGER, total_cents INTEGER,
-    date_depense TEXT, unite_id TEXT, ecriture_id TEXT, updated_at TEXT
+    date_depense TEXT, unite_id TEXT, ecriture_id TEXT, created_at TEXT, updated_at TEXT
   );
   CREATE TABLE ecritures (
     id TEXT PRIMARY KEY, group_id TEXT, type TEXT, amount_cents INTEGER,
-    date_ecriture TEXT, description TEXT, unite_id TEXT, status TEXT
+    date_ecriture TEXT, description TEXT, unite_id TEXT, status TEXT,
+    ventilation_group_id TEXT, comptaweb_ecriture_id INTEGER,
+    category_id TEXT, activite_id TEXT, mode_paiement_id TEXT, numero_piece TEXT,
+    carte_id TEXT, justif_attendu INTEGER, notes TEXT, ligne_bancaire_id INTEGER,
+    ligne_bancaire_sous_index INTEGER, libelle_origine TEXT, created_at TEXT, updated_at TEXT
   );
   CREATE TABLE unites (id TEXT PRIMARY KEY, code TEXT);
 `;

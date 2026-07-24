@@ -16,7 +16,7 @@ vi.mock('../../ids', () => ({
   currentTimestamp: () => '2026-07-24T10:00:00Z',
 }));
 
-import { syncEcritureVentilationFromRembs } from '../remboursement-ecriture-link';
+import { syncEcritureVentilationFromRembs, setRembsEcritureLink } from '../remboursement-ecriture-link';
 
 // Transaction libsql → schéma créé une seule fois, cache partagé (cf. ecritures-ventilate.test.ts).
 beforeAll(async () => {
@@ -142,5 +142,38 @@ describe('syncEcritureVentilationFromRembs', () => {
     await addRemb('R2', 17032, 'u-far', '2026-07-02');
     await syncEcritureVentilationFromRembs('g', 'ECR');
     expect(await lignes()).toHaveLength(1);
+  });
+});
+
+describe('setRembsEcritureLink → ventilation auto', () => {
+  beforeEach(async () => { await seedVirement(); });
+
+  it('lier une 2e demande ventile le virement en 2 lignes', async () => {
+    await addRemb('R1', 30000, 'u-lj', '2026-07-01'); // déjà liée
+    // R2 pas encore liée (ecriture_id NULL)
+    await testDb.prepare(
+      "INSERT INTO remboursements (id, group_id, amount_cents, total_cents, unite_id, created_at) VALUES ('R2','g',17032,17032,'u-far','2026-07-02')",
+    ).run();
+    const res = await setRembsEcritureLink('g', 'R2', 'ECR');
+    expect(res.ok).toBe(true);
+    const rows = await lignes();
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.amount_cents).sort((a, b) => a - b)).toEqual([17032, 30000]);
+  });
+
+  it('délier la 2e demande replie en mono-ligne', async () => {
+    await addRemb('R1', 30000, 'u-lj', '2026-07-01');
+    await addRemb('R2', 17032, 'u-far', '2026-07-02');
+    await syncEcritureVentilationFromRembs('g', 'ECR'); // ventilé en 2
+    expect(await lignes()).toHaveLength(2);
+    // R1 est corrigée pour couvrir tout le virement une fois R2 délié (sinon
+    // le reste des 17032 c non couverts redevient une ligne « reste à imputer »
+    // — cf. test « sous-couverture » ci-dessus, comportement volontaire).
+    await testDb.prepare("UPDATE remboursements SET total_cents=47032, amount_cents=47032 WHERE id='R1'").run();
+    const res = await setRembsEcritureLink('g', 'R2', null); // délien
+    expect(res.ok).toBe(true);
+    const rows = await lignes();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].amount_cents).toBe(47032);
   });
 });
