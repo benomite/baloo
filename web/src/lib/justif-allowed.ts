@@ -27,6 +27,25 @@ export const ALLOWED_MIME_TYPES = new Set([
 // La taille max double celle de bodySizeLimit Next (10 MB) pour matcher.
 export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
+// Plafond du CUMUL des fichiers envoyés en une fois (nouveaux justifs +
+// RIB). Sur Vercel, le body d'une requête serverless est rejeté à ~4,5 MB
+// AU NIVEAU EDGE, avant la fonction, avec un 413 opaque — `bodySizeLimit`
+// de Next (côté fonction) n'y change rien. On garde une marge sous ce
+// plafond pour l'overhead du multipart et les champs texte du formulaire.
+export const MAX_UPLOAD_TOTAL_BYTES = 4 * 1024 * 1024;
+
+// Validation côté client du cumul avant submit. Retourne un message
+// utilisateur si le total dépasse la limite d'envoi, sinon `null`.
+// Indispensable car un 413 edge Vercel court-circuite la server action :
+// impossible de renvoyer un message clair depuis le serveur, il faut
+// bloquer AVANT l'envoi.
+export function validateUploadTotal(totalBytes: number): string | null {
+  if (totalBytes <= MAX_UPLOAD_TOTAL_BYTES) return null;
+  const totalMo = Math.round((totalBytes / 1024 / 1024) * 10) / 10;
+  const maxMo = Math.round((MAX_UPLOAD_TOTAL_BYTES / 1024 / 1024) * 10) / 10;
+  return `Pièces jointes trop volumineuses (${totalMo} Mo pour ${maxMo} Mo max en un envoi). Réduis la taille des photos, ou enregistre en plusieurs fois.`;
+}
+
 // Libellé humain des formats autorisés, réutilisé dans les messages.
 export const ALLOWED_LABEL = 'PDF, JPG, PNG, GIF, WEBP, HEIC, CSV, XLS(X)';
 
