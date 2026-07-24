@@ -67,9 +67,10 @@ export async function ventilateDraft(
   // Validations métier (avant toute mutation).
   const sum = ventilations.reduce((s, v) => s + v.amount_cents, 0);
   if (sum !== total) return { ok: false, reason: 'sum_mismatch' };
-  const incomplete = ventilations.some(
-    (v) => v.amount_cents === 0 || !v.category_id || !v.unite_id || !v.activite_id,
-  );
+  // Un draft est incomplet par nature : seule contrainte, un montant non nul.
+  // La complétude catégorie/unité/activité est exigée côté UI (panneau manuel,
+  // `canSaveVentilation`) et à la validation vers Comptaweb, pas ici.
+  const incomplete = ventilations.some((v) => v.amount_cents === 0);
   if (incomplete) return { ok: false, reason: 'incomplete' };
 
   const now = currentTimestamp();

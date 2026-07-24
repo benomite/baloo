@@ -107,9 +107,19 @@ describe('ventilateDraft', () => {
     expect(n?.n).toBe(1); // rollback : rien créé
   });
 
-  it('refuse une ventilation incomplète', async () => {
+  it('accepte des lignes à catégorie/activité/unité nulles (draft incomplet toléré)', async () => {
     const res = await ventilateDraft({ groupId: 'g1' }, 'E1', [
-      { amount_cents: 700, category_id: null, unite_id: 'u-farfa', activite_id: 'a-camps' }, V(364, 'c-pharma'),
+      { amount_cents: 700, category_id: null, unite_id: null, activite_id: null },
+      { amount_cents: 364, category_id: null, unite_id: null, activite_id: null },
+    ]);
+    expect(res.ok).toBe(true);
+    expect(res.ids).toHaveLength(2);
+  });
+
+  it('refuse toujours une ligne à montant nul', async () => {
+    const res = await ventilateDraft({ groupId: 'g1' }, 'E1', [
+      { amount_cents: 1064, category_id: null, unite_id: null, activite_id: null },
+      { amount_cents: 0, category_id: null, unite_id: null, activite_id: null },
     ]);
     expect(res).toMatchObject({ ok: false, reason: 'incomplete' });
   });
