@@ -12,7 +12,7 @@ import { Field } from '@/components/shared/field';
 import { Section } from '@/components/shared/section';
 import { NativeSelect } from '@/components/ui/native-select';
 import { PendingButton } from '@/components/shared/pending-button';
-import { validateClientFile } from '@/lib/justif-allowed';
+import { validateClientFile, validateUploadTotal } from '@/lib/justif-allowed';
 
 // État renvoyé par les server actions du form en cas d'échec de
 // validation. `null` = pas encore soumis / succès (le succès redirige).
@@ -111,6 +111,15 @@ export function RemboursementForm({
 }: Props) {
   const [state, formAction] = useActionState(action, null);
   const [ribFileError, setRibFileError] = useState<string | null>(null);
+
+  // Garde d'envoi : sur Vercel le body serverless est rejeté à ~4,5 MB au
+  // niveau edge (413 opaque, avant la server action → aucun message custom
+  // possible côté serveur). On somme les NOUVEAUX fichiers (justifs +
+  // RIB — les justifs déjà stockés ne repartent pas dans le body) et on
+  // bloque l'envoi AVANT, avec un message clair.
+  const [justifsBytes, setJustifsBytes] = useState(0);
+  const [ribBytes, setRibBytes] = useState(0);
+  const uploadTotalError = validateUploadTotal(justifsBytes + ribBytes);
 
   // Champs contrôlés : React réinitialise les inputs NON contrôlés d'un
   // `<form action>` après l'exécution de l'action (y compris sur erreur).
@@ -296,6 +305,7 @@ export function RemboursementForm({
           required={existingJustifsCount === 0}
           accept="image/*,application/pdf"
           helpText="Tu peux glisser-déposer plusieurs fichiers d'un coup."
+          onTotalSizeChange={setJustifsBytes}
         />
         {hasKm && (
           <Alert variant="info" className="mt-3">
@@ -335,8 +345,10 @@ export function RemboursementForm({
                 // invalide ne parte jamais au serveur.
                 e.target.value = '';
                 setRibFileError(err);
+                setRibBytes(0);
               } else {
                 setRibFileError(null);
+                setRibBytes(f?.size ?? 0);
               }
             }}
             className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-brand-50 file:text-brand file:font-medium file:text-[13px] file:cursor-pointer hover:file:bg-brand-100 file:transition-colors"
@@ -403,8 +415,12 @@ export function RemboursementForm({
         </label>
       </div>
 
+      {uploadTotalError && (
+        <Alert variant="error">{uploadTotalError}</Alert>
+      )}
+
       <div className="flex justify-end pt-2">
-        <PendingButton size="lg" pendingLabel="Envoi…">
+        <PendingButton size="lg" pendingLabel="Envoi…" disabled={!!uploadTotalError}>
           {submitLabel}
         </PendingButton>
       </div>

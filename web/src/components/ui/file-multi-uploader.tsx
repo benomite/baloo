@@ -14,6 +14,10 @@ interface Props {
   required?: boolean;
   accept?: string;
   helpText?: string;
+  // Remonte le cumul (octets) des fichiers sélectionnés au parent, qui
+  // s'en sert pour la garde d'envoi (plafond edge Vercel). Le RIB est un
+  // input séparé : le total complet se calcule côté formulaire.
+  onTotalSizeChange?: (bytes: number) => void;
 }
 
 let _seq = 0;
@@ -23,6 +27,7 @@ export function FileMultiUploader({
   required = false,
   accept = 'image/*,application/pdf',
   helpText,
+  onTotalSizeChange,
 }: Props) {
   const [items, setItems] = useState<FileItem[]>([]);
   const [rejected, setRejected] = useState<string[]>([]);
@@ -46,7 +51,8 @@ export function FileMultiUploader({
   useEffect(() => {
     itemsRef.current = items;
     syncInput();
-  }, [items, syncInput]);
+    onTotalSizeChange?.(items.reduce((s, it) => s + it.file.size, 0));
+  }, [items, syncInput, onTotalSizeChange]);
 
   // React réinitialise le `<form action>` après chaque exécution de
   // l'action (y compris sur erreur), ce qui vide cet input file. On
