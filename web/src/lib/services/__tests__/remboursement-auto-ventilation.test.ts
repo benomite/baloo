@@ -119,6 +119,21 @@ describe('syncEcritureVentilationFromRembs', () => {
     expect(rows[0].vg).toBeNull();
   });
 
+  it('délien 2→0 → repli en mono-ligne complète, ventilation_group_id NULL', async () => {
+    await addRemb('R1', 30000, 'u-lj', '2026-07-01');
+    await addRemb('R2', 17032, 'u-far', '2026-07-02');
+    await syncEcritureVentilationFromRembs('g', 'ECR'); // ventile en 2
+    expect(await lignes()).toHaveLength(2);
+    // retrait des deux demandes : plus aucune ligne de rembs liée.
+    await testDb.prepare("UPDATE remboursements SET ecriture_id=NULL WHERE id IN ('R1','R2')").run();
+    await syncEcritureVentilationFromRembs('g', 'ECR'); // repli complet
+    const rows = await lignes();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe('ECR');
+    expect(rows[0].amount_cents).toBe(47032);
+    expect(rows[0].vg).toBeNull();
+  });
+
   it('demande unique jamais ventilée → COALESCE unité, pas de ventilation', async () => {
     await addRemb('R1', 47032, 'u-lj', '2026-07-01');
     await syncEcritureVentilationFromRembs('g', 'ECR');

@@ -259,14 +259,33 @@ export async function syncEcritureVentilationFromRembs(
   const ctx: EcritureContext = { groupId };
 
   if (lignes.length >= 2) {
-    await ventilateDraft(ctx, ecritureId, lignes);
+    const result = await ventilateDraft(ctx, ecritureId, lignes);
+    // `ventilateDraft` peut refuser (child_has_attachments, sum_mismatch…) sans
+    // lever d'exception : sans ce log, l'écriture reste silencieusement non
+    // ventilée alors que le lien rembs a déjà réussi → ventilation périmée,
+    // budgets faux, aucune trace exploitable.
+    if (!result.ok) {
+      logError('remboursements', 'Ventilation auto: ventilateDraft a échoué', undefined, {
+        ecritureId,
+        reason: result.reason,
+        nbLignes: lignes.length,
+      });
+    }
     return;
   }
 
   if (lignes.length === 1) {
     if (ecr.ventilation_group_id) {
       // Repli d'un groupe existant vers une mono-ligne.
-      await ventilateDraft(ctx, ecritureId, lignes);
+      const result = await ventilateDraft(ctx, ecritureId, lignes);
+      // Même remarque : le repli →1 ligne peut échouer silencieusement.
+      if (!result.ok) {
+        logError('remboursements', 'Ventilation auto: ventilateDraft a échoué', undefined, {
+          ecritureId,
+          reason: result.reason,
+          nbLignes: lignes.length,
+        });
+      }
     } else {
       // Demande unique jamais ventilée : COALESCE unité (non destructif).
       const u = lignes[0].unite_id;

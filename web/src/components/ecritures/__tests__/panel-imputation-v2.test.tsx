@@ -125,7 +125,7 @@ describe('EcritureInlinePanel — restructuration v2', () => {
   beforeEach(() => {
     fetchEcritureDetail.mockResolvedValue({
       ecriture: makeEcriture(),
-      justifsBundle: { direct: [], viaRemboursement: [] },
+      justifsBundle: { direct: [], viaRemboursement: [], ventilationGroupTotalCents: 0 },
       pendingDepots: [],
       shareableDepots: [],
     });
