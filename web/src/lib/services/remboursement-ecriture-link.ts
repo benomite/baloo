@@ -1,4 +1,8 @@
 import { getDb } from '../db';
+import { ventilateDraft } from './ecritures-ventilate';
+import type { EcritureContext } from './ecritures';
+import type { VentilationInput } from './ecritures-create';
+import { currentTimestamp } from '../ids';
 
 // Service dédié à la liaison `remboursements.ecriture_id`. Trouve les
 // écritures candidates au moment où un trésorier veut associer une
@@ -167,4 +171,99 @@ export async function getEcritureRembsCoverage(
     )
     .all<{ total: number }>(groupId, ecritureId);
   return computeRembsCoverage(ecr?.amount_cents ?? 0, rows.map((r) => r.total ?? 0));
+}
+
+// (Re)ventile une écriture de virement selon les demandes qui lui sont liées.
+// Best-effort — appelée après chaque lien/délien. Grain canonique = la
+// ventilation : une sous-ligne par demande (sur son unité) + une ligne « reste
+// à imputer » si la somme des demandes < montant du virement.
+//
+// Invariant d'ancrage : les remboursements restent épinglés à la TÊTE du
+// groupe (jamais réaffectés). `ventilateDraft` préserve l'id de tête, les
+// enfants n'ont aucune pièce → re-ventilation possible sans casser le lien N→1.
+export async function syncEcritureVentilationFromRembs(
+  groupId: string,
+  ecritureId: string,
+): Promise<void> {
+  const db = getDb();
+
+  const ecr = await db
+    .prepare(
+      `SELECT amount_cents, status, comptaweb_ecriture_id, ventilation_group_id
+       FROM ecritures WHERE id = ? AND group_id = ?`,
+    )
+    .get<{
+      amount_cents: number;
+      status: string;
+      comptaweb_ecriture_id: number | null;
+      ventilation_group_id: string | null;
+    }>(ecritureId, groupId);
+
+  // On ne touche jamais une écriture matérialisée dans Comptaweb.
+  if (!ecr || ecr.status !== 'draft' || ecr.comptaweb_ecriture_id !== null) return;
+
+  // Total du virement = Σ du groupe (la tête peut déjà porter une part), sinon
+  // son propre montant. Invariant : Σ groupe = montant du virement d'origine.
+  let virement = Math.abs(ecr.amount_cents);
+  if (ecr.ventilation_group_id) {
+    const g = await db
+      .prepare(
+        `SELECT COALESCE(SUM(amount_cents), 0) AS t
+         FROM ecritures WHERE group_id = ? AND ventilation_group_id = ?`,
+      )
+      .get<{ t: number }>(groupId, ecr.ventilation_group_id);
+    virement = Math.abs(g?.t ?? ecr.amount_cents);
+  }
+
+  // Demandes liées, tri déterministe.
+  const rembs = await db
+    .prepare(
+      `SELECT unite_id, COALESCE(total_cents, amount_cents) AS total
+       FROM remboursements
+       WHERE group_id = ? AND ecriture_id = ?
+       ORDER BY created_at, id`,
+    )
+    .all<{ unite_id: string | null; total: number | null }>(groupId, ecritureId);
+
+  const lignes: VentilationInput[] = rembs.map((r) => ({
+    amount_cents: Math.abs(r.total ?? 0),
+    unite_id: r.unite_id ?? null,
+    category_id: null,
+    activite_id: null,
+  }));
+
+  const somme = lignes.reduce((s, l) => s + l.amount_cents, 0);
+  const reste = virement - somme;
+
+  // Dépassement : on ne fabrique pas de ligne négative, on laisse tel quel.
+  if (reste < 0) return;
+  if (reste > 0) {
+    lignes.push({ amount_cents: reste, unite_id: null, category_id: null, activite_id: null });
+  }
+
+  const ctx: EcritureContext = { groupId };
+
+  if (lignes.length >= 2) {
+    await ventilateDraft(ctx, ecritureId, lignes);
+    return;
+  }
+
+  if (lignes.length === 1) {
+    if (ecr.ventilation_group_id) {
+      // Repli d'un groupe existant vers une mono-ligne.
+      await ventilateDraft(ctx, ecritureId, lignes);
+    } else {
+      // Demande unique jamais ventilée : COALESCE unité (non destructif).
+      const u = lignes[0].unite_id;
+      if (u) {
+        await db
+          .prepare(
+            `UPDATE ecritures SET unite_id = COALESCE(unite_id, ?), updated_at = ?
+             WHERE id = ? AND group_id = ? AND status = 'draft'`,
+          )
+          .run(u, currentTimestamp(), ecritureId, groupId);
+      }
+    }
+  }
+  // lignes.length === 0 : virement à 0 sans demande → rien à faire.
 }
