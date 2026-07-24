@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getStorage } from '@/lib/storage';
+import { fetchJustifWithTimeout } from '@/lib/justif-fetch';
 import { getDb } from '@/lib/db';
 import { requireApiContext } from '@/lib/api/route-helpers';
+import { logError } from '@/lib/log';
+
+// Borne l'attente du storage : au-delà, on renvoie une erreur nette plutôt
+// que de laisser le client charger à l'infini (ce qui pouvait wedger le SW).
+const FETCH_TIMEOUT_MS = 10_000;
 
 // GET /api/justificatifs/<entity_type>/<entity_id>/<filename>
 // Sert le file justif. Auth obligatoire (session ou Bearer MCP) ET le
@@ -33,7 +39,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ path
     return NextResponse.json({ error: 'Fichier non trouvé' }, { status: 404 });
   }
 
-  const result = await getStorage().fetch(relPath);
+  const outcome = await fetchJustifWithTimeout(
+    (p) => getStorage().fetch(p),
+    relPath,
+    FETCH_TIMEOUT_MS,
+  );
+  if (outcome.status === 'timeout') {
+    logError('justificatifs', 'Lecture justif : délai storage dépassé (blob injoignable ?)', undefined, { relPath });
+    return NextResponse.json({ error: 'Justificatif temporairement injoignable.' }, { status: 502 });
+  }
+  if (outcome.status === 'error') {
+    logError('justificatifs', 'Lecture justif : erreur storage', outcome.error, { relPath });
+    return NextResponse.json({ error: 'Erreur lors de la lecture du justificatif.' }, { status: 502 });
+  }
+  const result = outcome.result;
   if (!result) {
     return NextResponse.json({ error: 'Fichier non trouvé' }, { status: 404 });
   }
