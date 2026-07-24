@@ -46,6 +46,15 @@ export async function findEcritureCandidatesForRembs(
   const conditions: string[] = ["e.group_id = ?", "e.type = 'depense'"];
   const params: unknown[] = [groupId];
 
+  // Masque les sous-lignes internes d'un groupe de ventilation (pas de
+  // pièce, jamais candidates) : une demande ne peut se lier qu'à la TÊTE
+  // du virement, jamais à une ligne-enfant. Une écriture non ventilée
+  // (ventilation_group_id NULL) reste candidate ; une tête déjà porteuse
+  // d'une rembs (EXISTS) reste candidate aussi (many-to-one).
+  conditions.push(
+    "(e.ventilation_group_id IS NULL OR EXISTS (SELECT 1 FROM remboursements r WHERE r.ecriture_id = e.id))",
+  );
+
   // Fenêtre date seulement si la demande a une date d'appui.
   if (rembs.date_depense) {
     const baseDate = new Date(rembs.date_depense).getTime();
@@ -147,15 +156,28 @@ export function computeRembsCoverage(
 }
 
 // Variante BDD : lit le montant de l'écriture + les totaux des demandes
-// liées, puis délègue à computeRembsCoverage.
+// liées, puis délègue à computeRembsCoverage. Group-aware : une fois
+// ventilée, la tête ne porte plus qu'une part du virement — le
+// dénominateur doit être le total du `ventilation_group_id` (= le
+// virement d'origine), pas le seul `amount_cents` de la tête.
 export async function getEcritureRembsCoverage(
   groupId: string,
   ecritureId: string,
 ): Promise<RembsCoverage> {
   const db = getDb();
   const ecr = await db
-    .prepare('SELECT amount_cents FROM ecritures WHERE id = ? AND group_id = ?')
-    .get<{ amount_cents: number }>(ecritureId, groupId);
+    .prepare('SELECT amount_cents, ventilation_group_id FROM ecritures WHERE id = ? AND group_id = ?')
+    .get<{ amount_cents: number; ventilation_group_id: string | null }>(ecritureId, groupId);
+  let virement = ecr?.amount_cents ?? 0;
+  if (ecr?.ventilation_group_id) {
+    const g = await db
+      .prepare(
+        `SELECT COALESCE(SUM(amount_cents), 0) AS t
+         FROM ecritures WHERE group_id = ? AND ventilation_group_id = ?`,
+      )
+      .get<{ t: number }>(groupId, ecr.ventilation_group_id);
+    virement = g?.t ?? virement;
+  }
   const rows = await db
     .prepare(
       `SELECT COALESCE(total_cents, amount_cents) AS total
@@ -163,7 +185,7 @@ export async function getEcritureRembsCoverage(
        WHERE group_id = ? AND ecriture_id = ?`,
     )
     .all<{ total: number }>(groupId, ecritureId);
-  return computeRembsCoverage(ecr?.amount_cents ?? 0, rows.map((r) => r.total ?? 0));
+  return computeRembsCoverage(virement, rows.map((r) => r.total ?? 0));
 }
 
 // (Re)ventile une écriture de virement selon les demandes qui lui sont liées.

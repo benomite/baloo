@@ -44,13 +44,19 @@ describe('getEcritureRembsCoverage', () => {
     await client.execute('PRAGMA foreign_keys = OFF');
     testDb = wrapClient(client);
     await testDb.exec(`
-      CREATE TABLE ecritures (id TEXT PRIMARY KEY, group_id TEXT, amount_cents INTEGER);
+      CREATE TABLE ecritures (id TEXT PRIMARY KEY, group_id TEXT, amount_cents INTEGER, ventilation_group_id TEXT);
       CREATE TABLE remboursements (id TEXT PRIMARY KEY, group_id TEXT, amount_cents INTEGER, total_cents INTEGER, ecriture_id TEXT);
     `);
     await testDb.prepare("INSERT INTO ecritures (id, group_id, amount_cents) VALUES ('ECR','g',50000)").run();
     await testDb.prepare("INSERT INTO remboursements (id, group_id, amount_cents, total_cents, ecriture_id) VALUES ('R1','g',30000,30000,'ECR')").run();
     await testDb.prepare("INSERT INTO remboursements (id, group_id, amount_cents, total_cents, ecriture_id) VALUES ('R2','g',15000,15000,'ECR')").run();
     await testDb.prepare("INSERT INTO remboursements (id, group_id, amount_cents, total_cents, ecriture_id) VALUES ('R3','g',9999,9999,NULL)").run();
+    // Virement ventilé : la tête ('H') ne porte plus qu'une part du montant
+    // total, le reste vit sur une sous-ligne ('C') du même ventilation_group_id.
+    await testDb.prepare("INSERT INTO ecritures (id, group_id, amount_cents, ventilation_group_id) VALUES ('H','g',30000,'vg1')").run();
+    await testDb.prepare("INSERT INTO ecritures (id, group_id, amount_cents, ventilation_group_id) VALUES ('C','g',17032,'vg1')").run();
+    await testDb.prepare("INSERT INTO remboursements (id, group_id, amount_cents, total_cents, ecriture_id) VALUES ('RA','g',30000,30000,'H')").run();
+    await testDb.prepare("INSERT INTO remboursements (id, group_id, amount_cents, total_cents, ecriture_id) VALUES ('RB','g',17032,17032,'H')").run();
   });
 
   it('somme les totaux des demandes liées vs montant écriture', async () => {
@@ -59,6 +65,14 @@ describe('getEcritureRembsCoverage', () => {
     expect(c.sommeDemandesCents).toBe(45000);
     expect(c.montantVirementCents).toBe(50000);
     expect(c.resteCents).toBe(5000);
+    expect(c.depasse).toBe(false);
+  });
+
+  it('après ventilation : dénominateur = total du groupe, pas la part de la tête', async () => {
+    const c = await getEcritureRembsCoverage('g', 'H');
+    expect(c.montantVirementCents).toBe(47032); // 30000 + 17032, pas 30000
+    expect(c.sommeDemandesCents).toBe(47032);
+    expect(c.resteCents).toBe(0);
     expect(c.depasse).toBe(false);
   });
 });

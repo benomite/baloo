@@ -81,6 +81,14 @@ describe('findEcritureCandidatesForRembs', () => {
     const c = await findEcritureCandidatesForRembs('g', 'RBT-1');
     expect(c[0].id).toBe('ECR-EXACT');
   });
+
+  it('masque les lignes-enfants de ventilation (sans remb liée)', async () => {
+    await testDb.prepare(
+      "INSERT INTO ecritures (id, group_id, type, amount_cents, date_ecriture, description, status, ventilation_group_id) VALUES ('ECR-CHILD','g','depense',5000,'2026-07-01','Enfant ventil','draft','vgX')",
+    ).run();
+    const c = await findEcritureCandidatesForRembs('g', 'RBT-1');
+    expect(c.map((x) => x.id)).not.toContain('ECR-CHILD');
+  });
 });
 
 describe('setRembsEcritureLink', () => {
