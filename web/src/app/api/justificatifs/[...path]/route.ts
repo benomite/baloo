@@ -1,13 +1,21 @@
 import { NextResponse } from 'next/server';
 import { getStorage } from '@/lib/storage';
-import { fetchJustifWithTimeout } from '@/lib/justif-fetch';
+import { fetchJustifWithTimeout, readBodyWithTimeout } from '@/lib/justif-fetch';
 import { getDb } from '@/lib/db';
 import { requireApiContext } from '@/lib/api/route-helpers';
 import { logError } from '@/lib/log';
 
-// Borne l'attente du storage : au-delà, on renvoie une erreur nette plutôt
-// que de laisser le client charger à l'infini (ce qui pouvait wedger le SW).
+// Backstop plateforme : borne la durée de la lambda quoi qu'il arrive.
+export const maxDuration = 30;
+
+// Deux gardes de délai distinctes :
+// - `FETCH_TIMEOUT_MS` borne la RÉSOLUTION du `get()` storage.
+// - `BODY_READ_TIMEOUT_MS` borne le TRANSFERT du corps (drain du stream
+//   Vercel Blob). C'est CE maillon qui pouvait pendre à l'infini sans erreur
+//   (charge indéfiniment côté client) : `get()` résout vite puis le stream
+//   cale. Voir `readBodyWithTimeout`.
 const FETCH_TIMEOUT_MS = 10_000;
+const BODY_READ_TIMEOUT_MS = 15_000;
 
 // GET /api/justificatifs/<entity_type>/<entity_id>/<filename>
 // Sert le file justif. Auth obligatoire (session ou Bearer MCP) ET le
@@ -56,12 +64,27 @@ export async function GET(request: Request, { params }: { params: Promise<{ path
   if (!result) {
     return NextResponse.json({ error: 'Fichier non trouvé' }, { status: 404 });
   }
-  // `as BodyInit` : TS 5.x distingue `Uint8Array<ArrayBufferLike>` de
-  // `BodyInit` à cause du generic ; à l'exécution `Response` accepte
-  // sans souci les deux types qu'on lui passe ici.
-  return new NextResponse(result.body as BodyInit, {
+
+  // Draine le corps sous garde de délai plutôt que de streamer tel quel : un
+  // stream qui cale en transfert pendait à l'infini (aucune erreur levée).
+  // Au timeout, `readBodyWithTimeout` annule le reader → libère la lambda.
+  const bodyOut = await readBodyWithTimeout(result.body, BODY_READ_TIMEOUT_MS);
+  if (bodyOut.status === 'timeout') {
+    logError('justificatifs', 'Lecture justif : transfert du corps interrompu (délai dépassé)', undefined, { relPath });
+    return NextResponse.json({ error: 'Justificatif temporairement injoignable.' }, { status: 502 });
+  }
+  if (bodyOut.status === 'error') {
+    logError('justificatifs', 'Lecture justif : erreur pendant le transfert du corps', bodyOut.error, { relPath });
+    return NextResponse.json({ error: 'Erreur lors de la lecture du justificatif.' }, { status: 502 });
+  }
+
+  // Corps complet et de longueur connue → pas de tail de stream ouvert vers le
+  // client. `as BodyInit` : TS 5.x distingue `Uint8Array<ArrayBufferLike>` de
+  // `BodyInit` à cause du generic ; `Response` l'accepte sans souci au runtime.
+  return new NextResponse(bodyOut.bytes as BodyInit, {
     headers: {
       'Content-Type': result.contentType ?? 'application/octet-stream',
+      'Content-Length': String(bodyOut.bytes.length),
       'Cache-Control': 'private, max-age=0, no-store',
     },
   });
