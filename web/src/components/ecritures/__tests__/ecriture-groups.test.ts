@@ -39,6 +39,30 @@ describe('buildEcritureGroups — consolidation multi-ventilation', () => {
     expect(items.filter((i) => i.kind === 'row')).toHaveLength(0);
   });
 
+  it('head = la TÊTE du groupe (created_at le plus ancien), même quand le tri SQL (created_at DESC) place les enfants devant', () => {
+    // Cas réel prod 2026-07-27 (virement groupé MERSCH, vg_569c3deb…) : la tête
+    // ECR-483 porte les 5 remboursements liés + les justifs ; les enfants ont été
+    // (re)créés le 25/07 par ventilateDraft. `listEcritures` finit son tri par
+    // `created_at DESC` → les enfants arrivent en premier dans `rows`. Prendre
+    // rows[0] comme head ferait pointer le panneau sur un enfant sans aucune
+    // pièce → justifs/rembs invisibles alors que le tick « justif » est vert.
+    const items = buildEcritureGroups([
+      ecr({ id: 'ECR-489', amount_cents: 16112, ventilation_group_id: 'vg1', created_at: '2026-07-25T17:15:45Z' }),
+      ecr({ id: 'ECR-490', amount_cents: 18091, ventilation_group_id: 'vg1', created_at: '2026-07-25T17:15:45Z' }),
+      ecr({ id: 'ECR-491', amount_cents: 2190, ventilation_group_id: 'vg1', created_at: '2026-07-25T17:15:45Z' }),
+      ecr({ id: 'ECR-483', amount_cents: 599, ventilation_group_id: 'vg1', created_at: '2026-07-21T07:37:32Z' }),
+    ]);
+    const item = items[0];
+    if (item.kind !== 'aggregate') throw new Error('attendu aggregate');
+    expect(item.head.id).toBe('ECR-483');
+    // Les membres sont rendus tête d'abord (ordre stable = ordre d'ancrage
+    // attendu par ventilateDraft, dont ventilations[0] met à jour la tête).
+    expect(item.members.map((m) => m.id)).toEqual(['ECR-483', 'ECR-489', 'ECR-490', 'ECR-491']);
+    // Total et count inchangés.
+    expect(item.group.count).toBe(4);
+    expect(item.group.totalCents).toBe(-36992);
+  });
+
   it('cas 2 — vrai multi-sous-lignes bancaire (sous_index distincts, pas de ventilation_group_id) → 1 header bank + N rows (inchangé)', () => {
     const items = buildEcritureGroups([
       ecr({ id: 'E1', amount_cents: 7000, ligne_bancaire_id: 888, ligne_bancaire_sous_index: 0 }),

@@ -80,21 +80,43 @@ export async function listJustificatifsForEcriture(
 ): Promise<EcritureJustifsBundle> {
   const db = getDb();
 
+  const ecr = await db
+    .prepare('SELECT amount_cents, ventilation_group_id FROM ecritures WHERE group_id = ? AND id = ?')
+    .get<{ amount_cents: number; ventilation_group_id: string | null }>(groupId, ecritureId);
+
+  // Périmètre du bundle = le GROUPE de ventilation quand il y en a un. Une
+  // pièce (justif direct, dépôt, demande de remboursement) peut être accrochée
+  // à n'importe quelle ligne du groupe : les demandes restent épinglées à la
+  // tête (cf. syncEcritureVentilationFromRembs), un justif d'inbox ou du MCP
+  // peut atterrir sur une ligne-enfant. Le panneau, lui, représente le groupe
+  // entier (une seule ligne consolidée dans la table, tick « justif » calculé
+  // sur tous les membres) → limiter le bundle à `ecritureId` masquait les
+  // pièces des autres lignes. Cas réel prod 2026-07-27 : virement groupé
+  // MERSCH, 5 demandes liées à la tête, panneau vide.
+  const scopeIds = ecr?.ventilation_group_id
+    ? (
+        await db
+          .prepare('SELECT id FROM ecritures WHERE group_id = ? AND ventilation_group_id = ?')
+          .all<{ id: string }>(groupId, ecr.ventilation_group_id)
+      ).map((r) => r.id)
+    : [ecritureId];
+  const scopePlaceholders = scopeIds.map(() => '?').join(', ');
+
   const direct = await db
     .prepare(
       `SELECT * FROM justificatifs
-       WHERE group_id = ? AND entity_type = 'ecriture' AND entity_id = ?
+       WHERE group_id = ? AND entity_type = 'ecriture' AND entity_id IN (${scopePlaceholders})
        ORDER BY uploaded_at DESC`,
     )
-    .all<Justificatif>(groupId, ecritureId);
+    .all<Justificatif>(groupId, ...scopeIds);
 
   const linkedRembs = await db
     .prepare(
       `SELECT id, demandeur, total_cents, amount_cents FROM remboursements
-       WHERE group_id = ? AND ecriture_id = ?
+       WHERE group_id = ? AND ecriture_id IN (${scopePlaceholders})
        ORDER BY id`,
     )
-    .all<{ id: string; demandeur: string | null; total_cents: number | null; amount_cents: number | null }>(groupId, ecritureId);
+    .all<{ id: string; demandeur: string | null; total_cents: number | null; amount_cents: number | null }>(groupId, ...scopeIds);
 
   const viaRemboursement = await Promise.all(
     linkedRembs.map(async (r) => {
@@ -116,9 +138,6 @@ export async function listJustificatifsForEcriture(
     }),
   );
 
-  const ecr = await db
-    .prepare('SELECT amount_cents, ventilation_group_id FROM ecritures WHERE group_id = ? AND id = ?')
-    .get<{ amount_cents: number; ventilation_group_id: string | null }>(groupId, ecritureId);
   let ventilationGroupTotalCents = ecr?.amount_cents ?? 0;
   if (ecr?.ventilation_group_id) {
     const g = await db

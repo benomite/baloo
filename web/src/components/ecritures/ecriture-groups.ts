@@ -61,6 +61,17 @@ export function isMultiCategoryRow(group: Group | null | undefined): boolean {
   return group != null && group.count >= 2;
 }
 
+// Tie-break d'ids « ECR-2026-489 » : ordre d'émission = ordre NUMÉRIQUE du
+// dernier segment (le lexicographique mettrait ECR-2026-1000 avant ECR-2026-489).
+// Sert quand les membres partagent le même `created_at` (groupe créé d'un bloc
+// par la saisie multi-ventilation) : l'ordre reste celui de la saisie.
+function compareIds(a: string, b: string): number {
+  const na = Number(a.slice(a.lastIndexOf('-') + 1));
+  const nb = Number(b.slice(b.lastIndexOf('-') + 1));
+  if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
+  return a.localeCompare(b);
+}
+
 function signedTotal(entries: Ecriture[]): number {
   return entries.reduce((sum, e) => sum + (e.type === 'depense' ? -e.amount_cents : e.amount_cents), 0);
 }
@@ -90,6 +101,21 @@ export function buildEcritureGroups(rows: Ecriture[]): Item[] {
       (byVentil.get(e.ventilation_group_id) ?? byVentil.set(e.ventilation_group_id, []).get(e.ventilation_group_id)!).push(e);
     }
   }
+  // Les membres d'un groupe `ventil` sont réordonnés TÊTE D'ABORD. La tête est
+  // l'écriture d'origine : `ventilateDraft` la met à jour en place (elle garde
+  // son id, ses justifs, ses remboursements liés, son identité bancaire) et
+  // (re)crée les autres membres → elle a le `created_at` le plus ancien. Or le
+  // tri de `listEcritures` finit par `created_at DESC`, donc les enfants
+  // arrivent devant : sans ce tri, `head = members[0]` désignait un enfant sans
+  // aucune pièce → panneau vide (ni justif ni remboursement) alors que le tick
+  // « justif » de la ligne, calculé sur TOUS les membres, était vert ; et les
+  // mutations du panneau (ventilation, validation, couverture rembs)
+  // s'ancraient sur la mauvaise ligne. Cas réel prod 2026-07-27 (virement
+  // groupé MERSCH : tête ECR-483 porteuse des 5 demandes, reléguée en dernier).
+  for (const entries of byVentil.values()) {
+    entries.sort((a, b) => a.created_at.localeCompare(b.created_at) || compareIds(a.id, b.id));
+  }
+
   const isCwGrouped = (id: number): boolean => (byCw.get(id)?.length ?? 0) >= 2;
   const isVentilGrouped = (id: string): boolean => (byVentil.get(id)?.length ?? 0) >= 2;
 
