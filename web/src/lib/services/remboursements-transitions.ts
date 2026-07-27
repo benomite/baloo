@@ -20,7 +20,9 @@ export const REMBOURSEMENTS_TRANSITIONS: Record<string, TransitionGuard> = {
   virement_effectue: { from: ['valide_tresorier', 'valide_rg'], allowedRoles: ['tresorier', 'RG'] },
   termine: { from: ['virement_effectue'], allowedRoles: ['tresorier', 'RG'] },
   refuse: {
-    from: ['a_traiter', 'valide_tresorier', 'valide_rg', 'virement_effectue'],
+    // A1 : refus possible tant que la demande n'est pas validée RG — donc
+    // seulement pendant qu'elle attend une validation (trésorier ou RG).
+    from: ['a_traiter', 'valide_tresorier'],
     allowedRoles: ['tresorier', 'RG'],
   },
 };

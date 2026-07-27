@@ -113,7 +113,8 @@ export default async function RemboursementDetailPage({
   const canEditFull = (isOwner && r.status === 'a_traiter') || isAdmin;
   const canPatchNotes =
     (isOwner || isAdmin) && r.status !== 'a_traiter' && r.status !== 'refuse';
-  const canRefuse = isAdmin && !['termine', 'refuse'].includes(r.status);
+  // A1 : refus possible seulement tant qu'une validation est attendue.
+  const canRefuse = isAdmin && ['a_traiter', 'valide_tresorier'].includes(r.status);
   const totalCents = r.total_cents || r.amount_cents;
   const patchAction = patchNotesAndRib.bind(null, id);
 

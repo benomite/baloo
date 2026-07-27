@@ -55,21 +55,38 @@ describe('isAllowedRembsTransition', () => {
     });
   });
 
-  describe('refus depuis n importe quelle étape sauf termine/refuse', () => {
-    const fromStatuses = ['a_traiter', 'valide_tresorier', 'valide_rg', 'virement_effectue'];
-    for (const from of fromStatuses) {
+  describe('refus limité à avant validation RG (A1)', () => {
+    const allowedFrom = ['a_traiter', 'valide_tresorier'];
+    for (const from of allowedFrom) {
       it(`${from} → refuse par tresorier : OK`, () => {
         expect(isAllowedRembsTransition(from, 'refuse', 'tresorier'))
           .toEqual({ ok: true });
       });
     }
-    it('termine → refuse : refusé (terminal)', () => {
-      const r = isAllowedRembsTransition('termine', 'refuse', 'tresorier');
-      expect(r).toEqual({ ok: false, reason: 'wrong_source' });
+    const forbiddenFrom = ['valide_rg', 'virement_effectue', 'termine', 'refuse'];
+    for (const from of forbiddenFrom) {
+      it(`${from} → refuse : refusé (wrong_source)`, () => {
+        const r = isAllowedRembsTransition(from, 'refuse', 'tresorier');
+        expect(r).toEqual({ ok: false, reason: 'wrong_source' });
+      });
+    }
+  });
+
+  describe('refuse — resserré avant validation RG (A1)', () => {
+    it('autorise le refus depuis a_traiter (trésorier ou RG)', () => {
+      expect(isAllowedRembsTransition('a_traiter', 'refuse', 'tresorier')).toEqual({ ok: true });
+      expect(isAllowedRembsTransition('a_traiter', 'refuse', 'RG')).toEqual({ ok: true });
     });
-    it('refuse → refuse : refusé', () => {
-      const r = isAllowedRembsTransition('refuse', 'refuse', 'tresorier');
-      expect(r).toEqual({ ok: false, reason: 'wrong_source' });
+    it('autorise le refus depuis valide_tresorier', () => {
+      expect(isAllowedRembsTransition('valide_tresorier', 'refuse', 'RG')).toEqual({ ok: true });
+    });
+    it('INTERDIT le refus depuis valide_rg', () => {
+      expect(isAllowedRembsTransition('valide_rg', 'refuse', 'tresorier'))
+        .toEqual({ ok: false, reason: 'wrong_source' });
+    });
+    it('INTERDIT le refus depuis virement_effectue', () => {
+      expect(isAllowedRembsTransition('virement_effectue', 'refuse', 'tresorier'))
+        .toEqual({ ok: false, reason: 'wrong_source' });
     });
   });
 
