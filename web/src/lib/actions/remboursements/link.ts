@@ -21,7 +21,11 @@ const ADMIN_ROLES = ['tresorier', 'RG'];
 // A3 : l'écriture comptable du virement n'existe qu'une fois le virement
 // effectué → garde de statut avant de poser le lien.
 // A4 : poser le lien matérialise le virement rapproché → tentative
-// (best-effort) de passage en `termine` juste après.
+// (best-effort) de passage en `termine` juste après. Ce chemin passe par
+// `applyRemboursementTransition`, qui pour la cible `termine` ne fait que
+// mettre à jour le statut (pas de signature électronique ni de
+// régénération du PDF feuille : ces effets ne s'appliquent qu'aux cibles
+// `valide_tresorier` / `valide_rg`).
 export async function linkRemboursementToEcriture(rbtId: string, formData: FormData): Promise<void> {
   const ctx = await getCurrentContext();
   if (!ADMIN_ROLES.includes(ctx.role)) {
@@ -52,6 +56,8 @@ export async function linkRemboursementToEcriture(rbtId: string, formData: FormD
   }
 
   // A4 : le lien matérialise le virement rapproché → passage en terminé auto.
+  // Statut uniquement : `applyRemboursementTransition` ne signe/régénère le
+  // PDF feuille que pour `valide_tresorier` / `valide_rg`, pas pour `termine`.
   // Best-effort : si la transition échoue (retour `{ok:false}` OU exception),
   // le lien reste posé et l'utilisateur suit le chemin de succès normal.
   try {

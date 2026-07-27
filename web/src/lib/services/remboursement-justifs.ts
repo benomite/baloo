@@ -25,52 +25,6 @@ export async function listAssignationsLignes(
     .all<LigneJustifAssignation>(remboursementId);
 }
 
-// Remplace l'ensemble des lignes couvertes par CE justif. `ligneIds` vide
-// = on retire toutes ses affectations. Garde-fous : le justif et chaque
-// ligne doivent appartenir à la même demande / au même groupe.
-export async function setJustificatifLignes(
-  { groupId }: { groupId: string },
-  remboursementId: string,
-  justificatifId: string,
-  ligneIds: string[],
-): Promise<void> {
-  const db = getDb();
-
-  const justif = await db
-    .prepare(
-      `SELECT id FROM justificatifs
-       WHERE id = ? AND group_id = ? AND entity_type = 'remboursement' AND entity_id = ?`,
-    )
-    .get<{ id: string }>(justificatifId, groupId, remboursementId);
-  if (!justif) {
-    throw new Error(`Justificatif ${justificatifId} introuvable sur la demande ${remboursementId}.`);
-  }
-
-  const wanted = [...new Set(ligneIds)];
-  for (const ligneId of wanted) {
-    const ligne = await db
-      .prepare('SELECT id FROM remboursement_lignes WHERE id = ? AND remboursement_id = ?')
-      .get<{ id: string }>(ligneId, remboursementId);
-    if (!ligne) {
-      throw new Error(`Ligne ${ligneId} n'appartient pas à la demande ${remboursementId}.`);
-    }
-  }
-
-  // Réaffectation : on efface les paires de CE justif (table de liaison
-  // pure, aucune donnée métier attachée) puis on ré-insère la sélection.
-  await db
-    .prepare('DELETE FROM remboursement_ligne_justificatifs WHERE justificatif_id = ?')
-    .run(justificatifId);
-  const now = currentTimestamp();
-  for (const ligneId of wanted) {
-    await db
-      .prepare(
-        'INSERT INTO remboursement_ligne_justificatifs (ligne_id, justificatif_id, created_at) VALUES (?, ?, ?)',
-      )
-      .run(ligneId, justificatifId, now);
-  }
-}
-
 // Remplace l'ensemble des justifs rattachés à CETTE ligne. `justificatifIds`
 // vide = retire tous. Garde-fous : la ligne appartient à la demande, et chaque
 // justif est bien déposé sur la demande (entity remboursement).

@@ -15,6 +15,4 @@ export { updateRemboursementStatus } from './status';
 
 export { linkRemboursementToEcriture, unlinkRemboursementFromEcriture } from './link';
 
-export { assignJustifToLignes } from './assign-justif';
-
 export { assignLigneJustifs } from './assign-ligne-justifs';
