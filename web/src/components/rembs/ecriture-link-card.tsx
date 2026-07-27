@@ -14,6 +14,7 @@ import {
   linkRemboursementToEcriture,
   unlinkRemboursementFromEcriture,
 } from '@/lib/actions/remboursements';
+import { canLinkEcriture } from '@/lib/actions/remboursements/link-guard';
 import { EcritureLinkPicker } from './ecriture-link-picker';
 
 // Server component : affiché dans la sidebar de la page détail rembs.
@@ -33,6 +34,7 @@ interface EcritureLinkCardProps {
   groupId: string;
   ecritureId: string | null;
   amountCents: number;
+  status: string;
 }
 
 export async function EcritureLinkCard({
@@ -40,9 +42,23 @@ export async function EcritureLinkCard({
   groupId,
   ecritureId,
   amountCents,
+  status,
 }: EcritureLinkCardProps) {
   if (ecritureId) {
     return <LinkedView rembsId={rembsId} ecritureId={ecritureId} amountCents={amountCents} groupId={groupId} />;
+  }
+
+  // A3 : l'écriture comptable du virement n'existe qu'une fois le virement
+  // effectué. Avant ça, pas la peine de chercher des candidats.
+  if (!canLinkEcriture(status)) {
+    return (
+      <Section title="Écriture comptable">
+        <p className="text-[12.5px] text-fg-muted italic">
+          L&apos;écriture comptable du virement n&apos;existe qu&apos;une fois le virement
+          effectué. Reviens ici à ce moment-là pour lier la demande.
+        </p>
+      </Section>
+    );
   }
 
   const candidates = await findEcritureCandidatesForRembs(groupId, rembsId);

@@ -4,7 +4,12 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { getCurrentContext } from '../../context';
 import { setRembsEcritureLink } from '../../services/remboursement-ecriture-link';
+import { updateRemboursement } from '../../services/remboursements';
+import { applyRemboursementTransition } from '../../services/remboursement-transition';
+import { getRemboursement } from '../../queries/remboursements';
 import { logError } from '../../log';
+import { canLinkEcriture } from './link-guard';
+import { captureClientMeta, deriveAppUrl } from './_helpers';
 
 const ADMIN_ROLES = ['tresorier', 'RG'];
 
@@ -12,11 +17,25 @@ const ADMIN_ROLES = ['tresorier', 'RG'];
 //
 // Signature `(rbtId, formData)` pour usage `<form action={...bind(null, id)}>`,
 // le sélecteur d'écriture (Combobox recherchable) poste `ecriture_id`.
+//
+// A3 : l'écriture comptable du virement n'existe qu'une fois le virement
+// effectué → garde de statut avant de poser le lien.
+// A4 : poser le lien matérialise le virement rapproché → tentative
+// (best-effort) de passage en `termine` juste après.
 export async function linkRemboursementToEcriture(rbtId: string, formData: FormData): Promise<void> {
   const ctx = await getCurrentContext();
   if (!ADMIN_ROLES.includes(ctx.role)) {
     redirect(
       `/remboursements/${rbtId}?error=${encodeURIComponent('Action réservée aux trésoriers / RG.')}`,
+    );
+  }
+
+  const rbt = await getRemboursement(rbtId);
+  if (!rbt || !canLinkEcriture(rbt.status)) {
+    redirect(
+      `/remboursements/${rbtId}?error=${encodeURIComponent(
+        "L'écriture comptable n'existe qu'une fois le virement effectué.",
+      )}`,
     );
   }
 
@@ -30,6 +49,25 @@ export async function linkRemboursementToEcriture(rbtId: string, formData: FormD
   const result = await setRembsEcritureLink(ctx.groupId, rbtId, ecritureId);
   if (!result.ok) {
     redirect(`/remboursements/${rbtId}?error=${encodeURIComponent(result.error)}`);
+  }
+
+  // A4 : le lien matérialise le virement rapproché → passage en terminé auto.
+  // Best-effort : si la transition échoue (ex. déjà terminé), le lien reste.
+  const transition = await applyRemboursementTransition(
+    {
+      groupId: ctx.groupId,
+      role: ctx.role,
+      userId: ctx.userId,
+      email: ctx.email,
+      name: ctx.name,
+      scopeUniteIds: ctx.scopeUniteIds,
+    },
+    rbtId,
+    'termine',
+    { clientMeta: await captureClientMeta(), appUrl: await deriveAppUrl() },
+  );
+  if (!transition.ok) {
+    logError('remboursements', 'Lien posé mais passage en terminé échoué', new Error(transition.message));
   }
 
   revalidatePath(`/remboursements/${rbtId}`);
@@ -46,10 +84,20 @@ export async function unlinkRemboursementFromEcriture(rbtId: string): Promise<vo
     );
   }
 
+  const rbt = await getRemboursement(rbtId);
   try {
     const result = await setRembsEcritureLink(ctx.groupId, rbtId, null);
     if (result.ok && result.previous) {
       revalidatePath(`/ecritures/${result.previous}`);
+    }
+    // Le passage en terminé venait du lien (A4) → le délier l'annule. Écriture
+    // directe du statut (pas de transition régressive `termine → virement_effectue`).
+    if (rbt && rbt.status === 'termine') {
+      await updateRemboursement(
+        { groupId: ctx.groupId, scopeUniteIds: ctx.scopeUniteIds },
+        rbtId,
+        { status: 'virement_effectue' },
+      );
     }
   } catch (err) {
     logError('remboursements', 'Délier rembs/écriture échoué', err);

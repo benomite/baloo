@@ -308,6 +308,7 @@ export default async function RemboursementDetailPage({
               groupId={ctx.groupId}
               ecritureId={r.ecriture_id}
               amountCents={totalCents}
+              status={r.status}
             />
           )}
 
