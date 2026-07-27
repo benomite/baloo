@@ -234,7 +234,7 @@ export function RemboursementForm({
             return (
             <div
               key={l.key}
-              className="flex flex-col gap-3 rounded-xl border border-border p-3 sm:grid sm:grid-cols-[110px_100px_1fr_140px_auto] sm:items-end sm:gap-3 sm:rounded-none sm:border-0 sm:p-0"
+              className="flex flex-col gap-3 rounded-xl border border-border p-3 sm:grid sm:grid-cols-[100px_150px_1fr_130px_auto] sm:items-end sm:gap-3 sm:rounded-none sm:border-0 sm:p-0"
             >
               <input type="hidden" name={`ligne_${i}_id`} value={l.dbId ?? ''} />
               <Field label="Type" htmlFor={`ligne_${i}_type_sel`} className={hideLabelDesktop}>
