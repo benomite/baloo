@@ -34,6 +34,7 @@ import {
   assignJustifToLignes,
 } from '@/lib/actions/remboursements';
 import { convertRembToDepot } from '@/lib/actions/remboursements/convert';
+import { canConvertRemboursement } from '@/lib/actions/remboursements/convert-guard';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
 import { getCurrentContext } from '@/lib/context';
 import { cn } from '@/lib/utils';
@@ -294,8 +295,8 @@ export default async function RemboursementDetailPage({
               isRG={isRG}
               canRefuse={canRefuse}
               // Rattrapage : convertir une demande soumise par erreur en dépôt.
-              // Pas sur une demande déjà payée/terminée ni déjà convertie.
-              canConvert={!['virement_effectue', 'termine', 'converti'].includes(r.status)}
+              // Trésorier seul, avant toute validation (cf. convert-guard.ts, A2).
+              canConvert={canConvertRemboursement(ctx.role, r.status)}
             />
           )}
         </div>

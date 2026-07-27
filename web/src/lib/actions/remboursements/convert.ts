@@ -3,15 +3,19 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { getCurrentContext } from '../../context';
-import { ADMIN_ROLES } from '../../auth/access';
+import { getRemboursement } from '../../queries/remboursements';
 import { convertRemboursementToDepot } from '../../services/remboursement-convert';
+import { canConvertRemboursement } from './convert-guard';
 
 // Convertit une demande de remboursement soumise par erreur en dépôt/justif
-// (cf. remboursement-convert.ts). Admin only. Redirige avec un message.
+// (cf. remboursement-convert.ts). Trésorier seul, avant toute validation
+// (statut a_traiter) — cf. convert-guard.ts (A2).
 export async function convertRembToDepot(id: string): Promise<void> {
   const ctx = await getCurrentContext();
-  if (!(ADMIN_ROLES as readonly string[]).includes(ctx.role)) {
-    redirect('/remboursements?error=' + encodeURIComponent('Action réservée aux trésoriers / RG.'));
+  const rbt = await getRemboursement(id);
+  if (!rbt || !canConvertRemboursement(ctx.role, rbt.status)) {
+    redirect('/remboursements/' + id + '?error=' + encodeURIComponent(
+      'Conversion possible seulement par le trésorier, sur une demande non validée.'));
   }
   try {
     const res = await convertRemboursementToDepot({ groupId: ctx.groupId }, id);
