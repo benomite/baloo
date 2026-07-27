@@ -278,6 +278,15 @@ export interface UpdateEcritureInput {
 // pour modifier date/montant/type sans passer par le form complet.
 // `description` est un champ sync (= libellé envoyé à Comptaweb) : éditable
 // inline tant que l'écriture est un brouillon, verrouillé une fois dans CW.
+// Colonnes d'EN-TÊTE de pièce : elles décrivent le paiement, pas la
+// ventilation, donc elles sont communes à tout un `ventilation_group_id` (une
+// pièce Comptaweb = N ventilations). `amount_cents`, `unite_id`,
+// `category_id` et `activite_id` en sont volontairement absents (propres à la
+// ligne), ainsi que `notes` (contenu saisi, jamais écrasé ailleurs).
+const PIECE_FIELDS: readonly string[] = [
+  'date_ecriture', 'description', 'type', 'mode_paiement_id', 'carte_id', 'numero_piece', 'justif_attendu',
+];
+
 const INLINE_FIELDS_SYNC = ['unite_id', 'category_id', 'activite_id', 'mode_paiement_id', 'carte_id', 'description'] as const;
 const INLINE_FIELDS_INTERNAL = ['justif_attendu', 'notes'] as const;
 export type InlineField = (typeof INLINE_FIELDS_SYNC)[number] | (typeof INLINE_FIELDS_INTERNAL)[number];
@@ -293,8 +302,8 @@ export async function updateEcriture(
   // transition de statut/comptaweb_synced restent applicables. Les autres
   // champs sont silencieusement ignorés — l'UX renvoie déjà la lecture seule.
   const current = await getDb()
-    .prepare('SELECT status FROM ecritures WHERE id = ? AND group_id = ?')
-    .get<{ status: string }>(id, groupId);
+    .prepare('SELECT status, ventilation_group_id FROM ecritures WHERE id = ? AND group_id = ?')
+    .get<{ status: string; ventilation_group_id: string | null }>(id, groupId);
   if (!current) return null;
   // Lock sync : écriture déjà côté Comptaweb (mirror/divergent). On laisse
   // les champs internes Baloo (notes, justif_attendu) modifiables ; la
@@ -324,14 +333,40 @@ export async function updateEcriture(
     return (await getEcriture({ groupId }, id)) ?? null;
   }
 
+  // Champs d'en-tête de pièce touchés par ce patch → à répliquer sur les
+  // lignes-sœurs (chaque entrée de `sets` a poussé exactement une valeur, d'où
+  // l'appariement par index).
+  const now = currentTimestamp();
+  const pieceUpdates = sets
+    .map((set, i) => ({ set, value: values[i] }))
+    .filter(({ set }) => PIECE_FIELDS.includes(set.slice(0, set.indexOf(' '))));
+
   sets.push('updated_at = ?');
-  values.push(currentTimestamp());
+  values.push(now);
   values.push(id, groupId);
 
   const result = await getDb()
     .prepare(`UPDATE ecritures SET ${sets.join(', ')} WHERE id = ? AND group_id = ?`)
     .run(...values);
   if (result.changes === 0) return null;
+
+  // Un groupe de ventilation = UNE pièce Comptaweb : `ventilateDraft` copie les
+  // champs d'en-tête de la tête vers les enfants à leur création, et
+  // `syncDraftToComptaweb` n'envoie que ceux de la ligne cliquée. Les laisser
+  // diverger produisait des états faux : « Modes multiples » sur un paiement
+  // unique, lignes-sœurs jugées incomplètes, « Valider » grisé (cas prod
+  // 2026-07-27, virement groupé MERSCH). On ne touche que les sœurs encore
+  // locales : une ligne déjà dans Comptaweb se résout par la sync de retour.
+  if (current.ventilation_group_id && pieceUpdates.length > 0) {
+    await getDb()
+      .prepare(
+        `UPDATE ecritures
+            SET ${pieceUpdates.map((u) => u.set).join(', ')}, updated_at = ?
+          WHERE group_id = ? AND ventilation_group_id = ? AND id <> ?
+            AND status = 'draft' AND comptaweb_ecriture_id IS NULL`,
+      )
+      .run(...pieceUpdates.map((u) => u.value), now, groupId, current.ventilation_group_id, id);
+  }
 
   return (await getEcriture({ groupId }, id)) ?? null;
 }

@@ -17,7 +17,7 @@ import { DeleteDraftButton } from '@/components/ecritures/delete-draft-button';
 import { PanelValiderButton } from '@/components/ecritures/panel-valider-button';
 import { PanelMoreMenu } from '@/components/ecritures/panel-more-menu';
 import { updateEcriture, updateEcritureField, fetchEcritureDetail } from '@/lib/actions/ecritures';
-import { computeReadiness } from '@/lib/sync-readiness';
+import { computeGroupReadiness } from '@/lib/sync-readiness';
 import { panelViewModel } from '@/components/ecritures/panel-view-model';
 import { type EcritureJustifsBundle } from '@/lib/queries/justificatifs';
 import { type DepotEnriched, type DepotForSharing } from '@/lib/services/depots';
@@ -109,7 +109,6 @@ export function EcritureInlinePanel({
   }
 
   const vm = panelViewModel(ecriture);
-  const readiness = computeReadiness(ecriture, { categories, unites, modesPaiement, activites });
 
   // --- Ventilation d'un draft --------------------------------------------
   // Un brouillon local (jamais matérialisé dans Comptaweb) peut être éclaté en
@@ -120,6 +119,10 @@ export function EcritureInlinePanel({
   // et pour un aggregate `ventil` la table passe déjà tous les membres.
   const ventMembers = groupEntries && groupEntries.length > 1 ? groupEntries : [ecriture];
   const isMultiCategory = ventMembers.length >= 2;
+  // Readiness au niveau de la PIÈCE (= le groupe entier, ce que la validation
+  // envoie à Comptaweb) : sinon le panneau annonçait « Prête » sur la foi de la
+  // seule tête pendant que la ligne, elle, restait grisée — ou l'inverse.
+  const readiness = computeGroupReadiness(ventMembers, { categories, unites, modesPaiement, activites });
   const canVentilate = vm.editable && ecriture.status === 'draft' && ecriture.comptaweb_ecriture_id === null;
   const ventTotalCents = ventMembers.reduce((s, m) => s + m.amount_cents, 0);
   // 1 VentLine par membre du groupe. Le montant est au format saisie FR sans

@@ -13,7 +13,7 @@ import { updateEcritureField } from '@/lib/actions/ecritures';
 import { suggestMatchForEcriture, type MatchDepot, type MatchRemboursement } from '@/lib/services/ecriture-match';
 import { EcritureMatchBanner } from './ecriture-match-banner';
 import { EcritureInlinePanel } from './ecriture-inline-panel';
-import { computeReadiness } from '@/lib/sync-readiness';
+import { computeGroupReadiness, computeReadiness } from '@/lib/sync-readiness';
 import { ValiderCwButton } from './valider-cw-button';
 import { buildEcritureGroups, groupKey, isMultiCategoryRow, type Group, type GroupKind, type Item } from './ecriture-groups';
 import type { Ecriture, Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
@@ -260,15 +260,16 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
               const editable = isEditable(head);
               const uniformUnite = members.every((m) => m.unite_id != null && m.unite_id === head.unite_id);
               const uniformActivite = members.every((m) => m.activite_id != null && m.activite_id === head.activite_id);
-              const uniformMode = members.every((m) => m.mode_paiement_id === head.mode_paiement_id);
               const someJustif = members.some((m) => !!m.has_justificatif || !!m.remboursement_id);
               const railColor = (uniformUnite && head.unite_couleur) || style.rowRail;
               const railShadow = railColor ? { boxShadow: `inset 3px 0 0 0 ${railColor}` } : undefined;
               const rowBg = isSelected ? 'bg-primary/5' : style.rowBg;
               const showValider = head.status === 'draft' && head.comptaweb_ecriture_id == null;
-              const anyIncomplete = members.some(
-                (m) => computeReadiness(m, { categories, unites, modesPaiement, activites }).level === 'incomplete',
-              );
+              // Un groupe de ventilation = UNE pièce Comptaweb : le mode de
+              // paiement est jugé sur la tête (seul lu par la sync), l'imputation
+              // ligne par ligne. Cf. computeGroupReadiness.
+              const groupReadiness = computeGroupReadiness(members, { categories, unites, modesPaiement, activites });
+              const anyIncomplete = groupReadiness.level === 'incomplete';
               return (
                 <div key={`agg-${groupKey(g.kind, g.id)}`}>
                   <div
@@ -337,23 +338,36 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                         <Amount cents={g.totalCents} tone="signed" />
                       </div>
                       <div className="flex items-center justify-end gap-2 text-[12px]" onClick={stop}>
-                        {/* Mode : uniforme non nul → pastille ; uniforme nul →
-                            nudge « + Mode » ; sinon « Modes multiples ». */}
-                        {uniformMode && head.mode_paiement_id ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-fg-muted min-w-0">
-                            <Wallet size={11} className="shrink-0 text-fg-subtle" />
-                            <span className="truncate max-w-[110px]" title={head.mode_paiement_name ?? undefined}>{head.mode_paiement_name}</span>
-                          </span>
-                        ) : uniformMode ? (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/50 px-2 py-0.5 text-amber-600 dark:text-amber-400">
-                            <Wallet size={11} /> + Mode
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-fg-muted min-w-0">
-                            <Wallet size={11} className="shrink-0 text-fg-subtle" />
-                            <span className="truncate max-w-[110px]">Modes multiples</span>
-                          </span>
-                        )}
+                        {/* Mode : champ d'EN-TÊTE de pièce, donc UN seul pour tout
+                            le groupe → celui de la tête (jamais « Modes
+                            multiples » : un même paiement n'a qu'un mode).
+                            Éditable ici comme sur une ligne mono — le service
+                            le propage aux lignes-sœurs. */}
+                        <InlineSelect
+                          value={head.mode_paiement_id}
+                          disabled={!editable}
+                          placeholder="Aucun"
+                          options={modesPaiement.map((m) => ({ value: m.id, label: m.name }))}
+                          display={
+                            head.mode_paiement_name ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-fg-muted min-w-0">
+                                <Wallet size={11} className="shrink-0 text-fg-subtle" />
+                                <span className="truncate max-w-[110px]" title={head.mode_paiement_name}>{head.mode_paiement_name}</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/50 px-2 py-0.5 text-amber-600 dark:text-amber-400">
+                                <Wallet size={11} /> + Mode
+                              </span>
+                            )
+                          }
+                          onSave={async (v) => {
+                            const r = await updateEcritureField(head.id, 'mode_paiement_id', v);
+                            // Le mode descend sur toutes les sœurs → rafraîchir
+                            // chaque ligne du groupe, pas seulement la tête.
+                            if (r.ok) await Promise.all(members.map((m) => refreshRow(m.id)));
+                            return r;
+                          }}
+                        />
                         {isValidating ? (
                           <span
                             className="inline-flex items-center gap-1 text-[11.5px] font-medium text-amber-700 dark:text-amber-300"
@@ -365,7 +379,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                         ) : showValider ? (
                           <ValiderCwButton
                             disabled={anyIncomplete}
-                            missing={anyIncomplete ? ['une ou plusieurs ventilations incomplètes'] : []}
+                            missing={groupReadiness.missingFields}
                             onValidate={() => onValidate(head.id)}
                           />
                         ) : null}
