@@ -27,6 +27,11 @@ const nextConfig: NextConfig = {
   experimental: {
     serverActions: { bodySizeLimit: '10mb' },
   },
+  // pdfkit lit ses métriques de police .afm via fs (__dirname). En le
+  // déclarant "external", Next copie le package entier (avec js/data/*.afm)
+  // dans la fonction serverless au lieu de le bundler → plus d'ENOENT sur
+  // Vercel (feuille de remboursement qui ne se générait jamais).
+  serverExternalPackages: ['pdfkit'],
   async headers() {
     return [
       {
