@@ -3,7 +3,6 @@ import Link from 'next/link';
 import {
   Briefcase,
   CheckCircle2,
-  CreditCard,
   FileText,
   Paperclip,
   Shield,
@@ -22,6 +21,7 @@ import { Amount } from '@/components/shared/amount';
 import { Field } from '@/components/shared/field';
 import { Section } from '@/components/shared/section';
 import { EcritureLinkCard } from '@/components/rembs/ecriture-link-card';
+import { CoordonneesBancairesCard } from '@/components/rembs/coordonnees-bancaires-card';
 import { DetailDepensesTable } from '@/components/rembs/detail-depenses-table';
 import { getRemboursement } from '@/lib/queries/remboursements';
 import { listLignes } from '@/lib/services/remboursements';
@@ -227,33 +227,6 @@ export default async function RemboursementDetailPage({
             <DetailDepensesTable lignes={lignes} justifsParLigne={justifsParLigne} />
           </Section>
 
-          <Section
-            title="Coordonnées bancaires"
-            subtitle="Pour le virement."
-          >
-            {r.rib_texte ? (
-              <div className="rounded-md border border-border-soft bg-bg-sunken/40 px-3 py-2.5 font-mono text-[12.5px] text-fg whitespace-pre-line">
-                {r.rib_texte}
-              </div>
-            ) : ribFiles.length === 0 ? (
-              <p className="text-[12.5px] text-fg-muted italic">
-                Aucune coordonnée bancaire fournie.
-              </p>
-            ) : null}
-            {ribFiles.map((j) => (
-              <a
-                key={j.id}
-                href={`/api/justificatifs/${j.file_path}`}
-                target="_blank"
-                rel="noopener"
-                className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-fg hover:bg-brand-50 hover:text-brand transition-colors"
-              >
-                <CreditCard size={13} className="shrink-0 text-fg-subtle" strokeWidth={1.75} />
-                <span className="truncate">RIB · {j.original_filename}</span>
-              </a>
-            ))}
-          </Section>
-
           {canPatchNotes && (
             <Section
               title="Modifier notes / RIB"
@@ -311,6 +284,8 @@ export default async function RemboursementDetailPage({
               status={r.status}
             />
           )}
+
+          <CoordonneesBancairesCard ribTexte={r.rib_texte} ribFiles={ribFiles} />
 
           <Section
             title="Feuille de remboursement"
