@@ -52,22 +52,27 @@ export async function linkRemboursementToEcriture(rbtId: string, formData: FormD
   }
 
   // A4 : le lien matérialise le virement rapproché → passage en terminé auto.
-  // Best-effort : si la transition échoue (ex. déjà terminé), le lien reste.
-  const transition = await applyRemboursementTransition(
-    {
-      groupId: ctx.groupId,
-      role: ctx.role,
-      userId: ctx.userId,
-      email: ctx.email,
-      name: ctx.name,
-      scopeUniteIds: ctx.scopeUniteIds,
-    },
-    rbtId,
-    'termine',
-    { clientMeta: await captureClientMeta(), appUrl: await deriveAppUrl() },
-  );
-  if (!transition.ok) {
-    logError('remboursements', 'Lien posé mais passage en terminé échoué', new Error(transition.message));
+  // Best-effort : si la transition échoue (retour `{ok:false}` OU exception),
+  // le lien reste posé et l'utilisateur suit le chemin de succès normal.
+  try {
+    const transition = await applyRemboursementTransition(
+      {
+        groupId: ctx.groupId,
+        role: ctx.role,
+        userId: ctx.userId,
+        email: ctx.email,
+        name: ctx.name,
+        scopeUniteIds: ctx.scopeUniteIds,
+      },
+      rbtId,
+      'termine',
+      { clientMeta: await captureClientMeta(), appUrl: await deriveAppUrl() },
+    );
+    if (!transition.ok) {
+      logError('remboursements', 'Lien posé mais passage en terminé échoué', new Error(transition.message));
+    }
+  } catch (err) {
+    logError('remboursements', 'Lien posé mais passage en terminé échoué (exception)', err);
   }
 
   revalidatePath(`/remboursements/${rbtId}`);
