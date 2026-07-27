@@ -28,11 +28,7 @@ import { listLignes } from '@/lib/services/remboursements';
 import { listAssignationsLignes, computeCouverture } from '@/lib/services/remboursement-justifs';
 import { listSignatures, verifyChain } from '@/lib/services/signatures';
 import { listJustificatifs } from '@/lib/queries/justificatifs';
-import {
-  patchNotesAndRib,
-  updateRemboursementStatus,
-  assignJustifToLignes,
-} from '@/lib/actions/remboursements';
+import { patchNotesAndRib, updateRemboursementStatus } from '@/lib/actions/remboursements';
 import { convertRembToDepot } from '@/lib/actions/remboursements/convert';
 import { canConvertRemboursement } from '@/lib/actions/remboursements/convert-guard';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
@@ -85,10 +81,9 @@ export default async function RemboursementDetailPage({
     ]);
   if (!r) notFound();
 
-  // justif_id → ligne_ids et ligne_id → [justifs] (pour pastilles + cases).
+  // ligne_id → [justifs] (pour affichage + rattachement par ligne, C2/C3).
   const couverture = computeCouverture(lignes, assignations);
   const justifsParLigne: Record<string, { id: string; original_filename: string; file_path: string }[]> = {};
-  const lignesParJustif: Record<string, Set<string>> = {};
   for (const a of assignations) {
     const j = justificatifs.find((x) => x.id === a.justificatif_id);
     if (j) {
@@ -98,7 +93,6 @@ export default async function RemboursementDetailPage({
         file_path: j.file_path,
       });
     }
-    (lignesParJustif[a.justificatif_id] ??= new Set()).add(a.ligne_id);
   }
 
   const currentIdx = stepIndex(r.status);
@@ -224,7 +218,36 @@ export default async function RemboursementDetailPage({
               </div>
             }
           >
-            <DetailDepensesTable lignes={lignes} justifsParLigne={justifsParLigne} />
+            <DetailDepensesTable
+              lignes={lignes}
+              justifsParLigne={justifsParLigne}
+              demandeJustifs={justificatifs.map((j) => ({
+                id: j.id,
+                original_filename: j.original_filename,
+                file_path: j.file_path,
+              }))}
+              canEdit={isAdmin}
+              remboursementId={id}
+            />
+          </Section>
+
+          <Section title="Ajouter un justificatif">
+            <form action={uploadJustificatif}>
+              <input type="hidden" name="entity_type" value="remboursement" />
+              <input type="hidden" name="entity_id" value={id} />
+              <Field label="Fichier">
+                <input
+                  type="file"
+                  name="file"
+                  className="block w-full text-[13px] file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-brand-50 file:text-brand file:font-medium file:text-[13px] file:cursor-pointer hover:file:bg-brand-100 file:transition-colors"
+                />
+              </Field>
+              <div className="flex justify-end mt-3">
+                <PendingButton variant="outline" size="sm">
+                  Ajouter
+                </PendingButton>
+              </div>
+            </form>
           </Section>
 
           {canPatchNotes && (
@@ -330,58 +353,10 @@ export default async function RemboursementDetailPage({
                       <Paperclip size={13} className="shrink-0 text-fg-subtle" strokeWidth={1.75} />
                       <span className="truncate">{j.original_filename}</span>
                     </a>
-                    {isAdmin && lignes.length > 0 && (
-                      <details className="ml-6 mt-0.5">
-                        <summary className="cursor-pointer text-[11.5px] text-fg-subtle hover:text-fg-muted transition-colors">
-                          Rattacher à des lignes ({(lignesParJustif[j.id]?.size ?? 0)})
-                        </summary>
-                        <form
-                          action={assignJustifToLignes.bind(null, id, j.id)}
-                          className="mt-1.5 space-y-1.5 rounded-md border border-border-soft bg-bg-sunken/40 px-2.5 py-2"
-                        >
-                          {lignes.map((l) => (
-                            <label key={l.id} className="flex items-start gap-2 text-[12px] text-fg cursor-pointer">
-                              <input
-                                type="checkbox"
-                                name="ligne_ids"
-                                value={l.id}
-                                defaultChecked={lignesParJustif[j.id]?.has(l.id) ?? false}
-                                className="mt-0.5 h-3.5 w-3.5 rounded border-border-strong text-brand focus-visible:ring-2 focus-visible:ring-brand/30"
-                              />
-                              <span className="tabular-nums">
-                                {l.date_depense} · {l.nature} · {(l.amount_cents / 100).toFixed(2).replace('.', ',')} €
-                              </span>
-                            </label>
-                          ))}
-                          <div className="flex justify-end pt-1">
-                            <PendingButton variant="outline" size="sm">
-                              Enregistrer
-                            </PendingButton>
-                          </div>
-                        </form>
-                      </details>
-                    )}
                   </li>
                 ))}
               </ul>
             )}
-
-            <form action={uploadJustificatif} className="pt-2 border-t border-border-soft">
-              <input type="hidden" name="entity_type" value="remboursement" />
-              <input type="hidden" name="entity_id" value={id} />
-              <Field label="Ajouter un fichier">
-                <input
-                  type="file"
-                  name="file"
-                  className="block w-full text-[13px] file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-brand-50 file:text-brand file:font-medium file:text-[13px] file:cursor-pointer hover:file:bg-brand-100 file:transition-colors"
-                />
-              </Field>
-              <div className="flex justify-end mt-3">
-                <PendingButton variant="outline" size="sm">
-                  Ajouter
-                </PendingButton>
-              </div>
-            </form>
           </Section>
         </aside>
       </div>

@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { ArrowDown, ArrowUp, Check, Paperclip } from 'lucide-react';
 import { Amount } from '@/components/shared/amount';
+import { PendingButton } from '@/components/shared/pending-button';
+import { assignLigneJustifs } from '@/lib/actions/remboursements';
 import { formatKmRate, formatDistance } from '@/lib/services/km';
 
 export interface DetailLigne {
@@ -36,10 +38,18 @@ function SortArrow({ active, dir }: { active: boolean; dir: SortDir }) {
 export function DetailDepensesTable({
   lignes,
   justifsParLigne,
+  demandeJustifs = [],
+  canEdit = false,
+  remboursementId,
 }: {
   lignes: DetailLigne[];
   // map ligne_id → justifs rattachés
   justifsParLigne: Record<string, JustifRef[]>;
+  // tous les justifs déposés sur la demande (pour la liste à cocher)
+  demandeJustifs?: JustifRef[];
+  // trésorier/RG : peut rattacher un justif à une ligne
+  canEdit?: boolean;
+  remboursementId?: string;
 }) {
   const [col, setCol] = useState<SortCol>('date');
   const [dir, setDir] = useState<SortDir>('asc');
@@ -112,6 +122,35 @@ export function DetailDepensesTable({
                         </a>
                       ))}
                     </>
+                  )}
+                  {canEdit && remboursementId && demandeJustifs.length > 0 && (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer text-[11.5px] text-fg-subtle hover:text-fg-muted transition-colors">
+                        + rattacher un justif
+                      </summary>
+                      <form
+                        action={assignLigneJustifs.bind(null, remboursementId, l.id)}
+                        className="mt-1.5 space-y-1 rounded-md border border-border-soft bg-bg-sunken/40 px-2.5 py-2 min-w-[200px]"
+                      >
+                        {demandeJustifs.map((j) => (
+                          <label key={j.id} className="flex items-start gap-2 text-[12px] cursor-pointer">
+                            <input
+                              type="checkbox"
+                              name="justif_ids"
+                              value={j.id}
+                              defaultChecked={justifs.some((x) => x.id === j.id)}
+                              className="mt-0.5 h-3.5 w-3.5 rounded border-border-strong text-brand focus-visible:ring-2 focus-visible:ring-brand/30"
+                            />
+                            <span className="truncate">{j.original_filename}</span>
+                          </label>
+                        ))}
+                        <div className="flex justify-end pt-1">
+                          <PendingButton variant="outline" size="sm">
+                            Enregistrer
+                          </PendingButton>
+                        </div>
+                      </form>
+                    </details>
                   )}
                 </td>
                 <td className="py-2 px-2 text-right font-medium">
