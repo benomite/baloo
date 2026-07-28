@@ -74,6 +74,30 @@ export interface ReconcileOptions {
 }
 
 /**
+ * Clé de comparaison d'un n° de pièce, insensible à la casse et aux accents.
+ *
+ * Le même n° de pièce arrive dans Baloo sous DEUX casses différentes selon la
+ * porte d'entrée : l'import CSV le passe en MAJUSCULES (`comptaweb-import.ts`
+ * upper-case la pièce pour grouper les lignes d'une même écriture), la sync
+ * miroir écrit la casse réelle lue sur CW. Toute comparaison brute (`=`) rate
+ * donc l'absorption de la copie CSV et crée un doublon.
+ *
+ * Le repli doit se faire en JS, pas en SQL : `lower()` SQLite ne replie que
+ * l'ASCII, donc « PC25- 01 À 05 » ≠ « pc25- 01 à 05 » resterait non matché.
+ *
+ * Vu le bug : 2026-07-28, 11 paires de doublons en prod (import CSV du
+ * 2026-04-19 + première sync miroir du 2026-06-01).
+ */
+export function normalizePieceKey(piece: string | null | undefined): string {
+  return (piece ?? '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+/**
  * Signature stable des champs LISTE d'une écriture CW. Sert à décider de
  * l'enrichissement détail incrémental : si la signature stockée
  * (`ecritures.cw_signature`) diffère de celle recalculée, c'est que CW a

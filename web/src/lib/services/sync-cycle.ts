@@ -39,6 +39,7 @@ import {
   reconcile,
   reconcileVentilations,
   computeCwSignature,
+  normalizePieceKey,
   type CwSnapshotRow,
   type BalooRow,
   type ResolvedVentilation,
@@ -396,7 +397,7 @@ async function loadVentCandidates(
   // doublon) : pièce attachée (justif / dépôt justif / dépôt espèces / remb) et
   // imputation. `depots_justificatifs` est lazy-init (présente en prod ; les
   // tests qui exercent ce chemin la créent dans leur setup).
-  const SELECT_COLS = `e.id, e.amount_cents,
+  const SELECT_COLS = `e.id, e.amount_cents, e.numero_piece, e.date_ecriture, e.type,
       (CASE WHEN e.category_id IS NOT NULL OR e.unite_id IS NOT NULL OR e.activite_id IS NOT NULL
             THEN 1 ELSE 0 END) AS has_imput,
       (CASE WHEN EXISTS(SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id)
@@ -404,7 +405,15 @@ async function loadVentCandidates(
               OR EXISTS(SELECT 1 FROM depots_especes de WHERE de.ecriture_id = e.id)
               OR EXISTS(SELECT 1 FROM remboursements r WHERE r.ecriture_id = e.id)
             THEN 1 ELSE 0 END) AS has_attach`;
-  type CandRow = { id: string; amount_cents: number; has_imput: number; has_attach: number };
+  type CandRow = {
+    id: string;
+    amount_cents: number;
+    numero_piece: string | null;
+    date_ecriture: string;
+    type: string;
+    has_imput: number;
+    has_attach: number;
+  };
   const toCandidate = (row: CandRow, linked: boolean): VentCandidate => ({
     id: row.id,
     amountCents: row.amount_cents,
@@ -420,28 +429,26 @@ async function loadVentCandidates(
 
   if (ventAmounts.length > 0) {
     const placeholders = ventAmounts.map(() => '?').join(',');
+    // Le montant filtre en SQL (sélectif, indexable) ; le discriminant pièce /
+    // date+type est appliqué en JS, parce que la comparaison de pièce doit être
+    // insensible à la casse ET aux accents — hors de portée de `lower()`
+    // SQLite (cf. `normalizePieceKey`).
+    const rows = await db
+      .prepare(
+        `SELECT ${SELECT_COLS} FROM ecritures e
+         WHERE e.group_id = ? AND e.comptaweb_ecriture_id IS NULL
+           AND e.amount_cents IN (${placeholders})
+           AND e.status IN ('draft','pending_sync','mirror','divergent')`,
+      )
+      .all<CandRow>(groupId, ...ventAmounts);
     // Sécurité anti-collision (cf. AGENTS.md « Matching cascade UPSERT ») :
     // si l'écriture CW a un n° de pièce, on restreint le match aux écritures
     // de MÊME pièce (les adhésions ont des montants qui se télescopent d'une
     // pièce à l'autre). Sinon (pièce vide), on retombe sur date+type.
-    const piece = meta.numeroPiece.trim();
-    const unlinked = piece
-      ? await db
-          .prepare(
-            `SELECT ${SELECT_COLS} FROM ecritures e
-             WHERE e.group_id = ? AND e.comptaweb_ecriture_id IS NULL
-               AND e.numero_piece = ? AND e.amount_cents IN (${placeholders})
-               AND e.status IN ('draft','pending_sync','mirror','divergent')`,
-          )
-          .all<CandRow>(groupId, piece, ...ventAmounts)
-      : await db
-          .prepare(
-            `SELECT ${SELECT_COLS} FROM ecritures e
-             WHERE e.group_id = ? AND e.comptaweb_ecriture_id IS NULL
-               AND e.date_ecriture = ? AND e.type = ? AND e.amount_cents IN (${placeholders})
-               AND e.status IN ('draft','pending_sync','mirror','divergent')`,
-          )
-          .all<CandRow>(groupId, meta.date, meta.type, ...ventAmounts);
+    const pieceKey = normalizePieceKey(meta.numeroPiece);
+    const unlinked = pieceKey
+      ? rows.filter((r) => normalizePieceKey(r.numero_piece) === pieceKey)
+      : rows.filter((r) => r.date_ecriture === meta.date && r.type === meta.type);
     for (const u of unlinked) candidates.push(toCandidate(u, false));
   }
   return candidates;
@@ -824,23 +831,29 @@ export async function runSyncCycle(
     //   résorbé (il a l'air complet). On force le traitement ventilation ;
     //   une fois les ventilations reliées, plus de détachées → plus de
     //   retraitement (convergence).
+    //   Les détachées sont chargées UNE fois et indexées en mémoire : la
+    //   comparaison de pièce doit passer par `normalizePieceKey` (casse +
+    //   accents, cf. loadVentCandidates), donc pas de filtre SQL par pièce —
+    //   et ça économise une requête par ligne du snapshot.
+    const detachees = await db
+      .prepare(
+        `SELECT numero_piece, date_ecriture, type, description FROM ecritures
+         WHERE group_id = ? AND comptaweb_ecriture_id IS NULL
+           AND status IN ('draft','pending_sync','mirror','divergent')`,
+      )
+      .all<{ numero_piece: string | null; date_ecriture: string; type: string; description: string }>(groupId);
+    const detacheesParPiece = new Set(
+      detachees.map((d) => normalizePieceKey(d.numero_piece)).filter((k) => k !== ''),
+    );
+    const detacheesParContenu = new Set(
+      detachees.map((d) => `${d.date_ecriture}|${d.type}|${d.description}`),
+    );
     for (const row of snapshot) {
       if (enqueued.has(row.cwId)) continue;
-      const piece = row.numeroPiece.trim();
-      const loose = piece
-        ? await db
-            .prepare(
-              `SELECT 1 FROM ecritures WHERE group_id = ? AND comptaweb_ecriture_id IS NULL
-                 AND numero_piece = ? AND status IN ('draft','pending_sync','mirror','divergent') LIMIT 1`,
-            )
-            .get(groupId, piece)
-        : await db
-            .prepare(
-              `SELECT 1 FROM ecritures WHERE group_id = ? AND comptaweb_ecriture_id IS NULL
-                 AND date_ecriture = ? AND type = ? AND description = ?
-                 AND status IN ('draft','pending_sync','mirror','divergent') LIMIT 1`,
-            )
-            .get(groupId, row.date, row.type, row.intitule);
+      const pieceKey = normalizePieceKey(row.numeroPiece);
+      const loose = pieceKey
+        ? detacheesParPiece.has(pieceKey)
+        : detacheesParContenu.has(`${row.date}|${row.type}|${row.intitule}`);
       if (loose) enqueue(row.cwId);
     }
 

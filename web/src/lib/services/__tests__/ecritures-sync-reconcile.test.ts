@@ -327,3 +327,28 @@ describe('reconcileVentilations — changement de montant (passe 2)', () => {
     expect(plan.creates).toHaveLength(0);
   });
 });
+
+import { normalizePieceKey } from '../ecritures-sync-reconcile';
+
+describe('normalizePieceKey (n° de pièce CSV upper-case vs casse réelle CW)', () => {
+  it('replie la casse', () => {
+    expect(normalizePieceKey('PC25-10')).toBe(normalizePieceKey('pc25-10'));
+  });
+
+  it('replie les accents (hors de portée de lower() SQLite)', () => {
+    expect(normalizePieceKey('PC25- 01 À 05')).toBe(normalizePieceKey('pc25- 01 à 05'));
+  });
+
+  it('normalise espaces de bord et espaces multiples', () => {
+    expect(normalizePieceKey('  SA25-04   05 ')).toBe('sa25-04 05');
+  });
+
+  it('rend une clé vide pour null / vide / blanc (→ repli date+type, pas de faux match)', () => {
+    expect(normalizePieceKey(null)).toBe('');
+    expect(normalizePieceKey('   ')).toBe('');
+  });
+
+  it('ne confond pas deux pièces réellement différentes', () => {
+    expect(normalizePieceKey('SG25-01')).not.toBe(normalizePieceKey('SG25-02'));
+  });
+});

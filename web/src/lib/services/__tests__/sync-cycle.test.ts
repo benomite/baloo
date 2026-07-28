@@ -78,6 +78,7 @@ async function insertEcriture(
     id: string;
     group_id: string;
     status: string;
+    numero_piece: string | null;
     cw_numero_piece: string | null;
     comptaweb_ecriture_id: number | null;
     cw_signature: string | null;
@@ -94,6 +95,7 @@ async function insertEcriture(
     id: 'ECR-2026-001',
     group_id: 'g1',
     status: 'pending_sync',
+    numero_piece: null,
     cw_numero_piece: null,
     comptaweb_ecriture_id: null,
     cw_signature: null,
@@ -109,8 +111,8 @@ async function insertEcriture(
     .prepare(
       `INSERT INTO ecritures
          (id, group_id, date_ecriture, description, amount_cents, type, status,
-          cw_numero_piece, comptaweb_ecriture_id, cw_signature, notes, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          numero_piece, cw_numero_piece, comptaweb_ecriture_id, cw_signature, notes, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       e.id,
@@ -120,6 +122,7 @@ async function insertEcriture(
       e.amount_cents,
       e.type,
       e.status,
+      e.numero_piece,
       e.cw_numero_piece,
       e.comptaweb_ecriture_id,
       e.cw_signature,
@@ -568,6 +571,75 @@ describe('runSyncCycle — imports et drafts', () => {
     expect(res.supprimee_cw_detected).toBe(0); // aucune neutralisation (les deux ont une pièce)
     const neutralised = await db.prepare("SELECT COUNT(*) c FROM ecritures WHERE status='agrege_remplace'").get<{ c: number }>();
     expect(neutralised?.c).toBe(0);
+  });
+
+  // Cas réel « Favier » (constaté prod 2026-07-28, 11 paires sur l'exercice) :
+  // l'import CSV stocke le n° de pièce en MAJUSCULES (`comptaweb-import.ts`
+  // upper-case la pièce pour grouper les lignes), la sync lit la casse réelle
+  // de CW (`pc25-10`). Un match de pièce sensible à la casse ne retrouvait pas
+  // la copie CSV → import → doublon à la première sync.
+  it('absorbe une écriture CSV dont la pièce ne diffère que par la CASSE', async () => {
+    await insertEcriture(db, {
+      id: 'CSV-PIECE', status: 'mirror', comptaweb_ecriture_id: null, numero_piece: 'PC25-10',
+      amount_cents: 4886, type: 'depense', date_ecriture: '2026-01-01', description: 'rbst Favier',
+    });
+    const res = await runSyncCycle(db, 'g1', mockOpts({
+      ecritures: [makeRow({ id: 800, numeroPiece: 'pc25-10', montantCentimes: 4886, type: 'depense', dateEcriture: '2026-01-01', intitule: 'rbst Favier' })],
+    }));
+    expect(res.imported_from_cw).toBe(0); // absorbée, pas dupliquée
+    expect(res.updated_mirror).toBe(1);
+    const e = await getEcriture(db, 'CSV-PIECE');
+    expect(e?.comptaweb_ecriture_id).toBe(800);
+  });
+
+  // Même cause, variante ACCENT : `lower()` SQLite ne replie que l'ASCII, donc
+  // 'PC25- 01 À 05' (CSV) vs 'pc25- 01 à 05' (CW) resterait non matché avec un
+  // simple `lower()` en SQL → la normalisation doit désaccentuer.
+  it('absorbe une écriture CSV dont la pièce ne diffère que par un ACCENT en casse', async () => {
+    await insertEcriture(db, {
+      id: 'CSV-ACCENT', status: 'mirror', comptaweb_ecriture_id: null, numero_piece: 'PC25- 01 À 05',
+      amount_cents: 12380, type: 'depense', date_ecriture: '2025-10-04', description: 'alimentation we Piok octobre',
+    });
+    const res = await runSyncCycle(db, 'g1', mockOpts({
+      ecritures: [makeRow({ id: 801, numeroPiece: 'pc25- 01 à 05', montantCentimes: 12380, type: 'depense', dateEcriture: '2025-10-04', intitule: 'alimentation we Piok octobre' })],
+    }));
+    expect(res.imported_from_cw).toBe(0);
+    const e = await getEcriture(db, 'CSV-ACCENT');
+    expect(e?.comptaweb_ecriture_id).toBe(801);
+  });
+
+  it('résorbe un doublon de casse DÉJÀ créé : garde la copie CSV enrichie, neutralise la jumelle nue', async () => {
+    // État prod exact : la jumelle du 01/06 est reliée, imputée ET à signature
+    // à jour (donc `needsDetail` faux) → seule la détection « ventilations
+    // détachées » peut la faire retraiter, et elle compare aussi la pièce.
+    const { computeCwSignature } = await import('../ecritures-sync-reconcile');
+    const sig = computeCwSignature({
+      date: '2026-01-01', type: 'depense', montantCents: 4886, intitule: 'rbst Favier',
+      numeroPiece: 'pc25-10', modeTransaction: 'Virement', categorieTiers: '',
+    });
+    await insertEcriture(db, {
+      id: 'SYNC-DUP', status: 'mirror', comptaweb_ecriture_id: 802, numero_piece: 'pc25-10',
+      amount_cents: 4886, type: 'depense', date_ecriture: '2026-01-01', description: 'rbst Favier', cw_signature: sig,
+    });
+    await db.prepare("UPDATE ecritures SET category_id='cat-intendance' WHERE id='SYNC-DUP'").run();
+    await insertEcriture(db, {
+      id: 'CSV-DUP', status: 'mirror', comptaweb_ecriture_id: null, numero_piece: 'PC25-10',
+      amount_cents: 4886, type: 'depense', date_ecriture: '2026-01-01', description: 'rbst Favier',
+    });
+    await db.prepare("INSERT INTO justificatifs (id, entity_type, entity_id) VALUES ('J9','ecriture','CSV-DUP')").run();
+
+    const res = await runSyncCycle(db, 'g1', mockOpts({
+      ecritures: [makeRow({ id: 802, numeroPiece: 'pc25-10', montantCentimes: 4886, type: 'depense', dateEcriture: '2026-01-01', intitule: 'rbst Favier' })],
+    }));
+
+    expect(res.supprimee_cw_detected).toBe(1);
+    const csv = await getEcriture(db, 'CSV-DUP');
+    expect(csv?.status).toBe('mirror'); // la copie au justif est gardée…
+    expect(csv?.comptaweb_ecriture_id).toBe(802); // …et reliée au cwId
+    const jumelle = await getEcriture(db, 'SYNC-DUP');
+    expect(jumelle?.status).toBe('agrege_remplace'); // la nue est neutralisée
+    const just = await db.prepare("SELECT entity_id FROM justificatifs WHERE id='J9'").get<{ entity_id: string }>();
+    expect(just?.entity_id).toBe('CSV-DUP'); // justif intact
   });
 });
 
