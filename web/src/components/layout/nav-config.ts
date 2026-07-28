@@ -1,5 +1,5 @@
 import {
-  BookOpen, Bot, Coins, Ellipsis, Files, Gift, HandCoins, Link2, Mail,
+  BookOpen, Bot, CalendarRange, Coins, Ellipsis, Files, Gift, HandCoins, Link2, Mail,
   Paperclip, ShieldAlert, SlidersHorizontal, Tent,
   type LucideIcon,
 } from 'lucide-react';
@@ -66,6 +66,9 @@ export const DESKTOP_GROUPS: NavGroup[] = [
     title: 'Activités',
     items: [
       { href: '/camps', label: 'Camps', icon: Tent, roles: CAMPS },
+      // Année = le réalisé hors camps par unité. Admin-only : c'est une vue
+      // transverse au groupe, pas le suivi d'une unité par son chef.
+      { href: '/annee', label: 'Année', icon: CalendarRange, roles: ADMIN },
     ],
   },
   {

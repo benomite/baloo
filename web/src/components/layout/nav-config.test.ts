@@ -18,8 +18,8 @@ describe('nav-config — structure des groupes', () => {
     expect(DESKTOP_GROUPS.map((g) => g.key)).toEqual(['process', 'activites', 'comptabilite', 'administration']);
   });
 
-  it('le groupe activités contient Camps', () => {
-    expect(group('activites').items.map((i) => i.href)).toEqual(['/camps']);
+  it('le groupe activités contient Camps et Année', () => {
+    expect(group('activites').items.map((i) => i.href)).toEqual(['/camps', '/annee']);
   });
 
   it('le groupe comptabilité contient Écritures, Caisse, Rapprochement', () => {
@@ -38,7 +38,7 @@ describe('nav-config — desktop, filtrage par rôle', () => {
     const process = visibleItemsForRole(group('process').items, 'tresorier').map((i) => i.href);
     expect(process).toEqual(['/depot', '/remboursements', '/abandons']);
     const activites = visibleItemsForRole(group('activites').items, 'tresorier').map((i) => i.href);
-    expect(activites).toEqual(['/camps']);
+    expect(activites).toEqual(['/camps', '/annee']);
     const compta = visibleItemsForRole(group('comptabilite').items, 'tresorier').map((i) => i.href);
     expect(compta).toEqual(['/ecritures', '/caisse', '/inbox']);
     const admin = visibleItemsForRole(group('administration').items, 'tresorier').map((i) => i.href);

@@ -23,7 +23,12 @@ import { registerSyncReferentielsTools } from './tools/sync-referentiels';
 import { registerSyncTools } from './tools/sync';
 import { registerCampsTools } from './tools/camps';
 import { registerRepartitionsTools } from './tools/repartitions';
+import { registerAnneeTools } from './tools/annee';
 
+// Compteur Lot 4 : 76 tools = 74 existants + 2 vue Année
+//  - vue_annee : réalisé de l'exercice par unité, hors camps.
+//  - vue_annee_unite : détail d'une unité (par activité + écritures).
+//
 // Compteur Lot 3 : 74 tools = 70 existants + 4 parité MCP↔app
 //  - update_budget_ligne : édition partielle d'une ligne budgétaire.
 //  - delete_budget_ligne : suppression d'une ligne budgétaire (planification,
@@ -93,4 +98,7 @@ export function registerAllTools(server: McpServer, ctx: McpContext): void {
   // Lot 2 — Camps + Répartitions budgétaires (7 + 4 = 11 tools)
   registerCampsTools(server, ctx);
   registerRepartitionsTools(server, ctx);
+
+  // Lot 4 — Vue Année (2 tools, lecture seule)
+  registerAnneeTools(server, ctx);
 }
