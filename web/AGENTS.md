@@ -190,6 +190,28 @@ ventilations dont Cotisations 20€ ET Dons 20€) — l'orphelin pourrait
 Vu le bug : commit `7989125` (cleanup avait supprimé Dons 20€ ESP-2501
 en la prenant pour un doublon de Cotisations 20€ ESP-2501).
 
+### `numero_piece` : l'import CSV l'upper-case, la sync garde la casse CW
+
+`groupRows` (`comptaweb-import.ts`) majuscule le n° de pièce pour grouper
+les lignes d'une même écriture — et cette valeur upper-casée finit
+**stockée** dans `ecritures.numero_piece`. La sync miroir, elle, écrit la
+casse réelle lue sur CW. Donc la même pièce existe sous deux casses selon
+la porte d'entrée, et toute comparaison brute (`numero_piece = ?`) rate
+l'appariement.
+
+Comparer les pièces **uniquement** via `normalizePieceKey`
+(`ecritures-sync-reconcile.ts`) : lower + désaccentuation + espaces. Le
+repli doit se faire en **JS, pas en SQL** — `lower()` SQLite ne replie que
+l'ASCII, donc `PC25- 01 À 05` ≠ `pc25- 01 à 05` survivrait à un `lower()`
+en SQL. Corollaire de perf : filtrer en SQL sur le montant (sélectif) et
+appliquer le discriminant pièce en JS.
+
+Vu le bug : 2026-07-28, 12 paires de doublons en prod (import CSV du
+2026-04-19 + première sync miroir du 2026-06-01) — lignes en double dans
+la vue Année et totaux par unité double-comptés. Les deux comparaisons
+fautives étaient dans `loadVentCandidates` et la détection des
+« ventilations détachées » de `sync-cycle.ts`.
+
 ### Encoding CSV : Windows-1252
 
 L'export Comptaweb est en **Windows-1252** (Excel français), pas UTF-8.
