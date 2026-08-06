@@ -21,6 +21,13 @@ vi.mock('@/lib/services/depots', () => ({
     statut: 'rattache',
     ecriture_id: 'DEP-001',
   })),
+  detachDepotFromEcriture: vi.fn(async (_ctx: unknown, depotId: string) => {
+    if (depotId === 'JUS-ABSENT') throw new Error(`Dépôt ${depotId} introuvable.`);
+    return {
+      depot: { id: depotId, statut: 'a_traiter', ecriture_id: null },
+      previous_ecriture_id: 'DEP-001',
+    };
+  }),
 }));
 
 vi.mock('@/lib/services/inbox-auto', () => ({
@@ -31,13 +38,14 @@ describe('inbox tools (Vague 5)', () => {
   const tools = captureTools(registerInboxTools);
   beforeEach(() => vi.clearAllMocks());
 
-  it('expose les 5 tools attendus', () => {
+  it('expose les 6 tools attendus', () => {
     expect(Object.keys(tools).sort()).toEqual([
       'inbox_auto_match',
       'inbox_link',
       'inbox_list_orphan_ecritures',
       'inbox_list_orphan_justifs',
       'inbox_suggest_matches',
+      'inbox_unlink',
     ]);
   });
 
@@ -77,6 +85,26 @@ describe('inbox tools (Vague 5)', () => {
     const parsed = parseToolResult(r) as { ok: boolean; depot: { id: string } };
     expect(parsed.ok).toBe(true);
     expect(parsed.depot.id).toBe('JUS-001');
+  });
+
+  it('inbox_unlink détache le dépôt et rend son ancienne écriture', async () => {
+    const r = await tools.inbox_unlink.handler({ depot_id: 'JUS-001' });
+    const parsed = parseToolResult(r) as {
+      ok: boolean;
+      depot: { statut: string; ecriture_id: string | null };
+      previous_ecriture_id: string;
+    };
+    expect(parsed.ok).toBe(true);
+    expect(parsed.depot.statut).toBe('a_traiter');
+    expect(parsed.depot.ecriture_id).toBeNull();
+    expect(parsed.previous_ecriture_id).toBe('DEP-001');
+  });
+
+  it('inbox_unlink remonte l’erreur sans planter', async () => {
+    const r = await tools.inbox_unlink.handler({ depot_id: 'JUS-ABSENT' });
+    const parsed = parseToolResult(r) as { ok: boolean; error: string };
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error).toContain('introuvable');
   });
 
   it('inbox_auto_match renvoie les paires liées', async () => {

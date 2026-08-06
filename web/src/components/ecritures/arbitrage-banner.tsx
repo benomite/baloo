@@ -3,7 +3,7 @@
 import { useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Trash2, RotateCcw, Link2, X } from 'lucide-react';
+import { Trash2, RotateCcw, Link2, X, Unlink, Paperclip } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Amount } from '@/components/shared/amount';
 import {
@@ -13,6 +13,7 @@ import {
   confirmerLien,
   rejeterLien,
 } from '@/lib/actions/ecritures-arbitrage';
+import { unlinkDepotFromEcriture } from '@/lib/actions/depots';
 import type { SupprimeeCwRow, LinkSuggestionView } from '@/lib/queries/sync-arbitrage';
 
 interface Props {
@@ -39,6 +40,43 @@ export function ArbitrageBanner({ supprimees, agregesRemplaces = [], suggestions
     });
   }
 
+  // Pièces qui bloquent la suppression, nommées — sinon le refus « une pièce est
+  // attachée » ne dit ni laquelle, ni où aller la détacher. Un dépôt de justif
+  // porte son propre bouton ; les autres pièces se traitent depuis leur écran.
+  function Blockers({ row }: { row: SupprimeeCwRow }) {
+    if (row.blockers.length === 0) return null;
+    return (
+      <ul className="mt-1.5 space-y-1 border-t border-border/60 pt-1.5 text-[11.5px] text-muted-foreground">
+        {row.blockers.map((b) => (
+          <li key={`${b.kind}-${b.id}`} className="flex flex-wrap items-center gap-1.5">
+            <Paperclip size={11} className="shrink-0" />
+            <span>
+              Suppression bloquée par {b.label} <span className="tabular-nums opacity-70">({b.id})</span>
+            </span>
+            {b.detachable ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-1.5 text-[11.5px]"
+                disabled={pending}
+                onClick={() =>
+                  run(
+                    () => unlinkDepotFromEcriture(b.id),
+                    'Dépôt détaché : il est retourné dans « à traiter ».',
+                  )
+                }
+              >
+                <Unlink size={11} className="mr-1" /> Détacher
+              </Button>
+            ) : (
+              <span className="opacity-70">— à retirer depuis sa propre fiche</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
   function runBatch(status: 'agrege_remplace' | 'supprimee_cw') {
     startTransition(async () => {
       const res = await supprimerTousArbitres(status);
@@ -63,33 +101,33 @@ export function ArbitrageBanner({ supprimees, agregesRemplaces = [], suggestions
           </div>
           <ul className="space-y-1.5">
             {supprimees.map((e) => (
-              <li
-                key={e.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-background/60 px-3 py-2 text-sm"
-              >
-                <span className="min-w-0 flex-1 truncate">
-                  <span className="text-muted-foreground tabular-nums">{e.date_ecriture}</span>{' '}
-                  {e.description}{' '}
-                  <Amount cents={e.amount_cents} tone={e.type === 'depense' ? 'negative' : 'positive'} className="text-xs" />
-                </span>
-                <span className="flex shrink-0 gap-1.5">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={pending}
-                    onClick={() => run(() => restaurerEnDraft(e.id), 'Restaurée en brouillon.')}
-                  >
-                    <RotateCcw size={13} className="mr-1" /> Restaurer
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={pending}
-                    onClick={() => run(() => supprimerDefinitivement(e.id), 'Supprimée définitivement.')}
-                  >
-                    <Trash2 size={13} className="mr-1" /> Supprimer
-                  </Button>
-                </span>
+              <li key={e.id} className="rounded-md bg-background/60 px-3 py-2 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="text-muted-foreground tabular-nums">{e.date_ecriture}</span>{' '}
+                    {e.description}{' '}
+                    <Amount cents={e.amount_cents} tone={e.type === 'depense' ? 'negative' : 'positive'} className="text-xs" />
+                  </span>
+                  <span className="flex shrink-0 gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() => run(() => restaurerEnDraft(e.id), 'Restaurée en brouillon.')}
+                    >
+                      <RotateCcw size={13} className="mr-1" /> Restaurer
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() => run(() => supprimerDefinitivement(e.id), 'Supprimée définitivement.')}
+                    >
+                      <Trash2 size={13} className="mr-1" /> Supprimer
+                    </Button>
+                  </span>
+                </div>
+                <Blockers row={e} />
               </li>
             ))}
           </ul>
@@ -113,32 +151,32 @@ export function ArbitrageBanner({ supprimees, agregesRemplaces = [], suggestions
           </p>
           <ul className="space-y-1.5">
             {agregesRemplaces.map((e) => (
-              <li
-                key={e.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-background/60 px-3 py-2 text-sm"
-              >
-                <span className="min-w-0 flex-1 truncate">
-                  <span className="text-muted-foreground tabular-nums">{e.date_ecriture}</span>{' '}
-                  {e.description}{' '}
-                  <Amount cents={e.amount_cents} tone={e.type === 'depense' ? 'negative' : 'positive'} className="text-xs" />
-                </span>
-                <span className="flex shrink-0 gap-1.5">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={pending}
-                    onClick={() => run(() => restaurerEnDraft(e.id), 'Restaurée en brouillon.')}
-                  >
-                    <RotateCcw size={13} className="mr-1" /> Restaurer
-                  </Button>
-                  <Button
-                    size="sm"
-                    disabled={pending}
-                    onClick={() => run(() => supprimerDefinitivement(e.id), 'Doublon supprimé.')}
-                  >
-                    <Trash2 size={13} className="mr-1" /> Supprimer le doublon
-                  </Button>
-                </span>
+              <li key={e.id} className="rounded-md bg-background/60 px-3 py-2 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="text-muted-foreground tabular-nums">{e.date_ecriture}</span>{' '}
+                    {e.description}{' '}
+                    <Amount cents={e.amount_cents} tone={e.type === 'depense' ? 'negative' : 'positive'} className="text-xs" />
+                  </span>
+                  <span className="flex shrink-0 gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() => run(() => restaurerEnDraft(e.id), 'Restaurée en brouillon.')}
+                    >
+                      <RotateCcw size={13} className="mr-1" /> Restaurer
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => run(() => supprimerDefinitivement(e.id), 'Doublon supprimé.')}
+                    >
+                      <Trash2 size={13} className="mr-1" /> Supprimer le doublon
+                    </Button>
+                  </span>
+                </div>
+                <Blockers row={e} />
               </li>
             ))}
           </ul>

@@ -31,26 +31,170 @@ async function tableExists(db: DbWrapper, name: string): Promise<boolean> {
 // Si l'une référence l'écriture, la suppression est refusée (pas un simple
 // doublon). Toutes sont lazy-init sauf en prod où elles existent : on garde
 // par `tableExists` pour ne pas planter sur une base où elles n'existent pas.
+//
+// `label` = expression SQL du libellé montré à l'utilisateur, `prefix` = texte
+// qui la précède. Le libellé est facultatif : si la colonne manque (base plus
+// ancienne), on retombe sur l'id seul plutôt que de planter la page — cf.
+// AGENTS.md « résoudre chaque champ indépendamment ».
 const ATTACHMENT_TABLES = [
-  'depots_justificatifs',
-  'depots_especes',
-  'remboursements',
-  'avances_camp',
+  { table: 'depots_justificatifs', kind: 'depot', label: 'titre', prefix: 'Dépôt de justif' },
+  { table: 'depots_especes', kind: 'depot_especes', label: 'date_depot', prefix: 'Dépôt d’espèces du' },
+  { table: 'remboursements', kind: 'remboursement', label: 'demandeur', prefix: 'Remboursement' },
+  { table: 'avances_camp', kind: 'avance_camp', label: 'beneficiaire', prefix: 'Avance de camp' },
 ] as const;
 
-async function countAttachments(db: DbWrapper, ecritureId: string): Promise<number> {
-  const justifs = await db
-    .prepare(`SELECT COUNT(*) as n FROM justificatifs WHERE entity_type = 'ecriture' AND entity_id = ?`)
-    .get<{ n: number }>(ecritureId);
-  let total = justifs?.n ?? 0;
-  for (const table of ATTACHMENT_TABLES) {
-    if (!(await tableExists(db, table))) continue;
-    const r = await db
-      .prepare(`SELECT COUNT(*) as n FROM ${table} WHERE ecriture_id = ?`)
-      .get<{ n: number }>(ecritureId);
-    total += r?.n ?? 0;
+export type AttachmentKind = 'justificatif' | (typeof ATTACHMENT_TABLES)[number]['kind'];
+
+/** Une pièce qui référence l'écriture, telle qu'elle existe en base. */
+export interface Attachment {
+  kind: AttachmentKind;
+  id: string;
+  label: string;
+  /**
+   * Pour un justificatif : le dépôt d'où vient le fichier, déduit du préfixe de
+   * `file_path` (`depot/<id>/…`, figé à la création et jamais déplacé). Permet
+   * à l'UI de regrouper les fichiers sous le dépôt, seul objet détachable.
+   */
+  from_depot_id: string | null;
+}
+
+/** Extrait l'id du dépôt d'origine d'un chemin de blob (`depot/DEP-1/x.jpg`). */
+function depotIdFromPath(filePath: string | null): string | null {
+  const m = /^depot\/([^/]+)\//.exec(filePath ?? '');
+  return m ? m[1] : null;
+}
+
+/**
+ * Pièces attachées à PLUSIEURS écritures, en une passe : une requête par table
+ * quel que soit le nombre d'écritures (la bannière d'arbitrage peut en lister
+ * des dizaines, et chaque aller-retour libsql remote coûte).
+ */
+export async function listAttachmentsFor(
+  db: DbWrapper,
+  ecritureIds: string[],
+): Promise<Map<string, Attachment[]>> {
+  const byEcriture = new Map<string, Attachment[]>();
+  for (const id of ecritureIds) byEcriture.set(id, []);
+  if (ecritureIds.length === 0) return byEcriture;
+
+  const holes = ecritureIds.map(() => '?').join(',');
+  const push = (ecritureId: string, a: Attachment) => {
+    // Une pièce d'une écriture hors périmètre ne doit pas créer d'entrée.
+    byEcriture.get(ecritureId)?.push(a);
+  };
+
+  type JustifRow = {
+    id: string;
+    entity_id: string;
+    original_filename: string | null;
+    file_path: string | null;
+  };
+  let justifs: JustifRow[];
+  try {
+    justifs = await db
+      .prepare(
+        `SELECT id, entity_id, original_filename, file_path FROM justificatifs
+         WHERE entity_type = 'ecriture' AND entity_id IN (${holes})`,
+      )
+      .all<JustifRow>(...ecritureIds);
+  } catch {
+    // Colonnes de libellé absentes : le garde-fou de suppression ne doit JAMAIS
+    // tomber pour un libellé — on garde le décompte, qui seul protège les données.
+    justifs = await db
+      .prepare(
+        `SELECT id, entity_id FROM justificatifs
+         WHERE entity_type = 'ecriture' AND entity_id IN (${holes})`,
+      )
+      .all<JustifRow>(...ecritureIds);
   }
-  return total;
+  for (const j of justifs) {
+    push(j.entity_id, {
+      kind: 'justificatif',
+      id: j.id,
+      label: j.original_filename || j.id,
+      from_depot_id: depotIdFromPath(j.file_path),
+    });
+  }
+
+  for (const { table, kind, label, prefix } of ATTACHMENT_TABLES) {
+    if (!(await tableExists(db, table))) continue;
+    type Row = { id: string; ecriture_id: string; label: string | null };
+    let rows: Row[];
+    try {
+      rows = await db
+        .prepare(
+          `SELECT id, ecriture_id, ${label} AS label FROM ${table} WHERE ecriture_id IN (${holes})`,
+        )
+        .all<Row>(...ecritureIds);
+    } catch {
+      // Colonne de libellé absente : on garde la pièce (elle bloque quand même),
+      // sans son libellé.
+      rows = await db
+        .prepare(`SELECT id, ecriture_id FROM ${table} WHERE ecriture_id IN (${holes})`)
+        .all<Row>(...ecritureIds);
+    }
+    for (const r of rows) {
+      push(r.ecriture_id, {
+        kind,
+        id: r.id,
+        label: r.label ? `${prefix} ${r.label}` : `${prefix} ${r.id}`,
+        from_depot_id: null,
+      });
+    }
+  }
+
+  return byEcriture;
+}
+
+/**
+ * Liste nommée des pièces attachées à une écriture. Sert à la fois au garde-fou
+ * de suppression (le compte) et à l'UI d'arbitrage (les libellés).
+ */
+export async function listAttachments(db: DbWrapper, ecritureId: string): Promise<Attachment[]> {
+  return (await listAttachmentsFor(db, [ecritureId])).get(ecritureId) ?? [];
+}
+
+async function countAttachments(db: DbWrapper, ecritureId: string): Promise<number> {
+  return (await listAttachments(db, ecritureId)).length;
+}
+
+/** Pièce bloquante telle qu'affichée dans la bannière d'arbitrage. */
+export interface Blocker {
+  kind: AttachmentKind;
+  id: string;
+  label: string;
+  /** Un chemin utilisateur existe pour l'enlever (aujourd'hui : le dépôt de justif). */
+  detachable: boolean;
+  /** Nombre de fichiers regroupés sous ce bloqueur (dépôt). */
+  file_count: number;
+}
+
+/**
+ * Regroupe les pièces pour l'affichage : les fichiers issus d'un dépôt présent
+ * dans la liste disparaissent au profit du dépôt (les détacher, c'est détacher
+ * le dépôt). Fonction PURE — testable sans BDD.
+ */
+export function describeBlockers(attachments: Attachment[]): Blocker[] {
+  const depotIds = new Set(attachments.filter((a) => a.kind === 'depot').map((a) => a.id));
+  const out: Blocker[] = [];
+  for (const a of attachments) {
+    if (a.kind === 'justificatif' && a.from_depot_id && depotIds.has(a.from_depot_id)) continue;
+    if (a.kind === 'depot') {
+      const files = attachments.filter(
+        (f) => f.kind === 'justificatif' && f.from_depot_id === a.id,
+      ).length;
+      out.push({
+        kind: a.kind,
+        id: a.id,
+        label: files > 0 ? `${a.label} (${files} fichier${files > 1 ? 's' : ''})` : a.label,
+        detachable: true,
+        file_count: files,
+      });
+      continue;
+    }
+    out.push({ kind: a.kind, id: a.id, label: a.label, detachable: false, file_count: 0 });
+  }
+  return out;
 }
 
 // Retire les références NON-données-utilisateur qui bloqueraient le DELETE par

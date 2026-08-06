@@ -450,6 +450,21 @@ Permet :
 
 Tous les `status` de workflow (rembs, abandons, etc.) sont **TEXT sans CHECK SQL**. La validation des transitions vit dans des modules dédiés. Voir ADR-019 pour la justification originale (rôles users), étendu à tout workflow depuis.
 
+## Tout lien doit poser sa sortie, et tout refus doit nommer sa cause
+
+Deux manques qui se cumulent en cul-de-sac, appris sur le rattachement de dépôts (cas terrain 2026-08-03) :
+
+1. **Un lien créable doit être défaisable.** `attachDepotToEcriture` refusait tout dépôt dont le `statut ≠ 'a_traiter'` : un rattachement était donc **définitif**, y compris quand il était faux. Comme un dépôt rattaché bloque la suppression de son écriture (garde-fou `countAttachments`), l'écriture visée devenait impossible à nettoyer — aucun chemin, ni UI ni MCP. D'où `detachDepotFromEcriture` (statut → `a_traiter`, `ecriture_id` → NULL, fichiers rapatriés vers le dépôt).
+
+   Le détachement se fait **par UPDATE, jamais par DELETE** (cf. CLAUDE.md) et doit être chirurgical : ne rapatrier que les lignes `justificatifs` qui pointent vers l'écriture rattachée **ET** portent le préfixe `depot/<depotId>/`. Sinon on casse les copies partagées vers une 2ᵉ écriture (`shareDepotToEcriture`), les justifs uploadés en direct sur l'écriture, ou ceux d'un autre dépôt rattaché à la même écriture.
+
+2. **Un garde-fou qui refuse doit dire quoi retirer.** « Suppression refusée : une pièce est attachée » ne disait ni laquelle, ni où aller la détacher — l'utilisateur était bloqué sans recours. `listAttachments` / `describeBlockers` (`ecritures-arbitrage.ts`) nomment chaque pièce et marquent celles qui ont un chemin de sortie ; la bannière d'arbitrage les affiche avec leur bouton. Corollaire : les fichiers issus d'un dépôt sont regroupés **sous** leur dépôt (les détacher = détacher le dépôt), sinon l'UI liste des pièces qu'aucune action ne peut enlever.
+
+Deux détails à ne pas perdre :
+
+- **Ne jamais faire tomber le garde-fou pour un libellé.** Les requêtes de libellé sont en try/catch avec repli sur l'id seul (colonne absente sur une base plus ancienne) : le **décompte** protège les données, le libellé n'est que du confort. Même esprit que « résoudre chaque champ indépendamment » plus haut.
+- **Une requête par table, pas par écriture.** `listAttachmentsFor(db, ids[])` groupe en `WHERE ecriture_id IN (…)`. La bannière peut lister des dizaines de lignes, et chaque aller-retour libsql remote coûte.
+
 ---
 
 # Conventions UI / UX user-facing

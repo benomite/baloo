@@ -4,6 +4,7 @@
 // cf. AGENTS.md « 'use server' ≠ helpers serveur »).
 
 import { getDb } from '../db';
+import { listAttachmentsFor, describeBlockers, type Blocker } from '../services/ecritures-arbitrage';
 
 export interface SupprimeeCwRow {
   id: string;
@@ -12,6 +13,11 @@ export interface SupprimeeCwRow {
   amount_cents: number;
   type: 'depense' | 'recette';
   cw_numero_piece: string | null;
+  /**
+   * Pièces qui empêchent la suppression, nommées. Sans elles le refus
+   * « une pièce est attachée » est un cul-de-sac (cas terrain 2026-08-03).
+   */
+  blockers: Blocker[];
 }
 
 export interface LinkSuggestionView {
@@ -41,9 +47,18 @@ const SHARED_CW_ID = `
       AND e2.status IN ('mirror','pending_sync','divergent')
   )`;
 
+/** Complète les lignes avec leurs pièces bloquantes (une passe groupée). */
+async function withBlockers(rows: Omit<SupprimeeCwRow, 'blockers'>[]): Promise<SupprimeeCwRow[]> {
+  const attachments = await listAttachmentsFor(
+    getDb(),
+    rows.map((r) => r.id),
+  );
+  return rows.map((r) => ({ ...r, blockers: describeBlockers(attachments.get(r.id) ?? []) }));
+}
+
 /** Vraies suppressions CW : écriture flaggée dont le cwId a totalement disparu. */
 export async function listSupprimeeCw(groupId: string): Promise<SupprimeeCwRow[]> {
-  return getDb()
+  const rows = await getDb()
     .prepare(
       `SELECT id, date_ecriture, description, amount_cents, type, cw_numero_piece
        FROM ecritures e
@@ -51,7 +66,8 @@ export async function listSupprimeeCw(groupId: string): Promise<SupprimeeCwRow[]
          AND (comptaweb_ecriture_id IS NULL OR NOT ${SHARED_CW_ID})
        ORDER BY date_ecriture DESC`,
     )
-    .all<SupprimeeCwRow>(groupId);
+    .all<Omit<SupprimeeCwRow, 'blockers'>>(groupId);
+  return withBlockers(rows);
 }
 
 /**
@@ -61,7 +77,7 @@ export async function listSupprimeeCw(groupId: string): Promise<SupprimeeCwRow[]
  * encore partagé par des écritures vivantes).
  */
 export async function listAgregesRemplaces(groupId: string): Promise<SupprimeeCwRow[]> {
-  return getDb()
+  const rows = await getDb()
     .prepare(
       `SELECT id, date_ecriture, description, amount_cents, type, cw_numero_piece
        FROM ecritures e
@@ -69,7 +85,8 @@ export async function listAgregesRemplaces(groupId: string): Promise<SupprimeeCw
          AND comptaweb_ecriture_id IS NOT NULL AND ${SHARED_CW_ID}
        ORDER BY date_ecriture DESC`,
     )
-    .all<SupprimeeCwRow>(groupId);
+    .all<Omit<SupprimeeCwRow, 'blockers'>>(groupId);
+  return withBlockers(rows);
 }
 
 export async function listLinkSuggestions(groupId: string): Promise<LinkSuggestionView[]> {

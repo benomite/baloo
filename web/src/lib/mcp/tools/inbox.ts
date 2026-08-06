@@ -7,7 +7,7 @@ import {
   findSuggestionsForDepot,
   INBOX_PERIODS,
 } from '@/lib/queries/inbox';
-import { attachDepotToEcriture } from '@/lib/services/depots';
+import { attachDepotToEcriture, detachDepotFromEcriture } from '@/lib/services/depots';
 import { applyAutoLinks } from '@/lib/services/inbox-auto';
 
 const PERIOD_ENUM = z.enum(INBOX_PERIODS);
@@ -130,6 +130,37 @@ export function registerInboxTools(server: McpServer, ctx: McpContext) {
         return {
           content: [
             { type: 'text' as const, text: JSON.stringify({ ok: true, depot }, null, 2) },
+          ],
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [
+            { type: 'text' as const, text: JSON.stringify({ ok: false, error: msg }, null, 2) },
+          ],
+        };
+      }
+    },
+  );
+
+  server.tool(
+    'inbox_unlink',
+    "Défait le rattachement d'un dépôt de justif : il retourne « à traiter » et son écriture est libérée (ses fichiers repartent avec lui). À utiliser quand un dépôt a été rattaché à la mauvaise écriture, ou quand une écriture supprimée dans Comptaweb refuse d'être nettoyée parce qu'un dépôt y pend encore. Les copies partagées vers d'autres écritures ne sont pas touchées.",
+    {
+      depot_id: z.string(),
+    },
+    async (params) => {
+      try {
+        const { depot, previous_ecriture_id } = await detachDepotFromEcriture(
+          { groupId: ctx.groupId },
+          params.depot_id,
+        );
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({ ok: true, depot, previous_ecriture_id }, null, 2),
+            },
           ],
         };
       } catch (err) {

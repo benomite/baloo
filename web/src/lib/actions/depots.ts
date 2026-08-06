@@ -10,6 +10,7 @@ import {
   attachDepotToEcriture as attachDepotToEcritureService,
   attachDepotToRemboursement as attachDepotToRemboursementService,
   shareDepotToEcriture as shareDepotToEcritureService,
+  detachDepotFromEcriture as detachDepotFromEcritureService,
 } from '../services/depots';
 import { parseAmount } from '../format';
 import { validateJustifAttachment, JustificatifValidationError } from '../services/justificatifs';
@@ -284,6 +285,25 @@ export async function linkDepotToEcriture(
   }
   revalidatePath('/ecritures');
   revalidatePath('/depots');
+  return { ok: true };
+}
+
+// Défait un rattachement erroné : le dépôt retourne « à traiter » et libère
+// l'écriture. Sortie de secours du garde-fou de suppression (cas terrain
+// 2026-08-03 : doublon supprimé dans CW, dépôt resté accroché à la coquille).
+export async function unlinkDepotFromEcriture(
+  depotId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const ctx = await getCurrentContext();
+  if (!isAdminRole(ctx.role)) return { ok: false, error: 'Action réservée aux trésoriers / RG.' };
+  try {
+    await detachDepotFromEcritureService({ groupId: ctx.groupId }, depotId);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  revalidatePath('/ecritures');
+  revalidatePath('/depots');
+  revalidatePath('/inbox');
   return { ok: true };
 }
 

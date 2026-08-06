@@ -448,6 +448,66 @@ export async function attachDepotToEcriture(
   return (await db.prepare('SELECT * FROM depots_justificatifs WHERE id = ?').get<Depot>(depotId))!;
 }
 
+/**
+ * Défait un rattachement : le dépôt retourne dans la file « à traiter » et ses
+ * justifs sont rapatriés du côté du dépôt. Sortie de secours indispensable —
+ * sans elle un rattachement erroné est définitif, et l'écriture visée devient
+ * impossible à nettoyer (garde-fou `countAttachments` de l'arbitrage).
+ *
+ * Non destructif : aucun blob déplacé, aucune ligne supprimée. On ne rapatrie
+ * QUE les lignes qui pointent vers l'écriture rattachée ET portent le préfixe
+ * de chemin du dépôt — donc :
+ *   - un justif uploadé directement sur l'écriture reste sur l'écriture ;
+ *   - les justifs d'un AUTRE dépôt rattaché à la même écriture ne bougent pas ;
+ *   - les copies partagées vers une 2ᵉ écriture (`shareDepotToEcriture`)
+ *     survivent — elles pointent vers une autre entity_id.
+ *
+ * Cas terrain 2026-08-03 (doublon d'une écriture du territoire supprimée dans
+ * Comptaweb, dépôt resté accroché à la coquille).
+ */
+export async function detachDepotFromEcriture(
+  { groupId }: { groupId: string },
+  depotId: string,
+): Promise<{ depot: Depot; previous_ecriture_id: string | null }> {
+  await ensureDepotsSchema();
+  const db = getDb();
+
+  const existing = await db
+    .prepare(
+      'SELECT statut, ecriture_id FROM depots_justificatifs WHERE id = ? AND group_id = ?',
+    )
+    .get<{ statut: string; ecriture_id: string | null }>(depotId, groupId);
+  if (!existing) throw new Error(`Dépôt ${depotId} introuvable.`);
+  if (existing.statut !== 'rattache') {
+    throw new Error(`Dépôt ${depotId} non rattaché (statut ${existing.statut}) : rien à détacher.`);
+  }
+
+  const previousEcritureId = existing.ecriture_id;
+  if (previousEcritureId) {
+    await db
+      .prepare(
+        `UPDATE justificatifs
+         SET entity_type = 'depot', entity_id = ?
+         WHERE group_id = ? AND entity_type = 'ecriture' AND entity_id = ?
+           AND file_path LIKE ?`,
+      )
+      .run(depotId, groupId, previousEcritureId, `depot/${depotId}/%`);
+  }
+
+  await db
+    .prepare(
+      `UPDATE depots_justificatifs
+       SET statut = 'a_traiter', ecriture_id = NULL, updated_at = ?
+       WHERE id = ? AND group_id = ?`,
+    )
+    .run(currentTimestamp(), depotId, groupId);
+
+  const depot = (await db
+    .prepare('SELECT * FROM depots_justificatifs WHERE id = ?')
+    .get<Depot>(depotId))!;
+  return { depot, previous_ecriture_id: previousEcritureId };
+}
+
 // Partage le justificatif d'un dépôt DÉJÀ rattaché vers une 2ᵉ écriture
 // (paiement scindé en 2 : 1 justif = 2 écritures). Additif et non destructif :
 // le dépôt et son écriture principale (A) ne bougent pas, on ne fait qu'AJOUTER
