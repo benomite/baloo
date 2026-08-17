@@ -16,6 +16,7 @@ import {
   type InboxSuggestion,
   type RembSuggestion,
 } from '@/lib/queries/inbox';
+import { listAgregatsSupplantes } from '@/lib/queries/inbox-agregats';
 import {
   lierEcritureJustif,
   lierEcritureRemboursement,
@@ -71,6 +72,10 @@ export default async function InboxPage({
 
   const inbox = await listInboxItems({ period, includeRecettes });
 
+  // Doublons agrégat/détail que la réconciliation ne peut pas trancher seule
+  // (plusieurs sous-lignes DSP2 + pièces déjà attachées à l'agrégat).
+  const agregatsSupplantes = await listAgregatsSupplantes({ groupId: ctx.groupId });
+
   const totalRemaining =
     inbox.suggestions.length +
     inbox.rembSuggestions.length +
@@ -89,6 +94,33 @@ export default async function InboxPage({
       />
 
       <FilterBar period={period} includeRecettes={includeRecettes} />
+
+      {agregatsSupplantes.length > 0 && (
+        <Alert variant="warning" className="mb-4">
+          <div className="font-semibold">
+            {agregatsSupplantes.length === 1
+              ? 'Une écriture compte double'
+              : `${agregatsSupplantes.length} écritures comptent double`}
+          </div>
+          <p className="mt-1">
+            La banque a publié le détail de ces paiements groupés <em>après</em> leur
+            enregistrement. Le détail a bien été créé ligne par ligne, mais l&apos;écriture
+            groupée n&apos;a pas pu être retirée automatiquement : elle porte tes pièces
+            justificatives. Reventile-la sur les lignes de détail, puis supprime-la.
+          </p>
+          <ul className="mt-2 space-y-1">
+            {agregatsSupplantes.map((a) => (
+              <li key={a.id}>
+                <Link href={`/ecritures/${a.id}`} className="underline underline-offset-2">
+                  {a.description}
+                </Link>{' '}
+                — <Amount cents={a.amount_cents} /> du {a.date_ecriture}, remplacée par{' '}
+                {a.nb_sous_lignes} ligne{a.nb_sous_lignes > 1 ? 's' : ''} de détail.
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      )}
 
       {auto.applied > 0 && (
         <Alert variant="success" className="mb-4">

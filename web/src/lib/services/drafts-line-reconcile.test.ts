@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planStaleLineDrafts, type ExistingLineDraft } from './drafts-line-reconcile';
+import { planStaleLineDrafts, planLineHeal, type ExistingLineDraft } from './drafts-line-reconcile';
 
 const draft = (over: Partial<ExistingLineDraft> = {}): ExistingLineDraft => ({
   id: 'ECR-1',
@@ -77,5 +77,83 @@ describe('planStaleLineDrafts', () => {
     // canonique = sous-lignes [0,1] : les trois « ligne entière » sont stale ;
     // nu et imputé sont retirés (grain agrégé invalide), celui avec pièce reste.
     expect(planStaleLineDrafts([0, 1], existing)).toEqual(['PARENT_NU', 'PARENT_IMPUTE']);
+  });
+});
+
+describe('planLineHeal', () => {
+  it('promeut l’agrégat porteur de pièces en sous-ligne quand le détail DSP2 n’en a qu’une', () => {
+    const existing = [draft({ id: 'PARENT', sousLigneIndex: null, hasAttachment: true })];
+    expect(planLineHeal([0], existing)).toEqual({
+      toDelete: [],
+      toPromote: [{ id: 'PARENT', sousLigneIndex: 0 }],
+      toFlag: [],
+    });
+  });
+
+  it('supprime le jumeau nu déjà créé à l’index promu', () => {
+    const existing = [
+      draft({ id: 'PARENT', sousLigneIndex: null, hasAttachment: true }),
+      draft({ id: 'SUB0', sousLigneIndex: 0 }),
+    ];
+    expect(planLineHeal([0], existing)).toEqual({
+      toDelete: ['SUB0'],
+      toPromote: [{ id: 'PARENT', sousLigneIndex: 0 }],
+      toFlag: [],
+    });
+  });
+
+  it('signale sans rien toucher quand le détail a plusieurs sous-lignes', () => {
+    const existing = [draft({ id: 'PARENT', sousLigneIndex: null, hasAttachment: true })];
+    expect(planLineHeal([0, 1], existing)).toEqual({
+      toDelete: [],
+      toPromote: [],
+      toFlag: ['PARENT'],
+    });
+  });
+
+  it('ne promeut pas si le jumeau à l’index cible porte déjà du travail', () => {
+    const existing = [
+      draft({ id: 'PARENT', sousLigneIndex: null, hasAttachment: true }),
+      draft({ id: 'SUB0', sousLigneIndex: 0, hasImputation: true }),
+    ];
+    expect(planLineHeal([0], existing)).toEqual({
+      toDelete: [],
+      toPromote: [],
+      toFlag: ['PARENT'],
+    });
+  });
+
+  it('garde le comportement existant : l’agrégat nu supplanté est supprimé, pas signalé', () => {
+    const existing = [draft({ id: 'PARENT_NU', sousLigneIndex: null })];
+    expect(planLineHeal([0, 1], existing)).toEqual({
+      toDelete: ['PARENT_NU'],
+      toPromote: [],
+      toFlag: [],
+    });
+  });
+
+  it('ne touche ni ne signale un agrégat déjà matérialisé dans Comptaweb', () => {
+    const existing = [
+      draft({ id: 'M', sousLigneIndex: null, status: 'mirror', hasAttachment: true }),
+      draft({ id: 'CW', sousLigneIndex: null, comptawebEcritureId: 99, hasAttachment: true }),
+    ];
+    expect(planLineHeal([0], existing)).toEqual({ toDelete: [], toPromote: [], toFlag: [] });
+  });
+
+  it('signale sans promouvoir quand deux agrégats porteurs de pièces se disputent la sous-ligne', () => {
+    const existing = [
+      draft({ id: 'P1', sousLigneIndex: null, hasAttachment: true }),
+      draft({ id: 'P2', sousLigneIndex: null, hasAttachment: true }),
+    ];
+    expect(planLineHeal([0], existing)).toEqual({
+      toDelete: [],
+      toPromote: [],
+      toFlag: ['P1', 'P2'],
+    });
+  });
+
+  it('ligne stable sans agrégat → plan vide', () => {
+    const existing = [draft({ id: 'SUB0', sousLigneIndex: 0, hasAttachment: true })];
+    expect(planLineHeal([0], existing)).toEqual({ toDelete: [], toPromote: [], toFlag: [] });
   });
 });

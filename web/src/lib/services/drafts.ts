@@ -13,7 +13,7 @@ import type {
   SousLigneDsp2,
   CreateEcritureInput,
 } from '../comptaweb';
-import { planStaleLineDrafts, type ExistingLineDraft } from './drafts-line-reconcile';
+import { planLineHeal, type ExistingLineDraft } from './drafts-line-reconcile';
 
 ensureComptawebEnv();
 
@@ -118,6 +118,12 @@ export interface ScanDraftsResult {
   // candidat courant — ex. sous-lignes DSP2 jadis créées à tort en recette
   // avant le fix de signe 2026-07-02.
   corriges?: number;
+  // Drafts « ligne entière » DÉJÀ justifiés qui ont pris l'identité de la
+  // sous-ligne DSP2 unique apparue depuis (heal en place, cf. planLineHeal).
+  promus?: number;
+  // Agrégats justifiés supplantés par PLUSIEURS sous-lignes : impossible à
+  // trancher sans le trésorier (il doit reventiler), donc signalés, pas touchés.
+  supplantes?: string[];
   // Écritures comptables non rapprochées de CW (dont les transferts hors
   // résultat), transmises telles quelles pour l'import de la sync.
   ecrituresComptables?: EcritureComptableNonRapprochee[];
@@ -180,11 +186,27 @@ export async function scanDraftsFromComptaweb(
     const deleteStaleDraft = db.prepare(
       `DELETE FROM ecritures WHERE id = ? AND group_id = ? AND status = 'draft'`,
     );
+    // Promotion d'un agrégat justifié en sous-ligne (cf. planLineHeal). Heal EN
+    // PLACE : l'id ne bouge pas, donc justifs / dépôts / remboursements restent
+    // rattachés. `description` ne suit le nouveau libellé brut que si le
+    // trésorier ne l'a jamais renommée, et `notes` que si elle est encore celle
+    // générée à la création — jamais d'écrasement d'une saisie.
+    const promoteAggregate = db.prepare(
+      `UPDATE ecritures
+          SET ligne_bancaire_sous_index = ?,
+              libelle_origine = ?,
+              description = CASE WHEN description = libelle_origine THEN ? ELSE description END,
+              notes = CASE WHEN notes = ? THEN ? ELSE notes END,
+              updated_at = ?
+        WHERE id = ? AND group_id = ? AND status = 'draft' AND comptaweb_ecriture_id IS NULL`,
+    );
     let crees = 0;
     let existants = 0;
     let supprimes = 0;
     let doublons = 0;
     let corriges = 0;
+    let promus = 0;
+    const supplantes: string[] = [];
 
     for (const ligne of data.ecrituresBancaires) {
       const candidates = candidatesForLine(ligne);
@@ -193,7 +215,7 @@ export async function scanDraftsFromComptaweb(
       //    sous_index n'est plus canonique (ex. draft « ligne entière »
       //    survivant après l'apparition des sous-lignes DSP2 → son montant =
       //    somme des sous-lignes → double comptage). Brouillons NUS seulement
-      //    (le garde-fou est dans planStaleLineDrafts).
+      //    (le garde-fou est dans planLineHeal / planStaleLineDrafts).
       const existingRows = await findLineDrafts.all<{
         id: string; sousIndex: number | null; status: string; type: string;
         libelleOrigine: string | null; description: string;
@@ -208,11 +230,36 @@ export async function scanDraftsFromComptaweb(
         hasAttachment: r.hasAttach === 1,
       }));
       const canonical = candidates.map((c) => c.sousLigneIndex);
-      const staleIds = new Set(planStaleLineDrafts(canonical, existing));
+      const heal = planLineHeal(canonical, existing);
+      const staleIds = new Set(heal.toDelete);
       for (const staleId of staleIds) {
         await deleteStaleDraft.run(staleId, groupId);
         supprimes++;
       }
+
+      // 1 bis. Agrégat porteur de pièces supplanté par une sous-ligne unique :
+      //        il prend l'identité de la sous-ligne au lieu de rester en doublon
+      //        (cas ECR-2026-472 / ECR-2026-524, ligne 19130340, 2026-08-17).
+      for (const p of heal.toPromote) {
+        const cand = candidates.find((c) => c.sousLigneIndex === p.sousLigneIndex);
+        const row = existingRows.find((r) => r.id === p.id);
+        if (!cand || !row) continue;
+        const notesAvant = `Draft généré depuis ligne bancaire ${ligne.id}.`;
+        const notesApres = `Draft généré depuis ligne bancaire ${cand.ligneBancaireId} sous-ligne ${p.sousLigneIndex} (intitulé parent: ${cand.intituleParent.slice(0, 80)}).`;
+        await promoteAggregate.run(
+          p.sousLigneIndex, cand.libelProposal, cand.libelProposal,
+          notesAvant, notesApres, currentTimestamp(), p.id, groupId,
+        );
+        // Refléter la promotion en mémoire : sinon l'étape 2 ne reconnaît pas
+        // l'écriture (clé sous_index + libelle_origine) et recrée le doublon
+        // qu'on vient justement de résorber.
+        if (row.description === row.libelleOrigine) row.description = cand.libelProposal;
+        row.sousIndex = p.sousLigneIndex;
+        row.libelleOrigine = cand.libelProposal;
+        promus++;
+      }
+      supplantes.push(...heal.toFlag);
+
       // Écritures encore vivantes de la ligne (hors stales retirés ce cycle).
       const liveRows = existingRows.filter((r) => !staleIds.has(r.id));
 
@@ -284,7 +331,7 @@ export async function scanDraftsFromComptaweb(
       }
     }
 
-    return { crees, existants, supprimes, doublons, corriges, ecrituresComptables: data.ecrituresComptables };
+    return { crees, existants, supprimes, doublons, corriges, promus, supplantes, ecrituresComptables: data.ecrituresComptables };
   } catch (err) {
     if (err instanceof ComptawebSessionExpiredError) {
       return { crees: 0, existants: 0, supprimes: 0, erreur: 'Session Comptaweb expirée.' };

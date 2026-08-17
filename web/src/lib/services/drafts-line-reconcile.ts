@@ -57,3 +57,71 @@ export function planStaleLineDrafts(
   }
   return out;
 }
+
+export interface LineHealPlan {
+  /** Drafts stale à supprimer (cf. `planStaleLineDrafts`), plus le jumeau nu supplanté par une promotion. */
+  toDelete: string[];
+  /** Agrégat porteur de pièces qui prend l'identité de la sous-ligne (heal en place, aucune donnée perdue). */
+  toPromote: Array<{ id: string; sousLigneIndex: number }>;
+  /** Agrégats supplantés qu'on ne sait pas healer tout seul : à signaler au trésorier. */
+  toFlag: string[];
+}
+
+const estNu = (d: ExistingLineDraft): boolean =>
+  d.status === 'draft' && d.comptawebEcritureId === null && !d.hasAttachment && !d.hasImputation;
+
+/**
+ * Étend `planStaleLineDrafts` au cas « agrégat DÉJÀ justifié ».
+ *
+ * `planStaleLineDrafts` épargne (à raison) un draft « ligne entière » qui porte
+ * une pièce — mais il le laisse alors en doublon du détail DSP2, silencieusement
+ * et pour toujours : `dedup-ecritures` ne peut pas le voir non plus (il groupe
+ * par description + catégorie, or l'agrégat est enrichi et le détail est brut ;
+ * et dès N>1 les montants diffèrent). Cas terrain 2026-08-17 : ECR-2026-472
+ * (agrégat imputé + 2 justifs + 1 dépôt) et ECR-2026-524 (sous-ligne nue) sur la
+ * même ligne bancaire 19130340.
+ *
+ * Quand le détail ne compte qu'UNE sous-ligne, l'identité est non ambiguë :
+ * l'agrégat est **promu** à ce sous-index plutôt que supprimé — il garde ses
+ * justifs, son dépôt rattaché et son imputation (rien à re-saisir, aucune FK
+ * cassée), et le jumeau nu créé entre-temps disparaît. C'est le même principe
+ * que le self-heal du `type` : on corrige en place, jamais delete+recreate.
+ *
+ * Dès que c'est ambigu (plusieurs sous-lignes → le grain agrégé doit être
+ * reventilé à la main ; plusieurs agrégats candidats ; jumeau déjà travaillé),
+ * on ne devine pas : l'agrégat est signalé pour arbitrage humain.
+ */
+export function planLineHeal(
+  canonicalSousIndexes: Array<number | null>,
+  existing: ExistingLineDraft[],
+): LineHealPlan {
+  const toDelete = planStaleLineDrafts(canonicalSousIndexes, existing);
+  const canonical = new Set(canonicalSousIndexes.map(key));
+
+  // Agrégats supplantés que `planStaleLineDrafts` a épargnés pour leur pièce.
+  const bloques = existing.filter(
+    (d) =>
+      d.sousLigneIndex === null &&
+      !canonical.has(key(null)) &&
+      d.status === 'draft' &&
+      d.comptawebEcritureId === null &&
+      d.hasAttachment,
+  );
+  if (bloques.length === 0) return { toDelete, toPromote: [], toFlag: [] };
+
+  const cibles = canonicalSousIndexes.filter((i): i is number => i !== null);
+  const abandon = (): LineHealPlan => ({ toDelete, toPromote: [], toFlag: bloques.map((d) => d.id) });
+
+  // Promotion seulement si l'appariement est forcé : un agrégat, une sous-ligne.
+  if (bloques.length !== 1 || cibles.length !== 1) return abandon();
+
+  const cible = cibles[0];
+  const jumeau = existing.find((d) => d.sousLigneIndex === cible);
+  if (jumeau && !estNu(jumeau)) return abandon();
+
+  return {
+    toDelete: jumeau ? [...toDelete, jumeau.id] : toDelete,
+    toPromote: [{ id: bloques[0].id, sousLigneIndex: cible }],
+    toFlag: [],
+  };
+}
