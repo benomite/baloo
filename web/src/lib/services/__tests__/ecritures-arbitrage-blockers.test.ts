@@ -21,7 +21,8 @@ async function setupDb(): Promise<DbWrapper> {
   await db.exec(`
     CREATE TABLE justificatifs (
       id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT,
-      original_filename TEXT, file_path TEXT
+      original_filename TEXT, file_path TEXT,
+    obsolete_at TEXT
     );
     CREATE TABLE depots_justificatifs (id TEXT PRIMARY KEY, ecriture_id TEXT, titre TEXT);
     CREATE TABLE depots_especes (id TEXT PRIMARY KEY, ecriture_id TEXT, date_depot TEXT);
@@ -93,8 +94,9 @@ describe('listAttachments — nommer les pièces qui bloquent', () => {
   it('compte quand même les justifs si les colonnes de libellé manquent', async () => {
     await db.exec(
       `DROP TABLE justificatifs;
-       CREATE TABLE justificatifs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT);
-       INSERT INTO justificatifs VALUES ('JUS-1','ecriture','ECR-A');`,
+       CREATE TABLE justificatifs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT,
+         obsolete_at TEXT);
+       INSERT INTO justificatifs (id, entity_type, entity_id) VALUES ('JUS-1','ecriture','ECR-A');`,
     );
     const atts = await listAttachments(db, 'ECR-A');
     expect(atts).toHaveLength(1);

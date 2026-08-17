@@ -8,6 +8,7 @@ import {
   Shield,
   ShieldAlert,
   User,
+  X,
   XCircle,
 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
@@ -31,7 +32,7 @@ import { listJustificatifs } from '@/lib/queries/justificatifs';
 import { patchNotesAndRib, updateRemboursementStatus } from '@/lib/actions/remboursements';
 import { convertRembToDepot } from '@/lib/actions/remboursements/convert';
 import { canConvertRemboursement } from '@/lib/actions/remboursements/convert-guard';
-import { uploadJustificatif } from '@/lib/actions/justificatifs';
+import { retirerJustificatif, uploadJustificatif } from '@/lib/actions/justificatifs';
 import { getCurrentContext } from '@/lib/context';
 import { cn } from '@/lib/utils';
 
@@ -343,16 +344,30 @@ export default async function RemboursementDetailPage({
             ) : (
               <ul className="space-y-1">
                 {justificatifs.map((j) => (
-                  <li key={j.id}>
+                  <li key={j.id} className="flex items-center gap-1">
                     <a
                       href={`/api/justificatifs/${j.file_path}`}
                       target="_blank"
                       rel="noopener"
-                      className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-fg hover:bg-brand-50 hover:text-brand transition-colors"
+                      className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-fg hover:bg-brand-50 hover:text-brand transition-colors"
                     >
                       <Paperclip size={13} className="shrink-0 text-fg-subtle" strokeWidth={1.75} />
                       <span className="truncate">{j.original_filename}</span>
                     </a>
+                    {isAdmin && (
+                      <form action={retirerJustificatif}>
+                        <input type="hidden" name="justificatif_id" value={j.id} />
+                        <input type="hidden" name="entity_id" value={r.id} />
+                        <PendingButton
+                          variant="ghost"
+                          size="sm"
+                          title="Retirer cette pièce (conservée pour l'audit, plus affichée)"
+                          pendingLabel="…"
+                        >
+                          <X size={13} strokeWidth={1.75} />
+                        </PendingButton>
+                      </form>
+                    )}
                   </li>
                 ))}
               </ul>

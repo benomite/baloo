@@ -37,7 +37,8 @@ async function setup(): Promise<DbWrapper> {
       libelle_origine TEXT, amount_cents INTEGER, type TEXT, status TEXT,
       category_id TEXT, unite_id TEXT, carte_id TEXT, activite_id TEXT, updated_at TEXT
     );
-    CREATE TABLE justificatifs (id TEXT, entity_type TEXT, entity_id TEXT);
+    CREATE TABLE justificatifs (id TEXT, entity_type TEXT, entity_id TEXT,
+    obsolete_at TEXT);
   `);
   return db;
 }

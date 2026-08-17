@@ -33,7 +33,8 @@ async function setup(): Promise<DbWrapper> {
       date_estimee TEXT, carte_id TEXT, activite_id TEXT, statut TEXT NOT NULL DEFAULT 'a_traiter',
       ecriture_id TEXT, remboursement_id TEXT, motif_rejet TEXT, created_at TEXT, updated_at TEXT
     );
-    CREATE TABLE justificatifs (id TEXT, entity_type TEXT, entity_id TEXT);
+    CREATE TABLE justificatifs (id TEXT, entity_type TEXT, entity_id TEXT,
+    obsolete_at TEXT);
   `);
   return db;
 }

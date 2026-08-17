@@ -425,6 +425,50 @@ un draft existant (self-heal `type` uniquement). Note : les erreurs de relevé
 bancaire (somme des sous-lignes ≠ total ligne) restent un **arbitrage manuel**
 assumé — Baloo ne « corrige » pas la banque.
 
+## Remboursements
+
+### Éditer une demande validée : le statut doit redescendre avec les signatures
+
+Une édition de fond (`updateMyRemboursement`) change ce sur quoi les validations
+ont porté : les signatures deviennent caduques. Elles sont donc marquées
+périmées (`signatures.superseded_at`) — **jamais supprimées**, c'est une preuve
+d'audit — et le statut redescend à `a_traiter` via `planEditImpact`.
+
+Sans ce reset (bug RBT-2026-030, 2026-08-17), la demande gardait un statut
+`valide_tresorier` que plus aucune signature n'attestait : l'étape s'affichait
+« (sautée) » dans le stepper, et surtout la demande était **définitivement
+coincée** — aucune transition de `REMBOURSEMENTS_TRANSITIONS` ne redescend vers
+`a_traiter`, donc le trésorier ne pouvait plus re-valider pour régénérer la
+signature manquante.
+
+Après `virement_effectue` / `termine`, l'édition de fond est refusée : l'argent
+est parti, rouvrir la demande mentirait. L'édition limitée notes/RIB
+(`patchNotesAndRib`) reste disponible.
+
+Corollaire pour `signatures` : `listSignatures` / `verifyChain` / le chaînage de
+`signDocument` ne voient que la chaîne COURANTE (`superseded_at IS NULL`). Sinon
+une nouvelle signature hériterait d'un maillon qui ne correspond plus au contenu.
+
+### Justificatif obsolète : `obsolete_at`, jamais de DELETE
+
+Retirer une pièce remplacée passe par `marquerJustificatifObsolete`
+(`justificatifs.obsolete_at`) : la ligne et le blob restent, l'affichage les
+ignore. Le marquage n'est exposé que sur les justifs de **remboursement**
+(bouton fiche demande, admin only), et le filtre `obsolete_at IS NULL` est posé
+sur les chemins correspondants : `listJustificatifs`, les justifs vus depuis une
+écriture (`viaRemboursement`), la conversion remb → dépôt, l'assignation
+justif ↔ ligne.
+
+⚠️ Les ~15 autres requêtes `FROM justificatifs` (dedup, sync readiness,
+auto-match, overview, clôture) ne filtrent **pas** encore. C'est sans effet tant
+que seuls les justifs de remboursement peuvent devenir obsolètes — mais si on
+expose le marquage pour `entity_type='ecriture'`, il faut les traiter, sinon une
+écriture comptera comme justifiée par une pièce retirée.
+
+Piège tests : ajouter une colonne à `justificatifs` casse les `INSERT INTO
+justificatifs VALUES (...)` positionnels des schémas de test. Nommer les
+colonnes.
+
 ## Git / déploiement
 
 ### Pas de push sans accord explicite

@@ -56,7 +56,8 @@ const ECRITURES_DDL = `
   CREATE INDEX idx_ecritures_group ON ecritures(group_id);
 
   -- Tables satellites requises par loadVentCandidates (flags d'enrichissement).
-  CREATE TABLE justificatifs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT);
+  CREATE TABLE justificatifs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT,
+    obsolete_at TEXT);
   CREATE TABLE depots_justificatifs (id TEXT PRIMARY KEY, ecriture_id TEXT);
   CREATE TABLE depots_especes (id TEXT PRIMARY KEY, ecriture_id TEXT);
   CREATE TABLE remboursements (id TEXT PRIMARY KEY, ecriture_id TEXT);

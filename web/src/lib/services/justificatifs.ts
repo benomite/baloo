@@ -1,4 +1,4 @@
-import { getDb } from '../db';
+import { getDb, type DbWrapper } from '../db';
 import { nextId, currentTimestamp } from '../ids';
 import { getStorage, guessMime } from '../storage';
 import type { Justificatif } from '../types';
@@ -34,21 +34,48 @@ export interface ListJustificatifsOptions {
   entity_type?: string;
   entity_id?: string;
   limit?: number;
+  /** Inclut les justifs marqués obsolètes (audit). Par défaut : pièces actives. */
+  includeObsoletes?: boolean;
 }
 
 export async function listJustificatifs(
   { groupId }: JustificatifContext,
   options: ListJustificatifsOptions = {},
+  db: DbWrapper = getDb(),
 ): Promise<Justificatif[]> {
   const conditions: string[] = ['group_id = ?'];
   const values: unknown[] = [groupId];
 
   if (options.entity_type) { conditions.push('entity_type = ?'); values.push(options.entity_type); }
   if (options.entity_id) { conditions.push('entity_id = ?'); values.push(options.entity_id); }
+  if (!options.includeObsoletes) conditions.push('obsolete_at IS NULL');
 
-  return await getDb()
+  return await db
     .prepare(`SELECT * FROM justificatifs WHERE ${conditions.join(' AND ')} ORDER BY uploaded_at DESC LIMIT ?`)
     .all<Justificatif>(...values, options.limit ?? 50);
+}
+
+// Retire un justificatif des pièces actives SANS le supprimer : la ligne et le
+// fichier restent (règle anti-DELETE du projet — un justif porte du contexte
+// utilisateur et sert de preuve). Sert au cas « mauvais fichier / version
+// remplacée » (besoin terrain 2026-08-17).
+// Idempotent : re-marquer ne réécrit pas la date d'origine.
+export async function marquerJustificatifObsolete(
+  { groupId }: JustificatifContext,
+  justificatifId: string,
+  db: DbWrapper = getDb(),
+): Promise<void> {
+  const existant = await db
+    .prepare('SELECT id, obsolete_at FROM justificatifs WHERE id = ? AND group_id = ?')
+    .get<{ id: string; obsolete_at: string | null }>(justificatifId, groupId);
+  if (!existant) {
+    throw new JustificatifValidationError(`Justificatif ${justificatifId} introuvable.`);
+  }
+  if (existant.obsolete_at) return;
+
+  await db
+    .prepare('UPDATE justificatifs SET obsolete_at = ? WHERE id = ? AND group_id = ?')
+    .run(currentTimestamp(), justificatifId, groupId);
 }
 
 export interface EcritureJustifsBundle {
@@ -125,6 +152,7 @@ export async function listJustificatifsForEcriture(
           `SELECT * FROM justificatifs
            WHERE group_id = ? AND entity_id = ?
              AND entity_type IN ('remboursement', 'remboursement_rib')
+             AND obsolete_at IS NULL
            ORDER BY uploaded_at DESC`,
         )
         .all<Justificatif>(groupId, r.id);

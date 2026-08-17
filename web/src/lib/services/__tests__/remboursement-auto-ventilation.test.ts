@@ -37,7 +37,8 @@ beforeAll(async () => {
       id TEXT PRIMARY KEY, group_id TEXT, amount_cents INTEGER, total_cents INTEGER,
       unite_id TEXT, ecriture_id TEXT, created_at TEXT, updated_at TEXT
     );
-    CREATE TABLE justificatifs (id TEXT, group_id TEXT, entity_type TEXT, entity_id TEXT);
+    CREATE TABLE justificatifs (id TEXT, group_id TEXT, entity_type TEXT, entity_id TEXT,
+    obsolete_at TEXT);
     CREATE TABLE depots_justificatifs (id TEXT, ecriture_id TEXT);
   `);
 });

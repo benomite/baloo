@@ -59,7 +59,8 @@ export async function convertRemboursementToDepot(
   const sources = await db
     .prepare(
       `SELECT file_path, original_filename, mime_type
-       FROM justificatifs WHERE group_id = ? AND entity_type = 'remboursement' AND entity_id = ?`,
+       FROM justificatifs WHERE group_id = ? AND entity_type = 'remboursement' AND entity_id = ?
+         AND obsolete_at IS NULL`,
     )
     .all<JustifRow>(groupId, rembId);
 
