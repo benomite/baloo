@@ -34,7 +34,8 @@ async function setup(): Promise<DbWrapper> {
     CREATE TABLE unites (id TEXT PRIMARY KEY, code TEXT);
     CREATE TABLE categories (id TEXT PRIMARY KEY, name TEXT);
     CREATE TABLE cartes (id TEXT PRIMARY KEY, porteur TEXT);
-    CREATE TABLE justificatifs (id TEXT, entity_type TEXT, entity_id TEXT, file_path TEXT, uploaded_at TEXT);
+    CREATE TABLE justificatifs (id TEXT, entity_type TEXT, entity_id TEXT, file_path TEXT, uploaded_at TEXT,
+    obsolete_at TEXT);
     INSERT INTO users (id, nom_affichage, email) VALUES ('u1', 'Trésorier', 't@ex.org');
   `);
   const ins = (id: string, statut: string, ecr: string | null, rmb: string | null) =>

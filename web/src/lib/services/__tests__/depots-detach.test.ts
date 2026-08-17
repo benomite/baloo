@@ -39,7 +39,8 @@ async function setup(): Promise<DbWrapper> {
     );
     CREATE TABLE justificatifs (
       id TEXT PRIMARY KEY, group_id TEXT, file_path TEXT, original_filename TEXT,
-      mime_type TEXT, entity_type TEXT, entity_id TEXT, uploaded_at TEXT
+      mime_type TEXT, entity_type TEXT, entity_id TEXT, uploaded_at TEXT,
+    obsolete_at TEXT
     );
   `);
   return db;

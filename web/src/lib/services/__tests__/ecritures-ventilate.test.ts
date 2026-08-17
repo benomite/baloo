@@ -51,7 +51,8 @@ beforeAll(async () => {
       ventilation_group_id TEXT, comptaweb_ecriture_id INTEGER,
       status TEXT NOT NULL, created_at TEXT, updated_at TEXT
     );
-    CREATE TABLE justificatifs (id TEXT, entity_type TEXT, entity_id TEXT);
+    CREATE TABLE justificatifs (id TEXT, entity_type TEXT, entity_id TEXT,
+    obsolete_at TEXT);
     CREATE TABLE depots_justificatifs (id TEXT, ecriture_id TEXT);
     CREATE TABLE remboursements (id TEXT, ecriture_id TEXT);
   `);

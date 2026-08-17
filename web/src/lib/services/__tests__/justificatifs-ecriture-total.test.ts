@@ -19,7 +19,8 @@ describe('listJustificatifsForEcriture — totalCents par demande liée', () => 
     await testDb.exec(`
       CREATE TABLE ecritures (id TEXT PRIMARY KEY, group_id TEXT, amount_cents INTEGER, ventilation_group_id TEXT);
       CREATE TABLE remboursements (id TEXT PRIMARY KEY, group_id TEXT, demandeur TEXT, amount_cents INTEGER, total_cents INTEGER, ecriture_id TEXT);
-      CREATE TABLE justificatifs (id TEXT PRIMARY KEY, group_id TEXT NOT NULL, file_path TEXT NOT NULL, original_filename TEXT NOT NULL, mime_type TEXT, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, uploaded_at TEXT);
+      CREATE TABLE justificatifs (id TEXT PRIMARY KEY, group_id TEXT NOT NULL, file_path TEXT NOT NULL, original_filename TEXT NOT NULL, mime_type TEXT, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, uploaded_at TEXT,
+    obsolete_at TEXT);
     `);
     await testDb.prepare("INSERT INTO ecritures (id, group_id, amount_cents, ventilation_group_id) VALUES ('ECR','g',50000,NULL)").run();
     await testDb.prepare("INSERT INTO remboursements (id, group_id, demandeur, amount_cents, total_cents, ecriture_id) VALUES ('R1','g','Florence',30000,30000,'ECR')").run();

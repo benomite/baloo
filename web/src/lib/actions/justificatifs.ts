@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache';
 import { getCurrentContext } from '../context';
-import { attachJustificatif } from '../services/justificatifs';
+import { attachJustificatif, marquerJustificatifObsolete } from '../services/justificatifs';
+import { requireAdmin } from '../auth/access';
 
 export async function uploadJustificatif(formData: FormData) {
   const file = formData.get('file') as File;
@@ -23,4 +24,22 @@ export async function uploadJustificatif(formData: FormData) {
 
   revalidatePath(`/ecritures/${entityId}`);
   revalidatePath(`/remboursements/${entityId}`);
+}
+
+// Retire un justificatif des pièces actives (remplacé / erroné). Le fichier et
+// la ligne restent en base — cf. `marquerJustificatifObsolete`. Réservé aux
+// admins : c'est une pièce comptable, pas au demandeur d'en retirer une.
+export async function retirerJustificatif(formData: FormData): Promise<void> {
+  const justificatifId = formData.get('justificatif_id') as string | null;
+  const entityId = formData.get('entity_id') as string | null;
+  if (!justificatifId || !entityId) return;
+
+  const ctx = await getCurrentContext();
+  requireAdmin(ctx.role);
+
+  await marquerJustificatifObsolete({ groupId: ctx.groupId }, justificatifId);
+
+  revalidatePath(`/remboursements/${entityId}`);
+  revalidatePath(`/ecritures/${entityId}`);
+  revalidatePath('/inbox');
 }

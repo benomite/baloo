@@ -40,7 +40,8 @@ const SETUP_SQL = `
     created_at TEXT NOT NULL DEFAULT '2026-06-25T00:00:00Z',
     updated_at TEXT NOT NULL DEFAULT '2026-06-25T00:00:00Z'
   );
-  CREATE TABLE justificatifs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT);
+  CREATE TABLE justificatifs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT,
+    obsolete_at TEXT);
   CREATE TABLE depots_justificatifs (id TEXT PRIMARY KEY, ecriture_id TEXT);
   CREATE TABLE remboursements (id TEXT PRIMARY KEY, ecriture_id TEXT);
   CREATE TABLE modes_paiement (id TEXT PRIMARY KEY, comptaweb_id INTEGER);

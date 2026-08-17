@@ -213,4 +213,7 @@ export interface Justificatif {
   entity_type: string;
   entity_id: string;
   uploaded_at: string;
+  // Pièce retirée des justifs actifs (remplacée / erronée) sans être détruite.
+  // Cf. `marquerJustificatifObsolete`.
+  obsolete_at?: string | null;
 }

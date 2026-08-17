@@ -7,7 +7,8 @@ import { selectCampRecettes } from '../camps';
 // justificatifs/remboursements vides (les EXISTS de EcritureCampRow → 0).
 const SETUP_SQL = `
   CREATE TABLE categories (id TEXT PRIMARY KEY, name TEXT);
-  CREATE TABLE justificatifs (entity_type TEXT, entity_id TEXT);
+  CREATE TABLE justificatifs (entity_type TEXT, entity_id TEXT,
+    obsolete_at TEXT);
   CREATE TABLE remboursements (id TEXT PRIMARY KEY, ecriture_id TEXT);
   CREATE TABLE ecritures (
     id TEXT PRIMARY KEY, group_id TEXT NOT NULL, activite_id TEXT, unite_id TEXT,

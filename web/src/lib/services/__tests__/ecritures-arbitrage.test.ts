@@ -12,7 +12,8 @@ import {
 import { upsertSuggestion, listSuggestions } from '../cw-link-suggestions';
 
 const SATELLITE_DDL = `
-  CREATE TABLE justificatifs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT);
+  CREATE TABLE justificatifs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT,
+    obsolete_at TEXT);
   CREATE TABLE depots_justificatifs (id TEXT PRIMARY KEY, ecriture_id TEXT);
   CREATE TABLE depots_especes (id TEXT PRIMARY KEY, ecriture_id TEXT);
   CREATE TABLE remboursements (id TEXT PRIMARY KEY, ecriture_id TEXT);
@@ -135,7 +136,8 @@ describe('deleteArbitratedEcriture', () => {
         description TEXT NOT NULL, amount_cents INTEGER NOT NULL, type TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'draft', updated_at TEXT
       );
-      CREATE TABLE justificatifs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT);
+      CREATE TABLE justificatifs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT,
+    obsolete_at TEXT);
       CREATE TABLE inbox_suggestion_rejets (
         id INTEGER PRIMARY KEY AUTOINCREMENT, group_id TEXT NOT NULL,
         ecriture_id TEXT NOT NULL REFERENCES ecritures(id),

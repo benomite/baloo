@@ -17,7 +17,8 @@ beforeEach(async () => {
   await testDb.exec(`
     CREATE TABLE ecritures (id TEXT PRIMARY KEY, group_id TEXT, amount_cents INTEGER, ventilation_group_id TEXT);
     CREATE TABLE remboursements (id TEXT, group_id TEXT, demandeur TEXT, total_cents INTEGER, amount_cents INTEGER, ecriture_id TEXT);
-    CREATE TABLE justificatifs (id TEXT, group_id TEXT, entity_type TEXT, entity_id TEXT, uploaded_at TEXT);
+    CREATE TABLE justificatifs (id TEXT, group_id TEXT, entity_type TEXT, entity_id TEXT, uploaded_at TEXT,
+    obsolete_at TEXT);
   `);
   await testDb.prepare("INSERT INTO ecritures VALUES ('H','g',30000,'vg1')").run();
   await testDb.prepare("INSERT INTO ecritures VALUES ('C','g',17032,'vg1')").run();
@@ -40,14 +41,14 @@ it('remboursements du GROUPE visibles depuis n’importe quel membre', async () 
 });
 
 it('justif direct posé sur une autre ligne du groupe reste visible', async () => {
-  await testDb.prepare("INSERT INTO justificatifs VALUES ('J1','g','ecriture','C','2026-07-25T10:00:00Z')").run();
+  await testDb.prepare("INSERT INTO justificatifs (id, group_id, entity_type, entity_id, uploaded_at) VALUES ('J1','g','ecriture','C','2026-07-25T10:00:00Z')").run();
   const bundle = await listJustificatifsForEcriture({ groupId: 'g' }, 'H');
   expect(bundle.direct.map((j) => j.id)).toEqual(['J1']);
 });
 
 it('hors groupe : ni les justifs ni les rembs des autres écritures ne fuient', async () => {
   await testDb.prepare("INSERT INTO ecritures VALUES ('X','g',5000,NULL)").run();
-  await testDb.prepare("INSERT INTO justificatifs VALUES ('JX','g','ecriture','X','2026-07-25T10:00:00Z')").run();
+  await testDb.prepare("INSERT INTO justificatifs (id, group_id, entity_type, entity_id, uploaded_at) VALUES ('JX','g','ecriture','X','2026-07-25T10:00:00Z')").run();
   const bundle = await listJustificatifsForEcriture({ groupId: 'g' }, 'H');
   expect(bundle.direct).toHaveLength(0);
   const other = await listJustificatifsForEcriture({ groupId: 'g' }, 'X');

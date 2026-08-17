@@ -45,7 +45,8 @@ export async function setLigneJustificatifs(
   for (const jid of wanted) {
     const j = await db
       .prepare(
-        `SELECT id FROM justificatifs WHERE id = ? AND group_id = ? AND entity_type = 'remboursement' AND entity_id = ?`,
+        `SELECT id FROM justificatifs WHERE id = ? AND group_id = ? AND entity_type = 'remboursement' AND entity_id = ?
+           AND obsolete_at IS NULL`,
       )
       .get<{ id: string }>(jid, groupId, remboursementId);
     if (!j) throw new Error(`Justificatif ${jid} introuvable sur la demande ${remboursementId}.`);

@@ -736,6 +736,10 @@ export async function ensureBusinessSchema(): Promise<void> {
   // colonnes/table créées plus haut).
   await ensureReconcileSchema(db);
 
+  // Justificatifs obsolètes (besoin terrain 2026-08-17) : retirer une pièce
+  // remplacée sans la détruire. APRÈS la table justificatifs.
+  await ensureJustificatifsObsolete(db);
+
   // Titres parlants (spec 2026-06-30) : colonne libelle_origine + backfill
   // ciblé des brouillons bancaires encore bruts. APRÈS la table ecritures.
   await ensureEcrituresLibelleOrigine(db);
@@ -891,6 +895,28 @@ export async function ensureSyncRunsSchema(db: DbWrapper): Promise<void> {
  *
  * Exporté pour les tests.
  */
+/**
+ * `justificatifs.obsolete_at` (besoin terrain 2026-08-17).
+ *
+ * Permet de retirer des pièces actives un justif remplacé (mauvais fichier,
+ * version corrigée) SANS DELETE : la ligne et le fichier restent, l'affichage
+ * les ignore. Cf. `marquerJustificatifObsolete`.
+ *
+ * Nullable, aucun backfill : toutes les lignes existantes sont actives, ce qui
+ * est exact. Pattern AGENTS.md : PRAGMA puis ALTER, index après l'ALTER.
+ *
+ * Exporté pour les tests.
+ */
+export async function ensureJustificatifsObsolete(db: DbWrapper): Promise<void> {
+  const cols = await db.prepare('PRAGMA table_info(justificatifs)').all<{ name: string }>();
+  if (cols.length > 0 && !cols.some((c) => c.name === 'obsolete_at')) {
+    await db.exec('ALTER TABLE justificatifs ADD COLUMN obsolete_at TEXT');
+  }
+  await db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_just_entity_actives ON justificatifs(entity_type, entity_id, obsolete_at)',
+  );
+}
+
 export async function ensureReconcileSchema(db: DbWrapper): Promise<void> {
   // 1. ecritures.cw_signature
   const ecoCols = await db.prepare('PRAGMA table_info(ecritures)').all<{ name: string }>();

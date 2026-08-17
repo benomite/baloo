@@ -20,7 +20,8 @@ async function setupDb(): Promise<Db> {
       description TEXT NOT NULL, amount_cents INTEGER NOT NULL, type TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'draft', justif_attendu INTEGER NOT NULL DEFAULT 1
     );
-    CREATE TABLE justificatifs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT);
+    CREATE TABLE justificatifs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT,
+    obsolete_at TEXT);
   `);
   return db;
 }

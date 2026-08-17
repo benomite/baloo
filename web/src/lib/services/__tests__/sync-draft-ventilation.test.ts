@@ -48,7 +48,8 @@ beforeAll(async () => {
       carte_id TEXT, ventilation_group_id TEXT, comptaweb_ecriture_id INTEGER,
       comptaweb_synced INTEGER DEFAULT 0, updated_at TEXT
     );
-    CREATE TABLE justificatifs (id TEXT, entity_type TEXT, entity_id TEXT, uploaded_at TEXT);
+    CREATE TABLE justificatifs (id TEXT, entity_type TEXT, entity_id TEXT, uploaded_at TEXT,
+    obsolete_at TEXT);
     CREATE TABLE categories (id TEXT, comptaweb_id INTEGER);
     CREATE TABLE activites (id TEXT, comptaweb_id INTEGER);
     CREATE TABLE unites (id TEXT, comptaweb_id INTEGER);
