@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildEcritureGroups } from '../ecriture-groups';
+import { buildEcritureGroups, isMultiCategoryRow, type Group } from '../ecriture-groups';
 import type { Ecriture } from '@/lib/types';
 
 function ecr(over: Partial<Ecriture>): Ecriture {
@@ -113,5 +113,45 @@ describe('buildEcritureGroups — consolidation multi-ventilation', () => {
     // cw prioritaire sur ventil
     expect(headers[0].kind === 'header' && headers[0].group.kind).toBe('cw');
     expect(items.filter((i) => i.kind === 'row')).toHaveLength(2);
+  });
+});
+
+// Une sous-ligne bancaire est une ÉCRITURE AUTONOME, pas la ventilation d'une
+// pièce : deux paiements E.Leclerc du même débit carte ont chacun leur
+// catégorie, qui peut très bien être la même. Afficher « Catégories
+// multiples » y était faux, et privait la ligne de son picker de catégorie
+// (signalé 2026-08-17 sur ECR-2026-520 / ECR-2026-521, ligne bancaire 19122845,
+// toutes deux en Intendance).
+describe('isMultiCategoryRow', () => {
+  const group = (kind: Group['kind'], count: number): Group => ({
+    kind,
+    id: 'g',
+    label: 'l',
+    sublabel: 's',
+    totalCents: -1000,
+    count,
+  });
+
+  it('ne s’applique pas aux sous-lignes d’un même paiement bancaire', () => {
+    expect(isMultiCategoryRow(group('bank', 2))).toBe(false);
+    expect(isMultiCategoryRow(group('bank', 5))).toBe(false);
+  });
+
+  it('s’applique aux ventilations d’une pièce Comptaweb', () => {
+    expect(isMultiCategoryRow(group('cw', 2))).toBe(true);
+  });
+
+  it('s’applique aux ventilations d’une pièce locale', () => {
+    expect(isMultiCategoryRow(group('ventil', 2))).toBe(true);
+  });
+
+  it('ne s’applique pas à un groupe d’une seule ligne', () => {
+    expect(isMultiCategoryRow(group('cw', 1))).toBe(false);
+    expect(isMultiCategoryRow(group('ventil', 1))).toBe(false);
+  });
+
+  it('ne s’applique pas hors groupe', () => {
+    expect(isMultiCategoryRow(null)).toBe(false);
+    expect(isMultiCategoryRow(undefined)).toBe(false);
   });
 });
