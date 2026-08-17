@@ -363,6 +363,43 @@ côté dépôts. Seule barrière : ne jamais toucher une écriture déjà matér
 dans Comptaweb (`status ≠ 'draft'` ou `comptaweb_ecriture_id` non nul) — cf.
 garde-fou `corrigeable` dans `drafts.ts`.
 
+### Le détail DSP2 arrive APRÈS coup : l'agrégat déjà justifié devient un doublon invisible
+
+La banque ne publie le détail commerçant d'un « PAIEMENT C. PROC » qu'à la
+**clôture du relevé mensuel** (constat 2026-08-17 : détail présent jusqu'au
+31/07, absent pour tout août). Séquence typique, donc **récurrente chaque
+début de mois** :
+
+1. la ligne est scrapée sans sous-ligne → un draft « ligne entière » est créé ;
+2. le trésorier l'impute et y rattache ses justifs / son dépôt ;
+3. des semaines plus tard le détail apparaît → un draft par sous-ligne s'ajoute
+   (clé `(ligne, sous_index)` → aucune collision) ;
+4. `planStaleLineDrafts` veut retirer l'agrégat… mais la garde `hasAttachment`
+   l'en empêche : **il reste en doublon, pour toujours et en silence**.
+
+Le doublon est invisible pour `dedup-ecritures` : il groupe par description +
+catégorie identiques, or l'agrégat est enrichi et le détail est brut ; et dès
+N > 1 les montants diffèrent aussi. Ne pas compter dessus pour rattraper le
+coup — cas réel ECR-2026-472 (agrégat, 2 justifs + 1 dépôt) vs ECR-2026-524
+(sous-ligne nue), ligne 19130340, détecté seulement à la main.
+
+`planLineHeal` traite les deux cas :
+
+- **une seule sous-ligne** → l'identité est forcée : l'agrégat est **promu** à
+  ce `sous_index` (heal en place, comme pour le `type`). Il garde son id, donc
+  ses justifs, son dépôt et son imputation — rien à re-saisir, aucune FK cassée
+  — et le jumeau nu créé entre-temps est supprimé. Penser à mettre à jour
+  `libelle_origine` **et l'objet en mémoire** : sans ça l'étape de création ne
+  reconnaît plus l'écriture (clé `sous_index + libelle_origine`) et recrée le
+  doublon qu'on vient de résorber.
+- **plusieurs sous-lignes** → le grain agrégé doit être reventilé à la main :
+  on ne devine pas. L'agrégat est laissé intact et **signalé** (`supplantes`
+  dans le résultat de scan, bandeau `/inbox` via `listAgregatsSupplantes`).
+
+`description` ne suit le nouveau libellé brut que si le trésorier ne l'a jamais
+renommée, et `notes` que si elle est encore celle générée à la création :
+jamais d'écrasement d'une saisie.
+
 ### Clé de reconnaissance d'un draft bancaire : `sous_index + libelle_origine`, JAMAIS le montant ni l'id CW seul
 
 `scanDraftsFromComptaweb` doit reconnaître qu'une sous-ligne bancaire est
