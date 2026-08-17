@@ -9,6 +9,8 @@ import { getRemboursement, reconcileLignes } from '../../services/remboursements
 import { attachJustificatif } from '../../services/justificatifs';
 import { getGroupe } from '../../services/groupes';
 import { signAndRefreshRemboursementPdf } from '../../services/remboursement-signing';
+import { supersedeSignatures } from '../../services/signatures';
+import { planEditImpact } from '../../services/remboursement-edit-impact';
 import { logError } from '../../log';
 import {
   ADMIN_ROLES,
@@ -55,6 +57,14 @@ async function updateMyRemboursementBody(id: string, formData: FormData): Promis
   if (rbt!.status !== 'a_traiter' && !isAdmin) {
     fail('La demande a déjà été validée. Seuls les admins peuvent encore la modifier en full.');
   }
+
+  // Une édition de fond invalide les validations déjà obtenues : le statut doit
+  // suivre, sinon la demande affirme une validation que plus aucune signature
+  // n'atteste et se retrouve coincée (aucune transition ne redescend vers
+  // `a_traiter`) — bug RBT-2026-030, 2026-08-17.
+  const impact = planEditImpact(rbt!.status);
+  if (!impact.allowed) fail(impact.reason);
+  const resetStatusTo = impact.allowed ? impact.resetStatusTo : null;
 
   const { prenom, nom, email } = parseIdentiteFromForm(formData, fail);
   const lignes = parseLignesFromForm(formData, fail);
@@ -148,11 +158,17 @@ async function updateMyRemboursementBody(id: string, formData: FormData): Promis
     }
   }
 
-  // Re-signature : on supprime les signatures précédentes pour garder
-  // une chaîne cohérente, puis on signe à nouveau "demandeur".
-  await getDb()
-    .prepare("DELETE FROM signatures WHERE document_type = 'remboursement' AND document_id = ?")
-    .run(id);
+  // Re-signature : les signatures précédentes portaient sur un autre contenu.
+  // On les marque PÉRIMÉES (jamais de DELETE : une chaîne de signatures est une
+  // preuve d'audit), puis on repart d'une chaîne neuve signée "demandeur".
+  await supersedeSignatures('remboursement', id);
+
+  // Le statut redescend avec les validations qu'il affirmait.
+  if (resetStatusTo) {
+    await getDb()
+      .prepare('UPDATE remboursements SET status = ?, updated_at = ? WHERE id = ? AND group_id = ?')
+      .run(resetStatusTo, new Date().toISOString(), id, ctx.groupId);
+  }
   try {
     const meta = await captureClientMeta();
     await signAndRefreshRemboursementPdf({

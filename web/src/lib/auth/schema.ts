@@ -62,6 +62,22 @@ export async function migrateKmColumns(db: DbWrapper): Promise<void> {
   }
 }
 
+// Signatures rendues caduques par une édition du document (spec 2026-08-17).
+// Idempotent. Colonne nullable, pas de NOT NULL DEFAULT (piège Turso), pas de
+// backfill : les signatures existantes sont toutes actives, ce qui est exact.
+// Remplace le DELETE que faisait l'édition d'un remboursement — une chaîne de
+// signatures est une preuve, elle se périme, elle ne se détruit pas.
+export async function migrateSignaturesSuperseded(db: DbWrapper): Promise<void> {
+  const cols = await db.prepare('PRAGMA table_info(signatures)').all<{ name: string }>();
+  if (!cols.some((c) => c.name === 'superseded_at')) {
+    await db.exec('ALTER TABLE signatures ADD COLUMN superseded_at TEXT');
+  }
+  // CREATE INDEX après l'ALTER (piège Turso).
+  await db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_signatures_doc_actives ON signatures(document_type, document_id, superseded_at)',
+  );
+}
+
 // Lazy-init appelé depuis l'adapter NextAuth (cf. adapter.ts) au
 // premier accès. Garde le flag `ensured` pour ne tourner qu'une fois
 // par process.
@@ -644,6 +660,7 @@ export async function ensureAuthSchema(): Promise<void> {
   );
 
   await migrateKmColumns(db);
+  await migrateSignaturesSuperseded(db);
 
   // Multi-ventilation (S0, 2026-07-08) : relie N lignes ecritures d'une
   // même pièce AVANT que comptaweb_ecriture_id soit connu. Nullable

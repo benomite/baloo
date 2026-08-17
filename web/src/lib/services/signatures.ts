@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { getDb } from '../db';
+import { getDb, type DbWrapper } from '../db';
 import { currentTimestamp } from '../ids';
 import { nullIfEmpty } from '../utils/form';
 
@@ -32,6 +32,10 @@ export interface Signature {
   server_timestamp: string;
   tsa_response: string | null;
   tsa_timestamp: string | null;
+  // Signature rendue caduque par une édition du document (le contenu signé a
+  // changé). On la GARDE — c'est une preuve d'audit — mais elle sort de la
+  // chaîne courante. Cf. `supersedeSignatures`.
+  superseded_at: string | null;
   created_at: string;
 }
 
@@ -51,16 +55,20 @@ function sha256(input: string): string {
   return createHash('sha256').update(input).digest('hex');
 }
 
-export async function signDocument(input: SignDocumentInput): Promise<Signature> {
-  const db = getDb();
+export async function signDocument(
+  input: SignDocumentInput,
+  db: DbWrapper = getDb(),
+): Promise<Signature> {
   const id = randomUUID();
   const serverTimestamp = currentTimestamp();
 
-  // Récupère la dernière signature du document pour le chaînage.
+  // Récupère la dernière signature ACTIVE du document pour le chaînage : une
+  // signature périmée ne doit pas être chaînée (sinon la nouvelle chaîne
+  // hérite d'un maillon qui ne correspond plus au contenu).
   const previous = await db
     .prepare(
       `SELECT id, chain_hash FROM signatures
-       WHERE document_type = ? AND document_id = ?
+       WHERE document_type = ? AND document_id = ? AND superseded_at IS NULL
        ORDER BY server_timestamp DESC, created_at DESC LIMIT 1`,
     )
     .get<{ id: string; chain_hash: string }>(input.document_type, input.document_id);
@@ -105,17 +113,42 @@ export async function signDocument(input: SignDocumentInput): Promise<Signature>
   return (await db.prepare('SELECT * FROM signatures WHERE id = ?').get<Signature>(id))!;
 }
 
+// Par défaut : la chaîne COURANTE seulement. `includeSuperseded` sert à
+// l'audit (retracer les validations d'une version antérieure du document).
 export async function listSignatures(
   document_type: string,
   document_id: string,
+  db: DbWrapper = getDb(),
+  opts: { includeSuperseded?: boolean } = {},
 ): Promise<Signature[]> {
-  return await getDb()
+  const filtreActives = opts.includeSuperseded ? '' : ' AND superseded_at IS NULL';
+  return await db
     .prepare(
       `SELECT * FROM signatures
-       WHERE document_type = ? AND document_id = ?
+       WHERE document_type = ? AND document_id = ?${filtreActives}
        ORDER BY server_timestamp ASC, created_at ASC`,
     )
     .all<Signature>(document_type, document_id);
+}
+
+// Marque périmées les signatures actives d'un document, sans rien supprimer.
+// Appelé quand une édition change le contenu signé : les validations portaient
+// sur une autre version, elles ne valent plus — mais elles restent traçables.
+// Idempotent : une date déjà posée n'est pas réécrite.
+export async function supersedeSignatures(
+  document_type: string,
+  document_id: string,
+  db: DbWrapper = getDb(),
+): Promise<number> {
+  const actives = await listSignatures(document_type, document_id, db);
+  if (actives.length === 0) return 0;
+  await db
+    .prepare(
+      `UPDATE signatures SET superseded_at = ?
+        WHERE document_type = ? AND document_id = ? AND superseded_at IS NULL`,
+    )
+    .run(currentTimestamp(), document_type, document_id);
+  return actives.length;
 }
 
 // Vérifie l'intégrité de la chaîne : recalcule chain_hash de chaque
@@ -124,8 +157,9 @@ export async function listSignatures(
 export async function verifyChain(
   document_type: string,
   document_id: string,
+  db: DbWrapper = getDb(),
 ): Promise<{ ok: boolean; brokenAt?: string }> {
-  const sigs = await listSignatures(document_type, document_id);
+  const sigs = await listSignatures(document_type, document_id, db);
   let prev = '';
   for (const s of sigs) {
     const expected = sha256([
