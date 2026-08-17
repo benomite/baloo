@@ -49,16 +49,25 @@ export type Item = HeaderItem | RowItem | AggregateItem;
 export const groupKey = (kind: GroupKind, id: string): string => `${kind}-${id}`;
 
 // Une ligne est « catégorie multiple » quand elle est l'une des ≥2 ventilations
-// d'un même groupe (peu importe la famille : `ventil` local OU `cw` déjà
-// matérialisé dans Comptaweb) : chaque ventilation porte sa propre catégorie,
-// donc au niveau du groupe la catégorie n'a pas de sens unique → on affiche
-// « Catégories multiples » (non éditable) plutôt que le picker de catégorie de
-// la ligne. Pour un groupe `cw` encore éditable (fenêtre pending_sync), le
-// picker serait trompeur : modifier la catégorie localement ne répercute rien
-// côté CW. Un groupe mono (count 1, ou groupe bank d'une seule sous-ligne)
-// garde son picker. Fonction pure (pas de React) — testable.
+// d'une même PIÈCE (`ventil` local OU `cw` déjà matérialisé dans Comptaweb) :
+// chaque ventilation porte sa propre catégorie, donc au niveau de la pièce la
+// catégorie n'a pas de sens unique → on affiche « Catégories multiples » (non
+// éditable) plutôt que le picker de catégorie de la ligne. Pour un groupe `cw`
+// encore éditable (fenêtre pending_sync), le picker serait trompeur : modifier
+// la catégorie localement ne répercute rien côté CW.
+//
+// Un groupe `bank` est EXCLU : ses membres ne sont pas les ventilations d'une
+// pièce, mais des paiements distincts compensés le même jour sur la même carte
+// (un débit « PAIEMENT C. PROC » éclaté par commerçant). Chaque sous-ligne est
+// une écriture autonome, avec sa catégorie propre — qui peut d'ailleurs être la
+// même que sa voisine. Les traiter comme multi-catégories affichait un libellé
+// faux ET privait chaque ligne de son picker (signalé 2026-08-17 :
+// ECR-2026-520 / ECR-2026-521, deux achats E.Leclerc du débit 19122845, tous
+// deux en Intendance).
+//
+// Un groupe mono (count 1) garde son picker. Fonction pure — testable.
 export function isMultiCategoryRow(group: Group | null | undefined): boolean {
-  return group != null && group.count >= 2;
+  return group != null && group.kind !== 'bank' && group.count >= 2;
 }
 
 // Tie-break d'ids « ECR-2026-489 » : ordre d'émission = ordre NUMÉRIQUE du
