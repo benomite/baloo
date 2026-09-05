@@ -425,6 +425,42 @@ un draft existant (self-heal `type` uniquement). Note : les erreurs de relevé
 bancaire (somme des sous-lignes ≠ total ligne) restent un **arbitrage manuel**
 assumé — Baloo ne « corrige » pas la banque.
 
+### Supprimer un draft : toutes les FK vers `ecritures`, pas seulement celles du garde-fou
+
+Le garde-fou « ne pas détruire une écriture qui porte une pièce »
+(`planStaleLineDrafts`, `deleteDraftEcriture`) regarde `justificatifs`,
+`depots_justificatifs` et `remboursements`. Mais **cinq** tables portent une FK
+vers `ecritures(id)` : s'ajoutent `depots_especes`, `avances_camp` et
+`inbox_suggestion_rejets`. Une écriture jugée « nue » par le garde-fou peut donc
+être référencée quand même → `SQLITE_CONSTRAINT: FOREIGN KEY constraint failed`
+au DELETE.
+
+Deux règles qui en découlent :
+
+- **Un rejet de suggestion inbox se purge avec son écriture.** Il porte sur la
+  PAIRE (écriture, dépôt/remboursement) : sans l'écriture il ne filtre plus rien
+  et ne fait que bloquer. D'où `purgeRejetsPourEcriture` (`inbox-rejets.ts`),
+  appelée avant chaque DELETE de draft. C'est le seul de ces liens qui soit une
+  préférence d'affichage — `depots_especes` / `avances_camp` sont des liens
+  métier : eux doivent faire **échouer** la suppression, pas être sacrifiés.
+- **Le scan de drafts est un balayage, pas une transaction.** Chaque ligne
+  bancaire est traitée dans son propre try/catch (`lignes_en_erreur` + `logError`) :
+  une ligne qui casse ne doit pas emporter les suivantes.
+
+Vu le bug : 2026-09-05. Le trésorier avait rejeté une suggestion inbox sur
+ECR-2026-538 (agrégat « PAIEMENT C. PROC » du 06/08, ligne 19166233). Quand le
+détail DSP2 de cette ligne a été publié, la suppression de l'agrégat stale a
+levé — et comme le `try` englobait la boucle entière, **les 20 lignes bancaires
+suivantes n'ont plus jamais été traitées** : plus une seule ligne agrégée
+éclatée en sous-lignes pendant trois semaines. Invisible de bout en bout :
+`scanDraftsFromComptaweb` avale l'erreur, et `runSyncCycle` ignorait
+`draftsResult.erreur` → `sync_runs` restait « ok / new_drafts 0 ». Ces erreurs
+remontent désormais dans `sync_runs.error_message` + `/admin/errors`.
+
+Piège de test associé : les fixtures de `drafts-*.test.ts` tournent en
+`PRAGMA foreign_keys = OFF` — aucune n'aurait pu attraper ça. Toute régression
+sur la suppression d'écriture se teste **FK ON** (cf. `drafts-stale-fk.test.ts`).
+
 ## Remboursements
 
 ### Éditer une demande validée : le statut doit redescendre avec les signatures

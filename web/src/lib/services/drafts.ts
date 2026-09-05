@@ -1,5 +1,6 @@
 import { getDb, type DbWrapper } from '../db';
 import { nextId, currentTimestamp } from '../ids';
+import { logError } from '../log';
 import { ensureComptawebEnv } from '../comptaweb/env-loader';
 import {
   withAutoReLogin,
@@ -14,6 +15,7 @@ import type {
   CreateEcritureInput,
 } from '../comptaweb';
 import { planLineHeal, type ExistingLineDraft } from './drafts-line-reconcile';
+import { purgeRejetsPourEcriture } from './inbox-rejets';
 
 ensureComptawebEnv();
 
@@ -124,6 +126,9 @@ export interface ScanDraftsResult {
   // Agrégats justifiés supplantés par PLUSIEURS sous-lignes : impossible à
   // trancher sans le trésorier (il doit reventiler), donc signalés, pas touchés.
   supplantes?: string[];
+  // Lignes bancaires dont le traitement a levé (détail en base via logError) :
+  // le balayage continue, mais ces lignes n'ont ni draft créé ni réconciliation.
+  lignes_en_erreur?: number;
   // Écritures comptables non rapprochées de CW (dont les transferts hors
   // résultat), transmises telles quelles pour l'import de la sync.
   ecrituresComptables?: EcritureComptableNonRapprochee[];
@@ -206,132 +211,149 @@ export async function scanDraftsFromComptaweb(
     let doublons = 0;
     let corriges = 0;
     let promus = 0;
+    let lignesEnErreur = 0;
     const supplantes: string[] = [];
 
     for (const ligne of data.ecrituresBancaires) {
-      const candidates = candidatesForLine(ligne);
+      // Une ligne bancaire qui casse ne doit pas emporter les suivantes : le
+      // scan est un balayage, pas une transaction. Sans ce catch, une seule
+      // exception (FK résiduelle sur un agrégat, ligne CW malformée…) laissait
+      // toutes les lignes suivantes sans drafts, silencieusement.
+      try {
+        const candidates = candidatesForLine(ligne);
 
-      // 1. Réconciliation : retire les drafts fantômes de la ligne dont le
-      //    sous_index n'est plus canonique (ex. draft « ligne entière »
-      //    survivant après l'apparition des sous-lignes DSP2 → son montant =
-      //    somme des sous-lignes → double comptage). Brouillons NUS seulement
-      //    (le garde-fou est dans planLineHeal / planStaleLineDrafts).
-      const existingRows = await findLineDrafts.all<{
-        id: string; sousIndex: number | null; status: string; type: string;
-        libelleOrigine: string | null; description: string;
-        cwId: number | null; ventilationGroupId: string | null; hasImput: number; hasAttach: number;
-      }>(groupId, ligne.id);
-      const existing: ExistingLineDraft[] = existingRows.map((r) => ({
-        id: r.id,
-        sousLigneIndex: r.sousIndex,
-        status: r.status,
-        comptawebEcritureId: r.cwId,
-        hasImputation: r.hasImput === 1,
-        hasAttachment: r.hasAttach === 1,
-      }));
-      const canonical = candidates.map((c) => c.sousLigneIndex);
-      const heal = planLineHeal(canonical, existing);
-      const staleIds = new Set(heal.toDelete);
-      for (const staleId of staleIds) {
-        await deleteStaleDraft.run(staleId, groupId);
-        supprimes++;
-      }
-
-      // 1 bis. Agrégat porteur de pièces supplanté par une sous-ligne unique :
-      //        il prend l'identité de la sous-ligne au lieu de rester en doublon
-      //        (cas ECR-2026-472 / ECR-2026-524, ligne 19130340, 2026-08-17).
-      for (const p of heal.toPromote) {
-        const cand = candidates.find((c) => c.sousLigneIndex === p.sousLigneIndex);
-        const row = existingRows.find((r) => r.id === p.id);
-        if (!cand || !row) continue;
-        const notesAvant = `Draft généré depuis ligne bancaire ${ligne.id}.`;
-        const notesApres = `Draft généré depuis ligne bancaire ${cand.ligneBancaireId} sous-ligne ${p.sousLigneIndex} (intitulé parent: ${cand.intituleParent.slice(0, 80)}).`;
-        await promoteAggregate.run(
-          p.sousLigneIndex, cand.libelProposal, cand.libelProposal,
-          notesAvant, notesApres, currentTimestamp(), p.id, groupId,
-        );
-        // Refléter la promotion en mémoire : sinon l'étape 2 ne reconnaît pas
-        // l'écriture (clé sous_index + libelle_origine) et recrée le doublon
-        // qu'on vient justement de résorber.
-        if (row.description === row.libelleOrigine) row.description = cand.libelProposal;
-        row.sousIndex = p.sousLigneIndex;
-        row.libelleOrigine = cand.libelProposal;
-        promus++;
-      }
-      supplantes.push(...heal.toFlag);
-
-      // Écritures encore vivantes de la ligne (hors stales retirés ce cycle).
-      const liveRows = existingRows.filter((r) => !staleIds.has(r.id));
-
-      // 2. Création des candidats manquants (clé (ligne, sous_index)).
-      for (const c of candidates) {
-        const type = c.montantCentimes < 0 ? 'depense' : 'recette';
-        const amountAbs = Math.abs(c.montantCentimes);
-        // Une entrée d'argent (recette) n'attend pas de justificatif : pas de
-        // « à justifier », et au push pas de n° pièce de rattachement bidon.
-        const justifAttendu = type === 'recette' ? 0 : 1;
-        // Reconnaissance « déjà représentée » par `sous_index + libellé brut`,
-        // PAS par le `ligne_bancaire_id` seul (ids CW recyclés entre
-        // transactions : bug DEGOMME 2026-07-03, id 19105752 réutilisé,
-        // GABORIAUD validé masquait la nouvelle ligne DEGOMME) NI par le
-        // montant. Le montant d'un draft bancaire est ÉDITABLE (l'utilisateur
-        // corrige les erreurs de relevé — cas LECLERCGENAY 2026-07-04 : banque
-        // 217,10, dépense réelle 217,12) : l'inclure dans la clé recréait un
-        // doublon dès qu'on corrigeait le montant. `libelle_origine` = libellé
-        // bancaire brut figé (== libelProposal à la création), stable, survit au
-        // renommage « titre parlant » → seul discriminant fiable des transactions.
-        const existingCand = liveRows.find(
-          (r) =>
-            r.sousIndex === c.sousLigneIndex &&
-            (r.libelleOrigine === c.libelProposal || r.description === c.libelProposal),
-        );
-        if (existingCand) {
-          // Self-heal : recale le sens d'un draft LOCAL dont le type ne colle
-          // plus au candidat recalculé (cas des sous-lignes DSP2 créées en
-          // recette avant le fix de signe 2026-07-02). Sûr même sur un draft
-          // imputé/rattaché : le `type` d'une écriture bancaire est 100% généré
-          // (jamais éditable à la main), et la correction ne touche QUE
-          // type + justif_attendu — imputation, lien dépôt, justifs, montant
-          // absolu restent intacts (pas de suppression/recréation, donc rien à
-          // réassocier). Seule barrière : ne jamais toucher une écriture déjà
-          // matérialisée dans Comptaweb (status ≠ draft ou déjà liée à CW).
-          const corrigeable = existingCand.status === 'draft' && existingCand.cwId === null;
-          if (corrigeable && existingCand.type !== type) {
-            // Groupe de ventilation (split manuel) : les N lignes partagent la
-            // même sous-ligne bancaire → le sens se recale sur TOUTES, pas
-            // seulement sur la ligne reconnue par `.find`.
-            await correctGroupDraftType(db, groupId, existingCand.id, existingCand.ventilationGroupId, type, justifAttendu);
-            corriges++;
-          } else {
-            existants++;
-          }
-          continue;
+        // 1. Réconciliation : retire les drafts fantômes de la ligne dont le
+        //    sous_index n'est plus canonique (ex. draft « ligne entière »
+        //    survivant après l'apparition des sous-lignes DSP2 → son montant =
+        //    somme des sous-lignes → double comptage). Brouillons NUS seulement
+        //    (le garde-fou est dans planLineHeal / planStaleLineDrafts).
+        const existingRows = await findLineDrafts.all<{
+          id: string; sousIndex: number | null; status: string; type: string;
+          libelleOrigine: string | null; description: string;
+          cwId: number | null; ventilationGroupId: string | null; hasImput: number; hasAttach: number;
+        }>(groupId, ligne.id);
+        const existing: ExistingLineDraft[] = existingRows.map((r) => ({
+          id: r.id,
+          sousLigneIndex: r.sousIndex,
+          status: r.status,
+          comptawebEcritureId: r.cwId,
+          hasImputation: r.hasImput === 1,
+          hasAttachment: r.hasAttach === 1,
+        }));
+        const canonical = candidates.map((c) => c.sousLigneIndex);
+        const heal = planLineHeal(canonical, existing);
+        const staleIds = new Set(heal.toDelete);
+        for (const staleId of staleIds) {
+          // Le rejet inbox éventuel porte sur une paire qui disparaît avec
+          // l'écriture — et sa FK ferait échouer le DELETE.
+          await purgeRejetsPourEcriture(db, groupId, staleId);
+          await deleteStaleDraft.run(staleId, groupId);
+          supprimes++;
         }
-        // Doublon du flux bancaire : paiement déjà comptabilisé dans CW via une
-        // autre ligne identique → ne pas régénérer (sinon boucle d'arbitrage).
-        const twin = await findCwAccountedTwin.get(groupId, c.dateOperation, amountAbs, type, c.libelProposal);
-        if (twin) { doublons++; continue; }
-        const cwMode = inferComptawebModeId(c.intituleParent);
-        const modeLocal = cwMode !== null
-          ? (await findMode.get<{ id: string }>(cwMode))?.id ?? null
-          : null;
-        const carteCode = extractCarteProcCode(c.intituleParent);
-        const carteLocal = carteCode
-          ? (await findCarte.get<{ id: string }>(groupId, carteCode))?.id ?? null
-          : null;
-        const id = await nextId('ECR');
-        const now = currentTimestamp();
-        const notes = c.sousLigneIndex !== null
-          ? `Draft généré depuis ligne bancaire ${c.ligneBancaireId} sous-ligne ${c.sousLigneIndex} (intitulé parent: ${c.intituleParent.slice(0, 80)}).`
-          : `Draft généré depuis ligne bancaire ${c.ligneBancaireId}.`;
-        // libelle_origine = libellé brut figé (= description initiale) : sert
-        // au nudge « titre à renommer » et au rapprochement.
-        await insert.run(id, groupId, c.dateOperation, c.libelProposal, c.libelProposal, amountAbs, type, modeLocal, justifAttendu, c.ligneBancaireId, c.sousLigneIndex, carteLocal, notes, now, now);
-        crees++;
+
+        // 1 bis. Agrégat porteur de pièces supplanté par une sous-ligne unique :
+        //        il prend l'identité de la sous-ligne au lieu de rester en doublon
+        //        (cas ECR-2026-472 / ECR-2026-524, ligne 19130340, 2026-08-17).
+        for (const p of heal.toPromote) {
+          const cand = candidates.find((c) => c.sousLigneIndex === p.sousLigneIndex);
+          const row = existingRows.find((r) => r.id === p.id);
+          if (!cand || !row) continue;
+          const notesAvant = `Draft généré depuis ligne bancaire ${ligne.id}.`;
+          const notesApres = `Draft généré depuis ligne bancaire ${cand.ligneBancaireId} sous-ligne ${p.sousLigneIndex} (intitulé parent: ${cand.intituleParent.slice(0, 80)}).`;
+          await promoteAggregate.run(
+            p.sousLigneIndex, cand.libelProposal, cand.libelProposal,
+            notesAvant, notesApres, currentTimestamp(), p.id, groupId,
+          );
+          // Refléter la promotion en mémoire : sinon l'étape 2 ne reconnaît pas
+          // l'écriture (clé sous_index + libelle_origine) et recrée le doublon
+          // qu'on vient justement de résorber.
+          if (row.description === row.libelleOrigine) row.description = cand.libelProposal;
+          row.sousIndex = p.sousLigneIndex;
+          row.libelleOrigine = cand.libelProposal;
+          promus++;
+        }
+        supplantes.push(...heal.toFlag);
+
+        // Écritures encore vivantes de la ligne (hors stales retirés ce cycle).
+        const liveRows = existingRows.filter((r) => !staleIds.has(r.id));
+
+        // 2. Création des candidats manquants (clé (ligne, sous_index)).
+        for (const c of candidates) {
+          const type = c.montantCentimes < 0 ? 'depense' : 'recette';
+          const amountAbs = Math.abs(c.montantCentimes);
+          // Une entrée d'argent (recette) n'attend pas de justificatif : pas de
+          // « à justifier », et au push pas de n° pièce de rattachement bidon.
+          const justifAttendu = type === 'recette' ? 0 : 1;
+          // Reconnaissance « déjà représentée » par `sous_index + libellé brut`,
+          // PAS par le `ligne_bancaire_id` seul (ids CW recyclés entre
+          // transactions : bug DEGOMME 2026-07-03, id 19105752 réutilisé,
+          // GABORIAUD validé masquait la nouvelle ligne DEGOMME) NI par le
+          // montant. Le montant d'un draft bancaire est ÉDITABLE (l'utilisateur
+          // corrige les erreurs de relevé — cas LECLERCGENAY 2026-07-04 : banque
+          // 217,10, dépense réelle 217,12) : l'inclure dans la clé recréait un
+          // doublon dès qu'on corrigeait le montant. `libelle_origine` = libellé
+          // bancaire brut figé (== libelProposal à la création), stable, survit au
+          // renommage « titre parlant » → seul discriminant fiable des transactions.
+          const existingCand = liveRows.find(
+            (r) =>
+              r.sousIndex === c.sousLigneIndex &&
+              (r.libelleOrigine === c.libelProposal || r.description === c.libelProposal),
+          );
+          if (existingCand) {
+            // Self-heal : recale le sens d'un draft LOCAL dont le type ne colle
+            // plus au candidat recalculé (cas des sous-lignes DSP2 créées en
+            // recette avant le fix de signe 2026-07-02). Sûr même sur un draft
+            // imputé/rattaché : le `type` d'une écriture bancaire est 100% généré
+            // (jamais éditable à la main), et la correction ne touche QUE
+            // type + justif_attendu — imputation, lien dépôt, justifs, montant
+            // absolu restent intacts (pas de suppression/recréation, donc rien à
+            // réassocier). Seule barrière : ne jamais toucher une écriture déjà
+            // matérialisée dans Comptaweb (status ≠ draft ou déjà liée à CW).
+            const corrigeable = existingCand.status === 'draft' && existingCand.cwId === null;
+            if (corrigeable && existingCand.type !== type) {
+              // Groupe de ventilation (split manuel) : les N lignes partagent la
+              // même sous-ligne bancaire → le sens se recale sur TOUTES, pas
+              // seulement sur la ligne reconnue par `.find`.
+              await correctGroupDraftType(db, groupId, existingCand.id, existingCand.ventilationGroupId, type, justifAttendu);
+              corriges++;
+            } else {
+              existants++;
+            }
+            continue;
+          }
+          // Doublon du flux bancaire : paiement déjà comptabilisé dans CW via une
+          // autre ligne identique → ne pas régénérer (sinon boucle d'arbitrage).
+          const twin = await findCwAccountedTwin.get(groupId, c.dateOperation, amountAbs, type, c.libelProposal);
+          if (twin) { doublons++; continue; }
+          const cwMode = inferComptawebModeId(c.intituleParent);
+          const modeLocal = cwMode !== null
+            ? (await findMode.get<{ id: string }>(cwMode))?.id ?? null
+            : null;
+          const carteCode = extractCarteProcCode(c.intituleParent);
+          const carteLocal = carteCode
+            ? (await findCarte.get<{ id: string }>(groupId, carteCode))?.id ?? null
+            : null;
+          const id = await nextId('ECR');
+          const now = currentTimestamp();
+          const notes = c.sousLigneIndex !== null
+            ? `Draft généré depuis ligne bancaire ${c.ligneBancaireId} sous-ligne ${c.sousLigneIndex} (intitulé parent: ${c.intituleParent.slice(0, 80)}).`
+            : `Draft généré depuis ligne bancaire ${c.ligneBancaireId}.`;
+          // libelle_origine = libellé brut figé (= description initiale) : sert
+          // au nudge « titre à renommer » et au rapprochement.
+          await insert.run(id, groupId, c.dateOperation, c.libelProposal, c.libelProposal, amountAbs, type, modeLocal, justifAttendu, c.ligneBancaireId, c.sousLigneIndex, carteLocal, notes, now, now);
+          crees++;
+        }
+      } catch (err) {
+        lignesEnErreur++;
+        logError('drafts-scan', 'ligne bancaire non traitée', err, { groupId, ligneBancaireId: ligne.id });
       }
     }
 
-    return { crees, existants, supprimes, doublons, corriges, promus, supplantes, ecrituresComptables: data.ecrituresComptables };
+    return {
+      crees, existants, supprimes, doublons, corriges, promus, supplantes,
+      lignes_en_erreur: lignesEnErreur,
+      ecrituresComptables: data.ecrituresComptables,
+    };
   } catch (err) {
     if (err instanceof ComptawebSessionExpiredError) {
       return { crees: 0, existants: 0, supprimes: 0, erreur: 'Session Comptaweb expirée.' };

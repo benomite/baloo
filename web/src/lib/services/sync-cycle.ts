@@ -760,6 +760,24 @@ export async function runSyncCycle(
     //    les drafts créés ce cycle participent au match contenu).
     const draftsResult = await scanDrafts(groupId);
     const newDrafts = draftsResult.crees;
+    // Le scan avale ses erreurs pour ne pas faire tomber le cycle — mais un
+    // scan muet est un scan qui ne crée plus de drafts : sans cette remontée,
+    // le sync_run affichait « ok / 0 nouveau draft » alors que le balayage
+    // était cassé (bug terrain 2026-09-05, FK sur un agrégat : plus aucune
+    // ligne bancaire éclatée en sous-lignes pendant des semaines, en silence).
+    const draftsWarnings: string[] = [];
+    if (draftsResult.erreur) {
+      draftsWarnings.push(`scan drafts : ${draftsResult.erreur}`);
+      logError('sync-cycle', 'scan_drafts_erreur', draftsResult.erreur, { groupId, syncRunId });
+    }
+    if (draftsResult.lignes_en_erreur) {
+      draftsWarnings.push(`${draftsResult.lignes_en_erreur} ligne(s) bancaire(s) non traitée(s)`);
+      logError('sync-cycle', 'scan_drafts_lignes_en_erreur', null, {
+        groupId,
+        syncRunId,
+        count: draftsResult.lignes_en_erreur,
+      });
+    }
 
     // 4. Scrape liste → snapshot CW
     const listeResult = await scrapeListe(config, scope);
@@ -957,10 +975,14 @@ export async function runSyncCycle(
 
     // 8. Détection stale (warning, pas erreur)
     const staleCount = await detectStalePendingSync(db, groupId, startMs);
-    const warningMessage = staleCount > 0 ? `${staleCount} pending_sync stales > 1h` : null;
     if (staleCount > 0) {
       logError('sync-cycle', 'stale_pending_sync', null, { groupId, syncRunId, count: staleCount });
     }
+    const warnings = [
+      ...draftsWarnings,
+      ...(staleCount > 0 ? [`${staleCount} pending_sync stales > 1h`] : []),
+    ];
+    const warningMessage = warnings.length > 0 ? warnings.join(' — ') : null;
 
     const endMs = nowFn();
     const durationMs = endMs - startMs;

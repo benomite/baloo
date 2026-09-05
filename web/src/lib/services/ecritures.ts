@@ -4,6 +4,7 @@ import { nullIfEmpty } from '../utils/form';
 import { uniteScopeSql } from '../scope';
 import type { Ecriture, EcritureStatus } from '../types';
 import { isMirrorStatus, pendingStatuses } from './ecritures-status';
+import { purgeRejetsPourEcriture } from './inbox-rejets';
 
 export interface EcritureContext {
   groupId: string;
@@ -464,6 +465,9 @@ export async function deleteDraftEcriture(
     return { ok: false, reason: 'has_attachments' };
   }
 
+  // Même raison que dans le scan de drafts : un rejet de suggestion inbox
+  // porte sur la paire (écriture, dépôt/remb) et sa FK bloquerait le DELETE.
+  await purgeRejetsPourEcriture(db, groupId, id);
   await db
     .prepare(`DELETE FROM ecritures WHERE id = ? AND group_id = ? AND status = 'draft'`)
     .run(id, groupId);

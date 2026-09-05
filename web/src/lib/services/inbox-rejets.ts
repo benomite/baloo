@@ -1,4 +1,4 @@
-import { getDb } from '../db';
+import { getDb, type DbWrapper } from '../db';
 import { currentTimestamp } from '../ids';
 import { rejetPairKey, type SuggestionTargetKind } from '../queries/inbox-matching';
 
@@ -86,6 +86,33 @@ export async function rejectSuggestion(
        VALUES (?, ?, ?, ?, ?, ?)`,
     )
     .run(ctx.groupId, ecritureId, targetKind, targetId, ctx.userId ?? null, currentTimestamp());
+}
+
+// Retire les rejets qui pointent vers une écriture qu'on s'apprête à
+// supprimer. Un rejet porte sur la PAIRE (écriture, dépôt/remboursement) : sans
+// son écriture la paire n'existe plus, la ligne ne peut plus rien filtrer, et
+// sa FK `ecriture_id NOT NULL REFERENCES ecritures(id)` fait échouer le DELETE.
+//
+// Bug terrain 2026-09-05 : un rejet posé sur l'agrégat ECR-2026-538 (ligne
+// bancaire 19166233) bloquait sa suppression quand le détail DSP2 est arrivé —
+// `scanDraftsFromComptaweb` levait là et abandonnait TOUTES les lignes
+// bancaires suivantes, donc plus aucune ligne agrégée n'était éclatée.
+//
+// Table lazy-init (cf. `ensureInboxRejetsSchema`) : absente sur une BDD qui n'a
+// jamais servi l'inbox, d'où le catch. Le DELETE de l'écriture reste le juge de
+// paix — si un rejet subsiste, il échouera comme avant.
+export async function purgeRejetsPourEcriture(
+  db: DbWrapper,
+  groupId: string,
+  ecritureId: string,
+): Promise<void> {
+  try {
+    await db
+      .prepare('DELETE FROM inbox_suggestion_rejets WHERE group_id = ? AND ecriture_id = ?')
+      .run(groupId, ecritureId);
+  } catch {
+    // Table absente : rien à nettoyer.
+  }
 }
 
 // Charge l'ensemble des paires rejetées du groupe sous forme de Set de
