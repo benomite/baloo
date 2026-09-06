@@ -14,12 +14,14 @@ import { PendingButton } from '@/components/shared/pending-button';
 import { UniteBadge } from '@/components/shared/unite-badge';
 import { Field } from '@/components/shared/field';
 import { CampTabs } from '@/components/camps/camp-tabs';
+import { CampBilanPanel } from '@/components/camps/camp-bilan';
 import { getCurrentContext } from '@/lib/context';
 import { requireCampsAccess } from '@/lib/auth/access';
 import {
   getCampDashboard,
   type CampStatut,
 } from '@/lib/services/camps';
+import { getCampBilan } from '@/lib/services/camp-bilan';
 import type { CampPoste } from '@/lib/services/camp-budget';
 import {
   listAvancesForCamp,
@@ -113,8 +115,11 @@ export default async function CampDetailPage({
   ]);
   requireCampsAccess(ctx.role);
   const campCtx = { groupId: ctx.groupId, scopeUniteIds: ctx.scopeUniteIds };
-  const dashboard = await getCampDashboard(campCtx, id);
-  if (!dashboard) notFound();
+  const [dashboard, bilan] = await Promise.all([
+    getCampDashboard(campCtx, id),
+    getCampBilan(campCtx, id),
+  ]);
+  if (!dashboard || !bilan) notFound();
 
   const { camp, rows, ecrituresRecentes, depotsEnAttente, justifsManquants, sansUniteCount, recettes } =
     dashboard;
@@ -191,6 +196,8 @@ export default async function CampDetailPage({
       )}
 
       <CampTabs
+        statut={camp.statut}
+        bilan={<CampBilanPanel bilan={bilan} />}
         depenses={
           <div className="space-y-6">
             <Section title="Budget dépenses">
