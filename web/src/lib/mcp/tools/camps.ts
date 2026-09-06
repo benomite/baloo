@@ -14,6 +14,7 @@ import {
   rouvrirAvance,
   AVANCE_MODES,
 } from '@/lib/services/camp-avances';
+import { getCampBilan } from '@/lib/services/camp-bilan';
 import { formatAmount, parseAmount } from '@/lib/format';
 
 export function registerCampsTools(server: McpServer, ctx: McpContext) {
@@ -79,6 +80,85 @@ export function registerCampsTools(server: McpServer, ctx: McpContext) {
         return { content: [{ type: 'text' as const, text: `Erreur : ${res.error}` }] };
       }
       return { content: [{ type: 'text' as const, text: `Camp ${id} mis à jour → statut '${statut}'.` }] };
+    },
+  );
+
+  server.tool(
+    'bilan_camp',
+    "Bilan de fin de camp : résultat (recettes − dépenses), ce qui reste à finir avant clôture, les dépenses sans justificatif, les tickets déposés rattachés à aucune écriture, le budget vs réalisé par poste et toutes les écritures du camp.",
+    {
+      camp_id: z.string().describe("ID du camp (ex: 'CAMP-2026-001')."),
+    },
+    async ({ camp_id }) => {
+      const b = await getCampBilan(campCtx, camp_id);
+      if (!b) {
+        return { content: [{ type: 'text' as const, text: 'Camp introuvable.' }] };
+      }
+      const ticketsNonRattaches = b.depotsOrphelins.filter((d) => d.statut === 'a_traiter');
+      const ligneEcriture = (e: (typeof b.ecritures)[number]) => ({
+        id: e.id,
+        date: e.date_ecriture,
+        description: e.description,
+        type: e.type,
+        montant: formatAmount(e.amount_cents),
+        categorie: e.category_name,
+        justificatif: Boolean(e.has_justificatif),
+        remboursement_id: e.remboursement_id,
+      });
+
+      const result = {
+        camp: {
+          id: b.camp.id,
+          name: b.camp.name,
+          statut: b.camp.statut,
+          unite: b.camp.unite_name,
+          activite: b.camp.activite_name,
+          dates: [b.camp.date_debut, b.camp.date_fin].filter(Boolean).join(' → ') || null,
+        },
+        resultat: {
+          recettes: formatAmount(b.resultat.recettesCents),
+          depenses: formatAmount(b.resultat.depensesCents),
+          resultat: formatAmount(b.resultat.resultatCents),
+          tickets_en_attente: formatAmount(b.resultat.depotsEnAttenteCents),
+          resultat_projete: formatAmount(b.resultat.resultatProjeteCents),
+        },
+        a_finir: {
+          justifs_manquants: b.justifs.manquants.length,
+          tickets_non_rattaches: ticketsNonRattaches.length,
+          avances_en_circulation: b.avancesEnCirculation.length,
+          ecritures_activite_sans_unite: b.sansUniteCount,
+          depots_groupe_sans_imputation: b.depotsSansImputationCount,
+        },
+        justificatifs: {
+          manquants: b.justifs.manquants.map(ligneEcriture),
+          couverts_par_remboursement: b.justifs.couvertsParRemboursement.map(ligneEcriture),
+          non_attendus: b.justifs.nonAttendus.map(ligneEcriture),
+        },
+        depots_lies_a_rien: b.depotsOrphelins.map((d) => ({
+          id: d.id,
+          titre: d.titre,
+          statut: d.statut,
+          montant: d.amount_cents == null ? null : formatAmount(d.amount_cents),
+          date_estimee: d.date_estimee,
+          categorie: d.category_name,
+          deposant: d.submitter_name,
+          motif_rejet: d.motif_rejet,
+        })),
+        budget_vs_realise: b.rows.postes.map((p) => ({
+          poste: p.categoryName,
+          budget: formatAmount(p.budgetCents),
+          realise: formatAmount(p.depenseCents),
+          ecart: formatAmount(p.budgetCents - p.depenseCents),
+        })),
+        totaux_budget: {
+          budget_depenses: formatAmount(b.rows.totalBudgetDepensesCents),
+          realise_depenses: formatAmount(b.rows.totalDepenseCents),
+          budget_recettes: formatAmount(b.rows.totalBudgetRecettesCents),
+          recettes_encaissees: formatAmount(b.rows.recettesEncaisseesCents),
+        },
+        ecritures: b.ecritures.map(ligneEcriture),
+      };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
     },
   );
 

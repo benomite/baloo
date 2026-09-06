@@ -51,6 +51,40 @@ vi.mock('@/lib/services/camps', () => ({
   CAMP_STATUTS: ['preparation', 'en_cours', 'cloture'],
 }));
 
+const FAKE_BILAN = {
+  camp: FAKE_CAMP,
+  resultat: {
+    recettesCents: 588000, depensesCents: 124000, resultatCents: 464000,
+    depotsEnAttenteCents: 4200, resultatProjeteCents: 459800,
+  },
+  ecritures: [
+    { id: 'ECR-1', date_ecriture: '2026-07-10', description: 'Courses Leclerc', amount_cents: 12000, type: 'depense', category_id: 'cat-int', category_name: 'Intendance', has_justificatif: 1, remboursement_id: null, justif_attendu: 1 },
+    { id: 'ECR-2', date_ecriture: '2026-07-12', description: 'Boulangerie', amount_cents: 3500, type: 'depense', category_id: 'cat-int', category_name: 'Intendance', has_justificatif: 0, remboursement_id: null, justif_attendu: 1 },
+  ],
+  justifs: {
+    manquants: [{ id: 'ECR-2', date_ecriture: '2026-07-12', description: 'Boulangerie', amount_cents: 3500, type: 'depense', category_id: 'cat-int', category_name: 'Intendance', has_justificatif: 0, remboursement_id: null, justif_attendu: 1 }],
+    couvertsParRemboursement: [],
+    nonAttendus: [],
+  },
+  depotsOrphelins: [
+    { id: 'DEP-1', titre: 'Courses marché', amount_cents: 4200, date_estimee: '2026-07-12', statut: 'a_traiter', motif_rejet: null, category_name: 'Intendance', submitter_name: 'Akela', created_at: '2026-07-12T00:00:00Z' },
+    { id: 'DEP-2', titre: 'Ticket illisible', amount_cents: null, date_estimee: null, statut: 'rejete', motif_rejet: 'photo floue', category_name: null, submitter_name: 'Baloo', created_at: '2026-07-13T00:00:00Z' },
+  ],
+  depotsSansImputationCount: 2,
+  sansUniteCount: 1,
+  avancesEnCirculation: [FAKE_AVANCE],
+  avancesSummary: FAKE_SUMMARY,
+  rows: {
+    postes: [{ categoryId: 'cat-int', categoryName: 'Intendance', budgetCents: 180000, ecrituresCents: 124000, depotsCents: 4200, depenseCents: 128200 }],
+    totalBudgetDepensesCents: 180000, totalDepenseCents: 128200,
+    totalBudgetRecettesCents: 672000, recettesEncaisseesCents: 588000,
+  },
+};
+
+vi.mock('@/lib/services/camp-bilan', () => ({
+  getCampBilan: vi.fn(async () => FAKE_BILAN),
+}));
+
 vi.mock('@/lib/services/camp-avances', () => ({
   listAvancesForCamp: vi.fn(async () => ({
     avances: [FAKE_AVANCE],
@@ -66,8 +100,9 @@ describe('camps tools (Lot 2)', () => {
   const tools = captureTools(registerCampsTools);
   beforeEach(() => vi.clearAllMocks());
 
-  it('expose les 7 tools attendus', () => {
+  it('expose les 8 tools attendus', () => {
     expect(Object.keys(tools).sort()).toEqual([
+      'bilan_camp',
       'cloturer_avance_camp',
       'create_avance_camp',
       'create_camp',
@@ -205,5 +240,72 @@ describe('camps tools (Lot 2)', () => {
     const txt = parseToolResult(r) as string;
     expect(txt).toContain('Erreur');
     expect(txt).toContain('non clôturée');
+  });
+});
+
+describe('bilan_camp', () => {
+  const tools = captureTools(registerCampsTools);
+  // formatAmount met un NBSP avant le € : on normalise pour comparer.
+  const eur = (v: string | null | undefined) => v?.replace(/\u00a0/g, ' ');
+  beforeEach(() => vi.clearAllMocks());
+
+  it('formate le résultat du camp en euros', async () => {
+    const r = await tools.bilan_camp.handler({ camp_id: 'CAMP-2026-001' });
+    const p = parseToolResult(r) as { resultat: Record<string, string> };
+    expect(eur(p.resultat.recettes)).toBe('5880,00 €');
+    expect(eur(p.resultat.depenses)).toBe('1240,00 €');
+    expect(eur(p.resultat.resultat)).toBe('4640,00 €');
+    expect(p.resultat.tickets_en_attente).toMatch(/42,00/);
+    expect(eur(p.resultat.resultat_projete)).toBe('4598,00 €');
+  });
+
+  it('compte ce qui reste à finir avant clôture', async () => {
+    const r = await tools.bilan_camp.handler({ camp_id: 'CAMP-2026-001' });
+    const p = parseToolResult(r) as { a_finir: Record<string, number> };
+    expect(p.a_finir).toEqual({
+      justifs_manquants: 1,
+      tickets_non_rattaches: 1,
+      avances_en_circulation: 1,
+      ecritures_activite_sans_unite: 1,
+      depots_groupe_sans_imputation: 2,
+    });
+  });
+
+  it('liste les dépenses sans justificatif avec leur montant', async () => {
+    const r = await tools.bilan_camp.handler({ camp_id: 'CAMP-2026-001' });
+    const p = parseToolResult(r) as { justificatifs: { manquants: Array<{ id: string; montant: string }> } };
+    expect(p.justificatifs.manquants[0].id).toBe('ECR-2');
+    expect(p.justificatifs.manquants[0].montant).toMatch(/35,00/);
+  });
+
+  it('liste les dépôts liés à rien, en attente comme rejetés', async () => {
+    const r = await tools.bilan_camp.handler({ camp_id: 'CAMP-2026-001' });
+    const p = parseToolResult(r) as { depots_lies_a_rien: Array<{ id: string; statut: string; montant: string | null; motif_rejet: string | null }> };
+    expect(p.depots_lies_a_rien.map((d) => d.id)).toEqual(['DEP-1', 'DEP-2']);
+    expect(p.depots_lies_a_rien[0].montant).toMatch(/42,00/);
+    expect(p.depots_lies_a_rien[1].montant).toBeNull();
+    expect(p.depots_lies_a_rien[1].motif_rejet).toBe('photo floue');
+  });
+
+  it('renvoie le budget par poste avec son écart', async () => {
+    const r = await tools.bilan_camp.handler({ camp_id: 'CAMP-2026-001' });
+    const p = parseToolResult(r) as { budget_vs_realise: Array<{ poste: string; budget: string; realise: string; ecart: string }> };
+    expect(p.budget_vs_realise[0].poste).toBe('Intendance');
+    expect(eur(p.budget_vs_realise[0].realise)).toBe('1282,00 €');
+    expect(p.budget_vs_realise[0].ecart).toMatch(/518,00/);
+  });
+
+  it('marque chaque écriture comme justifiée ou non', async () => {
+    const r = await tools.bilan_camp.handler({ camp_id: 'CAMP-2026-001' });
+    const p = parseToolResult(r) as { ecritures: Array<{ id: string; justificatif: boolean }> };
+    expect(p.ecritures.find((e) => e.id === 'ECR-1')?.justificatif).toBe(true);
+    expect(p.ecritures.find((e) => e.id === 'ECR-2')?.justificatif).toBe(false);
+  });
+
+  it('répond « Camp introuvable » quand le camp n’existe pas ou est hors scope', async () => {
+    const { getCampBilan } = await import('@/lib/services/camp-bilan');
+    vi.mocked(getCampBilan).mockResolvedValueOnce(null);
+    const r = await tools.bilan_camp.handler({ camp_id: 'CAMP-INCONNU' });
+    expect(parseToolResult(r)).toContain('Camp introuvable');
   });
 });
