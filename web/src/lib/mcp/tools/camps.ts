@@ -144,15 +144,22 @@ export function registerCampsTools(server: McpServer, ctx: McpContext) {
           deposant: d.submitter_name,
           motif_rejet: d.motif_rejet,
         })),
+        // `depense` est le brut, `rembourse` les recettes imputées au MÊME
+        // poste (caution rendue…), `cout_reel` la différence — c'est elle
+        // qui se compare au budget.
         budget_vs_realise: b.rows.postes.map((p) => ({
           poste: p.categoryName,
           budget: formatAmount(p.budgetCents),
-          realise: formatAmount(p.depenseCents),
-          ecart: formatAmount(p.budgetCents - p.depenseCents),
+          depense: formatAmount(p.depenseCents),
+          rembourse: formatAmount(p.recettesCents),
+          cout_reel: formatAmount(p.netCents),
+          ecart: formatAmount(p.budgetCents - p.netCents),
         })),
         totaux_budget: {
           budget_depenses: formatAmount(b.rows.totalBudgetDepensesCents),
-          realise_depenses: formatAmount(b.rows.totalDepenseCents),
+          depenses_brutes: formatAmount(b.rows.totalDepenseCents),
+          rembourse_sur_postes: formatAmount(b.rows.totalDepenseCents - b.rows.totalNetCents),
+          cout_reel_depenses: formatAmount(b.rows.totalNetCents),
           budget_recettes: formatAmount(b.rows.totalBudgetRecettesCents),
           recettes_encaissees: formatAmount(b.rows.recettesEncaisseesCents),
         },

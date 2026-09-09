@@ -27,9 +27,26 @@ export interface DepensePoste {
  * que `buildCampBudgetRows` utilise pour rapprocher réel et budget.
  */
 export function aggregerDepensesParCategorie(ecritures: BilanEcriture[]): DepensePoste[] {
+  return aggregerParCategorie(ecritures, 'depense');
+}
+
+/**
+ * Idem côté recettes. Sert à montrer, sur un poste de dépense, ce qui est
+ * revenu dessus (caution rendue, remboursement fournisseur) : sans ça un
+ * poste dont la dépense a été remboursée s'affiche au brut, et la recette
+ * qui l'annule reste invisible — cas camp bleu 2026, location de camion.
+ */
+export function aggregerRecettesParCategorie(ecritures: BilanEcriture[]): DepensePoste[] {
+  return aggregerParCategorie(ecritures, 'recette');
+}
+
+function aggregerParCategorie(
+  ecritures: BilanEcriture[],
+  type: 'depense' | 'recette',
+): DepensePoste[] {
   const parCat = new Map<string, DepensePoste>();
   for (const e of ecritures) {
-    if (e.type !== 'depense') continue;
+    if (e.type !== type) continue;
     const key = e.category_id ?? '__none__';
     const cur = parCat.get(key);
     if (cur) cur.amountCents += e.amount_cents;

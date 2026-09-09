@@ -205,18 +205,24 @@ export async function getCampDashboard(ctx: CampContext, id: string): Promise<Ca
      GROUP BY d.category_id`,
   ).all<CatAmount>(ctx.groupId, camp.activite_id, camp.unite_id);
 
-  const rec = await db.prepare(
-    `SELECT COALESCE(SUM(e.amount_cents), 0) AS total FROM ecritures e
+  // Recettes ventilées par catégorie : le total global ne suffit pas pour
+  // voir ce qui est revenu SUR un poste de dépense (caution rendue,
+  // remboursement fournisseur). Cf. buildCampBudgetRows.
+  const ecrRec = await db.prepare(
+    `SELECT e.category_id AS categoryId, c.name AS categoryName, SUM(e.amount_cents) AS amountCents
+     FROM ecritures e LEFT JOIN categories c ON c.id = e.category_id
      WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id = ? AND e.type = 'recette'
-       AND (e.category_id IS NULL OR e.category_id NOT IN (${EXCLUS}))`,
-  ).get<{ total: number }>(ctx.groupId, camp.activite_id, camp.unite_id, ...CATEGORIES_HORS_RESULTAT);
+       AND (e.category_id IS NULL OR e.category_id NOT IN (${EXCLUS}))
+     GROUP BY e.category_id`,
+  ).all<CatAmount>(ctx.groupId, camp.activite_id, camp.unite_id, ...CATEGORIES_HORS_RESULTAT);
 
   const rows = buildCampBudgetRows({
     budgetDepenses: budget.filter((b) => b.type === 'depense'),
     budgetRecettes: budget.filter((b) => b.type === 'recette'),
     ecrituresDepenses: ecrDep,
     depotsEnAttente: depAttente,
-    recettesEncaissees: rec?.total ?? 0,
+    recettesParCategorie: ecrRec,
+    recettesEncaissees: ecrRec.reduce((sum, r) => sum + r.amountCents, 0),
   });
 
   const ECR_SELECT = `

@@ -16,6 +16,12 @@ export function CampBilanPanel({ bilan }: { bilan: CampBilan }) {
     depotsSansImputationCount, sansUniteCount, avancesEnCirculation, rows,
   } = bilan;
 
+  // Les colonnes « Remboursé » / « Coût réel » n'apparaissent que si au
+  // moins un poste a reçu une recette (caution rendue, remboursement
+  // fournisseur). Sur un camp sans ce cas — la majorité — le tableau reste
+  // à 4 colonnes.
+  const hasRemboursements = rows.postes.some((p) => p.recettesCents > 0);
+
   const enAttente = depotsOrphelins.filter((d) => d.statut === 'a_traiter');
   const rejetes = depotsOrphelins.filter((d) => d.statut === 'rejete');
   const aFinir =
@@ -155,7 +161,14 @@ export function CampBilanPanel({ bilan }: { bilan: CampBilan }) {
         </div>
       </Section>
 
-      <Section title="Budget vs réalisé" subtitle="Par poste de dépense.">
+      <Section
+        title="Budget vs réalisé"
+        subtitle={
+          hasRemboursements
+            ? 'Par poste de dépense. « Remboursé » = les recettes imputées au même poste (caution rendue, remboursement fournisseur) ; le coût réel les déduit.'
+            : 'Par poste de dépense.'
+        }
+      >
         {rows.postes.length === 0 ? (
           <p className="text-[13px] text-fg-muted">Aucun budget ni dépense sur ce camp.</p>
         ) : (
@@ -165,7 +178,9 @@ export function CampBilanPanel({ bilan }: { bilan: CampBilan }) {
                 <tr className="text-fg-muted text-[11.5px] uppercase tracking-wide">
                   <th className="text-left font-medium pb-2">Poste</th>
                   <th className="text-right font-medium pb-2">Budget</th>
-                  <th className="text-right font-medium pb-2">Réalisé</th>
+                  <th className="text-right font-medium pb-2">Dépensé</th>
+                  {hasRemboursements && <th className="text-right font-medium pb-2">Remboursé</th>}
+                  {hasRemboursements && <th className="text-right font-medium pb-2">Coût réel</th>}
                   <th className="text-right font-medium pb-2">Écart</th>
                 </tr>
               </thead>
@@ -179,8 +194,22 @@ export function CampBilanPanel({ bilan }: { bilan: CampBilan }) {
                     <td className="py-2 text-right tabular-nums">
                       <Amount cents={p.depenseCents} />
                     </td>
+                    {hasRemboursements && (
+                      <td className="py-2 text-right tabular-nums">
+                        {p.recettesCents > 0 ? (
+                          <Amount cents={p.recettesCents} tone="positive" />
+                        ) : (
+                          <span className="text-fg-subtle">—</span>
+                        )}
+                      </td>
+                    )}
+                    {hasRemboursements && (
+                      <td className="py-2 text-right tabular-nums">
+                        <Amount cents={p.netCents} />
+                      </td>
+                    )}
                     <td className="py-2 text-right tabular-nums">
-                      <Amount cents={p.budgetCents - p.depenseCents} tone="signed" />
+                      <Amount cents={p.budgetCents - p.netCents} tone="signed" />
                     </td>
                   </tr>
                 ))}
@@ -194,9 +223,19 @@ export function CampBilanPanel({ bilan }: { bilan: CampBilan }) {
                   <td className="pt-2.5 text-right tabular-nums">
                     <Amount cents={rows.totalDepenseCents} />
                   </td>
+                  {hasRemboursements && (
+                    <td className="pt-2.5 text-right tabular-nums">
+                      <Amount cents={rows.totalDepenseCents - rows.totalNetCents} tone="positive" />
+                    </td>
+                  )}
+                  {hasRemboursements && (
+                    <td className="pt-2.5 text-right tabular-nums">
+                      <Amount cents={rows.totalNetCents} />
+                    </td>
+                  )}
                   <td className="pt-2.5 text-right tabular-nums">
                     <Amount
-                      cents={rows.totalBudgetDepensesCents - rows.totalDepenseCents}
+                      cents={rows.totalBudgetDepensesCents - rows.totalNetCents}
                       tone="signed"
                     />
                   </td>

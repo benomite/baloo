@@ -41,7 +41,7 @@ const bilan = (over: Partial<CampBilan> = {}): CampBilan => ({
   sansUniteCount: 0,
   avancesEnCirculation: [],
   avancesSummary: null,
-  rows: { postes: [], totalBudgetDepensesCents: 0, totalDepenseCents: 0, totalBudgetRecettesCents: 0, recettesEncaisseesCents: 0 },
+  rows: { postes: [], totalBudgetDepensesCents: 0, totalDepenseCents: 0, totalNetCents: 0, totalBudgetRecettesCents: 0, recettesEncaisseesCents: 0, recettesHorsPosteCents: 0 },
   ...over,
 });
 
@@ -105,5 +105,41 @@ describe('<CampBilanPanel>', () => {
   it('signale les dépôts du groupe sans imputation, invisibles de tout camp', () => {
     render(<CampBilanPanel bilan={bilan({ depotsSansImputationCount: 2 })} />);
     expect(screen.getByText(/n’apparaissent\s+dans\s+aucun camp/)).toBeTruthy();
+  });
+
+  // Cas terrain camp bleu 2026 : caution de camion payée puis rendue sur la
+  // même catégorie. Le tableau montrait 1215,23 € de « réalisé » pour un
+  // coût réel de 625,23 €, sans trace de la recette qui l'annule.
+  const posteLoc = (recettesCents: number) => ({
+    categoryId: 'cat-loc', categoryName: 'Location véhicule',
+    budgetCents: 0, ecrituresCents: 121523, depotsCents: 0, depenseCents: 121523,
+    recettesCents, netCents: 121523 - recettesCents,
+  });
+
+  it('poste remboursé : colonnes Remboursé et Coût réel', () => {
+    render(<CampBilanPanel bilan={bilan({
+      rows: {
+        postes: [posteLoc(59000)],
+        totalBudgetDepensesCents: 0, totalDepenseCents: 121523, totalNetCents: 62523,
+        totalBudgetRecettesCents: 0, recettesEncaisseesCents: 59000, recettesHorsPosteCents: 0,
+      },
+    })} />);
+    expect(screen.getByText('Remboursé')).toBeTruthy();
+    expect(screen.getByText('Coût réel')).toBeTruthy();
+    expect(montant('1 215,23 €')).toBe(true);
+    expect(montant('+590,00 €')).toBe(true);
+    expect(montant('625,23 €')).toBe(true);
+  });
+
+  it('aucun poste remboursé : le tableau reste à 4 colonnes', () => {
+    render(<CampBilanPanel bilan={bilan({
+      rows: {
+        postes: [posteLoc(0)],
+        totalBudgetDepensesCents: 0, totalDepenseCents: 121523, totalNetCents: 121523,
+        totalBudgetRecettesCents: 0, recettesEncaisseesCents: 0, recettesHorsPosteCents: 0,
+      },
+    })} />);
+    expect(screen.queryByText('Remboursé')).toBeNull();
+    expect(screen.queryByText('Coût réel')).toBeNull();
   });
 });

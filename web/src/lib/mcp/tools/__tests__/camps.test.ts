@@ -75,9 +75,9 @@ const FAKE_BILAN = {
   avancesEnCirculation: [FAKE_AVANCE],
   avancesSummary: FAKE_SUMMARY,
   rows: {
-    postes: [{ categoryId: 'cat-int', categoryName: 'Intendance', budgetCents: 180000, ecrituresCents: 124000, depotsCents: 4200, depenseCents: 128200 }],
-    totalBudgetDepensesCents: 180000, totalDepenseCents: 128200,
-    totalBudgetRecettesCents: 672000, recettesEncaisseesCents: 588000,
+    postes: [{ categoryId: 'cat-int', categoryName: 'Intendance', budgetCents: 180000, ecrituresCents: 124000, depotsCents: 4200, depenseCents: 128200, recettesCents: 0, netCents: 128200 }],
+    totalBudgetDepensesCents: 180000, totalDepenseCents: 128200, totalNetCents: 128200,
+    totalBudgetRecettesCents: 672000, recettesEncaisseesCents: 588000, recettesHorsPosteCents: 588000,
   },
 };
 
@@ -289,9 +289,12 @@ describe('bilan_camp', () => {
 
   it('renvoie le budget par poste avec son écart', async () => {
     const r = await tools.bilan_camp.handler({ camp_id: 'CAMP-2026-001' });
-    const p = parseToolResult(r) as { budget_vs_realise: Array<{ poste: string; budget: string; realise: string; ecart: string }> };
+    const p = parseToolResult(r) as { budget_vs_realise: Array<{ poste: string; budget: string; depense: string; rembourse: string; cout_reel: string; ecart: string }> };
     expect(p.budget_vs_realise[0].poste).toBe('Intendance');
-    expect(eur(p.budget_vs_realise[0].realise)).toBe('1282,00 €');
+    expect(eur(p.budget_vs_realise[0].depense)).toBe('1282,00 €');
+    // Aucune recette sur ce poste : coût réel = dépense brute.
+    expect(eur(p.budget_vs_realise[0].rembourse)).toBe('0,00 €');
+    expect(eur(p.budget_vs_realise[0].cout_reel)).toBe('1282,00 €');
     expect(p.budget_vs_realise[0].ecart).toMatch(/518,00/);
   });
 

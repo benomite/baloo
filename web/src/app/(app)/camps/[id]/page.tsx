@@ -214,14 +214,14 @@ export default async function CampDetailPage({
                     <div className="flex items-baseline justify-between gap-3 font-semibold text-[13.5px]">
                       <span className="text-fg">Total</span>
                       <span className="tabular-nums text-fg">
-                        <Amount cents={rows.totalDepenseCents} />
+                        <Amount cents={rows.totalNetCents} />
                         <span className="text-fg-subtle font-normal"> / </span>
                         <Amount cents={rows.totalBudgetDepensesCents} tone="muted" />
                       </span>
                     </div>
                     <div className="mt-2">
                       <Jauge
-                        done={rows.totalDepenseCents}
+                        done={rows.totalNetCents}
                         total={rows.totalBudgetDepensesCents}
                       />
                     </div>
@@ -415,20 +415,29 @@ export default async function CampDetailPage({
   );
 }
 
+// Le chiffre de référence est le COÛT RÉEL (dépenses − recettes du même
+// poste) : une caution de camion payée puis rendue ne consomme pas de
+// budget. Le brut n'est rappelé que quand les deux diffèrent.
 function PosteRow({ poste }: { poste: CampPoste }) {
   return (
     <div>
       <div className="flex items-baseline justify-between gap-3 text-[13px]">
         <span className="min-w-0 truncate text-fg">{poste.categoryName}</span>
         <span className="tabular-nums shrink-0">
-          <Amount cents={poste.depenseCents} />
+          <Amount cents={poste.netCents} />
           <span className="text-fg-subtle"> / </span>
           <Amount cents={poste.budgetCents} tone="muted" />
         </span>
       </div>
       <div className="mt-1.5">
-        <Jauge done={poste.depenseCents} total={poste.budgetCents} />
+        <Jauge done={poste.netCents} total={poste.budgetCents} />
       </div>
+      {poste.recettesCents > 0 && (
+        <p className="mt-1 text-[11.5px] text-fg-subtle tabular-nums">
+          <Amount cents={poste.depenseCents} /> dépensés, dont{' '}
+          <Amount cents={poste.recettesCents} /> remboursés.
+        </p>
+      )}
     </div>
   );
 }

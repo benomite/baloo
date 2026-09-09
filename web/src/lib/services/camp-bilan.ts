@@ -7,6 +7,7 @@ import { listAvancesForCamp, type AvanceCamp } from './camp-avances';
 import type { AvancesSummary } from './camp-avances-logic';
 import {
   aggregerDepensesParCategorie,
+  aggregerRecettesParCategorie,
   buildBilanResultat,
   classerJustifs,
   type BilanEcriture,
@@ -165,6 +166,7 @@ export async function getCampBilan(ctx: CampContext, id: string): Promise<CampBi
     budgetRecettes: budget.filter((b) => b.type === 'recette'),
     ecrituresDepenses: aggregerDepensesParCategorie(ecritures),
     depotsEnAttente: depotsParCategorie,
+    recettesParCategorie: aggregerRecettesParCategorie(ecritures),
     recettesEncaissees: resultat.recettesCents,
   });
 

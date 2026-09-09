@@ -6,6 +6,7 @@ const agg = (over: Partial<CampAgg> = {}): CampAgg => ({
   budgetRecettes: [{ categoryId: 'c9', categoryName: 'Participation activités', amountCents: 672000 }],
   ecrituresDepenses: [{ categoryId: 'c1', categoryName: 'Intendance', amountCents: 86400 }],
   depotsEnAttente: [{ categoryId: 'c1', categoryName: 'Intendance', amountCents: 37600 }],
+  recettesParCategorie: [{ categoryId: 'c9', categoryName: 'Participation activités', amountCents: 588000 }],
   recettesEncaissees: 588000,
   ...over,
 });
@@ -14,7 +15,7 @@ describe('buildCampBudgetRows', () => {
   it('fusionne budget + écritures + dépôts par poste', () => {
     const r = buildCampBudgetRows(agg());
     expect(r.postes).toEqual([
-      { categoryId: 'c1', categoryName: 'Intendance', budgetCents: 180000, ecrituresCents: 86400, depotsCents: 37600, depenseCents: 124000 },
+      { categoryId: 'c1', categoryName: 'Intendance', budgetCents: 180000, ecrituresCents: 86400, depotsCents: 37600, depenseCents: 124000, recettesCents: 0, netCents: 124000 },
     ]);
     expect(r.totalDepenseCents).toBe(124000);
     expect(r.totalBudgetDepensesCents).toBe(180000);
@@ -48,5 +49,37 @@ describe('buildCampBudgetRows', () => {
       ],
     }));
     expect(r.postes.map((p) => p.categoryId)).toEqual(['c1', 'c2']);
+  });
+
+  // Cas terrain camp bleu 2026 : caution de camion payée 590 € puis
+  // remboursée 590 € sur la même catégorie. Le poste affichait 1215,23 €
+  // de « réalisé » pour un coût réel de 625,23 € — la recette qui l'annule
+  // n'apparaissait nulle part dans le tableau.
+  it('poste dont une dépense a été remboursée : brut et net distincts', () => {
+    const loc = (amountCents: number) => ({ categoryId: 'cat-loc', categoryName: 'Location véhicule', amountCents });
+    const r = buildCampBudgetRows(agg({
+      budgetDepenses: [],
+      ecrituresDepenses: [loc(59000 + 61600 + 923)],
+      depotsEnAttente: [],
+      recettesParCategorie: [loc(59000)],
+      recettesEncaissees: 59000,
+    }));
+    const poste = r.postes.find((p) => p.categoryId === 'cat-loc')!;
+    expect(poste.depenseCents).toBe(121523);
+    expect(poste.recettesCents).toBe(59000);
+    expect(poste.netCents).toBe(62523);
+    expect(r.totalNetCents).toBe(62523);
+  });
+
+  // Une recette sur une catégorie qui n'est pas un poste de dépense
+  // (participations des familles…) ne doit PAS créer de ligne dans le
+  // tableau des dépenses — mais son montant reste traçable.
+  it('une recette hors poste de dépense ne crée pas de ligne', () => {
+    const r = buildCampBudgetRows(agg());
+    expect(r.postes.map((p) => p.categoryId)).toEqual(['c1']);
+    expect(r.recettesHorsPosteCents).toBe(588000);
+    expect(
+      r.postes.reduce((s, p) => s + p.recettesCents, 0) + r.recettesHorsPosteCents,
+    ).toBe(r.recettesEncaisseesCents);
   });
 });
