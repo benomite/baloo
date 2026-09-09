@@ -201,6 +201,7 @@ export async function attachDepotToEcriture(formData: FormData): Promise<void> {
     redirect('/depots?error=' + encodeURIComponent(err instanceof Error ? err.message : String(err)));
   }
   revalidatePath('/depots');
+  revalidatePath('/inbox');
   revalidatePath(`/ecritures/${ecritureId}`);
   redirect('/depots?attached=' + encodeURIComponent(depotId));
 }
@@ -221,6 +222,7 @@ export async function attachDepotToRemboursement(formData: FormData): Promise<vo
     redirect('/depots?error=' + encodeURIComponent(err instanceof Error ? err.message : String(err)));
   }
   revalidatePath('/depots');
+  revalidatePath('/inbox');
   revalidatePath(`/remboursements/${remboursementId}`);
   redirect('/depots?attached=' + encodeURIComponent(depotId));
 }
@@ -241,9 +243,11 @@ export async function attachDepotFromEcriture(formData: FormData): Promise<void>
   try {
     await attachDepotToEcritureService({ groupId: ctx.groupId }, depotId, ecritureId);
   } catch (err) {
+    logError('depots/attachDepotFromEcriture', 'rattachement refusé', err, { depotId, ecritureId });
     redirect(`/ecritures/${ecritureId}?error=` + encodeURIComponent(err instanceof Error ? err.message : String(err)));
   }
   revalidatePath('/depots');
+  revalidatePath('/inbox');
   revalidatePath(`/ecritures/${ecritureId}`);
   redirect(`/ecritures/${ecritureId}`);
 }
@@ -264,6 +268,7 @@ export async function shareDepotFromEcriture(formData: FormData): Promise<void> 
   try {
     await shareDepotToEcritureService({ groupId: ctx.groupId }, depotId, ecritureId);
   } catch (err) {
+    logError('depots/shareDepotFromEcriture', 'partage de justif refusé', err, { depotId, ecritureId });
     redirect(`/ecritures/${ecritureId}?error=` + encodeURIComponent(err instanceof Error ? err.message : String(err)));
   }
   revalidatePath(`/ecritures/${ecritureId}`);
@@ -285,6 +290,7 @@ export async function linkDepotToEcriture(
   }
   revalidatePath('/ecritures');
   revalidatePath('/depots');
+  revalidatePath('/inbox');
   return { ok: true };
 }
 

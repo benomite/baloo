@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Calculator } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Alert } from '@/components/ui/alert';
 import { PageHeader } from '@/components/layout/page-header';
 import { TabLink } from '@/components/shared/tab-link';
 import { listEcritures } from '@/lib/queries/ecritures';
@@ -129,6 +130,15 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
         <Link href="/ecritures/nouveau"><Button>Nouvelle écriture</Button></Link>
       </PageHeader>
 
+      {/* Échecs des actions serveur qui redirigent ici (rattachement d'un
+          dépôt, partage de justif…). Sans ce bandeau, elles échouaient en
+          silence — cf. commentaire de /ecritures/[id]/page.tsx. */}
+      {params.error && (
+        <Alert variant="error" className="mb-4">
+          {params.error}
+        </Alert>
+      )}
+
       <EcrituresFinancialHeader
         resultatExerciceCents={headerTotals.resultatExerciceCents}
         exercice={headerTotals.exercice}
@@ -157,7 +167,9 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
 
       <ArbitrageBanner supprimees={supprimeesCw} agregesRemplaces={agregesRemplaces} suggestions={linkSuggestions} />
 
-      <EcritureFilters categories={categories} unites={unites} cartes={cartes} current={params} />
+      {/* `error` est un message ponctuel, pas un filtre : on l'exclut pour
+          qu'il ne soit pas recollé dans chaque lien de filtre / export. */}
+      <EcritureFilters categories={categories} unites={unites} cartes={cartes} current={{ ...params, error: undefined }} />
 
       {params.open && (
         <PinnedEcriturePanel

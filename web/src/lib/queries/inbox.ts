@@ -138,6 +138,11 @@ export async function listInboxItems(
          LEFT JOIN categories c ON c.id = d.category_id
          WHERE d.group_id = ?
            AND d.statut = 'a_traiter'
+           -- Même garde défensive que listDepots() : un dépôt « à traiter »
+           -- qui porte déjà un lien est en réalité rattaché (statut périmé).
+           -- Sans elle, /depots le masque mais l'inbox continue de le
+           -- réclamer — le justif ne sort jamais de la file.
+           AND d.ecriture_id IS NULL AND d.remboursement_id IS NULL
          ORDER BY d.created_at DESC`,
       )
       .all<InboxJustif>(groupId),
