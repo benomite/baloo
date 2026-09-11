@@ -155,21 +155,26 @@ export async function createEcriture(
     body: body.toString(),
   });
 
-  if (res.status === 302 || res.status === 303) {
-    const location = res.headers.get('location') ?? '';
-    const match = location.match(/\/recettedepense\/(\d+)\/afficher/);
-    const ecritureId = match ? Number(match[1]) : undefined;
-    return {
-      dryRun: false,
-      ecritureId,
-      detailsPath: location,
-      warnings,
-    };
-  }
-
   if (res.status >= 300 && res.status < 400) {
-    const loc = res.headers.get('location') ?? '';
-    if (/\/login\b|auth\.sgdf\.fr/.test(loc)) throw new ComptawebSessionExpiredError();
+    const location = res.headers.get('location') ?? '';
+    // Seule la redirection vers la fiche créée prouve la création. Toute autre
+    // cible (retour au formulaire, liste…) = refus silencieux de CW, typiquement
+    // une date hors de l'exercice ouvert (cas 2026-09-11 : 5 écritures de
+    // septembre « validées » alors qu'aucune n'existait dans Comptaweb).
+    const match = location.match(/\/recettedepense\/(\d+)\/afficher/);
+    if (match) {
+      return {
+        dryRun: false,
+        ecritureId: Number(match[1]),
+        detailsPath: location,
+        warnings,
+      };
+    }
+    if (/\/login\b|auth\.sgdf\.fr/.test(location)) throw new ComptawebSessionExpiredError();
+    throw new Error(
+      `Création non confirmée par Comptaweb (redirection vers ${location || '?'}). ` +
+        `Vérifie que la date ${input.dateecriture} est dans l'exercice ouvert dans Comptaweb.`,
+    );
   }
 
   const bodyText = await res.text();
