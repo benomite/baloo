@@ -14,10 +14,15 @@ import type { Ecriture } from '@/lib/types';
 export function PanelMoreMenu({
   ecriture,
   onDone,
+  align = 'right',
 }: {
   ecriture: Ecriture;
   // Rafraîchit/ferme après une action de statut.
   onDone?: () => void;
+  // Bord du bouton sur lequel s'aligne le menu. 'left' quand le bouton est
+  // à gauche du panneau (lecture seule) : sinon le menu déborde à gauche et
+  // se fait rogner par le conteneur défilant du panneau.
+  align?: 'left' | 'right';
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -96,7 +101,7 @@ export function PanelMoreMenu({
       {open && (
         <div
           role="menu"
-          className="absolute bottom-full right-0 mb-1.5 z-50 min-w-[16rem] rounded-lg border border-border bg-bg-elevated shadow-lg p-1 text-[12.5px]"
+          className={`absolute bottom-full ${align === 'left' ? 'left-0' : 'right-0'} mb-1.5 z-50 min-w-[16rem] rounded-lg border border-border bg-bg-elevated shadow-lg p-1 text-[12.5px]`}
         >
           {items.map((it) => (
             <button

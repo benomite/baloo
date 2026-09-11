@@ -246,7 +246,7 @@ export function EcritureInlinePanel({
                   SANS id CW (validation que CW a refusée en silence, cas
                   2026-09-11) doit pouvoir repasser en brouillon. Le menu ne
                   propose rien dès qu'un id CW est posé. */}
-              <PanelMoreMenu ecriture={ecriture} onDone={() => void refreshRow?.(ecriture.id)} />
+              <PanelMoreMenu ecriture={ecriture} onDone={() => void refreshRow?.(ecriture.id)} align="left" />
             </div>
           </div>
         </div>
