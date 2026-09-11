@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, Receipt, Unlink } from 'lucide-react';
+import { ArrowRight, FilePlus, Receipt, Unlink } from 'lucide-react';
 import { PendingButton } from '@/components/shared/pending-button';
 import { Section } from '@/components/shared/section';
 import { Alert } from '@/components/ui/alert';
@@ -11,6 +11,7 @@ import {
   getEcritureRembsCoverage,
 } from '@/lib/services/remboursement-ecriture-link';
 import {
+  createEcritureForRemboursement,
   linkRemboursementToEcriture,
   unlinkRemboursementFromEcriture,
 } from '@/lib/actions/remboursements';
@@ -89,6 +90,22 @@ export async function EcritureLinkCard({
           action={linkRemboursementToEcriture.bind(null, rembsId)}
         />
       )}
+
+      {/* Fin d'exercice : virement parti, ligne bancaire pas encore remontée →
+          on saisit l'écriture tout de suite (la ligne, à son arrivée, ne créera
+          pas de doublon : cf. findEcritureAnticipee). */}
+      <div className="mt-3 space-y-2 border-t border-border pt-3">
+        <p className="text-[12px] text-fg-muted">
+          Le virement n&apos;est pas encore sur le relevé (fin d&apos;exercice) ? Crée
+          l&apos;écriture maintenant pour la passer dans Comptaweb sur le bon exercice.
+        </p>
+        <form action={createEcritureForRemboursement.bind(null, rembsId)}>
+          <PendingButton variant="outline" size="sm">
+            <FilePlus size={13} strokeWidth={2} className="mr-1.5" />
+            Créer l&apos;écriture correspondante
+          </PendingButton>
+        </form>
+      </div>
     </Section>
   );
 }

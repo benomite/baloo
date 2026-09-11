@@ -2,8 +2,9 @@ import { getDb } from '../db';
 import { ventilateDraft } from './ecritures-ventilate';
 import type { EcritureContext } from './ecritures';
 import type { VentilationInput } from './ecritures-create';
-import { currentTimestamp } from '../ids';
+import { currentTimestamp, nextIdOn } from '../ids';
 import { logError } from '../log';
+import { canLinkEcriture } from '../actions/remboursements/link-guard';
 
 // Service dédié à la liaison `remboursements.ecriture_id`. Trouve les
 // écritures candidates au moment où un trésorier veut associer une
@@ -127,6 +128,82 @@ export async function setRembsEcritureLink(
   }
 
   return { ok: true, previous: current.ecriture_id };
+}
+
+// Mode de paiement « Virement » (comptaweb_id = 1, cf. inferComptawebModeId
+// dans drafts.ts) : repli quand la demande n'a pas de mode renseigné.
+const CW_MODE_VIREMENT = 1;
+
+// Crée l'écriture comptable du virement d'une demande SANS attendre la ligne
+// bancaire. Cas fin d'exercice : remboursement payé en 2025/26 dont la ligne
+// BNP ne remontera qu'en 2026/27 → il faut saisir l'écriture dans CW sur
+// l'exercice du paiement. Brouillon local lié à la demande ; le trésorier
+// complète nature/activité puis l'envoie à CW par le chemin habituel.
+//
+// Quand la ligne bancaire remontera, le scan des drafts la reconnaîtra comme
+// déjà représentée par cette écriture (`findEcritureAnticipee`, drafts.ts)
+// → pas de doublon en attendant le rapprochement dans CW.
+export async function createEcritureForRembs(
+  groupId: string,
+  rembsId: string,
+): Promise<{ ok: true; ecritureId: string } | { ok: false; error: string }> {
+  const db = getDb();
+
+  const r = await db
+    .prepare(
+      `SELECT status, ecriture_id, demandeur, prenom, nom, nature, unite_id,
+              amount_cents, total_cents, date_paiement, mode_paiement_id
+       FROM remboursements WHERE id = ? AND group_id = ?`,
+    )
+    .get<{
+      status: string;
+      ecriture_id: string | null;
+      demandeur: string;
+      prenom: string | null;
+      nom: string | null;
+      nature: string | null;
+      unite_id: string | null;
+      amount_cents: number | null;
+      total_cents: number | null;
+      date_paiement: string | null;
+      mode_paiement_id: string | null;
+    }>(rembsId, groupId);
+  if (!r) return { ok: false, error: 'Demande introuvable.' };
+  if (!canLinkEcriture(r.status)) {
+    return { ok: false, error: "L'écriture comptable ne se crée qu'une fois le virement effectué." };
+  }
+  if (r.ecriture_id) return { ok: false, error: `Demande déjà liée à l'écriture ${r.ecriture_id}.` };
+
+  const montant = Math.abs(r.total_cents || r.amount_cents || 0);
+  if (montant === 0) return { ok: false, error: 'Montant de la demande nul.' };
+
+  let modeId = r.mode_paiement_id;
+  if (!modeId) {
+    const m = await db
+      .prepare('SELECT id FROM modes_paiement WHERE comptaweb_id = ? LIMIT 1')
+      .get<{ id: string }>(CW_MODE_VIREMENT);
+    modeId = m?.id ?? null;
+  }
+
+  const qui = [r.prenom, r.nom].filter(Boolean).join(' ').trim() || r.demandeur;
+  const description = `Remboursement ${qui}${r.nature ? ` – ${r.nature}` : ''}`.slice(0, 100);
+  const dateEcriture = r.date_paiement ?? new Date().toISOString().slice(0, 10);
+  const notes = `Écriture du virement de ${rembsId}, créée avant la remontée de la ligne bancaire.`;
+
+  const id = await nextIdOn(db, 'ECR');
+  const now = currentTimestamp();
+  await db
+    .prepare(
+      `INSERT INTO ecritures (
+         id, group_id, date_ecriture, description, amount_cents, type, unite_id,
+         mode_paiement_id, status, justif_attendu, comptaweb_synced, notes, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, 'depense', ?, ?, 'draft', 1, 0, ?, ?, ?)`,
+    )
+    .run(id, groupId, dateEcriture, description, montant, r.unite_id, modeId, notes, now, now);
+
+  const link = await setRembsEcritureLink(groupId, rembsId, id);
+  if (!link.ok) return link;
+  return { ok: true, ecritureId: id };
 }
 
 export interface RembsCoverage {

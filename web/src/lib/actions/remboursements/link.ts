@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { getCurrentContext } from '../../context';
-import { setRembsEcritureLink } from '../../services/remboursement-ecriture-link';
+import { createEcritureForRembs, setRembsEcritureLink } from '../../services/remboursement-ecriture-link';
 import { updateRemboursement } from '../../services/remboursements';
 import { applyRemboursementTransition } from '../../services/remboursement-transition';
 import { getRemboursement } from '../../queries/remboursements';
@@ -55,11 +55,46 @@ export async function linkRemboursementToEcriture(rbtId: string, formData: FormD
     redirect(`/remboursements/${rbtId}?error=${encodeURIComponent(result.error)}`);
   }
 
-  // A4 : le lien matérialise le virement rapproché → passage en terminé auto.
-  // Statut uniquement : `applyRemboursementTransition` ne signe/régénère le
-  // PDF feuille que pour `valide_tresorier` / `valide_rg`, pas pour `termine`.
-  // Best-effort : si la transition échoue (retour `{ok:false}` OU exception),
-  // le lien reste posé et l'utilisateur suit le chemin de succès normal.
+  await passerEnTermine(ctx, rbtId);
+
+  revalidatePath(`/remboursements/${rbtId}`);
+  revalidatePath(`/ecritures/${ecritureId}`);
+  if (result.previous) revalidatePath(`/ecritures/${result.previous}`);
+  redirect(`/remboursements/${rbtId}?linked=${encodeURIComponent(ecritureId)}`);
+}
+
+// Fin d'exercice : le virement est parti mais sa ligne bancaire ne remontera
+// qu'à l'exercice suivant → crée l'écriture du virement tout de suite (brouillon
+// lié à la demande), puis envoie le trésorier la compléter et la pousser à CW.
+export async function createEcritureForRemboursement(rbtId: string): Promise<void> {
+  const ctx = await getCurrentContext();
+  if (!ADMIN_ROLES.includes(ctx.role)) {
+    redirect(
+      `/remboursements/${rbtId}?error=${encodeURIComponent('Action réservée aux trésoriers / RG.')}`,
+    );
+  }
+
+  const result = await createEcritureForRembs(ctx.groupId, rbtId);
+  if (!result.ok) {
+    redirect(`/remboursements/${rbtId}?error=${encodeURIComponent(result.error)}`);
+  }
+
+  await passerEnTermine(ctx, rbtId);
+
+  revalidatePath(`/remboursements/${rbtId}`);
+  revalidatePath('/ecritures');
+  redirect(`/ecritures/${result.ecritureId}`);
+}
+
+// A4 : le lien matérialise le virement → passage en terminé auto.
+// Statut uniquement : `applyRemboursementTransition` ne signe/régénère le
+// PDF feuille que pour `valide_tresorier` / `valide_rg`, pas pour `termine`.
+// Best-effort : si la transition échoue (retour `{ok:false}` OU exception),
+// le lien reste posé et l'utilisateur suit le chemin de succès normal.
+async function passerEnTermine(
+  ctx: Awaited<ReturnType<typeof getCurrentContext>>,
+  rbtId: string,
+): Promise<void> {
   try {
     const transition = await applyRemboursementTransition(
       {
@@ -80,11 +115,6 @@ export async function linkRemboursementToEcriture(rbtId: string, formData: FormD
   } catch (err) {
     logError('remboursements', 'Lien posé mais passage en terminé échoué (exception)', err);
   }
-
-  revalidatePath(`/remboursements/${rbtId}`);
-  revalidatePath(`/ecritures/${ecritureId}`);
-  if (result.previous) revalidatePath(`/ecritures/${result.previous}`);
-  redirect(`/remboursements/${rbtId}?linked=${encodeURIComponent(ecritureId)}`);
 }
 
 export async function unlinkRemboursementFromEcriture(rbtId: string): Promise<void> {

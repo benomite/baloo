@@ -126,6 +126,9 @@ export interface ScanDraftsResult {
   // Agrégats justifiés supplantés par PLUSIEURS sous-lignes : impossible à
   // trancher sans le trésorier (il doit reventiler), donc signalés, pas touchés.
   supplantes?: string[];
+  // Lignes bancaires ignorées car déjà représentées par l'écriture d'un
+  // remboursement créée avant sa remontée bancaire (fin d'exercice).
+  anticipes?: number;
   // Lignes bancaires dont le traitement a levé (détail en base via logError) :
   // le balayage continue, mais ces lignes n'ont ni draft créé ni réconciliation.
   lignes_en_erreur?: number;
@@ -133,6 +136,73 @@ export interface ScanDraftsResult {
   // résultat), transmises telles quelles pour l'import de la sync.
   ecrituresComptables?: EcritureComptableNonRapprochee[];
   erreur?: string;
+}
+
+// Écriture de virement d'un remboursement saisie AVANT que sa ligne bancaire
+// ne remonte (bouton « Créer l'écriture correspondante », fin d'exercice :
+// payé en N, débité en N+1). Quand la ligne arrive, elle n'est pas encore
+// rapprochée dans CW → sans cette reconnaissance, le scan en ferait un draft
+// en doublon de l'écriture déjà saisie.
+export interface EcritureAnticipee {
+  id: string;
+  date: string;
+  totalCents: number;
+}
+
+// Fenêtre entre la date de l'écriture (date du virement) et le débit bancaire.
+const ANTICIPEE_JOURS_AVANT = 7;
+const ANTICIPEE_JOURS_APRES = 60;
+
+// Candidates : dépense liée à un remboursement, sans ligne bancaire, et pas
+// encore rapprochée — soit locale (pas encore dans CW), soit présente parmi
+// les écritures CW non rapprochées. Une écriture CW déjà rapprochée ne peut
+// plus absorber de ligne (évite qu'un vieux remboursement mirror « mange »
+// une nouvelle ligne au même montant).
+async function loadEcrituresAnticipees(
+  db: DbWrapper,
+  groupId: string,
+  cwNonRapprochees: Set<number>,
+): Promise<EcritureAnticipee[]> {
+  const rows = await db
+    .prepare(
+      `SELECT e.id, e.date_ecriture AS date, e.status, e.comptaweb_ecriture_id AS cwId,
+              COALESCE(
+                (SELECT SUM(g.amount_cents) FROM ecritures g
+                  WHERE g.group_id = e.group_id AND g.ventilation_group_id = e.ventilation_group_id),
+                e.amount_cents) AS totalCents
+         FROM ecritures e
+        WHERE e.group_id = ? AND e.type = 'depense' AND e.ligne_bancaire_id IS NULL
+          AND EXISTS (SELECT 1 FROM remboursements r WHERE r.ecriture_id = e.id)`,
+    )
+    .all<{ id: string; date: string; status: string; cwId: number | null; totalCents: number }>(groupId);
+  return rows
+    .filter((r) =>
+      r.cwId !== null
+        ? cwNonRapprochees.has(r.cwId)
+        : ['draft', 'pending_cw', 'pending_sync'].includes(r.status),
+    )
+    .map((r) => ({ id: r.id, date: r.date, totalCents: Math.abs(r.totalCents) }));
+}
+
+function daysBetween(fromIso: string, toIso: string): number {
+  return Math.round((Date.parse(toIso.slice(0, 10)) - Date.parse(fromIso.slice(0, 10))) / 86400000);
+}
+
+// Pur : l'écriture anticipée que représente une ligne bancaire de dépense
+// (même montant, débit dans la fenêtre), hors celles déjà consommées par une
+// autre ligne de ce scan. La plus proche en date d'abord.
+export function findEcritureAnticipee(
+  pool: EcritureAnticipee[],
+  dateOperation: string,
+  amountAbs: number,
+  dejaUtilisees: Set<string>,
+): string | null {
+  const match = pool
+    .filter((e) => !dejaUtilisees.has(e.id) && e.totalCents === amountAbs)
+    .map((e) => ({ id: e.id, d: daysBetween(e.date, dateOperation) }))
+    .filter((e) => e.d >= -ANTICIPEE_JOURS_AVANT && e.d <= ANTICIPEE_JOURS_APRES)
+    .sort((a, b) => Math.abs(a.d) - Math.abs(b.d))[0];
+  return match?.id ?? null;
 }
 
 export async function scanDraftsFromComptaweb(
@@ -212,7 +282,14 @@ export async function scanDraftsFromComptaweb(
     let corriges = 0;
     let promus = 0;
     let lignesEnErreur = 0;
+    let anticipes = 0;
     const supplantes: string[] = [];
+    const anticipees = await loadEcrituresAnticipees(
+      db,
+      groupId,
+      new Set((data.ecrituresComptables ?? []).map((c) => c.id)),
+    );
+    const anticipeesUtilisees = new Set<string>();
 
     for (const ligne of data.ecrituresBancaires) {
       // Une ligne bancaire qui casse ne doit pas emporter les suivantes : le
@@ -325,6 +402,11 @@ export async function scanDraftsFromComptaweb(
           // autre ligne identique → ne pas régénérer (sinon boucle d'arbitrage).
           const twin = await findCwAccountedTwin.get(groupId, c.dateOperation, amountAbs, type, c.libelProposal);
           if (twin) { doublons++; continue; }
+          // Virement de remboursement déjà saisi avant sa remontée bancaire.
+          if (type === 'depense') {
+            const anticipee = findEcritureAnticipee(anticipees, c.dateOperation, amountAbs, anticipeesUtilisees);
+            if (anticipee) { anticipeesUtilisees.add(anticipee); anticipes++; continue; }
+          }
           const cwMode = inferComptawebModeId(c.intituleParent);
           const modeLocal = cwMode !== null
             ? (await findMode.get<{ id: string }>(cwMode))?.id ?? null
@@ -350,7 +432,7 @@ export async function scanDraftsFromComptaweb(
     }
 
     return {
-      crees, existants, supprimes, doublons, corriges, promus, supplantes,
+      crees, existants, supprimes, doublons, corriges, promus, supplantes, anticipes,
       lignes_en_erreur: lignesEnErreur,
       ecrituresComptables: data.ecrituresComptables,
     };

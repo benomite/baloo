@@ -13,6 +13,10 @@ export { updateMyRemboursement, patchNotesAndRib } from './update';
 
 export { updateRemboursementStatus } from './status';
 
-export { linkRemboursementToEcriture, unlinkRemboursementFromEcriture } from './link';
+export {
+  linkRemboursementToEcriture,
+  unlinkRemboursementFromEcriture,
+  createEcritureForRemboursement,
+} from './link';
 
 export { assignLigneJustifs } from './assign-ligne-justifs';
