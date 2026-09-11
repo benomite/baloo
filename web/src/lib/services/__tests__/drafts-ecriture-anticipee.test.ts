@@ -41,7 +41,7 @@ const SETUP_SQL = `
   );
   CREATE TABLE justificatifs (id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT, obsolete_at TEXT);
   CREATE TABLE depots_justificatifs (id TEXT PRIMARY KEY, ecriture_id TEXT);
-  CREATE TABLE remboursements (id TEXT PRIMARY KEY, ecriture_id TEXT);
+  CREATE TABLE remboursements (id TEXT PRIMARY KEY, ecriture_id TEXT, date_paiement TEXT);
   CREATE TABLE modes_paiement (id TEXT PRIMARY KEY, comptaweb_id INTEGER);
   CREATE TABLE cartes (id TEXT PRIMARY KEY, group_id TEXT, code_externe TEXT, statut TEXT);
 `;
@@ -59,7 +59,10 @@ async function setupDb(): Promise<DbWrapper> {
 // Écriture du virement de RBT-1 (84,50 €, 28/08), liée à la demande.
 async function insertAnticipee(
   db: DbWrapper,
-  opts: { id?: string; status?: string; cwId?: number | null; ligne?: number | null; date?: string } = {},
+  opts: {
+    id?: string; status?: string; cwId?: number | null; ligne?: number | null; date?: string;
+    datePaiement?: string | null;
+  } = {},
 ) {
   const id = opts.id ?? 'ECR-ANT';
   await db
@@ -69,7 +72,9 @@ async function insertAnticipee(
        VALUES (?, ?, ?, 'Remboursement Florence Martin', 8450, 'depense', ?, ?, ?)`,
     )
     .run(id, G, opts.date ?? '2026-08-28', opts.status ?? 'draft', opts.cwId ?? null, opts.ligne ?? null);
-  await db.prepare(`INSERT INTO remboursements (id, ecriture_id) VALUES (?, ?)`).run(`RBT-${id}`, id);
+  await db
+    .prepare(`INSERT INTO remboursements (id, ecriture_id, date_paiement) VALUES (?, ?, ?)`)
+    .run(`RBT-${id}`, id, opts.datePaiement ?? null);
 }
 
 function virement(id: number, date = '2026-09-02', montant = -8450) {
@@ -94,6 +99,18 @@ describe('scanDraftsFromComptaweb — écriture de remboursement anticipée', ()
     expect(res.anticipes).toBe(1);
     expect(res.crees).toBe(0);
     expect(await draftsDeLigne(db, 19300001)).toBe(0);
+  });
+
+  it('écriture datée de la dernière dépense (juin) : la fenêtre part du virement (septembre)', async () => {
+    const db = await setupDb();
+    // 20/06 → 03/09 = 75 j : hors fenêtre si on partait de la date de l'écriture.
+    await insertAnticipee(db, { date: '2026-06-20', datePaiement: '2026-09-01' });
+    bankLinesRef.value = [virement(19300001, '2026-09-03')];
+
+    const res = await scanDraftsFromComptaweb({ groupId: G }, db);
+
+    expect(res.anticipes).toBe(1);
+    expect(res.crees).toBe(0);
   });
 
   it('écriture déjà dans CW mais non rapprochée : pas de doublon', async () => {

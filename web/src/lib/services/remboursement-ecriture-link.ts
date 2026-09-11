@@ -152,7 +152,7 @@ export async function createEcritureForRembs(
   const r = await db
     .prepare(
       `SELECT status, ecriture_id, demandeur, prenom, nom, nature, unite_id,
-              amount_cents, total_cents, date_paiement, mode_paiement_id
+              amount_cents, total_cents, date_depense, date_paiement, mode_paiement_id
        FROM remboursements WHERE id = ? AND group_id = ?`,
     )
     .get<{
@@ -165,6 +165,7 @@ export async function createEcritureForRembs(
       unite_id: string | null;
       amount_cents: number | null;
       total_cents: number | null;
+      date_depense: string | null;
       date_paiement: string | null;
       mode_paiement_id: string | null;
     }>(rembsId, groupId);
@@ -187,7 +188,15 @@ export async function createEcritureForRembs(
 
   const qui = [r.prenom, r.nom].filter(Boolean).join(' ').trim() || r.demandeur;
   const description = `Remboursement ${qui}${r.nature ? ` – ${r.nature}` : ''}`.slice(0, 100);
-  const dateEcriture = r.date_paiement ?? new Date().toISOString().slice(0, 10);
+  // Date = dernière dépense de la demande, pas celle du virement : la charge
+  // appartient à l'exercice où la dépense a été faite (camp de juillet payé en
+  // septembre → exercice 25/26, que CW accepte). Replis : date de la demande,
+  // puis date du virement.
+  const derniereLigne = await db
+    .prepare('SELECT MAX(date_depense) AS d FROM remboursement_lignes WHERE remboursement_id = ?')
+    .get<{ d: string | null }>(rembsId);
+  const dateEcriture =
+    derniereLigne?.d ?? r.date_depense ?? r.date_paiement ?? new Date().toISOString().slice(0, 10);
   const notes = `Écriture du virement de ${rembsId}, créée avant la remontée de la ligne bancaire.`;
 
   const id = await nextIdOn(db, 'ECR');

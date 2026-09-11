@@ -30,6 +30,9 @@ const SETUP = `
     ligne_bancaire_sous_index INTEGER, libelle_origine TEXT, created_at TEXT, updated_at TEXT
   );
   CREATE TABLE modes_paiement (id TEXT PRIMARY KEY, name TEXT, comptaweb_id INTEGER);
+  CREATE TABLE remboursement_lignes (
+    id TEXT PRIMARY KEY, remboursement_id TEXT, date_depense TEXT, amount_cents INTEGER, nature TEXT
+  );
 `;
 
 async function setup(): Promise<DbWrapper> {
@@ -42,7 +45,13 @@ async function setup(): Promise<DbWrapper> {
     `INSERT INTO remboursements (id, group_id, demandeur, prenom, nom, nature, status, amount_cents,
        total_cents, date_depense, date_paiement, unite_id, created_at)
      VALUES ('RBT-1','g','Florence M.','Florence','Martin','Courses camp','virement_effectue',
-       8450, 8450, '2026-07-20', '2026-08-28', 'U-LJ', '2026-07-21')`,
+       8450, 8450, '2026-07-05', '2026-09-02', 'U-LJ', '2026-07-21')`,
+  ).run();
+  // Détail de la demande : dernière dépense le 20/07 (ordre d'insertion ≠ ordre des dates).
+  await db.prepare(
+    `INSERT INTO remboursement_lignes VALUES
+       ('L2','RBT-1','2026-07-20',3000,'Courses'),
+       ('L1','RBT-1','2026-07-12',5450,'Courses')`,
   ).run();
   return db;
 }
@@ -60,7 +69,7 @@ describe('createEcritureForRembs', () => {
       type: 'depense',
       status: 'draft',
       amount_cents: 8450,
-      date_ecriture: '2026-08-28', // exercice du paiement, pas celui du débit
+      date_ecriture: '2026-07-20', // dernière dépense (exercice 25/26), pas le virement de septembre
       description: 'Remboursement Florence Martin – Courses camp',
       unite_id: 'U-LJ',
       mode_paiement_id: 'MP-VIR', // repli virement quand la demande n'a pas de mode
@@ -71,6 +80,20 @@ describe('createEcritureForRembs', () => {
 
     const r = await testDb.prepare("SELECT ecriture_id FROM remboursements WHERE id = 'RBT-1'").get<{ ecriture_id: string }>();
     expect(r?.ecriture_id).toBe(res.ecritureId);
+  });
+
+  it('sans détail : date de la demande, puis date du virement', async () => {
+    await testDb.prepare('UPDATE remboursement_lignes SET remboursement_id = NULL').run();
+    const res1 = await createEcritureForRembs('g', 'RBT-1');
+    if (!res1.ok) throw new Error(res1.error);
+    const e1 = await testDb.prepare('SELECT date_ecriture FROM ecritures WHERE id = ?').get<{ date_ecriture: string }>(res1.ecritureId);
+    expect(e1?.date_ecriture).toBe('2026-07-05');
+
+    await testDb.prepare("UPDATE remboursements SET ecriture_id = NULL, date_depense = NULL WHERE id = 'RBT-1'").run();
+    const res2 = await createEcritureForRembs('g', 'RBT-1');
+    if (!res2.ok) throw new Error(res2.error);
+    const e2 = await testDb.prepare('SELECT date_ecriture FROM ecritures WHERE id = ?').get<{ date_ecriture: string }>(res2.ecritureId);
+    expect(e2?.date_ecriture).toBe('2026-09-02');
   });
 
   it('garde le mode de paiement renseigné sur la demande', async () => {

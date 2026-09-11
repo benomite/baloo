@@ -145,11 +145,14 @@ export interface ScanDraftsResult {
 // en doublon de l'écriture déjà saisie.
 export interface EcritureAnticipee {
   id: string;
+  // Date de référence du débit attendu : date du virement de la demande liée
+  // (l'écriture, elle, est datée de la dernière dépense — souvent des semaines
+  // plus tôt), à défaut la date de l'écriture.
   date: string;
   totalCents: number;
 }
 
-// Fenêtre entre la date de l'écriture (date du virement) et le débit bancaire.
+// Fenêtre entre la date du virement et le débit bancaire.
 const ANTICIPEE_JOURS_AVANT = 7;
 const ANTICIPEE_JOURS_APRES = 60;
 
@@ -163,18 +166,30 @@ async function loadEcrituresAnticipees(
   groupId: string,
   cwNonRapprochees: Set<number>,
 ): Promise<EcritureAnticipee[]> {
-  const rows = await db
-    .prepare(
-      `SELECT e.id, e.date_ecriture AS date, e.status, e.comptaweb_ecriture_id AS cwId,
-              COALESCE(
-                (SELECT SUM(g.amount_cents) FROM ecritures g
-                  WHERE g.group_id = e.group_id AND g.ventilation_group_id = e.ventilation_group_id),
-                e.amount_cents) AS totalCents
-         FROM ecritures e
-        WHERE e.group_id = ? AND e.type = 'depense' AND e.ligne_bancaire_id IS NULL
-          AND EXISTS (SELECT 1 FROM remboursements r WHERE r.ecriture_id = e.id)`,
-    )
-    .all<{ id: string; date: string; status: string; cwId: number | null; totalCents: number }>(groupId);
+  // Reconnaissance « confort » : si elle casse, le scan continue sans elle
+  // (au pire un draft en doublon, arbitrable) plutôt que de perdre toutes les
+  // lignes bancaires du cycle — cf. AGENTS.md « le scan est un balayage ».
+  let rows: Array<{ id: string; date: string; status: string; cwId: number | null; totalCents: number }>;
+  try {
+    rows = await db
+      .prepare(
+        `SELECT e.id, e.status, e.comptaweb_ecriture_id AS cwId,
+                COALESCE(
+                  (SELECT MAX(r.date_paiement) FROM remboursements r WHERE r.ecriture_id = e.id),
+                  e.date_ecriture) AS date,
+                COALESCE(
+                  (SELECT SUM(g.amount_cents) FROM ecritures g
+                    WHERE g.group_id = e.group_id AND g.ventilation_group_id = e.ventilation_group_id),
+                  e.amount_cents) AS totalCents
+           FROM ecritures e
+          WHERE e.group_id = ? AND e.type = 'depense' AND e.ligne_bancaire_id IS NULL
+            AND EXISTS (SELECT 1 FROM remboursements r WHERE r.ecriture_id = e.id)`,
+      )
+      .all<{ id: string; date: string; status: string; cwId: number | null; totalCents: number }>(groupId);
+  } catch (err) {
+    logError('drafts-scan', 'écritures anticipées non chargées', err, { groupId });
+    return [];
+  }
   return rows
     .filter((r) =>
       r.cwId !== null
