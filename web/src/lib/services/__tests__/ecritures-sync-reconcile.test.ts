@@ -103,6 +103,43 @@ describe('reconcile — suppressions', () => {
   });
 });
 
+// Comptaweb ne liste que l'exercice (01/09 → 31/08) du contexte de session, mais
+// ses ids d'écriture sont une séquence unique qui entrelace les exercices pendant
+// la période de clôture (septembre : on saisit encore l'ancien ET le nouveau).
+// La plage d'ids ne suffit donc pas : une écriture d'un AUTRE exercice peut y
+// tomber sans être listée. Cas réel 2026-09-11.
+describe('reconcile — suppressions bornées à l’exercice du snapshot', () => {
+  it('lecture 26/27 : ne supprime pas une écriture d’août (25/26) dont l’id tombe dans la plage', () => {
+    const plan = reconcile(
+      [cw({ cwId: 100, date: '2026-09-02' }), cw({ cwId: 200, date: '2026-09-10' })],
+      [baloo({ id: 'AOUT', comptawebEcritureId: 150, dateEcriture: '2026-08-24' })],
+      OPTS,
+    );
+    expect(plan.deletions).toHaveLength(0);
+  });
+
+  it('lecture 25/26 : ne supprime pas une écriture de septembre 2026 dont l’id tombe dans la plage', () => {
+    const plan = reconcile(
+      [cw({ cwId: 100, date: '2026-03-01' }), cw({ cwId: 200, date: '2026-08-30' })],
+      [baloo({ id: 'SEPT', comptawebEcritureId: 150, dateEcriture: '2026-09-05' })],
+      OPTS,
+    );
+    expect(plan.deletions).toHaveLength(0);
+  });
+
+  it('les bornes 01/09 et 31/08 appartiennent à l’exercice lu', () => {
+    const plan = reconcile(
+      [cw({ cwId: 100, date: '2026-03-01' }), cw({ cwId: 200, date: '2026-03-02' })],
+      [
+        baloo({ id: 'DEBUT', comptawebEcritureId: 120, dateEcriture: '2025-09-01' }),
+        baloo({ id: 'FIN', comptawebEcritureId: 180, dateEcriture: '2026-08-31' }),
+      ],
+      OPTS,
+    );
+    expect(plan.deletions.sort()).toEqual(['DEBUT', 'FIN']);
+  });
+});
+
 describe('reconcile — import', () => {
   it('importe une ligne CW sans équivalent Baloo', () => {
     const plan = reconcile([cw({ cwId: 100 })], [], OPTS);

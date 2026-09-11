@@ -7,8 +7,8 @@
 //                    signature liste a changé → relire la page détail).
 //   - promotions : drafts locaux reliés à une ligne CW par match contenu
 //                  CONFIANT (montant+type+date±tol, unique des deux côtés).
-//   - deletions  : écritures reliées, dans la plage couverte, absentes du
-//                  snapshot → supprimee_cw.
+//   - deletions  : écritures reliées, dans la plage couverte (ids ET exercice
+//                  du snapshot), absentes du snapshot → supprimee_cw.
 //   - imports    : lignes CW jamais matchées → créer en mirror.
 //   - suggestions: matches contenu AMBIGUS → lien à confirmer (pas d'auto).
 //
@@ -261,14 +261,24 @@ function daysBetween(a: string, b: string): number {
   return Math.abs(Math.round((da - db) / 86_400_000));
 }
 
+/** Année de début de l'exercice SGDF (01/09 → 31/08) d'une date ISO. */
+function exerciceStartYear(isoDate: string): number {
+  const year = Number(isoDate.slice(0, 4));
+  const month = Number(isoDate.slice(5, 7));
+  return month >= 9 ? year : year - 1;
+}
+
 /**
  * Diff snapshot CW ↔ écritures Baloo. Voir en-tête de fichier pour la
  * sémantique de chaque sortie.
  *
- * `snapshot` = écritures CW de la fenêtre scrapée. La plage couverte est
- * dérivée de `[min(cwId), max(cwId)]` : une suppression n'est affirmée que
- * pour une écriture Baloo dont le `comptawebEcritureId` tombe DANS cette
- * plage (sinon = hors fenêtre, on n'y touche pas).
+ * `snapshot` = écritures CW de la fenêtre scrapée. Une suppression n'est
+ * affirmée que pour une écriture Baloo dont le `comptawebEcritureId` tombe
+ * dans `[min(cwId), max(cwId)]` ET dont la date tombe dans l'exercice couvert
+ * par le snapshot. Comptaweb ne liste que l'exercice du contexte de session,
+ * mais ses ids entrelacent les exercices pendant la clôture (septembre : on
+ * saisit l'ancien et le nouveau) — la plage d'ids seule attrapait des
+ * écritures de l'autre exercice, jamais listées (cas 2026-09-11).
  */
 export function reconcile(
   snapshot: CwSnapshotRow[],
@@ -283,11 +293,14 @@ export function reconcile(
     suggestions: [],
   };
 
-  // Plage couverte par id stable.
+  // Plage couverte : par id stable, bornée à l'exercice des dates listées.
   const ids = snapshot.map((r) => r.cwId);
   const hasRange = ids.length > 0;
   const minId = hasRange ? Math.min(...ids) : 0;
   const maxId = hasRange ? Math.max(...ids) : 0;
+  const dates = snapshot.map((r) => r.date).sort();
+  const minDate = hasRange ? `${exerciceStartYear(dates[0])}-09-01` : '';
+  const maxDate = hasRange ? `${exerciceStartYear(dates[dates.length - 1]) + 1}-08-31` : '';
 
   const snapByCwId = new Map<number, CwSnapshotRow>();
   for (const row of snapshot) snapByCwId.set(row.cwId, row);
@@ -308,8 +321,16 @@ export function reconcile(
         cw,
         needsDetail: row.cwSignature !== cw.signature || !row.hasImputation,
       });
-    } else if (hasRange && !row.horsResultat && row.comptawebEcritureId >= minId && row.comptawebEcritureId <= maxId) {
-      // Reliée, dans la plage couverte, absente, ET pas hors-résultat → vraie suppression.
+    } else if (
+      hasRange &&
+      !row.horsResultat &&
+      row.comptawebEcritureId >= minId &&
+      row.comptawebEcritureId <= maxId &&
+      row.dateEcriture >= minDate &&
+      row.dateEcriture <= maxDate
+    ) {
+      // Reliée, dans la plage couverte (ids + exercice), absente, ET pas
+      // hors-résultat → vraie suppression.
       plan.deletions.push(row.id);
     }
     // Sinon (hors plage) : intouchée.

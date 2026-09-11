@@ -327,6 +327,34 @@ absents / Keycloak-MFA / structure CW changée / 5xx), avec fallback qui
 préserve toujours le message brut. Le libellé « Échec » ouvre désormais une
 **popover** de diagnostic au clic au lieu de relancer aveuglément.
 
+### L'exercice CW est un contexte de SESSION, les ids CW entrelacent les exercices
+
+Constaté en live le 2026-09-11. Dans Comptaweb, l'exercice (01/09 → 31/08) n'est
+pas un filtre d'URL : c'est le **contexte de la session PHP** (menu « Changement
+de contexte → Exercice », form `POST /exercice/upd?id=<exo courant>` avec
+`exercice_change[identifiants_exercices]` + CSRF `exercice_change[_token]`).
+Chaque session a le sien : un navigateur basculé sur 26/27 ne change rien à la
+session serveur de Baloo, restée sur 25/26. Un login frais arrive (observé
+2026-09-11) sur l'exercice pas encore clôturé.
+
+Tout ce qu'on scrape est découpé par ce contexte :
+
+- `/recettedepense` = **tout l'exercice du contexte** ; `?m=1` n'est qu'un
+  marqueur de menu (les scopes `recent` et `exercice` de la sync lisent la même
+  chose).
+- `/rapprochementbancaire` : les lignes bancaires sont aussi réparties par date
+  d'opération (en 25/26 : rien après le 31/08 ; en 26/27 : rien avant le 01/09).
+- Une création datée hors de l'exercice du contexte est **refusée en silence**
+  (302 ailleurs que sur la fiche, cf. `createEcriture`).
+
+Piège pour la réconciliation : les ids d'écriture CW forment **une seule
+séquence** pour tous les exercices. Pendant la clôture (septembre), on saisit
+l'ancien ET le nouveau exercice, donc leurs ids s'entrelacent. Une plage
+`[min(cwId), max(cwId)]` du snapshot contient alors des écritures de l'autre
+exercice, jamais listées → faussement `supprimee_cw`. `reconcile` borne donc
+la détection des suppressions aux **dates de l'exercice couvert par le
+snapshot** en plus de la plage d'ids. Ne jamais revenir à un critère id seul.
+
 ### Sous-lignes DSP2 : montants en VALEUR ABSOLUE, le signe est sur le parent
 
 Le détail DSP2 d'une ligne bancaire (« PAIEMENT C. PROC … », un paiement carte
