@@ -7,27 +7,27 @@ import {
 } from '../exercices-actifs';
 
 const LISTE: ExerciceCw[] = [
-  { cwId: 34, libelle: 'Sept 2026 - Aout 2027' },
-  { cwId: 33, libelle: 'Sept 2025 - Aout 2026' },
+  { cwId: 34, libelle: 'Sept 2026 - Août 2027' },
+  { cwId: 33, libelle: 'Sept 2025 - Août 2026' },
   { cwId: 32, libelle: 'Sept 2024 - Aout 2025' },
 ];
 
 describe('codeFromLibelle', () => {
-  it('lit les deux annees du libelle CW', () => {
-    expect(codeFromLibelle('Sept 2025 - Aout 2026')).toBe('2025-2026');
+  it('lit les deux années du libellé CW', () => {
+    expect(codeFromLibelle('Sept 2025 - Août 2026')).toBe('2025-2026');
   });
 
-  it('tolere la casse et les accents absents (libelles anciens)', () => {
+  it('tolère la casse et les accents absents (libellés anciens)', () => {
     expect(codeFromLibelle('sept 2016 - aout 2017')).toBe('2016-2017');
   });
 
-  it('rend null sur un libelle inattendu', () => {
+  it('rend null sur un libellé inattendu', () => {
     expect(codeFromLibelle('Exercice en cours')).toBeNull();
   });
 });
 
 describe('exercicesActifs', () => {
-  it('le 01/09 : le nouvel exercice et le precedent, le plus recent dabord', () => {
+  it('le 01/09 : le nouvel exercice et le précédent, le plus récent d\'abord', () => {
     const { actifs, avertissement } = exercicesActifs({
       exercicesCw: LISTE,
       now: new Date('2026-09-01T10:00:00Z'),
@@ -38,7 +38,7 @@ describe('exercicesActifs', () => {
     expect(avertissement).toBeNull();
   });
 
-  it('le 31/08 : lexercice en cours est encore celui qui se termine', () => {
+  it('le 31/08 : l\'exercice en cours est encore celui qui se termine', () => {
     const { actifs } = exercicesActifs({
       exercicesCw: LISTE,
       now: new Date('2026-08-31T10:00:00Z'),
@@ -47,7 +47,7 @@ describe('exercicesActifs', () => {
     expect(actifs.map((e) => e.code)).toEqual(['2025-2026', '2024-2025']);
   });
 
-  it('exercice precedent declare clos -> un seul actif', () => {
+  it('exercice précédent déclaré clos → un seul actif', () => {
     const { actifs } = exercicesActifs({
       exercicesCw: LISTE,
       now: new Date('2026-09-15T10:00:00Z'),
@@ -56,9 +56,9 @@ describe('exercicesActifs', () => {
     expect(actifs.map((e) => e.code)).toEqual(['2026-2027']);
   });
 
-  it('nouvel exercice pas encore cree dans CW -> lancien seul, avec avertissement', () => {
+  it('nouvel exercice pas encore créé dans CW → l\'ancien seul, avec avertissement', () => {
     const { actifs, avertissement } = exercicesActifs({
-      exercicesCw: [{ cwId: 33, libelle: 'Sept 2025 - Aout 2026' }],
+      exercicesCw: [{ cwId: 33, libelle: 'Sept 2025 - Août 2026' }],
       now: new Date('2026-09-15T10:00:00Z'),
       dernierExerciceClos: null,
     });
@@ -74,11 +74,11 @@ describe('exercicePourDate', () => {
     dernierExerciceClos: null,
   });
 
-  it('une depense du 24/08/2026 appartient a 2025-2026', () => {
+  it('une dépense du 24/08/2026 appartient à 2025-2026', () => {
     expect(exercicePourDate(actifs, '2026-08-24')?.cwId).toBe(33);
   });
 
-  it('une depense du 05/09/2026 appartient a 2026-2027', () => {
+  it('une dépense du 05/09/2026 appartient à 2026-2027', () => {
     expect(exercicePourDate(actifs, '2026-09-05')?.cwId).toBe(34);
   });
 

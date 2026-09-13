@@ -2,18 +2,18 @@
 //
 // L'exercice court du 01/09 au 31/08 et, dans Comptaweb, c'est le contexte de
 // la session — pas un filtre (cf. ADR-039). Pendant la clôture (septembre →
-// declaration de cloture), deux exercices vivent en parallele : les depenses
-// de camp d'aout se saisissent encore sur l'ancien pendant que la rentree
+// déclaration de clôture), deux exercices vivent en parallèle : les dépenses
+// de camp d'août se saisissent encore sur l'ancien pendant que la rentrée
 // alimente le nouveau.
 import { currentExercice, exerciceBounds } from './overview';
 
-/** Une option du select de `/exercice?m=1` cote Comptaweb. */
+/** Une option du select de `/exercice?m=1` côté Comptaweb. */
 export interface ExerciceCw {
   cwId: number;
   libelle: string;
 }
 
-/** Un exercice actif, pret a etre route vers sa connexion CW. */
+/** Un exercice actif, prêt à être routé vers sa connexion CW. */
 export interface ExerciceActif {
   code: string; // '2025-2026'
   cwId: number;
@@ -21,7 +21,7 @@ export interface ExerciceActif {
   fin: string; // ISO '2026-08-31'
 }
 
-/** « Sept 2025 - Aout 2026 » → '2025-2026'. Null si le libelle est inattendu. */
+/** « Sept 2025 - Août 2026 » → '2025-2026'. Null si le libellé est inattendu. */
 export function codeFromLibelle(libelle: string): string | null {
   const m = libelle.match(/(\d{4})\D+(\d{4})/);
   if (!m) return null;
@@ -40,8 +40,8 @@ function codePrecedent(code: string): string {
 
 /**
  * Exercices sur lesquels Baloo doit travailler : celui de la date du jour, plus
- * le precedent TANT QU'IL N'EST PAS declare clos (reglage groupe
- * `dernier_exercice_clos`). Le plus recent d'abord — c'est l'ordre de priorite
+ * le précédent TANT QU'IL N'EST PAS déclaré clos (réglage groupe
+ * `dernier_exercice_clos`). Le plus récent d'abord — c'est l'ordre de priorité
  * de la sync.
  */
 export function exercicesActifs(input: {
@@ -69,7 +69,7 @@ export function exercicesActifs(input: {
     avertissement = `L'exercice ${codeCourant} n'existe pas encore dans Comptaweb.`;
   }
 
-  // Comparaison de chaines suffisante : 'YYYY-YYYY' s'ordonne comme les annees.
+  // Comparaison de chaînes suffisante : 'YYYY-YYYY' s'ordonne comme les années.
   const ancienClos = clos !== null && clos >= codeAncien;
   const idAncien = parCode.get(codeAncien);
   if (!ancienClos && idAncien !== undefined) {
@@ -79,7 +79,7 @@ export function exercicesActifs(input: {
   return { actifs, avertissement };
 }
 
-/** L'exercice actif auquel appartient une date ISO, ou null (hors perimetre). */
+/** L'exercice actif auquel appartient une date ISO, ou null (hors périmètre). */
 export function exercicePourDate(actifs: ExerciceActif[], dateIso: string): ExerciceActif | null {
   return actifs.find((e) => dateIso >= e.debut && dateIso <= e.fin) ?? null;
 }
