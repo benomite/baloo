@@ -17,6 +17,7 @@ import { computeGroupReadiness, computeReadiness } from '@/lib/sync-readiness';
 import { ValiderCwButton } from './valider-cw-button';
 import { buildEcritureGroups, groupKey, isMultiCategoryRow, type Group, type GroupKind, type Item } from './ecriture-groups';
 import type { Ecriture, Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
+import { abregeExercice, exerciceCodeForDate } from '@/lib/services/exercices-affichage';
 
 interface Props {
   ecritures: Ecriture[];
@@ -38,6 +39,10 @@ interface Props {
   onValidate: (id: string) => void;
   // Admin (tresorier/RG) : débloque la relance justif dans le panneau.
   isAdmin?: boolean;
+  // Exercices couverts par le dernier cycle de sync (ADR-039). La pastille
+  // d'exercice n'apparaît sur les lignes qu'au-delà d'un seul : le reste de
+  // l'année, la date suffit et la répéter en code serait du bruit.
+  exercicesActifs?: string[];
 }
 
 const MOIS_COURTS = ['janv', 'févr', 'mars', 'avr', 'mai', 'juin', 'juil', 'août', 'sept', 'oct', 'nov', 'déc'];
@@ -81,8 +86,12 @@ const GROUP_STYLE: Record<GroupKind, { rail: string; headerBg: string; rowBg: st
   },
 };
 
-export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes, matchDepots, matchRembs, rejectedMatchKeys, topCategoryIds, refreshRow, validatingIds, onValidate, isAdmin = false }: Props) {
+export function EcrituresTable({ ecritures, categories, unites, modesPaiement, activites, cartes, matchDepots, matchRembs, rejectedMatchKeys, topCategoryIds, refreshRow, validatingIds, onValidate, isAdmin = false, exercicesActifs = [] }: Props) {
   const rejectedMatchSet = useMemo(() => new Set(rejectedMatchKeys), [rejectedMatchKeys]);
+  // Période de clôture : deux exercices vivent en parallèle et la liste les
+  // mélange. On marque alors chaque ligne de son exercice ; sinon, rien.
+  const montrerExercice = exercicesActifs.length > 1;
+  const pastilleExercice = (dateIso: string) => abregeExercice(exerciceCodeForDate(dateIso));
   // Ouverture du panneau d'édition = état CLIENT pur (pas de navigation
   // `?detail` : elle relançait toute la page → lent, et `useSearchParams`
   // ne se mettait à jour qu'après le serveur, d'où le « refermer » cassé).
@@ -295,6 +304,11 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                     <div className="shrink-0 w-10 text-center leading-none pt-0.5">
                       <div className="text-[15px] font-semibold tabular-nums text-fg">{head.date_ecriture.slice(8, 10)}</div>
                       <div className="text-[9.5px] uppercase tracking-wide text-fg-subtle">{moisCourt(head.date_ecriture)}</div>
+                      {montrerExercice && (
+                        <div className="mt-0.5 text-[9px] tabular-nums text-fg-subtle/75" title={`Exercice ${exerciceCodeForDate(head.date_ecriture)}`}>
+                          {pastilleExercice(head.date_ecriture)}
+                        </div>
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       {/* Titre = titre du groupe (lecture seule ; l'édition du
@@ -469,6 +483,11 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                   <div className="shrink-0 w-10 text-center leading-none pt-0.5">
                     <div className="text-[15px] font-semibold tabular-nums text-fg">{e.date_ecriture.slice(8, 10)}</div>
                     <div className="text-[9.5px] uppercase tracking-wide text-fg-subtle">{moisCourt(e.date_ecriture)}</div>
+                    {montrerExercice && (
+                      <div className="mt-0.5 text-[9px] tabular-nums text-fg-subtle/75" title={`Exercice ${exerciceCodeForDate(e.date_ecriture)}`}>
+                        {pastilleExercice(e.date_ecriture)}
+                      </div>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     {/* Titre. Sur un brouillon (editable), il est éditable

@@ -33,6 +33,12 @@ export interface SyncRunRow {
   error_message: string | null;
   duration_ms: number | null;
   remaining: number | null;
+  /**
+   * Exercices couverts par le cycle, tels que stockés : codes joints par des
+   * virgules (« 2026-2027,2025-2026 »), ou null pour un run antérieur à
+   * ADR-039. `getSyncStatus` renvoie la ligne brute, le découpage est ici.
+   */
+  exercices: string | null;
 }
 
 export interface SyncStatusPayload {

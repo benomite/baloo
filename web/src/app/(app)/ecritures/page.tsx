@@ -14,6 +14,7 @@ import { ScanDraftsButton } from '@/components/ecritures/scan-drafts-button';
 import { FullResyncButton } from '@/components/ecritures/full-resync-button';
 import { SyncStatusButton } from '@/components/sync/sync-status-button';
 import { ArbitrageBanner } from '@/components/ecritures/arbitrage-banner';
+import { ExercicesBanner } from '@/components/ecritures/exercices-banner';
 import { listSupprimeeCw, listAgregesRemplaces, listLinkSuggestions } from '@/lib/queries/sync-arbitrage';
 import { EcrituresInfiniteList } from '@/components/ecritures/ecritures-infinite-list';
 import { PinnedEcriturePanel } from '@/components/ecritures/pinned-ecriture-panel';
@@ -21,6 +22,9 @@ import { EcrituresSection } from '@/components/ecritures/ecritures-section';
 import { getCurrentContext } from '@/lib/context';
 import { requireComptaAccess } from '@/lib/auth/access';
 import { getEcrituresHeaderTotals, currentExercice } from '@/lib/services/overview';
+import { getSyncStatus } from '@/lib/services/sync-cycle';
+import { getGroupe } from '@/lib/services/groupes';
+import { getDb } from '@/lib/db';
 import { EcrituresFinancialHeader } from '@/components/ecritures/ecritures-financial-header';
 
 // Taille de page du chargement progressif (infinite scroll). La première
@@ -64,6 +68,8 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     rawMatchDepots,
     rawMatchRembs,
     rawRejectedKeys,
+    syncStatus,
+    groupe,
   ] = await Promise.all([
     listEcritures({ ...filters, bucket: 'a_traiter' }),
     listEcritures({ ...filters, bucket: 'bouclees' }),
@@ -80,7 +86,15 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
     canLink ? listDepots({ groupId: ctx.groupId }, { statut: 'a_traiter' }) : Promise.resolve([]),
     canLink ? listAllAttachableRemboursements({ groupId: ctx.groupId }, { unlinkedOnly: true }) : Promise.resolve([]),
     canLink ? loadRejectedPairKeys(ctx.groupId) : Promise.resolve(new Set<string>()),
+    // Exercices couverts par le dernier cycle + réglage de clôture : de quoi
+    // signaler la période à deux exercices sans appeler Comptaweb (ADR-039).
+    getSyncStatus(getDb(), ctx.groupId),
+    getGroupe({ groupId: ctx.groupId }),
   ]);
+  const exercicesCouverts = syncStatus.last_run?.exercices ?? null;
+  const exercicesActifs = exercicesCouverts
+    ? exercicesCouverts.split(',').map((c) => c.trim()).filter(Boolean)
+    : [];
 
   const matchDepots: MatchDepot[] = rawMatchDepots.map((d) => ({
     id: d.id,
@@ -165,6 +179,12 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
         </TabLink>
       </div>
 
+      <ExercicesBanner
+        exercices={exercicesCouverts}
+        dernierExerciceClos={groupe?.dernier_exercice_clos ?? null}
+        canDeclarer={canLink}
+      />
+
       <ArbitrageBanner supprimees={supprimeesCw} agregesRemplaces={agregesRemplaces} suggestions={linkSuggestions} />
 
       {/* `error` est un message ponctuel, pas un filtre : on l'exclut pour
@@ -201,6 +221,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
           rejectedMatchKeys={rejectedMatchKeys}
           topCategoryIds={topCategoryIds}
           isAdmin={canLink}
+          exercicesActifs={exercicesActifs}
         />
       </EcrituresSection>
 
@@ -221,6 +242,7 @@ export default async function EcrituresPage({ searchParams }: { searchParams: Pr
           rejectedMatchKeys={rejectedMatchKeys}
           topCategoryIds={topCategoryIds}
           isAdmin={canLink}
+          exercicesActifs={exercicesActifs}
         />
       </EcrituresSection>
 

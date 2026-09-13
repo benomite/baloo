@@ -24,6 +24,9 @@ interface Props {
   rejectedMatchKeys: string[];
   topCategoryIds: string[];
   isAdmin?: boolean;
+  /** Codes des exercices couverts par le dernier cycle (cf. ADR-039). La
+   *  pastille d'exercice n'apparaît sur les lignes qu'au-delà d'un seul. */
+  exercicesActifs?: string[];
 }
 
 /**
@@ -48,6 +51,7 @@ export function EcrituresInfiniteList({
   rejectedMatchKeys,
   topCategoryIds,
   isAdmin,
+  exercicesActifs,
 }: Props) {
   const [rows, setRows] = useState<Ecriture[]>(initialEcritures);
   const [loading, setLoading] = useState(false);
@@ -125,6 +129,7 @@ export function EcrituresInfiniteList({
         validatingIds={validatingIds}
         onValidate={validate}
         isAdmin={isAdmin}
+        exercicesActifs={exercicesActifs}
       />
 
       <div ref={sentinelRef} className="h-px" aria-hidden />

@@ -15,6 +15,7 @@ import { RefreshCw, Check, AlertTriangle, CircleAlert, X, ExternalLink } from 'l
 import Link from 'next/link';
 import { useSyncStatus } from './use-sync-status';
 import { describeSyncError, type SyncErrorInput } from './describe-sync-error';
+import { libelleExercicesCouverts } from '@/lib/services/exercices-affichage';
 
 function relativeFr(iso: string | null | undefined): string {
   if (!iso) return 'jamais';
@@ -58,6 +59,12 @@ export function SyncStatusButton({
   else if (lastFailed) errorInput = { status: 'failed', errorMessage: lastRun?.error_message ?? null };
   else if (interrupted) errorInput = { status: 'running', errorMessage: null };
 
+  // Exercices couverts par le dernier cycle. Stockés joints par des virgules
+  // (colonne `sync_runs.exercices`), null pour un run antérieur à ADR-039.
+  const exercicesLabel = libelleExercicesCouverts(
+    lastRun?.exercices ? lastRun.exercices.split(',').map((c) => c.trim()) : null,
+  );
+
   let label: string;
   let Icon = Check;
   let extraClasses = 'text-fg-muted';
@@ -79,7 +86,12 @@ export function SyncStatusButton({
     Icon = AlertTriangle;
     extraClasses = 'text-warning';
   } else if (lastFinishedAt) {
-    label = `Synced ${relativeFr(lastFinishedAt)}`;
+    // En période de clôture, deux exercices sont couverts : on le dit. Le reste
+    // de l'année il n'y en a qu'un, et `libelleExercicesCouverts` rend null —
+    // afficher « 26/27 » onze mois sur douze serait du bruit (ADR-039).
+    label = exercicesLabel
+      ? `Synced ${relativeFr(lastFinishedAt)} · ${exercicesLabel}`
+      : `Synced ${relativeFr(lastFinishedAt)}`;
     Icon = Check;
     extraClasses = 'text-fg-muted';
   } else {
