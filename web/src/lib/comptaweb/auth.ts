@@ -9,7 +9,7 @@ import { assurerExercice } from './exercices';
 import { resolveComptawebCredentials } from '../services/comptaweb-credentials';
 import type { ComptawebConfig } from './types';
 
-const DEFAULT_BASE_URL = 'https://sgdf.production.sirom.net';
+const DEFAULT_BASE_URL = 'https://comptaweb.sgdf.fr';
 
 export async function loadConfig(): Promise<ComptawebConfig> {
   const envBaseUrl = process.env.COMPTAWEB_BASE_URL ?? DEFAULT_BASE_URL;

@@ -22,4 +22,8 @@ describe('buildRedirectUri', () => {
   it('URL complète non encodée → telle quelle', () => {
     expect(buildRedirectUri('https://sgdf.production.sirom.net/')).toBe(EXPECTED);
   });
+
+  it('accepte le nouveau domaine tel quel', () => {
+    expect(buildRedirectUri('https://comptaweb.sgdf.fr/')).toBe('https://comptaweb.sgdf.fr/');
+  });
 });

@@ -4,7 +4,7 @@
 // renvoie une 500 sur certaines écritures (cf. AGENTS.md) — depuis l'affichage,
 // le bouton « modifier » de Comptaweb reste accessible.
 
-const COMPTAWEB_BASE_URL = 'https://sgdf.production.sirom.net';
+const COMPTAWEB_BASE_URL = 'https://comptaweb.sgdf.fr';
 
 export function comptawebEcritureUrl(comptawebEcritureId: number): string {
   return `${COMPTAWEB_BASE_URL}/recettedepense/${comptawebEcritureId}/afficher`;

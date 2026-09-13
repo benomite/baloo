@@ -167,7 +167,7 @@ export interface AutomatedLoginResult {
 export async function performAutomatedLogin(
   username: string,
   password: string,
-  opts: { baseUrl: string } = { baseUrl: 'https://sgdf.production.sirom.net' },
+  opts: { baseUrl: string } = { baseUrl: 'https://comptaweb.sgdf.fr' },
 ): Promise<AutomatedLoginResult> {
   if (!username || !password) {
     throw new Error("COMPTAWEB_USERNAME et COMPTAWEB_PASSWORD sont requis pour l'auth automatisée.");
