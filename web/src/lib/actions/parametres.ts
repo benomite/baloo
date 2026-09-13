@@ -29,3 +29,24 @@ export async function updateTauxKm(formData: FormData): Promise<void> {
   revalidatePath('/admin/parametres');
   redirect('/admin/parametres?saved=1');
 }
+
+// Déclare (ou rouvre) la clôture d'un exercice. Format attendu : '2025-2026'.
+// Vider le champ rouvre l'exercice — la déclaration est réversible.
+export async function updateExerciceClos(formData: FormData): Promise<void> {
+  const ctx = await getCurrentContext();
+  requireAdmin(ctx.role);
+
+  const raw = ((formData.get('dernier_exercice_clos') as string | null) ?? '').trim();
+  if (raw && !/^\d{4}-\d{4}$/.test(raw)) {
+    redirect('/admin/parametres?error=' + encodeURIComponent('Format attendu : 2025-2026.'));
+  }
+
+  try {
+    await updateGroupe({ groupId: ctx.groupId }, { dernier_exercice_clos: raw || null });
+  } catch (err) {
+    logError('parametres', 'MAJ exercice clos échouée', err);
+    redirect('/admin/parametres?error=' + encodeURIComponent('Échec de l’enregistrement.'));
+  }
+  revalidatePath('/admin/parametres');
+  redirect('/admin/parametres?saved=1');
+}

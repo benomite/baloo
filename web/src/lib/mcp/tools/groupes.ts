@@ -11,7 +11,7 @@ export function registerGroupeTools(server: McpServer, ctx: McpContext) {
 
   server.tool(
     'update_groupe',
-    'Met à jour les informations du groupe courant (nom, territoire, adresse, email, IBAN principal, taux kilométrique).',
+    'Met à jour les informations du groupe courant (nom, territoire, adresse, email, IBAN principal, taux kilométrique, dernier exercice clos).',
     {
       nom: z.string().optional(),
       territoire: z.string().nullable().optional(),
@@ -25,6 +25,14 @@ export function registerGroupeTools(server: McpServer, ctx: McpContext) {
         .optional()
         .describe(
           "Taux kilométrique en euros par km (ex: 0.354). Converti en millièmes d'euro en interne (même conversion que /admin/parametres).",
+        ),
+      dernier_exercice_clos: z
+        .string()
+        .regex(/^\d{4}-\d{4}$/)
+        .nullable()
+        .optional()
+        .describe(
+          "Dernier exercice comptable déclaré clos (ex: '2025-2026'). Baloo cesse alors d'y lire et d'y écrire. null rouvre l'exercice.",
         ),
     },
     async (params) => {

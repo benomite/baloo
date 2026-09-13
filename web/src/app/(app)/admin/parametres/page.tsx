@@ -7,7 +7,7 @@ import { PendingButton } from '@/components/shared/pending-button';
 import { getCurrentContext } from '@/lib/context';
 import { requireAdmin } from '@/lib/auth/access';
 import { getGroupe } from '@/lib/services/groupes';
-import { updateTauxKm } from '@/lib/actions/parametres';
+import { updateTauxKm, updateExerciceClos } from '@/lib/actions/parametres';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,13 +24,31 @@ export default async function ParametresPage({
   return (
     <div className="max-w-2xl mx-auto">
       <PageHeader title="Paramètres du groupe" subtitle="Réglages de la compta du groupe." />
-      {params.saved && <Alert variant="success" className="mb-6">Taux kilométrique enregistré.</Alert>}
+      {params.saved && <Alert variant="success" className="mb-6">Paramètres enregistrés.</Alert>}
       {params.error && <Alert variant="error" className="mb-6">{params.error}</Alert>}
       <Section title="Frais kilométriques" subtitle="Taux de remboursement au kilomètre (barème SGDF).">
         <form action={updateTauxKm} className="flex items-end gap-3">
           <Field label="Taux (€ / km)" htmlFor="taux_km" required>
             <Input id="taux_km" name="taux_km" required inputMode="decimal" placeholder="0,354"
               defaultValue={tauxEuros} className="tabular-nums w-32" />
+          </Field>
+          <PendingButton pendingLabel="Enregistrement…">Enregistrer</PendingButton>
+        </form>
+      </Section>
+      <Section
+        title="Exercice comptable"
+        subtitle="Tant qu'un exercice n'est pas déclaré clos, Baloo continue d'y lire et d'y écrire."
+      >
+        <form action={updateExerciceClos} className="flex items-end gap-3">
+          <Field label="Dernier exercice clos" htmlFor="dernier_exercice_clos">
+            <Input
+              id="dernier_exercice_clos"
+              name="dernier_exercice_clos"
+              inputMode="text"
+              placeholder="2025-2026"
+              defaultValue={groupe?.dernier_exercice_clos ?? ''}
+              className="tabular-nums w-36"
+            />
           </Field>
           <PendingButton pendingLabel="Enregistrement…">Enregistrer</PendingButton>
         </form>

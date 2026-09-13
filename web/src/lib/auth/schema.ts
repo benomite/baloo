@@ -60,6 +60,10 @@ export async function migrateKmColumns(db: DbWrapper): Promise<void> {
     await db.exec('ALTER TABLE groupes ADD COLUMN taux_km_millicents INTEGER DEFAULT 354');
     await db.exec('UPDATE groupes SET taux_km_millicents = 354 WHERE taux_km_millicents IS NULL');
   }
+  if (!groupeCols.some((c) => c.name === 'dernier_exercice_clos')) {
+    // Nullable, sans backfill : aucun exercice n'est déclaré clos au départ.
+    await db.exec('ALTER TABLE groupes ADD COLUMN dernier_exercice_clos TEXT');
+  }
 }
 
 // Signatures rendues caduques par une édition du document (spec 2026-08-17).
