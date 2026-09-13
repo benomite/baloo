@@ -1,5 +1,9 @@
 {
   "mcpServers": {
+    "tutos-sgdf": {
+      "type": "http",
+      "url": "https://tutos.sgdf.fr/guides-and-tutos/~gitbook/mcp"
+    },
     "airtable": {
       "type": "http",
       "url": "https://mcp.airtable.com/mcp",
