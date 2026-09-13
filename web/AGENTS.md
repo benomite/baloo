@@ -372,6 +372,14 @@ Vu le bug : 2026-07-02 (paiement C. PROC dont les 6 sous-lignes remontaient en
 recette). Fix à la **source** (parsing) → répare d'un coup les drafts,
 `ecritures-from-bancaire`, l'affichage `rapprochement/page.tsx` et le MCP.
 
+**Mais le signe du parent n'est qu'un défaut** : un paiement C. PROC débiteur
+peut regrouper un **remboursement commerçant**. Seul le total parent le trahit
+(somme des sous-lignes ≠ parent). `signerSousLignes` inverse alors le jeu de
+sous-lignes qui équilibre **exactement** le parent, s'il est **unique** ; un
+écart sans combinaison exacte (erreur de relevé) ou ambigu garde le signe du
+parent. Vu le bug : 2026-09-13, Getaround +9,23 € dans une ligne à -340,98 €
+(ligne 19182303), passé en dépense puis validé tel quel dans CW.
+
 ### Corriger des drafts déjà mal orientés : self-heal en place, pas de delete
 
 Un draft bancaire déjà créé à tort (ex. sous-ligne DSP2 en recette avant le fix

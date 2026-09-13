@@ -54,6 +54,54 @@ function parseSousLignes($: CheerioAPI, idLigne: number): SousLigneDsp2[] {
   return out;
 }
 
+const somme = (montants: number[]) => montants.reduce((s, m) => s + m, 0);
+
+// Au-delà, 2^n combinaisons deviennent coûteuses : on s'en tient au signe du parent.
+const MAX_SOUS_LIGNES_INVERSION = 16;
+
+/**
+ * Le détail DSP2 affiche les montants des sous-lignes en VALEUR ABSOLUE
+ * (« 47,94 »), le sens ne vit que sur la ligne parent (« -186,44 »). Par
+ * défaut chaque sous-ligne prend donc le signe du parent — sinon toutes les
+ * sous-lignes d'un paiement carte ressortent en recette.
+ *
+ * Mais un « PAIEMENT C. PROC » débiteur peut regrouper un REMBOURSEMENT
+ * commerçant (Getaround 9,23 € dans -340,98 €). Seul le total parent le
+ * trahit : la somme des sous-lignes ne retombe pas dessus. On inverse alors le
+ * jeu de sous-lignes qui équilibre EXACTEMENT le parent, s'il est unique. Un
+ * écart sans combinaison exacte (erreur de relevé de quelques centimes) ou
+ * ambigu reste un arbitrage manuel : on garde le signe du parent.
+ */
+function signerSousLignes(parent: number, sousLignes: SousLigneDsp2[]): SousLigneDsp2[] {
+  if (sousLignes.length === 0) return sousLignes;
+
+  // Si CW signe lui-même le détail et que ça tombe juste, on le croit.
+  const brut = sousLignes.map((sl) => sl.montantCentimes);
+  if (brut.some((m) => m < 0) && somme(brut) === parent) return sousLignes;
+
+  const sign = parent < 0 ? -1 : 1;
+  const absolus = brut.map(Math.abs);
+  const signes: number[] = absolus.map(() => sign);
+  const ecart = sign * somme(absolus) - parent;
+
+  if (ecart !== 0 && sousLignes.length <= MAX_SOUS_LIGNES_INVERSION) {
+    // Inverser une sous-ligne déplace la somme de 2×|montant| vers le parent.
+    const cible = Math.abs(ecart);
+    const solutions: number[] = [];
+    for (let masque = 1; masque < 1 << absolus.length; masque++) {
+      let total = 0;
+      for (let i = 0; i < absolus.length; i++) if (masque & (1 << i)) total += 2 * absolus[i];
+      if (total === cible) solutions.push(masque);
+      if (solutions.length > 1) break;
+    }
+    if (solutions.length === 1) {
+      for (let i = 0; i < absolus.length; i++) if (solutions[0] & (1 << i)) signes[i] = -sign;
+    }
+  }
+
+  return sousLignes.map((sl, i) => ({ ...sl, montantCentimes: signes[i] * absolus[i] }));
+}
+
 function parseEcritureBancaire($: CheerioAPI, tr: AnyNode): EcritureBancaireNonRapprochee | null {
   const checkbox = $(tr).find('input[name^="releve_a_rapprocher["]').first();
   if (!checkbox.length) return null;
@@ -69,17 +117,8 @@ function parseEcritureBancaire($: CheerioAPI, tr: AnyNode): EcritureBancaireNonR
   intituleClone.find('table, button, a').remove();
   const intitule = intituleClone.text().replace(/\s+/g, ' ').trim();
 
-  // Le détail DSP2 affiche les montants des sous-lignes en VALEUR ABSOLUE
-  // (ex. « 47,94 »), alors que le sens (dépense/recette) ne vit que sur la
-  // ligne parent (« -186,44 »). On reporte donc le signe du parent sur chaque
-  // sous-ligne pour préserver l'invariant « montantCentimes est signé » — sinon
-  // toutes les sous-lignes d'un paiement carte ressortent en recette à tort.
   const montantCentimes = parseMontantFrFlexible(montantText);
-  const sign = montantCentimes < 0 ? -1 : 1;
-  const sousLignes = parseSousLignes($, id).map((sl) => ({
-    ...sl,
-    montantCentimes: sign * Math.abs(sl.montantCentimes),
-  }));
+  const sousLignes = signerSousLignes(montantCentimes, parseSousLignes($, id));
 
   return {
     id,
