@@ -1,5 +1,7 @@
 export { loadConfig, withAutoReLogin } from './auth';
 export { fetchHtml, ComptawebSessionExpiredError } from './http';
+export { fetchExercices, parseExercicesHtml, assurerExercice } from './exercices';
+export type { PageExercices, ExercicesDeps } from './exercices';
 export { listRapprochementBancaire, parseRapprochementHtml } from './ecritures-bancaires';
 export {
   scrapeListeEcritures,
