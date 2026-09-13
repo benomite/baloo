@@ -17,9 +17,15 @@ vi.mock('../../db', async (importOriginal) => {
 vi.mock('../../comptaweb/env-loader', () => ({ ensureComptawebEnv: () => {} }));
 vi.mock('../../comptaweb', () => ({
   withAutoReLogin: async (cb: (cfg: unknown) => unknown) => cb({}),
+  withComptaweb: async (_cwId: number, cb: (cfg: unknown) => unknown) => cb({}),
   createEcriture: (...a: unknown[]) => createEcriture(...a),
   listRapprochementBancaire: vi.fn(),
   ComptawebSessionExpiredError: class extends Error {},
+}));
+// Résolution d'exercice hors périmètre de ce test (multi-ventilation) :
+// stubbée sur un exercice fixe pour éviter tout appel réseau/BDD réel.
+vi.mock('../exercice-pour-ecriture', () => ({
+  resoudreExercicePourDate: async () => ({ code: '2025-2026', cwId: 1, debut: '2025-09-01', fin: '2026-08-31' }),
 }));
 vi.mock('../../ids', () => ({
   currentTimestamp: () => '2026-07-13T10:00:00Z',

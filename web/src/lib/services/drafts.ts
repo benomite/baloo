@@ -4,10 +4,12 @@ import { logError } from '../log';
 import { ensureComptawebEnv } from '../comptaweb/env-loader';
 import {
   withAutoReLogin,
+  withComptaweb,
   listRapprochementBancaire,
   createEcriture,
   ComptawebSessionExpiredError,
 } from '../comptaweb';
+import { resoudreExercicePourDate } from './exercice-pour-ecriture';
 import type {
   EcritureBancaireNonRapprochee,
   EcritureComptableNonRapprochee,
@@ -639,7 +641,11 @@ export async function syncDraftToComptaweb(
       ventilations,
     };
 
-    const result = await withAutoReLogin((cfg) => createEcriture(cfg, input, { dryRun }));
+    // Route vers la connexion CW de l'exercice de LA DATE de l'écriture (pas
+    // celui du jour) : ADR-039, cas 2026-09-11. Refuse avant tout appel
+    // réseau si cet exercice est clos ou absent de Comptaweb.
+    const exercice = await resoudreExercicePourDate(groupId, ecr.date_ecriture);
+    const result = await withComptaweb(exercice.cwId, (cfg) => createEcriture(cfg, input, { dryRun }));
     if (result.dryRun) {
       return { ok: missing.length === 0, message: missing.length ? `Preview : il manque ${missing.join(', ')}.` : 'Preview OK, prêt à synchroniser.', dryRun: true, missingFields: missing };
     }

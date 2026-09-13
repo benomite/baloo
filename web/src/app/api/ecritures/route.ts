@@ -15,8 +15,9 @@ import { ECRITURE_STATUSES } from '@/lib/types';
 import { jsonError, parseJsonBody, requireApiContext } from '@/lib/api/route-helpers';
 import { resolveStatusFilter } from './status-filter';
 import { ensureComptawebEnv } from '@/lib/comptaweb/env-loader';
-import { loadConfig } from '@/lib/comptaweb/auth';
+import { loadConfigPourExercice } from '@/lib/comptaweb/auth';
 import { defaultCwScraper } from '@/lib/services/ecritures-create-cw-adapter';
+import { resoudreExercicePourDate } from '@/lib/services/exercice-pour-ecriture';
 
 ensureComptawebEnv();
 
@@ -132,7 +133,13 @@ export async function POST(request: Request) {
       // scraper bas niveau `createEcriture`. Si un mapping CW manque,
       // l'adapter throw → caller voit un 502 avec un message explicite.
       cwScraper: defaultCwScraper,
-      cwConfigLoader: loadConfig,
+      // Résout l'exercice CW de la date de l'écriture (pas celui du jour) :
+      // ADR-039, cas 2026-09-11 — évite le refus silencieux de Comptaweb
+      // (redirection) pour une date hors de l'exercice de la session.
+      cwConfigLoader: async () => {
+        const exercice = await resoudreExercicePourDate(groupId, payload.date_ecriture);
+        return loadConfigPourExercice(exercice.cwId);
+      },
     });
     return Response.json({ ok: true, ecriture: result }, { status: 201 });
   } catch (err) {
