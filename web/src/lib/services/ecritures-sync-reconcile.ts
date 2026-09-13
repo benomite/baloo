@@ -6,7 +6,8 @@
 //                  → CW écrase les champs comptables (needsDetail si la
 //                    signature liste a changé → relire la page détail).
 //   - promotions : drafts locaux reliés à une ligne CW par match contenu
-//                  CONFIANT (montant+type+date±tol, unique des deux côtés).
+//                  CONFIANT (montant+type+date±tol, unique des deux côtés),
+//                  borné à l'exercice du snapshot — comme les deletions.
 //   - deletions  : écritures reliées, dans la plage couverte (ids ET exercice
 //                  du snapshot), absentes du snapshot → supprimee_cw.
 //   - imports    : lignes CW jamais matchées → créer en mirror.
@@ -342,9 +343,21 @@ export function reconcile(
   const drafts = baloo.filter((r) => r.status === 'draft' && r.comptawebEcritureId == null);
   const freeCw = snapshot.filter((c) => !consumedCwIds.has(c.cwId));
 
+  // Le match de contenu ne franchit PAS la frontière d'exercice. La tolérance
+  // de date est absolue (`daysBetween`), donc un brouillon du 30/08 et une
+  // ligne CW du 02/09, de même montant et même type, s'apparieraient — alors
+  // qu'ils vivent dans deux exercices différents. Depuis qu'un cycle lit les
+  // deux exercices actifs (ADR-039), ce cas se présente réellement, et
+  // précisément pendant la clôture (fenêtre 29/08–03/09). Un faux
+  // `comptaweb_ecriture_id` posé là se défait mal.
+  // On réutilise les bornes des suppressions (`minDate` / `maxDate`) : la
+  // tolérance reste pleinement active À L'INTÉRIEUR de l'exercice lu, bornes
+  // comprises.
   const matchesCriteria = (d: BalooRow, c: CwSnapshotRow): boolean =>
     d.amountCents === c.montantCents &&
     d.type === c.type &&
+    d.dateEcriture >= minDate &&
+    d.dateEcriture <= maxDate &&
     daysBetween(d.dateEcriture, c.date) <= opts.dateToleranceDays;
 
   for (const d of drafts) {

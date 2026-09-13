@@ -67,6 +67,50 @@ describe('reconcile — clé stable', () => {
   });
 });
 
+// Bornes d'exercice sur le match de CONTENU (ADR-039), symétriques de celles
+// qui protègent déjà les suppressions. Depuis que le cycle lit DEUX exercices,
+// les brouillons d'août sont confrontés au snapshot de septembre ; or la
+// tolérance de date est ABSOLUE (`daysBetween`). Un brouillon du 30/08 et une
+// ligne CW du 02/09, de même montant et même type, pouvaient donc se promouvoir
+// mutuellement — un faux `comptaweb_ecriture_id`, qui se défait mal. C'est
+// exactement la fenêtre 29/08–03/09, soit la clôture que ce chantier vise.
+describe('reconcile — le match de contenu ne franchit pas la frontière d’exercice', () => {
+  it('un brouillon du 30/08 n’est pas promu par un snapshot de septembre', () => {
+    const plan = reconcile(
+      [cw({ cwId: 900, date: '2026-09-02', montantCents: 4200 })],
+      [baloo({ id: 'DRAFT-AOUT', status: 'draft', dateEcriture: '2026-08-30', amountCents: 4200 })],
+      OPTS,
+    );
+    expect(plan.promotions).toHaveLength(0);
+    expect(plan.suggestions).toHaveLength(0);
+    // La ligne CW n'est appariée par personne → elle part en import, comme
+    // n'importe quelle ligne libre.
+    expect(plan.imports.map((c) => c.cwId)).toEqual([900]);
+  });
+
+  it('le symétrique : un brouillon du 02/09 n’est pas promu par un snapshot d’août', () => {
+    const plan = reconcile(
+      [cw({ cwId: 800, date: '2026-08-31', montantCents: 4200 })],
+      [baloo({ id: 'DRAFT-SEPT', status: 'draft', dateEcriture: '2026-09-02', amountCents: 4200 })],
+      OPTS,
+    );
+    expect(plan.promotions).toHaveLength(0);
+    expect(plan.suggestions).toHaveLength(0);
+    expect(plan.imports.map((c) => c.cwId)).toEqual([800]);
+  });
+
+  it('la tolérance de ±3 jours reste effective À L’INTÉRIEUR de l’exercice lu', () => {
+    const plan = reconcile(
+      [cw({ cwId: 901, date: '2026-09-04', montantCents: 4200 })],
+      [baloo({ id: 'DRAFT-SEPT', status: 'draft', dateEcriture: '2026-09-02', amountCents: 4200 })],
+      OPTS,
+    );
+    expect(plan.promotions).toHaveLength(1);
+    expect(plan.promotions[0].ecritureId).toBe('DRAFT-SEPT');
+    expect(plan.imports).toHaveLength(0);
+  });
+});
+
 describe('reconcile — suppressions', () => {
   it('déclare supprimée une écriture reliée dans la plage couverte', () => {
     const plan = reconcile(
