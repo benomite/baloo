@@ -140,6 +140,34 @@ describe('runSyncCycle — deux exercices', () => {
     expect(res.exercices).toEqual(['2026-2027']);
   });
 
+  it('scanne les lignes bancaires de CHAQUE exercice, dans la session de cet exercice', async () => {
+    // Le rapprochement bancaire est découpé par exercice (rien après le 31/08
+    // en contexte 25/26). Sans la session de l'exercice, les lignes de
+    // septembre restent invisibles et aucun brouillon n'est créé — le symptôme
+    // terrain du 2026-09-11.
+    const sessionsScannees: string[] = [];
+
+    const res = await runSyncCycle(db, 'g1', {
+      trigger: 'manual',
+      force: true,
+      exercices: [EX_2627, EX_2526],
+      loadConfigPourExercice: async (cwId) => ({ baseUrl: 'https://cw.test', cookie: `c-${cwId}` }),
+      scrapeListe: async () => ({ ecritures: [] }),
+      scanDrafts: async (_groupId, cfg) => {
+        sessionsScannees.push(cfg.cookie);
+        return { crees: 1, existants: 0, supprimes: 0 };
+      },
+      scrapeDetail: async () => ({ ventilations: [] }),
+      resolveActiviteId: async () => null,
+      resolveUniteId: async () => null,
+      resolveCategoryId: async () => null,
+    });
+
+    expect(sessionsScannees).toEqual(['c-34', 'c-33']);
+    expect(res.status).toBe('ok');
+    expect(res.new_drafts).toBe(2); // un brouillon par exercice
+  });
+
   it('le budget de lectures détail est partagé, pas doublé', async () => {
     let fetches = 0;
 

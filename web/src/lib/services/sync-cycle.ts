@@ -82,8 +82,8 @@ export interface SyncCycleOptions {
   scrapeListe?: (cfg: ComptawebConfig, scope: SyncScope) => Promise<ScrapeListeEcrituresResult>;
   /** Injection pour tests : scrape le rapprochement bancaire. */
   scrapeRapprochement?: (cfg: ComptawebConfig) => Promise<RapprochementBancaireData>;
-  /** Injection pour tests : scan drafts depuis lignes bancaires. */
-  scanDrafts?: (groupId: string) => Promise<ScanDraftsResult>;
+  /** Injection pour tests : scan drafts depuis les lignes bancaires de l'exercice. */
+  scanDrafts?: (groupId: string, config: ComptawebConfig) => Promise<ScanDraftsResult>;
   /** Injection pour tests : lit la page détail CW d'une écriture. */
   scrapeDetail?: (cwId: number) => Promise<EcritureDetail>;
   /** Injection pour tests : résout un nom d'activité CW → activite_id Baloo. */
@@ -749,8 +749,14 @@ async function syncUnExercice(
 ): Promise<CompteursExercice> {
   const scope: SyncScope = opts.scope ?? 'recent';
   const scrapeListe = opts.scrapeListe ?? defaultScrapeListe;
+  // Le rapprochement bancaire est découpé par exercice (rien après le 31/08 en
+  // contexte 25/26) : il doit être lu dans la session de CET exercice, sinon
+  // les lignes de septembre restent invisibles et aucun brouillon n'est créé
+  // (constat terrain 2026-09-11).
   const scanDrafts =
-    opts.scanDrafts ?? (async (gid: string) => scanDraftsFromComptaweb({ groupId: gid }));
+    opts.scanDrafts ??
+    ((gid: string, cfg: ComptawebConfig) =>
+      scanDraftsFromComptaweb({ groupId: gid }, undefined, { config: cfg }));
 
   const resolvers: Resolvers = {
     scrapeDetail: opts.scrapeDetail ?? ((cwId: number) => defaultScrapeDetail(config, cwId)),
@@ -761,7 +767,7 @@ async function syncUnExercice(
 
   // 3. Drafts depuis lignes bancaires non rapprochées (avant reconcile :
   //    les drafts créés ce cycle participent au match contenu).
-  const draftsResult = await scanDrafts(groupId);
+  const draftsResult = await scanDrafts(groupId, config);
   const newDrafts = draftsResult.crees;
   // Le scan avale ses erreurs pour ne pas faire tomber le cycle — mais un
   // scan muet est un scan qui ne crée plus de drafts : sans cette remontée,

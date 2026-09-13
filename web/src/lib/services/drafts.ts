@@ -14,6 +14,7 @@ import type {
   SousLigneDsp2,
   CreateEcritureInput,
 } from '../comptaweb';
+import type { ComptawebConfig } from '../comptaweb/types';
 import { planLineHeal, type ExistingLineDraft } from './drafts-line-reconcile';
 import { purgeRejetsPourEcriture } from './inbox-rejets';
 
@@ -220,12 +221,26 @@ export function findEcritureAnticipee(
   return match?.id ?? null;
 }
 
+export interface ScanDraftsDeps {
+  /**
+   * Session Comptaweb à utiliser. Côté CW l'exercice est le contexte de la
+   * SESSION : le rapprochement bancaire est donc découpé par exercice (rien
+   * après le 31/08 en contexte 25/26). La sync passe ici la session de
+   * l'exercice qu'elle balaie (ADR-039). Absente, on ouvre la session par
+   * défaut comme avant — comportement des appels manuels (`/api/drafts/scan`).
+   */
+  config?: ComptawebConfig;
+}
+
 export async function scanDraftsFromComptaweb(
   { groupId }: DraftsContext,
   db: DbWrapper = getDb(),
+  deps: ScanDraftsDeps = {},
 ): Promise<ScanDraftsResult> {
   try {
-    const data = await withAutoReLogin((cfg) => listRapprochementBancaire(cfg));
+    const data = deps.config
+      ? await listRapprochementBancaire(deps.config)
+      : await withAutoReLogin((cfg) => listRapprochementBancaire(cfg));
 
     // Jumeau déjà comptabilisé dans CW : même contenu exact (date+montant+type
     // +description, la description embarquant la réf de transaction unique →
