@@ -102,6 +102,7 @@ describe('sync MCP tools (Phase 2 Task 5)', () => {
       link_suggestions_created: 0,
       detail_fetches: 0,
       remaining: 0,
+      exercices: [],
       scope: 'recent',
       duration_ms: 0,
       error_message: 'CW down',

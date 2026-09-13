@@ -873,6 +873,7 @@ export async function ensureSyncRunsSchema(db: DbWrapper): Promise<void> {
       detail_fetches INTEGER NOT NULL DEFAULT 0,
       remaining INTEGER,
       scope TEXT,
+      exercices TEXT,
       error_message TEXT,
       duration_ms INTEGER,
       created_at TEXT NOT NULL
@@ -951,6 +952,12 @@ export async function ensureReconcileSchema(db: DbWrapper): Promise<void> {
     // volontairement (vieux runs = NULL = inconnu, PAS 0). Pas de backfill.
     if (!srHas('remaining')) {
       await db.exec('ALTER TABLE sync_runs ADD COLUMN remaining INTEGER');
+    }
+    // exercices : codes couverts par le run, séparés par des virgules
+    // (ex. '2026-2027,2025-2026'). Nullable, pas de backfill : les runs
+    // antérieurs à ADR-039 ne couvraient qu'un exercice, lequel est inconnu.
+    if (!srHas('exercices')) {
+      await db.exec('ALTER TABLE sync_runs ADD COLUMN exercices TEXT');
     }
   }
 

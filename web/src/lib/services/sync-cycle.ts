@@ -4,6 +4,10 @@
 // CW est la source de vérité. Un cycle aligne la liste Baloo sur CW :
 //   1. shouldSkip (throttle 15 min + verrou 60 s) — inchangé vs ADR-032
 //   2. INSERT sync_runs(running)
+//   2 bis. un tour par exercice ACTIF (ADR-039), chacun avec SA session CW :
+//      l'exercice est le contexte de la session Comptaweb, pas un filtre d'URL.
+//      Les étapes 3 à 7 ci-dessous se jouent donc une fois PAR exercice ; le
+//      budget de lectures détail, lui, est partagé (une seule lambda, 60 s).
 //   3. scanDrafts (drafts depuis lignes bancaires non rapprochées) — inchangé
 //   4. scrape liste (scope) → snapshot CW
 //   5. heal : backfill comptaweb_ecriture_id des écritures reliées au
@@ -22,7 +26,12 @@ import type { DbWrapper } from '../db';
 import { nextIdOn, currentTimestamp } from '../ids';
 import { logError } from '../log';
 import { mapWithConcurrency } from './concurrency';
-import { loadConfig as defaultLoadConfig } from '../comptaweb/auth';
+import {
+  loadConfig as defaultLoadConfig,
+  loadConfigPourExercice as defaultLoadConfigPourExercice,
+  withAutoReLogin,
+} from '../comptaweb/auth';
+import { fetchExercices } from '../comptaweb/exercices';
 import {
   scrapeListeEcritures as defaultScrapeListe,
   scrapeEcritureDetail as defaultScrapeDetail,
@@ -48,6 +57,8 @@ import {
 import { upsertSuggestion } from './cw-link-suggestions';
 import { importHorsResultatTransfers } from './hors-resultat-import';
 import { CATEGORIES_HORS_RESULTAT } from './overview';
+import { exercicesActifs, type ExerciceActif } from './exercices-actifs';
+import { getGroupe } from './groupes';
 
 // ============================================================================
 // Types publics
@@ -85,6 +96,10 @@ export interface SyncCycleOptions {
   now?: () => number;
   /** Injection pour tests : plafond de scrapeDetail par cycle. */
   maxDetailFetches?: number;
+  /** Injection pour tests : exercices à synchroniser. Sinon découverte via CW. */
+  exercices?: ExerciceActif[];
+  /** Injection pour tests : ouvre la session d'un exercice. */
+  loadConfigPourExercice?: (cwId: number) => Promise<ComptawebConfig>;
 }
 
 export interface SyncCycleResult {
@@ -100,6 +115,8 @@ export interface SyncCycleResult {
   link_suggestions_created: number;
   detail_fetches: number;
   remaining: number;
+  /** Codes des exercices effectivement synchronisés (ex. ['2026-2027','2025-2026']). */
+  exercices: string[];
   scope: SyncScope;
   duration_ms: number;
   error_message?: string;
@@ -124,6 +141,7 @@ export interface SyncRunRow {
   detail_fetches: number;
   remaining: number | null;
   scope: string | null;
+  exercices: string | null;
   error_message: string | null;
   duration_ms: number | null;
   created_at: string;
@@ -696,6 +714,306 @@ export async function resyncEcritureDetail(
   return { ok: true, updated: counts.updated, created: counts.created, orphaned: counts.orphaned };
 }
 
+/** Compteurs d'un tour de sync sur UN exercice. */
+interface CompteursExercice {
+  promoted: number;
+  newDrafts: number;
+  updatedMirror: number;
+  supprimeeCw: number;
+  imported: number;
+  suggestionsCreated: number;
+  detailFetches: number;
+  remaining: number;
+  warnings: string[];
+}
+
+/**
+ * Un tour de sync sur UN exercice, mené avec la session de CET exercice :
+ * côté Comptaweb l'exercice est le contexte de la session, pas un filtre
+ * d'URL (ADR-039). Tout ce qu'on lit ici — journal, lignes bancaires, détail —
+ * est donc découpé par cet exercice.
+ *
+ * Le budget de lectures détail est un paramètre parce qu'il est GLOBAL au
+ * cycle, jamais par exercice : la lambda Vercel a 60 s quel que soit le nombre
+ * d'exercices couverts. Ce que ce tour n'a pas lu ressort en `remaining` et
+ * sera drainé au cycle suivant.
+ */
+async function syncUnExercice(
+  db: DbWrapper,
+  groupId: string,
+  config: ComptawebConfig,
+  budgetDetail: number,
+  opts: SyncCycleOptions,
+  now: string,
+  syncRunId: string,
+): Promise<CompteursExercice> {
+  const scope: SyncScope = opts.scope ?? 'recent';
+  const scrapeListe = opts.scrapeListe ?? defaultScrapeListe;
+  const scanDrafts =
+    opts.scanDrafts ?? (async (gid: string) => scanDraftsFromComptaweb({ groupId: gid }));
+
+  const resolvers: Resolvers = {
+    scrapeDetail: opts.scrapeDetail ?? ((cwId: number) => defaultScrapeDetail(config, cwId)),
+    resolveActiviteId: opts.resolveActiviteId ?? defaultResolveActiviteId(db, groupId),
+    resolveUniteId: opts.resolveUniteId ?? defaultResolveUniteId(db, groupId),
+    resolveCategoryId: opts.resolveCategoryId ?? defaultResolveCategoryId(db),
+  };
+
+  // 3. Drafts depuis lignes bancaires non rapprochées (avant reconcile :
+  //    les drafts créés ce cycle participent au match contenu).
+  const draftsResult = await scanDrafts(groupId);
+  const newDrafts = draftsResult.crees;
+  // Le scan avale ses erreurs pour ne pas faire tomber le cycle — mais un
+  // scan muet est un scan qui ne crée plus de drafts : sans cette remontée,
+  // le sync_run affichait « ok / 0 nouveau draft » alors que le balayage
+  // était cassé (bug terrain 2026-09-05, FK sur un agrégat : plus aucune
+  // ligne bancaire éclatée en sous-lignes pendant des semaines, en silence).
+  const draftsWarnings: string[] = [];
+  if (draftsResult.erreur) {
+    draftsWarnings.push(`scan drafts : ${draftsResult.erreur}`);
+    logError('sync-cycle', 'scan_drafts_erreur', draftsResult.erreur, { groupId, syncRunId });
+  }
+  if (draftsResult.lignes_en_erreur) {
+    draftsWarnings.push(`${draftsResult.lignes_en_erreur} ligne(s) bancaire(s) non traitée(s)`);
+    logError('sync-cycle', 'scan_drafts_lignes_en_erreur', null, {
+      groupId,
+      syncRunId,
+      count: draftsResult.lignes_en_erreur,
+    });
+  }
+
+  // 4. Scrape liste → snapshot CW
+  const listeResult = await scrapeListe(config, scope);
+  const snapshot = listeResult.ecritures.map(toSnapshotRow);
+
+  // 5. Heal des écritures reliées au vieux format
+  await healComptawebIds(db, groupId, snapshot);
+
+  // 6. Charge l'état Baloo + reconcile (pur)
+  const balooRows = await loadBalooRows(db, groupId);
+  const plan = reconcile(snapshot, balooRows, { dateToleranceDays: DRAFT_DATE_TOLERANCE_DAYS });
+
+  let updatedMirror = 0;
+  let promoted = 0;
+  let supprimeeCw = 0;
+  let imported = 0;
+  let suggestionsCreated = 0;
+  let detailFetches = 0;
+
+  // Le traitement est au grain VENTILATION : pour chaque écriture CW à
+  // (re)traiter, on lit son détail et on aligne N écritures Baloo (une par
+  // ventilation). On collecte d'abord l'ensemble des cwId à traiter.
+  const snapByCwId = new Map<number, CwSnapshotRow>();
+  for (const row of snapshot) snapByCwId.set(row.cwId, row);
+
+  // Collecte priorisée des cwId nécessitant une lecture détail. L'ordre
+  // reflète la visibilité utilisateur : promotions (deviennent mirror),
+  // imports (nouvelles lignes), enrichissements, agrégats legacy. On
+  // tronque ensuite à K : le reste (remaining) est drainé au cycle suivant.
+  const detailQueue: number[] = [];
+  const enqueued = new Set<number>();
+  const enqueue = (cwId: number) => {
+    if (!enqueued.has(cwId)) {
+      enqueued.add(cwId);
+      detailQueue.push(cwId);
+    }
+  };
+
+  // 7a. Promotions (draft reconnu dans CW par match contenu) : la LIAISON
+  //     est posée dans tous les cas (draft→cwId correct). Seul le fetch
+  //     détail est plafonné → enqueue.
+  for (const p of plan.promotions) {
+    await db
+      .prepare(
+        `UPDATE ecritures SET comptaweb_ecriture_id = ?, status = 'mirror', comptaweb_synced = 1, updated_at = ? WHERE id = ?`,
+      )
+      .run(p.cw.cwId, now, p.ecritureId);
+    enqueue(p.cw.cwId);
+    promoted++;
+  }
+
+  // 7c. Imports : cwId sans écriture Baloo reliée → à traiter (absorbera
+  //     les écritures CSV non reliées, ou créera les ventilations).
+  //     Priorité 2 (avant les updates) : nouvelles lignes visibles pour
+  //     l'utilisateur, cf. spec priorité 2026-07-15.
+  for (const cw of plan.imports) enqueue(cw.cwId);
+
+  // 7b. Updates : seules les écritures à enrichir (signature changée ou
+  //     imputation vide) déclenchent un traitement de leur cwId.
+  for (const u of plan.updates) {
+    if (u.needsDetail) enqueue(u.cw.cwId);
+  }
+
+  // 7c-bis. Agrégats legacy : un cwId déjà relié+imputé (donc needsDetail
+  //   faux) mais dont des « ventilations détachées » (écritures non reliées
+  //   de même pièce, ou même date+type+intitulé) traînent encore. Sans ça,
+  //   un agrégat créé par l'ancienne sync écriture-grain ne serait jamais
+  //   résorbé (il a l'air complet). On force le traitement ventilation ;
+  //   une fois les ventilations reliées, plus de détachées → plus de
+  //   retraitement (convergence).
+  //   Les détachées sont chargées UNE fois et indexées en mémoire : la
+  //   comparaison de pièce doit passer par `normalizePieceKey` (casse +
+  //   accents, cf. loadVentCandidates), donc pas de filtre SQL par pièce —
+  //   et ça économise une requête par ligne du snapshot.
+  const detachees = await db
+    .prepare(
+      `SELECT numero_piece, date_ecriture, type, description FROM ecritures
+       WHERE group_id = ? AND comptaweb_ecriture_id IS NULL
+         AND status IN ('draft','pending_sync','mirror','divergent')`,
+    )
+    .all<{ numero_piece: string | null; date_ecriture: string; type: string; description: string }>(groupId);
+  const detacheesParPiece = new Set(
+    detachees.map((d) => normalizePieceKey(d.numero_piece)).filter((k) => k !== ''),
+  );
+  const detacheesParContenu = new Set(
+    detachees.map((d) => `${d.date_ecriture}|${d.type}|${d.description}`),
+  );
+  for (const row of snapshot) {
+    if (enqueued.has(row.cwId)) continue;
+    const pieceKey = normalizePieceKey(row.numeroPiece);
+    const loose = pieceKey
+      ? detacheesParPiece.has(pieceKey)
+      : detacheesParContenu.has(`${row.date}|${row.type}|${row.intitule}`);
+    if (loose) enqueue(row.cwId);
+  }
+
+  // Troncature au budget : les K premiers sont traités ce cycle, le reste
+  // devient `remaining` (drainé au prochain cycle, idempotent). Le budget est
+  // celui qui RESTE au cycle, pas un budget par exercice : ce que le tour
+  // précédent a consommé n'est plus disponible ici.
+  const toProcess = detailQueue.slice(0, budgetDetail);
+  const remaining = detailQueue.length - toProcess.length;
+
+  // 7d. Phase 1 — pré-fetch des détails en parallèle (pool borné). Le HTTP
+  // CW est le coût dominant ; on le parallélise, mais PAS les writes BDD.
+  // Cache : cwId → détail OK ; les échecs sont marqués et re-throwés en
+  // phase 2 (→ resolveVentilations les catch → écriture laissée intacte).
+  const detailCache = new Map<number, EcritureDetail>();
+  // Map (pas Set) : on garde la raison ORIGINALE de l'échec pour la
+  // re-throw en phase 2, sinon resolveVentilations logue un 2e message
+  // générique dans /admin/errors qui masque la vraie cause (cf. revue
+  // finale feat/sync-robuste).
+  const detailFailed = new Map<number, unknown>();
+  const settled = await mapWithConcurrency(
+    toProcess,
+    DETAIL_FETCH_CONCURRENCY,
+    (cwId) => resolvers.scrapeDetail(cwId),
+  );
+  settled.forEach((r, i) => {
+    const cwId = toProcess[i];
+    if (r.status === 'fulfilled') detailCache.set(cwId, r.value);
+    else {
+      detailFailed.set(cwId, r.reason);
+      logError('sync-cycle', 'scrapeEcritureDetail failed (pool)', r.reason, { cwId });
+    }
+  });
+  detailFetches = toProcess.length; // fetch réseau tentés ce cycle
+
+  // Resolvers de phase 2 : scrapeDetail lit le cache (aucun réseau ; un
+  // échec de phase 1 est re-throwé pour être neutralisé proprement).
+  const cachedResolvers: Resolvers = {
+    ...resolvers,
+    scrapeDetail: async (cwId: number) => {
+      if (detailFailed.has(cwId)) {
+        const reason = detailFailed.get(cwId);
+        throw reason instanceof Error ? reason : new Error(String(reason));
+      }
+      const d = detailCache.get(cwId);
+      if (d) return d;
+      return resolvers.scrapeDetail(cwId); // filet (ne devrait pas arriver)
+    },
+  };
+
+  // Phase 2 — application séquentielle (writes BDD non concurrents).
+  for (const cwId of toProcess) {
+    const row = snapByCwId.get(cwId);
+    if (!row) continue;
+    const counts = await processCwEcriture(db, groupId, metaFromSnapshot(row), cachedResolvers, now);
+    // detailFetched compté en phase 1 : ne pas ré-additionner counts.detailFetched.
+    updatedMirror += counts.updated;
+    imported += counts.created;
+    supprimeeCw += counts.orphaned;
+  }
+
+  // 7e. Deletions (cwId disparu de CW, dans la plage) → supprimee_cw.
+  for (const ecritureId of plan.deletions) {
+    await db
+      .prepare(`UPDATE ecritures SET status = 'supprimee_cw', updated_at = ? WHERE id = ?`)
+      .run(now, ecritureId);
+    supprimeeCw++;
+  }
+
+  // 7e. Suggestions de lien (match contenu ambigu).
+  for (const s of plan.suggestions) {
+    const created = await upsertSuggestion(db, {
+      groupId,
+      ecritureId: s.ecritureId,
+      cwEcritureId: s.cw.cwId,
+      cwNumeroPiece: s.cw.numeroPiece,
+      cwMontantCents: s.cw.montantCents,
+      cwDate: s.cw.date,
+      cwIntitule: s.cw.intitule,
+    });
+    if (created) suggestionsCreated++;
+  }
+
+  // 7f. Transferts inter-structures (hors résultat) : ces écritures CW sont
+  //     dans le rapprochement bancaire mais PAS dans /recettedepense. On les
+  //     importe comme lignes validées (mirror), en promouvant le draft
+  //     bancaire matchant s'il existe. Filtre sur tiers 'Echelon National'.
+  const comptables = draftsResult.ecrituresComptables ?? [];
+  const transfers = comptables
+    .filter((c) => c.tiers.trim() === 'Echelon National')
+    .map((c) => ({
+      cwId: c.id,
+      dateEcriture: c.dateEcriture,
+      montantCentimes: c.montantCentimes,
+      intitule: c.intitule,
+    }));
+  if (transfers.length > 0) {
+    const transferRes = await importHorsResultatTransfers(db, { groupId }, transfers);
+    promoted += transferRes.promoted;
+    imported += transferRes.created;
+  }
+
+  return {
+    promoted,
+    newDrafts,
+    updatedMirror,
+    supprimeeCw,
+    imported,
+    suggestionsCreated,
+    detailFetches,
+    remaining,
+    warnings: draftsWarnings,
+  };
+}
+
+/**
+ * Exercices actifs du groupe : le select de Comptaweb (la session `default`
+ * suffit — son propre contexte n'importe pas pour LIRE la liste) croisé avec le
+ * réglage `dernier_exercice_clos` du groupe.
+ */
+async function decouvrirExercices(groupId: string): Promise<ExerciceActif[]> {
+  const [groupe, page] = await Promise.all([
+    getGroupe({ groupId }),
+    withAutoReLogin((cfg) => fetchExercices(cfg)),
+  ]);
+  const calcul = exercicesActifs({
+    exercicesCw: page.options,
+    dernierExerciceClos: groupe?.dernier_exercice_clos ?? null,
+  });
+  // Un exercice courant absent de CW se signale, mais ne fait pas tomber le
+  // cycle : l'exercice précédent, lui, reste synchronisable.
+  if (calcul.avertissement) {
+    logError('sync-cycle', 'exercice_courant_absent', null, {
+      groupId,
+      message: calcul.avertissement,
+    });
+  }
+  return calcul.actifs;
+}
+
 // ============================================================================
 // runSyncCycle
 // ============================================================================
@@ -723,6 +1041,7 @@ export async function runSyncCycle(
     link_suggestions_created: 0,
     detail_fetches: 0,
     remaining: 0,
+    exercices: [],
     scope,
     duration_ms: 0,
     ...over,
@@ -742,235 +1061,79 @@ export async function runSyncCycle(
     .run(syncRunId, groupId, startedAt, opts.trigger, scope, startedAt);
 
   try {
-    const loadConfig = opts.loadConfig ?? defaultLoadConfig;
-    const scrapeListe = opts.scrapeListe ?? defaultScrapeListe;
-    const scanDrafts =
-      opts.scanDrafts ?? (async (gid: string) => scanDraftsFromComptaweb({ groupId: gid }));
+    // Exercices à couvrir. Un `loadConfig` injecté (tests, appels legacy) impose
+    // une session unique : on ne découvre rien et on ne fait qu'un tour, comme
+    // avant ADR-039.
+    const loadPourExercice = opts.loadConfigPourExercice ?? defaultLoadConfigPourExercice;
+    const exercices = opts.exercices ?? (opts.loadConfig ? null : await decouvrirExercices(groupId));
 
-    const config = await loadConfig();
+    // Le plus récent d'abord — c'est l'ordre rendu par `exercicesActifs`, et
+    // celui de la priorité : la rentrée avant la clôture de l'exercice passé.
+    const tours = exercices
+      ? exercices.map((e) => ({ code: e.code, ouvrirSession: () => loadPourExercice(e.cwId) }))
+      : [{ code: null as string | null, ouvrirSession: opts.loadConfig ?? defaultLoadConfig }];
 
-    const resolvers: Resolvers = {
-      scrapeDetail: opts.scrapeDetail ?? ((cwId: number) => defaultScrapeDetail(config, cwId)),
-      resolveActiviteId: opts.resolveActiviteId ?? defaultResolveActiviteId(db, groupId),
-      resolveUniteId: opts.resolveUniteId ?? defaultResolveUniteId(db, groupId),
-      resolveCategoryId: opts.resolveCategoryId ?? defaultResolveCategoryId(db),
-    };
-
-    // 3. Drafts depuis lignes bancaires non rapprochées (avant reconcile :
-    //    les drafts créés ce cycle participent au match contenu).
-    const draftsResult = await scanDrafts(groupId);
-    const newDrafts = draftsResult.crees;
-    // Le scan avale ses erreurs pour ne pas faire tomber le cycle — mais un
-    // scan muet est un scan qui ne crée plus de drafts : sans cette remontée,
-    // le sync_run affichait « ok / 0 nouveau draft » alors que le balayage
-    // était cassé (bug terrain 2026-09-05, FK sur un agrégat : plus aucune
-    // ligne bancaire éclatée en sous-lignes pendant des semaines, en silence).
-    const draftsWarnings: string[] = [];
-    if (draftsResult.erreur) {
-      draftsWarnings.push(`scan drafts : ${draftsResult.erreur}`);
-      logError('sync-cycle', 'scan_drafts_erreur', draftsResult.erreur, { groupId, syncRunId });
-    }
-    if (draftsResult.lignes_en_erreur) {
-      draftsWarnings.push(`${draftsResult.lignes_en_erreur} ligne(s) bancaire(s) non traitée(s)`);
-      logError('sync-cycle', 'scan_drafts_lignes_en_erreur', null, {
-        groupId,
-        syncRunId,
-        count: draftsResult.lignes_en_erreur,
-      });
-    }
-
-    // 4. Scrape liste → snapshot CW
-    const listeResult = await scrapeListe(config, scope);
-    const snapshot = listeResult.ecritures.map(toSnapshotRow);
-
-    // 5. Heal des écritures reliées au vieux format
-    await healComptawebIds(db, groupId, snapshot);
-
-    // 6. Charge l'état Baloo + reconcile (pur)
-    const balooRows = await loadBalooRows(db, groupId);
-    const plan = reconcile(snapshot, balooRows, { dateToleranceDays: DRAFT_DATE_TOLERANCE_DAYS });
-
-    const now = currentTimestamp();
-    let updatedMirror = 0;
+    let budgetRestant = opts.maxDetailFetches ?? MAX_DETAIL_FETCHES_PER_CYCLE;
     let promoted = 0;
+    let newDrafts = 0;
+    let updatedMirror = 0;
     let supprimeeCw = 0;
     let imported = 0;
     let suggestionsCreated = 0;
     let detailFetches = 0;
+    let remaining = 0;
+    let reussis = 0;
+    const codesCouverts: string[] = [];
+    const avertissements: string[] = [];
+    const echecs: unknown[] = [];
 
-    // Le traitement est au grain VENTILATION : pour chaque écriture CW à
-    // (re)traiter, on lit son détail et on aligne N écritures Baloo (une par
-    // ventilation). On collecte d'abord l'ensemble des cwId à traiter.
-    const snapByCwId = new Map<number, CwSnapshotRow>();
-    for (const row of snapshot) snapByCwId.set(row.cwId, row);
-
-    // Collecte priorisée des cwId nécessitant une lecture détail. L'ordre
-    // reflète la visibilité utilisateur : promotions (deviennent mirror),
-    // imports (nouvelles lignes), enrichissements, agrégats legacy. On
-    // tronque ensuite à K : le reste (remaining) est drainé au cycle suivant.
-    const detailQueue: number[] = [];
-    const enqueued = new Set<number>();
-    const enqueue = (cwId: number) => {
-      if (!enqueued.has(cwId)) {
-        enqueued.add(cwId);
-        detailQueue.push(cwId);
+    for (const tour of tours) {
+      try {
+        const config = await tour.ouvrirSession();
+        const c = await syncUnExercice(
+          db,
+          groupId,
+          config,
+          budgetRestant,
+          opts,
+          currentTimestamp(),
+          syncRunId,
+        );
+        // Budget partagé : ce que ce tour a consommé n'est plus disponible pour
+        // le suivant. Le `remaining` cumulé assure le drainage au cycle d'après.
+        budgetRestant = Math.max(0, budgetRestant - c.detailFetches);
+        promoted += c.promoted;
+        newDrafts += c.newDrafts;
+        updatedMirror += c.updatedMirror;
+        supprimeeCw += c.supprimeeCw;
+        imported += c.imported;
+        suggestionsCreated += c.suggestionsCreated;
+        detailFetches += c.detailFetches;
+        remaining += c.remaining;
+        avertissements.push(...c.warnings);
+        reussis++;
+        if (tour.code) codesCouverts.push(tour.code);
+      } catch (err) {
+        // Un exercice en échec (session, bascule refusée, scrape) ne doit pas
+        // emporter l'autre : pendant la clôture les deux se jouent en
+        // parallèle, et une clôture en cours bloquerait la rentrée (ADR-039).
+        const message = err instanceof Error ? err.message : String(err);
+        avertissements.push(tour.code ? `exercice ${tour.code} : ${message}` : message);
+        echecs.push(err);
+        logError('sync-cycle', 'exercice_en_echec', err, {
+          groupId,
+          syncRunId,
+          exercice: tour.code,
+        });
       }
-    };
-
-    // 7a. Promotions (draft reconnu dans CW par match contenu) : la LIAISON
-    //     est posée dans tous les cas (draft→cwId correct). Seul le fetch
-    //     détail est plafonné → enqueue.
-    for (const p of plan.promotions) {
-      await db
-        .prepare(
-          `UPDATE ecritures SET comptaweb_ecriture_id = ?, status = 'mirror', comptaweb_synced = 1, updated_at = ? WHERE id = ?`,
-        )
-        .run(p.cw.cwId, now, p.ecritureId);
-      enqueue(p.cw.cwId);
-      promoted++;
     }
 
-    // 7c. Imports : cwId sans écriture Baloo reliée → à traiter (absorbera
-    //     les écritures CSV non reliées, ou créera les ventilations).
-    //     Priorité 2 (avant les updates) : nouvelles lignes visibles pour
-    //     l'utilisateur, cf. spec priorité 2026-07-15.
-    for (const cw of plan.imports) enqueue(cw.cwId);
-
-    // 7b. Updates : seules les écritures à enrichir (signature changée ou
-    //     imputation vide) déclenchent un traitement de leur cwId.
-    for (const u of plan.updates) {
-      if (u.needsDetail) enqueue(u.cw.cwId);
-    }
-
-    // 7c-bis. Agrégats legacy : un cwId déjà relié+imputé (donc needsDetail
-    //   faux) mais dont des « ventilations détachées » (écritures non reliées
-    //   de même pièce, ou même date+type+intitulé) traînent encore. Sans ça,
-    //   un agrégat créé par l'ancienne sync écriture-grain ne serait jamais
-    //   résorbé (il a l'air complet). On force le traitement ventilation ;
-    //   une fois les ventilations reliées, plus de détachées → plus de
-    //   retraitement (convergence).
-    //   Les détachées sont chargées UNE fois et indexées en mémoire : la
-    //   comparaison de pièce doit passer par `normalizePieceKey` (casse +
-    //   accents, cf. loadVentCandidates), donc pas de filtre SQL par pièce —
-    //   et ça économise une requête par ligne du snapshot.
-    const detachees = await db
-      .prepare(
-        `SELECT numero_piece, date_ecriture, type, description FROM ecritures
-         WHERE group_id = ? AND comptaweb_ecriture_id IS NULL
-           AND status IN ('draft','pending_sync','mirror','divergent')`,
-      )
-      .all<{ numero_piece: string | null; date_ecriture: string; type: string; description: string }>(groupId);
-    const detacheesParPiece = new Set(
-      detachees.map((d) => normalizePieceKey(d.numero_piece)).filter((k) => k !== ''),
-    );
-    const detacheesParContenu = new Set(
-      detachees.map((d) => `${d.date_ecriture}|${d.type}|${d.description}`),
-    );
-    for (const row of snapshot) {
-      if (enqueued.has(row.cwId)) continue;
-      const pieceKey = normalizePieceKey(row.numeroPiece);
-      const loose = pieceKey
-        ? detacheesParPiece.has(pieceKey)
-        : detacheesParContenu.has(`${row.date}|${row.type}|${row.intitule}`);
-      if (loose) enqueue(row.cwId);
-    }
-
-    // Troncature au budget : les K premiers sont traités ce cycle, le reste
-    // devient `remaining` (drainé au prochain cycle, idempotent).
-    const budget = opts.maxDetailFetches ?? MAX_DETAIL_FETCHES_PER_CYCLE;
-    const toProcess = detailQueue.slice(0, budget);
-    const remaining = detailQueue.length - toProcess.length;
-
-    // 7d. Phase 1 — pré-fetch des détails en parallèle (pool borné). Le HTTP
-    // CW est le coût dominant ; on le parallélise, mais PAS les writes BDD.
-    // Cache : cwId → détail OK ; les échecs sont marqués et re-throwés en
-    // phase 2 (→ resolveVentilations les catch → écriture laissée intacte).
-    const detailCache = new Map<number, EcritureDetail>();
-    // Map (pas Set) : on garde la raison ORIGINALE de l'échec pour la
-    // re-throw en phase 2, sinon resolveVentilations logue un 2e message
-    // générique dans /admin/errors qui masque la vraie cause (cf. revue
-    // finale feat/sync-robuste).
-    const detailFailed = new Map<number, unknown>();
-    const settled = await mapWithConcurrency(
-      toProcess,
-      DETAIL_FETCH_CONCURRENCY,
-      (cwId) => resolvers.scrapeDetail(cwId),
-    );
-    settled.forEach((r, i) => {
-      const cwId = toProcess[i];
-      if (r.status === 'fulfilled') detailCache.set(cwId, r.value);
-      else {
-        detailFailed.set(cwId, r.reason);
-        logError('sync-cycle', 'scrapeEcritureDetail failed (pool)', r.reason, { cwId });
-      }
-    });
-    detailFetches = toProcess.length; // fetch réseau tentés ce cycle
-
-    // Resolvers de phase 2 : scrapeDetail lit le cache (aucun réseau ; un
-    // échec de phase 1 est re-throwé pour être neutralisé proprement).
-    const cachedResolvers: Resolvers = {
-      ...resolvers,
-      scrapeDetail: async (cwId: number) => {
-        if (detailFailed.has(cwId)) {
-          const reason = detailFailed.get(cwId);
-          throw reason instanceof Error ? reason : new Error(String(reason));
-        }
-        const d = detailCache.get(cwId);
-        if (d) return d;
-        return resolvers.scrapeDetail(cwId); // filet (ne devrait pas arriver)
-      },
-    };
-
-    // Phase 2 — application séquentielle (writes BDD non concurrents).
-    for (const cwId of toProcess) {
-      const row = snapByCwId.get(cwId);
-      if (!row) continue;
-      const counts = await processCwEcriture(db, groupId, metaFromSnapshot(row), cachedResolvers, now);
-      // detailFetched compté en phase 1 : ne pas ré-additionner counts.detailFetched.
-      updatedMirror += counts.updated;
-      imported += counts.created;
-      supprimeeCw += counts.orphaned;
-    }
-
-    // 7e. Deletions (cwId disparu de CW, dans la plage) → supprimee_cw.
-    for (const ecritureId of plan.deletions) {
-      await db
-        .prepare(`UPDATE ecritures SET status = 'supprimee_cw', updated_at = ? WHERE id = ?`)
-        .run(now, ecritureId);
-      supprimeeCw++;
-    }
-
-    // 7e. Suggestions de lien (match contenu ambigu).
-    for (const s of plan.suggestions) {
-      const created = await upsertSuggestion(db, {
-        groupId,
-        ecritureId: s.ecritureId,
-        cwEcritureId: s.cw.cwId,
-        cwNumeroPiece: s.cw.numeroPiece,
-        cwMontantCents: s.cw.montantCents,
-        cwDate: s.cw.date,
-        cwIntitule: s.cw.intitule,
-      });
-      if (created) suggestionsCreated++;
-    }
-
-    // 7f. Transferts inter-structures (hors résultat) : ces écritures CW sont
-    //     dans le rapprochement bancaire mais PAS dans /recettedepense. On les
-    //     importe comme lignes validées (mirror), en promouvant le draft
-    //     bancaire matchant s'il existe. Filtre sur tiers 'Echelon National'.
-    const comptables = draftsResult.ecrituresComptables ?? [];
-    const transfers = comptables
-      .filter((c) => c.tiers.trim() === 'Echelon National')
-      .map((c) => ({
-        cwId: c.id,
-        dateEcriture: c.dateEcriture,
-        montantCentimes: c.montantCentimes,
-        intitule: c.intitule,
-      }));
-    if (transfers.length > 0) {
-      const transferRes = await importHorsResultatTransfers(db, { groupId }, transfers);
-      promoted += transferRes.promoted;
-      imported += transferRes.created;
+    // Aucun tour n'a abouti : c'est l'échec du cycle, pas un avertissement.
+    // Sans ça, un Comptaweb injoignable passerait pour un run « ok » n'ayant
+    // rien fait — et l'UI afficherait « à jour ».
+    if (tours.length > 0 && reussis === 0) throw echecs[0];
+    if (tours.length === 0) {
+      avertissements.push('aucun exercice actif dans Comptaweb — rien à synchroniser');
     }
 
     // 8. Détection stale (warning, pas erreur)
@@ -979,7 +1142,7 @@ export async function runSyncCycle(
       logError('sync-cycle', 'stale_pending_sync', null, { groupId, syncRunId, count: staleCount });
     }
     const warnings = [
-      ...draftsWarnings,
+      ...avertissements,
       ...(staleCount > 0 ? [`${staleCount} pending_sync stales > 1h`] : []),
     ];
     const warningMessage = warnings.length > 0 ? warnings.join(' — ') : null;
@@ -997,7 +1160,7 @@ export async function runSyncCycle(
            divergent_detected = 0,
            updated_mirror = ?, supprimee_cw_detected = ?, imported_from_cw = ?,
            link_suggestions_created = ?, detail_fetches = ?, remaining = ?,
-           error_message = ?, duration_ms = ?
+           exercices = ?, error_message = ?, duration_ms = ?
          WHERE id = ?`,
       )
       .run(
@@ -1010,6 +1173,7 @@ export async function runSyncCycle(
         suggestionsCreated,
         detailFetches,
         remaining,
+        codesCouverts.join(',') || null,
         warningMessage,
         durationMs,
         syncRunId,
@@ -1028,6 +1192,7 @@ export async function runSyncCycle(
       link_suggestions_created: suggestionsCreated,
       detail_fetches: detailFetches,
       remaining,
+      exercices: codesCouverts,
       scope,
       duration_ms: durationMs,
       error_message: warningMessage ?? undefined,
