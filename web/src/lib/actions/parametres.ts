@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { getCurrentContext } from '../context';
 import { requireAdmin } from '../auth/access';
 import { updateGroupe } from '../services/groupes';
+import { parseExerciceClosInput } from '../services/exercice-clos';
 import { logError } from '../log';
 
 // Met à jour le taux kilométrique du groupe (millièmes d'euro). Saisie en
@@ -36,13 +37,14 @@ export async function updateExerciceClos(formData: FormData): Promise<void> {
   const ctx = await getCurrentContext();
   requireAdmin(ctx.role);
 
-  const raw = ((formData.get('dernier_exercice_clos') as string | null) ?? '').trim();
-  if (raw && !/^\d{4}-\d{4}$/.test(raw)) {
-    redirect('/admin/parametres?error=' + encodeURIComponent('Format attendu : 2025-2026.'));
+  const raw = (formData.get('dernier_exercice_clos') as string | null) ?? '';
+  const parsed = parseExerciceClosInput(raw);
+  if (!parsed.ok) {
+    redirect('/admin/parametres?error=' + encodeURIComponent(parsed.erreur));
   }
 
   try {
-    await updateGroupe({ groupId: ctx.groupId }, { dernier_exercice_clos: raw || null });
+    await updateGroupe({ groupId: ctx.groupId }, { dernier_exercice_clos: parsed.valeur });
   } catch (err) {
     logError('parametres', 'MAJ exercice clos échouée', err);
     redirect('/admin/parametres?error=' + encodeURIComponent('Échec de l’enregistrement.'));
