@@ -34,7 +34,7 @@ export async function saveAndTestComptawebCredentials(formData: FormData): Promi
 
   // 2. Tester : on repart d'une session propre pour forcer un vrai login.
   //    redirect() lève NEXT_REDIRECT → JAMAIS dans le try/catch (sinon avalé).
-  clearStoredSession();
+  clearStoredSession('default');
   let testOk = false;
   try {
     await loadConfig();
