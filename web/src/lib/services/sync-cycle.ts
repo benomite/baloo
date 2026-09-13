@@ -30,6 +30,7 @@ import {
   loadConfig as defaultLoadConfig,
   loadConfigPourExercice as defaultLoadConfigPourExercice,
   withAutoReLogin,
+  withComptaweb,
 } from '../comptaweb/auth';
 import { fetchExercices } from '../comptaweb/exercices';
 import {
@@ -45,7 +46,8 @@ import type {
   RapprochementBancaireData,
   ScrapeListeEcrituresResult,
 } from '../comptaweb/types';
-import { scanDraftsFromComptaweb, type ScanDraftsResult } from './drafts';
+import { scanDraftsFromComptaweb, type ScanDraftsResult, type ScanDraftsDeps } from './drafts';
+import { resoudreExercicePourDate } from './exercice-pour-ecriture';
 import {
   reconcile,
   reconcileVentilations,
@@ -85,7 +87,7 @@ export interface SyncCycleOptions {
   /** Injection pour tests : scrape le rapprochement bancaire. */
   scrapeRapprochement?: (cfg: ComptawebConfig) => Promise<RapprochementBancaireData>;
   /** Injection pour tests : scan drafts depuis les lignes bancaires de l'exercice. */
-  scanDrafts?: (groupId: string, config: ComptawebConfig) => Promise<ScanDraftsResult>;
+  scanDrafts?: (groupId: string, deps: ScanDraftsDeps) => Promise<ScanDraftsResult>;
   /** Injection pour tests : lit la page détail CW d'une écriture. */
   scrapeDetail?: (cwId: number) => Promise<EcritureDetail>;
   /** Injection pour tests : résout un nom d'activité CW → activite_id Baloo. */
@@ -695,10 +697,19 @@ export async function resyncEcritureDetail(
   if (!ecr) return { ok: false, reason: 'not_found' };
   if (ecr.comptaweb_ecriture_id == null) return { ok: false, reason: 'not_linked' };
 
-  const loadConfig = opts.loadConfig ?? defaultLoadConfig;
-  const config = await loadConfig();
+  // Le détail se lit dans la session de l'exercice de CETTE écriture. C'était le
+  // dernier chemin qui supposait un exercice unique : sur une écriture de
+  // l'autre exercice, le scrape échouait, `resolveVentilations` avalait l'erreur
+  // et le bouton « resynchroniser » du panneau restait sans effet, en silence
+  // (ADR-039). Une injection `loadConfig` (tests, appels legacy) court-circuite
+  // le routage et garde le comportement d'avant.
+  const lireDetail = async (cwId: number): Promise<EcritureDetail> => {
+    if (opts.loadConfig) return defaultScrapeDetail(await opts.loadConfig(), cwId);
+    const exercice = await resoudreExercicePourDate(groupId, ecr.date_ecriture);
+    return withComptaweb(exercice.cwId, (cfg) => defaultScrapeDetail(cfg, cwId));
+  };
   const resolvers: Resolvers = {
-    scrapeDetail: opts.scrapeDetail ?? ((cwId: number) => defaultScrapeDetail(config, cwId)),
+    scrapeDetail: opts.scrapeDetail ?? lireDetail,
     resolveActiviteId: opts.resolveActiviteId ?? defaultResolveActiviteId(db, groupId),
     resolveUniteId: opts.resolveUniteId ?? defaultResolveUniteId(db, groupId),
     resolveCategoryId: opts.resolveCategoryId ?? defaultResolveCategoryId(db),
@@ -738,6 +749,8 @@ interface ContexteExercice {
   /** Lectures détail RESTANT au cycle — partagé entre exercices, pas par exercice. */
   budgetDetail: number;
   opts: SyncCycleOptions;
+  /** Bornes ISO de l'exercice du tour, qui limitent le périmètre du scan de brouillons. */
+  bornes: { debut: string; fin: string } | null;
   /** Horodatage du tour, écrit sur les lignes touchées. */
   now: string;
   /** Run d'audit en cours, pour le contexte des erreurs journalisées. */
@@ -756,7 +769,7 @@ interface ContexteExercice {
  * sera drainé au cycle suivant.
  */
 async function syncUnExercice(ctx: ContexteExercice): Promise<CompteursExercice> {
-  const { db, groupId, config, budgetDetail, opts, now, syncRunId } = ctx;
+  const { db, groupId, config, budgetDetail, opts, bornes, now, syncRunId } = ctx;
   const scope: SyncScope = opts.scope ?? 'recent';
   const scrapeListe = opts.scrapeListe ?? defaultScrapeListe;
   // Le rapprochement bancaire est découpé par exercice (rien après le 31/08 en
@@ -765,8 +778,7 @@ async function syncUnExercice(ctx: ContexteExercice): Promise<CompteursExercice>
   // (constat terrain 2026-09-11).
   const scanDrafts =
     opts.scanDrafts ??
-    ((gid: string, cfg: ComptawebConfig) =>
-      scanDraftsFromComptaweb({ groupId: gid }, undefined, { config: cfg }));
+    ((gid: string, d: ScanDraftsDeps) => scanDraftsFromComptaweb({ groupId: gid }, undefined, d));
 
   const resolvers: Resolvers = {
     scrapeDetail: opts.scrapeDetail ?? ((cwId: number) => defaultScrapeDetail(config, cwId)),
@@ -777,7 +789,10 @@ async function syncUnExercice(ctx: ContexteExercice): Promise<CompteursExercice>
 
   // 3. Drafts depuis lignes bancaires non rapprochées (avant reconcile :
   //    les drafts créés ce cycle participent au match contenu).
-  const draftsResult = await scanDrafts(groupId, config);
+  // Les bornes limitent le périmètre des brouillons examinés par ligne
+  // bancaire : un id de ligne recyclé ne doit pas mettre face à face des
+  // brouillons de deux exercices (cf. `ScanDraftsDeps.exercice`).
+  const draftsResult = await scanDrafts(groupId, { config, exercice: bornes ?? undefined });
   const newDrafts = draftsResult.crees;
   // Le scan avale ses erreurs pour ne pas faire tomber le cycle — mais un
   // scan muet est un scan qui ne crée plus de drafts : sans cette remontée,
@@ -1089,12 +1104,14 @@ export async function runSyncCycle(
       ? exercices.map((e) => ({
           code: e.code,
           cwId: e.cwId as number | null,
+          bornes: { debut: e.debut, fin: e.fin } as { debut: string; fin: string } | null,
           ouvrirSession: () => loadPourExercice(e.cwId),
         }))
       : [
           {
             code: null as string | null,
             cwId: null as number | null,
+            bornes: null as { debut: string; fin: string } | null,
             ouvrirSession: opts.loadConfig ?? defaultLoadConfig,
           },
         ];
@@ -1123,6 +1140,7 @@ export async function runSyncCycle(
           config: await tour.ouvrirSession(),
           budgetDetail: budgetRestant,
           opts,
+          bornes: tour.bornes,
           now: currentTimestamp(),
           syncRunId,
         });

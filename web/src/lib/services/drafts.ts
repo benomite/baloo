@@ -232,6 +232,15 @@ export interface ScanDraftsDeps {
    * défaut comme avant — comportement des appels manuels (`/api/drafts/scan`).
    */
   config?: ComptawebConfig;
+  /**
+   * Bornes ISO de l'exercice scanné. Fournies, elles limitent le périmètre des
+   * brouillons examinés pour une ligne bancaire : les ids de lignes sont
+   * RECYCLÉS par Comptaweb entre transactions, et depuis qu'un cycle scanne
+   * chaque exercice (ADR-039), un brouillon d'août pourrait être confronté à
+   * l'ensemble canonique d'une ligne de septembre portant le même id — puis
+   * détruit comme « périmé ». Absentes, le comportement est inchangé.
+   */
+  exercice?: { debut: string; fin: string };
 }
 
 export async function scanDraftsFromComptaweb(
@@ -272,6 +281,12 @@ export async function scanDraftsFromComptaweb(
     );
     // Drafts existants d'une ligne, avec les flags du garde-fou de suppression
     // (statut, lien CW, imputation, pièce attachée) — cf. deleteDraftEcriture.
+    // Le périmètre est borné à l'exercice scanné quand la sync le fournit : sans
+    // cette borne, un id de ligne recyclé met face à face des brouillons de deux
+    // exercices, ce qui casse l'hypothèse « ces brouillons décrivent la même
+    // transaction » sur laquelle repose `planStaleLineDrafts`.
+    const bornes = deps.exercice;
+    const filtreExercice = bornes ? 'AND e.date_ecriture BETWEEN ? AND ?' : '';
     const findLineDrafts = db.prepare(
       `SELECT e.id AS id,
               e.ligne_bancaire_sous_index AS sousIndex,
@@ -288,7 +303,8 @@ export async function scanDraftsFromComptaweb(
                       OR EXISTS(SELECT 1 FROM remboursements r WHERE r.ecriture_id = e.id)
                     THEN 1 ELSE 0 END) AS hasAttach
        FROM ecritures e
-       WHERE e.group_id = ? AND e.ligne_bancaire_id = ?`,
+       WHERE e.group_id = ? AND e.ligne_bancaire_id = ?
+         ${filtreExercice}`,
     );
     const deleteStaleDraft = db.prepare(
       `DELETE FROM ecritures WHERE id = ? AND group_id = ? AND status = 'draft'`,
@@ -340,7 +356,7 @@ export async function scanDraftsFromComptaweb(
           id: string; sousIndex: number | null; status: string; type: string;
           libelleOrigine: string | null; description: string;
           cwId: number | null; ventilationGroupId: string | null; hasImput: number; hasAttach: number;
-        }>(groupId, ligne.id);
+        }>(groupId, ligne.id, ...(bornes ? [bornes.debut, bornes.fin] : []));
         const existing: ExistingLineDraft[] = existingRows.map((r) => ({
           id: r.id,
           sousLigneIndex: r.sousIndex,

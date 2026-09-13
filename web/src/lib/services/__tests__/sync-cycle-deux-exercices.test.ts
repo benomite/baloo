@@ -158,6 +158,7 @@ describe('runSyncCycle — deux exercices', () => {
     // septembre restent invisibles et aucun brouillon n'est créé — le symptôme
     // terrain du 2026-09-11.
     const sessionsScannees: string[] = [];
+    const bornesScannees: string[] = [];
 
     const res = await runSyncCycle(db, 'g1', {
       trigger: 'manual',
@@ -165,8 +166,9 @@ describe('runSyncCycle — deux exercices', () => {
       exercices: [EX_2627, EX_2526],
       loadConfigPourExercice: async (cwId) => ({ baseUrl: 'https://cw.test', cookie: `c-${cwId}` }),
       scrapeListe: async () => ({ ecritures: [] }),
-      scanDrafts: async (_groupId, cfg) => {
-        sessionsScannees.push(cfg.cookie);
+      scanDrafts: async (_groupId, deps) => {
+        sessionsScannees.push(deps.config?.cookie ?? 'aucune session');
+        bornesScannees.push(`${deps.exercice?.debut}..${deps.exercice?.fin}`);
         return { crees: 1, existants: 0, supprimes: 0 };
       },
       scrapeDetail: async () => ({ ventilations: [] }),
@@ -176,6 +178,9 @@ describe('runSyncCycle — deux exercices', () => {
     });
 
     expect(sessionsScannees).toEqual(['c-34', 'c-33']);
+    // Le scan reçoit aussi les bornes de l'exercice : elles limitent le
+    // périmètre des brouillons examinés (ids de lignes bancaires recyclés).
+    expect(bornesScannees).toEqual(['2026-09-01..2027-08-31', '2025-09-01..2026-08-31']);
     expect(res.status).toBe('ok');
     expect(res.new_drafts).toBe(2); // un brouillon par exercice
   });
