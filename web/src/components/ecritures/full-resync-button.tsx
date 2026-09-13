@@ -28,7 +28,7 @@ export function FullResyncButton() {
 
   async function run() {
     setRunning(true);
-    const t = toast.loading('Réconciliation de tout l’exercice en cours…');
+    const t = toast.loading('Réconciliation en cours…');
     try {
       const res = await fetch('/api/sync/run?force=1&scope=exercice', { method: 'POST' });
       const data = (await res.json()) as SyncResult;
@@ -57,7 +57,7 @@ export function FullResyncButton() {
   return (
     <Button variant="outline" disabled={running} onClick={run}>
       <RefreshCw size={14} className={running ? 'mr-1.5 animate-spin' : 'mr-1.5'} />
-      {running ? 'Resync…' : 'Tout resynchroniser'}
+      {running ? 'Resync…' : 'Resynchroniser'}
     </Button>
   );
 }

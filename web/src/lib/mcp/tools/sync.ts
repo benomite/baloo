@@ -31,7 +31,7 @@ export function registerSyncTools(server: McpServer, ctx: McpContext) {
       scope: z
         .enum(['recent', 'exercice'])
         .optional()
-        .describe("Étendue : 'recent' (défaut, période active CW) ou 'exercice' (tout l'exercice, plus lourd — réservé aux réconciliations explicites)."),
+        .describe("Sans effet depuis ADR-039 : un cycle couvre toujours l'exercice complet de chaque exercice actif. Paramètre conservé pour compatibilité."),
     },
     async ({ force, scope }) => {
       const result = await runSyncCycle(getDb(), ctx.groupId, {
