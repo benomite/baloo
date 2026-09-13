@@ -1533,4 +1533,35 @@ Restent **UI-only**, par choix : création d'écriture / push Comptaweb (ADR-037
 
 ---
 
+## ADR-039 — Comptaweb : une connexion par exercice, deux exercices actifs en période de clôture
+
+**Date** : 2026-09-13
+**Statut** : Acté
+**Lié à** : [ADR-035](#adr-035--réconciliation-comptaweb--miroir-descendant-continu) (miroir descendant), [ADR-037](#adr-037--mcp--retrait-des-tools-décriture-directe-dans-comptaweb), [ADR-038](#adr-038--parité-mcp--app-comme-invariant).
+**Spec** : [`superpowers/specs/2026-09-13-comptaweb-deux-exercices-design.md`](superpowers/specs/2026-09-13-comptaweb-deux-exercices-design.md).
+
+### Contexte
+
+L'exercice SGDF va du 01/09 au 31/08. Dans Comptaweb, il n'est pas un filtre d'URL mais le **contexte de la session** (« Changement de contexte → Exercice ») : une session ne voit qu'un exercice. Baloo n'ouvrait qu'une session, et un login frais tombe sur l'exercice non clôturé.
+
+Constaté le 2026-09-11, onze jours après la bascule : les lignes bancaires de septembre étaient **invisibles** pour Baloo (le rapprochement en 25/26 s'arrête au 31/08), et les écritures datées de septembre étaient **refusées en silence** par CW (redirection hors fiche ; fix `d06a9a6`). Or les deux exercices sont nécessaires en même temps : les dépenses de camp d'août se saisissent sur 25/26 jusqu'à la clôture (30/09, validation nationale jusqu'à début décembre) pendant que la rentrée alimente 26/27.
+
+### Décision
+
+1. **Une connexion CW par exercice**, mise en cache séparément, basculée sur son exercice à l'ouverture puis **relue pour confirmation**. Pas de bascule de contexte à la volée sur une session partagée : deux opérations simultanées écriraient dans le mauvais exercice.
+2. **Exercices actifs** = celui de la date du jour + le précédent **tant que le trésorier ne l'a pas déclaré clos** (réglage groupe `dernier_exercice_clos`, UI `/admin/parametres` + MCP `update_groupe`). Déclaration manuelle et réversible plutôt qu'une fenêtre calendaire : la durée réelle de la clôture varie.
+3. **La sync boucle sur les exercices actifs**, chacun avec sa connexion, budget de lectures détail partagé et erreurs isolées par exercice.
+4. **La création d'écriture est routée par la date** de l'écriture ; un exercice clos ou absent de CW est refusé **avant** tout appel réseau, avec un message actionnable.
+
+### Conséquences
+
+- **Le scope `recent` / `exercice` de la sync perd son sens** : on a vérifié que `/recettedepense?m=1` ≡ `/recettedepense` (tout l'exercice du contexte, `m=1` n'étant qu'un marqueur de menu). La réserve d'ADR-035 sur la « fenêtre courte » qui empêcherait de voir disparaître une écriture ancienne **tombe** : chaque cycle voit déjà tout l'exercice. Le paramètre reste accepté mais ignoré.
+- **Les ids d'écriture CW sont une séquence unique** qui entrelace les exercices en période de clôture. La détection des suppressions ne peut donc pas se fonder sur une plage d'ids seule : elle est bornée aux **dates de l'exercice lu** (livré avant cette décision, `b21d152`).
+- Deux logins au lieu d'un par cold start, et deux fois plus de pages lues par cycle : absorbé par le drainage `remaining` existant, pas par un allongement du `maxDuration`.
+- Points non tranchés, faute de données au 2026-09-13 : lisibilité d'une page de détail depuis une session d'un autre exercice (le design l'évite), et découpage par exercice de la caisse, des cartes et des référentiels (laissés sur l'exercice du jour).
+
+**Liens** : `web/src/lib/comptaweb/{auth,session-store}.ts`, `web/src/lib/services/{sync-cycle,drafts,ecritures-create-cw-adapter}.ts`, `web/AGENTS.md` (section « L'exercice CW est un contexte de SESSION »).
+
+---
+
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*
