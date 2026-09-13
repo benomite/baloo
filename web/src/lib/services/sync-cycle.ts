@@ -727,6 +727,21 @@ interface CompteursExercice {
   warnings: string[];
 }
 
+/** Tout ce dont un tour de sync a besoin pour traiter son exercice. */
+interface ContexteExercice {
+  db: DbWrapper;
+  groupId: string;
+  /** Session Comptaweb de CET exercice (son contexte porte l'exercice). */
+  config: ComptawebConfig;
+  /** Lectures détail RESTANT au cycle — partagé entre exercices, pas par exercice. */
+  budgetDetail: number;
+  opts: SyncCycleOptions;
+  /** Horodatage du tour, écrit sur les lignes touchées. */
+  now: string;
+  /** Run d'audit en cours, pour le contexte des erreurs journalisées. */
+  syncRunId: string;
+}
+
 /**
  * Un tour de sync sur UN exercice, mené avec la session de CET exercice :
  * côté Comptaweb l'exercice est le contexte de la session, pas un filtre
@@ -738,15 +753,8 @@ interface CompteursExercice {
  * d'exercices couverts. Ce que ce tour n'a pas lu ressort en `remaining` et
  * sera drainé au cycle suivant.
  */
-async function syncUnExercice(
-  db: DbWrapper,
-  groupId: string,
-  config: ComptawebConfig,
-  budgetDetail: number,
-  opts: SyncCycleOptions,
-  now: string,
-  syncRunId: string,
-): Promise<CompteursExercice> {
+async function syncUnExercice(ctx: ContexteExercice): Promise<CompteursExercice> {
+  const { db, groupId, config, budgetDetail, opts, now, syncRunId } = ctx;
   const scope: SyncScope = opts.scope ?? 'recent';
   const scrapeListe = opts.scrapeListe ?? defaultScrapeListe;
   // Le rapprochement bancaire est découpé par exercice (rien après le 31/08 en
@@ -1096,15 +1104,15 @@ export async function runSyncCycle(
     for (const tour of tours) {
       try {
         const config = await tour.ouvrirSession();
-        const c = await syncUnExercice(
+        const c = await syncUnExercice({
           db,
           groupId,
           config,
-          budgetRestant,
+          budgetDetail: budgetRestant,
           opts,
-          currentTimestamp(),
+          now: currentTimestamp(),
           syncRunId,
-        );
+        });
         // Budget partagé : ce que ce tour a consommé n'est plus disponible pour
         // le suivant. Le `remaining` cumulé assure le drainage au cycle d'après.
         budgetRestant = Math.max(0, budgetRestant - c.detailFetches);
