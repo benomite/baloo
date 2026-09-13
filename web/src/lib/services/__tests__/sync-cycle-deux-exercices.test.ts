@@ -6,11 +6,22 @@
 // Réutilise le harnais de `sync-cycle.test.ts` (setupDb) plutôt que de le
 // dupliquer intégralement. Ici on ne vérifie QUE le multi-exercice.
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
+
+// Le cache de sessions est simulé : on veut observer qu'une session invalidée
+// par Comptaweb est bien JETÉE avant la reprise du tour.
+vi.mock('../../comptaweb/session-store', () => ({
+  readStoredSession: vi.fn(() => null),
+  writeStoredSession: vi.fn(),
+  clearStoredSession: vi.fn(),
+}));
+
 import { wrapClient, type DbWrapper } from '../../db';
 import { ensureSyncRunsSchema, ensureReconcileSchema } from '../../db/business-schema';
 import { runSyncCycle } from '../sync-cycle';
+import { ComptawebSessionExpiredError } from '../../comptaweb';
+import { clearStoredSession } from '../../comptaweb/session-store';
 import type { ExerciceActif } from '../exercices-actifs';
 
 // ---------------- Setup BDD (identique à sync-cycle.test.ts) ----------------
@@ -79,6 +90,7 @@ const ligne = (cwId: number, date: string, montantCentimes: number) => ({
 describe('runSyncCycle — deux exercices', () => {
   let db: DbWrapper;
   beforeEach(async () => {
+    vi.clearAllMocks();
     ({ db } = await setupDb());
   });
 
@@ -198,5 +210,73 @@ describe('runSyncCycle — deux exercices', () => {
 
     expect(fetches).toBe(2); // 2 au total, pas 2 par exercice
     expect(res.remaining).toBe(2); // le reste est drainé au cycle suivant
+  });
+
+  it('une session invalidée par Comptaweb est vidée, et le tour rejoué une seule fois', async () => {
+    // Comptaweb peut invalider une session AVANT son TTL. Le cookie mort reste
+    // alors en cache et fait échouer CET exercice à chaque cycle, avec un
+    // simple avertissement — la panne silencieuse qui dure des semaines.
+    const appels: Record<string, number> = {};
+    const sessionsOuvertes: number[] = [];
+
+    const res = await runSyncCycle(db, 'g1', {
+      trigger: 'manual',
+      force: true,
+      exercices: [EX_2627, EX_2526],
+      loadConfigPourExercice: async (cwId) => {
+        sessionsOuvertes.push(cwId);
+        return { baseUrl: 'https://cw.test', cookie: `c-${cwId}` };
+      },
+      scrapeListe: async (cfg) => {
+        const n = (appels[cfg.cookie] = (appels[cfg.cookie] ?? 0) + 1);
+        // La session en cache du 26/27 est morte : le premier scrape le découvre.
+        if (cfg.cookie === 'c-34' && n === 1) throw new ComptawebSessionExpiredError();
+        return { ecritures: cfg.cookie === 'c-34' ? [ligne(900, '2026-09-05', 1000)] : [] };
+      },
+      scanDrafts: async () => ({ crees: 0, existants: 0, supprimes: 0 }),
+      scrapeDetail: async () => ({
+        ventilations: [{ montantCents: 1000, nature: null, activite: null, brancheprojet: null }],
+      }),
+      resolveActiviteId: async () => null,
+      resolveUniteId: async () => null,
+      resolveCategoryId: async () => null,
+    });
+
+    expect(clearStoredSession).toHaveBeenCalledWith('34'); // session morte jetée
+    expect(appels['c-34']).toBe(2); // tour rejoué, une seule fois
+    expect(sessionsOuvertes).toEqual([34, 34, 33]); // config fraîche pour la reprise
+    expect(res.status).toBe('ok');
+    expect(res.exercices).toEqual(['2026-2027', '2025-2026']);
+    expect(res.imported_from_cw).toBe(1); // le tour a fini par aboutir
+    expect(res.error_message).toBeUndefined(); // réparé : rien à signaler
+  });
+
+  it('une session encore invalide après la reprise laisse l’exercice en échec, sans emporter l’autre', async () => {
+    const appels: Record<string, number> = {};
+
+    const res = await runSyncCycle(db, 'g1', {
+      trigger: 'manual',
+      force: true,
+      exercices: [EX_2627, EX_2526],
+      loadConfigPourExercice: async (cwId) => ({ baseUrl: 'https://cw.test', cookie: `c-${cwId}` }),
+      scrapeListe: async (cfg) => {
+        appels[cfg.cookie] = (appels[cfg.cookie] ?? 0) + 1;
+        if (cfg.cookie === 'c-34') throw new ComptawebSessionExpiredError();
+        return { ecritures: [ligne(800, '2026-08-24', 2000)] };
+      },
+      scanDrafts: async () => ({ crees: 0, existants: 0, supprimes: 0 }),
+      scrapeDetail: async () => ({
+        ventilations: [{ montantCents: 2000, nature: null, activite: null, brancheprojet: null }],
+      }),
+      resolveActiviteId: async () => null,
+      resolveUniteId: async () => null,
+      resolveCategoryId: async () => null,
+    });
+
+    expect(appels['c-34']).toBe(2); // une seule reprise, pas de boucle
+    expect(res.status).toBe('ok');
+    expect(res.exercices).toEqual(['2025-2026']); // 25/26 a bien tourné
+    expect(res.imported_from_cw).toBe(1);
+    expect(res.error_message).toContain('2026-2027');
   });
 });

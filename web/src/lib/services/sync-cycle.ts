@@ -35,7 +35,9 @@ import { fetchExercices } from '../comptaweb/exercices';
 import {
   scrapeListeEcritures as defaultScrapeListe,
   scrapeEcritureDetail as defaultScrapeDetail,
+  ComptawebSessionExpiredError,
 } from '../comptaweb';
+import { clearStoredSession } from '../comptaweb/session-store';
 import type { EcritureDetail, SyncScope } from '../comptaweb';
 import type {
   ComptawebConfig,
@@ -1084,8 +1086,18 @@ export async function runSyncCycle(
     // Le plus récent d'abord — c'est l'ordre rendu par `exercicesActifs`, et
     // celui de la priorité : la rentrée avant la clôture de l'exercice passé.
     const tours = exercices
-      ? exercices.map((e) => ({ code: e.code, ouvrirSession: () => loadPourExercice(e.cwId) }))
-      : [{ code: null as string | null, ouvrirSession: opts.loadConfig ?? defaultLoadConfig }];
+      ? exercices.map((e) => ({
+          code: e.code,
+          cwId: e.cwId as number | null,
+          ouvrirSession: () => loadPourExercice(e.cwId),
+        }))
+      : [
+          {
+            code: null as string | null,
+            cwId: null as number | null,
+            ouvrirSession: opts.loadConfig ?? defaultLoadConfig,
+          },
+        ];
 
     let budgetRestant = opts.maxDetailFetches ?? MAX_DETAIL_FETCHES_PER_CYCLE;
     let promoted = 0;
@@ -1102,17 +1114,39 @@ export async function runSyncCycle(
     const echecs: unknown[] = [];
 
     for (const tour of tours) {
-      try {
-        const config = await tour.ouvrirSession();
-        const c = await syncUnExercice({
+      // Un tour complet, session comprise : rejouable tel quel après avoir jeté
+      // une session morte. `budgetRestant` est lu à l'appel, donc toujours à jour.
+      const lancerTour = async () =>
+        syncUnExercice({
           db,
           groupId,
-          config,
+          config: await tour.ouvrirSession(),
           budgetDetail: budgetRestant,
           opts,
           now: currentTimestamp(),
           syncRunId,
         });
+
+      try {
+        let c: CompteursExercice;
+        try {
+          c = await lancerTour();
+        } catch (err) {
+          // Comptaweb peut invalider une session AVANT son TTL. Le cookie mort
+          // resterait alors en cache et ferait échouer CET exercice à chaque
+          // cycle, derrière un simple avertissement — le genre de panne muette
+          // qui a déjà duré des semaines ici (scan de brouillons, 2026-09-05).
+          // On jette la session et on rejoue le tour UNE seule fois :
+          // `loadConfigPourExercice` refait login + bascule + confirmation.
+          if (!(err instanceof ComptawebSessionExpiredError) || tour.cwId === null) throw err;
+          clearStoredSession(String(tour.cwId));
+          logError('sync-cycle', 'session_exercice_invalidee', err, {
+            groupId,
+            syncRunId,
+            exercice: tour.code,
+          });
+          c = await lancerTour();
+        }
         // Budget partagé : ce que ce tour a consommé n'est plus disponible pour
         // le suivant. Le `remaining` cumulé assure le drainage au cycle d'après.
         budgetRestant = Math.max(0, budgetRestant - c.detailFetches);
