@@ -838,6 +838,7 @@ git commit -m "feat(parametres): déclarer un exercice comptable clos"
 
 **Interfaces:**
 - Consomme : `exercicesActifs`, `ExerciceActif` (Task 1) ; `loadConfigPourExercice` (Task 3) ; `getGroupe` (Task 4).
+- ⚠️ **Défaut de ce plan, corrigé pendant l'exécution (2026-09-13)** : tel qu'écrit ci-dessous, ce plan laisse `scanDrafts` avec sa signature `(groupId)`, or `scanDraftsFromComptaweb` rouvre sa propre session via `withAutoReLogin` (contexte `default`). La boucle lirait donc deux exercices d'**écritures** mais un seul de **lignes bancaires** → aucun brouillon de septembre, soit l'effet terrain visé qui manque, et le point de vérification n°3 de la tâche 7 qui échoue en production. Correctif appliqué : `SyncCycleOptions.scanDrafts` devient `(groupId, config)` et `scanDraftsFromComptaweb` accepte une config optionnelle (absente = comportement inchangé). Deux autres ajouts sont venus de la relecture : borner le match de contenu des promotions à l'exercice du snapshot, et reprendre une fois un tour dont CW a invalidé la session.
 - Produit :
   - `SyncCycleOptions.exercices?: ExerciceActif[]` (injection tests ; sinon découverte réelle)
   - `SyncCycleOptions.loadConfigPourExercice?: (cwId: number) => Promise<ComptawebConfig>`
