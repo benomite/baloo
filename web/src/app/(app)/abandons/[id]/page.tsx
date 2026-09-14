@@ -19,7 +19,8 @@ import { Section } from '@/components/shared/section';
 import { Input } from '@/components/ui/input';
 import { PendingButton } from '@/components/shared/pending-button';
 import { getCurrentContext } from '@/lib/context';
-import { getAbandon, type AbandonStatus } from '@/lib/services/abandons';
+import { canEditAbandon, getAbandon, type AbandonStatus } from '@/lib/services/abandons';
+import { Button } from '@/components/ui/button';
 import { listJustificatifs } from '@/lib/queries/justificatifs';
 import { getGroupe } from '@/lib/services/groupes';
 import {
@@ -64,6 +65,7 @@ export default async function AbandonDetailPage({
   const isAdmin = ctx.role === 'tresorier' || ctx.role === 'RG';
   const isOwner = !!a.submitted_by_user_id && a.submitted_by_user_id === ctx.userId;
   if (!isAdmin && !isOwner) notFound();
+  const canEdit = canEditAbandon(a.status, { isAdmin, isOwner });
 
   const [feuilles, justifs, groupe] = await Promise.all([
     listJustificatifs('abandon_feuille', id),
@@ -94,6 +96,15 @@ export default async function AbandonDetailPage({
         eyebrow={{ label: 'Abandons', href: '/abandons' }}
         title={a.id}
         subtitle={fullName}
+        actions={
+          canEdit ? (
+            <Link href={`/abandons/${id}/edit`}>
+              <Button variant="outline" size="sm">
+                Modifier
+              </Button>
+            </Link>
+          ) : null
+        }
         meta={
           <>
             <AbandonStatusBadge status={a.status} />

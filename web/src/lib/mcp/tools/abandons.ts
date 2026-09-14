@@ -1,7 +1,14 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { McpContext } from '../auth';
-import { listAbandons, createAbandon, updateAbandon } from '@/lib/services/abandons';
+import {
+  listAbandons,
+  createAbandon,
+  updateAbandon,
+  getAbandon,
+  editAbandon,
+  canEditAbandon,
+} from '@/lib/services/abandons';
 import { formatAmount, parseAmount } from '@/lib/format';
 import { applyAbandonTransition } from '@/lib/services/abandon-transition';
 import { currentTimestamp } from '@/lib/ids';
@@ -98,34 +105,74 @@ export function registerAbandonTools(server: McpServer, ctx: McpContext) {
 
   server.tool(
     'update_abandon',
-    'Met à jour les métadonnées d’un abandon de frais (CERFA émis, notes, motif refus…). Pour changer le statut, utilisez `transition_abandon` qui applique les règles de workflow.',
+    'Met à jour un abandon de frais. Champs métier (donateur, montant, date, nature, unité) : modifiables uniquement tant que la demande est `a_traiter`, par le demandeur ou un trésorier/RG — l’année fiscale suit la date. Notes et métadonnées (CERFA émis, envoi national, motif refus) : à tout moment. Pour changer le statut, utilisez `transition_abandon`. Pas d’ajout de pièce via MCP (upload UI uniquement).',
     {
       id: z.string().describe("ID de l'abandon (ex: ABF-2026-001)"),
       // status RETIRÉ — utiliser transition_abandon
+      prenom: z.string().optional(),
+      nom: z.string().optional(),
+      email: z.string().email().nullable().optional(),
+      montant: z.string().optional().describe('Montant abandonné (ex: "42,50")'),
+      date_depense: z.string().optional().describe('Date de la dépense (YYYY-MM-DD)'),
+      nature: z.string().optional(),
+      unite_id: z.string().nullable().optional(),
+      notes: z.string().nullable().optional(),
       cerfa_emis: z.boolean().optional().describe('Le CERFA fiscal a-t-il été émis ?'),
       cerfa_emis_at: z.string().nullable().optional(),
       sent_to_national_at: z.string().nullable().optional(),
       motif_refus: z.string().nullable().optional(),
-      notes: z.string().nullable().optional(),
     },
     async (params) => {
-      const { id, ...patch } = params;
-      const updated = await updateAbandon(abandonCtx, id, patch);
-      if (!updated) {
-        return { content: [{ type: 'text' as const, text: `Abandon ${id} introuvable.` }] };
+      const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
+      const { id, prenom, nom, email, montant, date_depense, nature, unite_id, notes, ...meta } =
+        params;
+
+      const touchesFields = [prenom, nom, email, montant, date_depense, nature, unite_id].some(
+        (v) => v !== undefined,
+      );
+      let updated = null;
+
+      if (touchesFields) {
+        const existing = await getAbandon(abandonCtx, id);
+        if (!existing) return text(`Abandon ${id} introuvable.`);
+        const isAdmin = ctx.role === 'tresorier' || ctx.role === 'RG';
+        const isOwner =
+          !!existing.submitted_by_user_id && existing.submitted_by_user_id === ctx.userId;
+        if (!canEditAbandon(existing.status, { isAdmin, isOwner })) {
+          return text(
+            `Abandon ${id} non modifiable : statut « ${existing.status} » (seul « a_traiter » est éditable, par le demandeur ou un trésorier/RG).`,
+          );
+        }
+        const newPrenom = prenom ?? existing.prenom;
+        const newNom = nom ?? existing.nom;
+        const date = date_depense ?? existing.date_depense;
+        updated = await editAbandon(abandonCtx, id, {
+          donateur:
+            prenom !== undefined || nom !== undefined
+              ? [newPrenom, newNom].filter(Boolean).join(' ')
+              : existing.donateur,
+          prenom: newPrenom,
+          nom: newNom,
+          email: email !== undefined ? email : existing.email,
+          amount_cents: montant !== undefined ? parseAmount(montant) : existing.amount_cents,
+          date_depense: date,
+          nature: nature ?? existing.nature,
+          unite_id: unite_id !== undefined ? unite_id : existing.unite_id,
+          annee_fiscale: date_depense !== undefined ? date.slice(0, 4) : existing.annee_fiscale,
+          notes: notes !== undefined ? notes : existing.notes,
+        });
+        if (!updated) return text(`Abandon ${id} a changé de statut entre-temps, rien modifié.`);
+        if (Object.values(meta).some((v) => v !== undefined)) {
+          updated = await updateAbandon(abandonCtx, id, meta);
+        }
+      } else {
+        updated = await updateAbandon(abandonCtx, id, { ...meta, notes });
       }
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(
-              { ...updated, montant: formatAmount(updated.amount_cents) },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
+
+      if (!updated) return text(`Abandon ${id} introuvable.`);
+      return text(
+        JSON.stringify({ ...updated, montant: formatAmount(updated.amount_cents) }, null, 2),
+      );
     },
   );
 }

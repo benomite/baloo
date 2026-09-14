@@ -8,8 +8,12 @@ import { resolveScopedUnite } from '../scope';
 import { getDb } from '../db';
 import {
   createAbandon as createAbandonService,
+  canEditAbandon,
+  editAbandon,
+  getAbandon,
   updateAbandon as updateAbandonService,
   type AbandonStatus,
+  type EditAbandonInput,
 } from '../services/abandons';
 import { applyAbandonTransition } from '../services/abandon-transition';
 import {
@@ -54,6 +58,98 @@ function pickFiles(formData: FormData, key: string): File[] {
     .filter((v): v is File => v instanceof File && v.size > 0);
 }
 
+// Champs métier du formulaire abandon, communs à la création et à l'édition.
+// Redirige vers `errorPath` avec le message si une saisie est invalide.
+function readAbandonFields(
+  formData: FormData,
+  errorPath: string,
+  scopeUniteIds: string[],
+): EditAbandonInput {
+  const fail = (msg: string): never =>
+    redirect(`${errorPath}?error=` + encodeURIComponent(msg));
+
+  const prenom = ((formData.get('prenom') as string | null)?.trim()) ?? '';
+  const nom = ((formData.get('nom') as string | null)?.trim()) ?? '';
+  const email = ((formData.get('email') as string | null)?.trim()) ?? '';
+  const nature = ((formData.get('nature') as string | null)?.trim()) ?? '';
+  const dateDepense = (formData.get('date_depense') as string | null) ?? '';
+  const amountRaw = (formData.get('montant') as string | null)?.trim() ?? '';
+
+  if (!prenom || !nom) fail('Prénom et nom du donateur requis.');
+  if (!nature) fail('Nature de la dépense requise.');
+  if (!dateDepense) fail('Date requise.');
+  let amount_cents = 0;
+  try {
+    amount_cents = parseAmount(amountRaw);
+  } catch {
+    fail(`Montant invalide : "${amountRaw}".`);
+  }
+  let unite_id: string | null = null;
+  try {
+    unite_id = resolveScopedUnite(
+      scopeUniteIds,
+      (formData.get('unite_id') as string | null) || null,
+    );
+  } catch (err) {
+    fail(err instanceof Error ? err.message : 'Unité invalide.');
+  }
+
+  return {
+    donateur: `${prenom} ${nom}`,
+    prenom,
+    nom,
+    email: email || null,
+    amount_cents,
+    date_depense: dateDepense,
+    nature,
+    unite_id,
+    // Annee fiscale = annee de la date de la depense (format YYYY).
+    annee_fiscale: dateDepense.slice(0, 4),
+    notes: (formData.get('notes') as string | null)?.trim() || null,
+  };
+}
+
+// Feuille + justifs optionnels (rattrapage d'historique : on saisit pour ne
+// pas perdre l'info, on attache apres). Validation taille / mime avant
+// toute ecriture en BDD.
+function readAbandonFiles(
+  formData: FormData,
+  errorPath: string,
+): { feuille: File | null; justifs: File[] } {
+  const feuille = pickFile(formData, 'feuille');
+  const justifs = pickFiles(formData, 'justifs');
+  try {
+    for (const f of feuille ? [feuille, ...justifs] : justifs) {
+      validateJustifAttachment({ filename: f.name, size: f.size, mime_type: f.type || null });
+    }
+  } catch (err) {
+    if (err instanceof JustificatifValidationError) {
+      redirect(`${errorPath}?error=` + encodeURIComponent(err.message));
+    }
+    throw err;
+  }
+  return { feuille, justifs };
+}
+
+async function attachAbandonFiles(
+  groupId: string,
+  abandonId: string,
+  files: { feuille: File | null; justifs: File[] },
+): Promise<void> {
+  // Si l'attache echoue on log mais on ne bloque pas — la demande est
+  // enregistree, on pourra rajouter la piece depuis l'edition.
+  try {
+    if (files.feuille) {
+      await attachFile(groupId, 'abandon_feuille', abandonId, files.feuille);
+    }
+    for (const j of files.justifs) {
+      await attachFile(groupId, 'abandon', abandonId, j);
+    }
+  } catch (err) {
+    console.error('[abandons] Attache fichiers echouee :', err);
+  }
+}
+
 async function attachFile(
   groupId: string,
   entityType: string,
@@ -88,78 +184,16 @@ export async function createAbandon(formData: FormData): Promise<void> {
   const ctx = await getCurrentContext();
   requireCanSubmit(ctx.role);
 
-  const feuille = pickFile(formData, 'feuille');
-  const justifs = pickFiles(formData, 'justifs');
-
-  const prenom = ((formData.get('prenom') as string | null)?.trim()) ?? '';
-  const nom = ((formData.get('nom') as string | null)?.trim()) ?? '';
-  const email = ((formData.get('email') as string | null)?.trim()) ?? '';
-  const nature = ((formData.get('nature') as string | null)?.trim()) ?? '';
-  const dateDepense = (formData.get('date_depense') as string | null) ?? '';
-  const amountRaw = (formData.get('montant') as string | null)?.trim() ?? '';
-
-  if (!prenom || !nom) {
-    redirect(
-      '/abandons/nouveau?error=' + encodeURIComponent('Prénom et nom du donateur requis.'),
-    );
-  }
-  if (!nature) {
-    redirect(
-      '/abandons/nouveau?error=' + encodeURIComponent('Nature de la dépense requise.'),
-    );
-  }
-  if (!dateDepense) {
-    redirect('/abandons/nouveau?error=' + encodeURIComponent('Date requise.'));
-  }
-  let amount_cents: number;
-  try {
-    amount_cents = parseAmount(amountRaw);
-  } catch {
-    redirect(
-      '/abandons/nouveau?error=' +
-        encodeURIComponent(`Montant invalide : "${amountRaw}".`),
-    );
-  }
-
-  // Validation des fichiers (taille / mime). Feuille et justifs sont optionnels
-  // (rattrapage d'historique : on saisit pour ne pas perdre l'info, on attache apres).
-  try {
-    if (feuille) {
-      validateJustifAttachment({
-        filename: feuille.name,
-        size: feuille.size,
-        mime_type: feuille.type || null,
-      });
-    }
-    for (const j of justifs) {
-      validateJustifAttachment({ filename: j.name, size: j.size, mime_type: j.type || null });
-    }
-  } catch (err) {
-    if (err instanceof JustificatifValidationError) {
-      redirect('/abandons/nouveau?error=' + encodeURIComponent(err.message));
-    }
-    throw err;
-  }
-
-  // Annee fiscale = annee de la date de la depense (format YYYY).
-  const anneeFiscale = dateDepense.slice(0, 4);
-  const fullName = `${prenom} ${nom}`;
+  const errorPath = '/abandons/nouveau';
+  const fields = readAbandonFields(formData, errorPath, ctx.scopeUniteIds);
+  const { feuille, justifs } = readAbandonFiles(formData, errorPath);
 
   let created;
   try {
     created = await createAbandonService(
       { groupId: ctx.groupId },
       {
-        donateur: fullName,
-        prenom,
-        nom,
-        email: email || null,
-        amount_cents,
-        date_depense: dateDepense,
-        nature,
-        unite_id: resolveScopedUnite(ctx.scopeUniteIds, (formData.get('unite_id') as string | null) || null),
-        annee_fiscale: anneeFiscale,
-        notes: (formData.get('notes') as string | null)?.trim() || null,
+        ...fields,
         // Le user connecte a soumis la demande (meme si le donateur designe
         // est une autre personne — cas admin saisie pour autrui).
         submitted_by_user_id: ctx.userId,
@@ -172,19 +206,7 @@ export async function createAbandon(formData: FormData): Promise<void> {
     );
   }
 
-  // Attache feuille (entity_type='abandon_feuille') + justifs (entity_type='abandon').
-  // Si l'attache echoue on log mais on ne bloque pas — la demande est creee,
-  // l'admin pourra ajouter a la main depuis la page detail.
-  try {
-    if (feuille) {
-      await attachFile(ctx.groupId, 'abandon_feuille', created.id, feuille);
-    }
-    for (const j of justifs) {
-      await attachFile(ctx.groupId, 'abandon', created.id, j);
-    }
-  } catch (err) {
-    console.error('[abandons] Attache fichiers echouee :', err);
-  }
+  await attachAbandonFiles(ctx.groupId, created.id, { feuille, justifs });
 
   // Notif admins (hors le declarant lui-meme s'il est deja admin).
   const admins = (await listAdminEmails(ctx.groupId)).filter((e) => e !== ctx.email);
@@ -207,6 +229,46 @@ export async function createAbandon(formData: FormData): Promise<void> {
   revalidatePath('/');
   revalidatePath('/abandons');
   redirect('/abandons?abandon_created=' + encodeURIComponent(created.id));
+}
+
+// Édition d'une demande encore `a_traiter` (demandeur ou admin) : champs
+// métier + ajout de pièces. Les pièces déjà attachées sont conservées —
+// les nouveaux fichiers s'ajoutent.
+export async function updateAbandon(id: string, formData: FormData): Promise<void> {
+  const ctx = await getCurrentContext();
+  const errorPath = `/abandons/${id}/edit`;
+
+  const existing = await getAbandon({ groupId: ctx.groupId }, id);
+  if (!existing) {
+    redirect('/abandons?error=' + encodeURIComponent('Demande introuvable.'));
+  }
+  const isAdmin = ADMIN_ROLES.includes(ctx.role);
+  const isOwner =
+    !!existing.submitted_by_user_id && existing.submitted_by_user_id === ctx.userId;
+  if (!canEditAbandon(existing.status, { isAdmin, isOwner })) {
+    redirect(
+      `/abandons/${id}?error=` +
+        encodeURIComponent('Cette demande n’est plus modifiable (elle n’est plus à traiter).'),
+    );
+  }
+
+  const fields = readAbandonFields(formData, errorPath, ctx.scopeUniteIds);
+  const files = readAbandonFiles(formData, errorPath);
+
+  const updated = await editAbandon({ groupId: ctx.groupId }, id, fields);
+  if (!updated) {
+    redirect(
+      `/abandons/${id}?error=` +
+        encodeURIComponent('La demande a changé de statut entre-temps, modification non enregistrée.'),
+    );
+  }
+
+  await attachAbandonFiles(ctx.groupId, id, files);
+
+  revalidatePath('/');
+  revalidatePath('/abandons');
+  revalidatePath(`/abandons/${id}`);
+  redirect(`/abandons/${id}?updated=1`);
 }
 
 async function transitionAbandon(

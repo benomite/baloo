@@ -37,6 +37,18 @@ interface Props {
   // Afficher l'info-box SGDF de téléchargement du formulaire.
   showSgdfInfo?: boolean;
   submitLabel?: string;
+  // Édition : valeurs de la demande existante et nombre de pièces déjà
+  // attachées (les nouveaux fichiers s'ajoutent, rien n'est remplacé).
+  initial?: {
+    nature: string;
+    montant: string;
+    date_depense: string;
+    unite_id: string | null;
+    notes: string | null;
+  };
+  existingFeuillesCount?: number;
+  existingJustifsCount?: number;
+  pendingLabel?: string;
 }
 
 export function AbandonForm({
@@ -48,6 +60,10 @@ export function AbandonForm({
   natureSuggestions = [],
   showSgdfInfo = false,
   submitLabel = 'Enregistrer le don',
+  initial,
+  existingFeuillesCount = 0,
+  existingJustifsCount = 0,
+  pendingLabel = 'Création…',
 }: Props) {
   return (
     <form action={action} encType="multipart/form-data" className="space-y-6">
@@ -109,6 +125,7 @@ export function AbandonForm({
             id="nature"
             name="nature"
             required
+            defaultValue={initial?.nature}
             placeholder="Ex. Frais km camp bleu — août 2025"
             list={natureSuggestions.length > 0 ? 'nature-suggestions' : undefined}
           />
@@ -126,6 +143,7 @@ export function AbandonForm({
               id="montant"
               name="montant"
               required
+              defaultValue={initial?.montant}
               placeholder="42,50"
               inputMode="decimal"
               className="tabular-nums"
@@ -142,7 +160,7 @@ export function AbandonForm({
               name="date_depense"
               type="date"
               required
-              defaultValue={today}
+              defaultValue={initial?.date_depense ?? today}
             />
           </Field>
         </div>
@@ -156,7 +174,12 @@ export function AbandonForm({
           const requireChoice = scopeUniteIds.length > 1;
           return (
             <Field label="Unité concernée" htmlFor="unite_id" hint={requireChoice ? undefined : 'optionnel'}>
-              <NativeSelect id="unite_id" name="unite_id" defaultValue="" required={requireChoice}>
+              <NativeSelect
+                id="unite_id"
+                name="unite_id"
+                defaultValue={initial?.unite_id ?? ''}
+                required={requireChoice}
+              >
                 <option value="" disabled={requireChoice}>
                   {requireChoice ? '— Choisir une unité —' : '— Aucune / groupe —'}
                 </option>
@@ -175,6 +198,14 @@ export function AbandonForm({
         title="Feuille d'abandon signée"
         subtitle="Le formulaire SGDF rempli et signé (xlsx ou PDF). Document officiel envoyé au national pour émettre le CERFA."
       >
+        {existingFeuillesCount > 0 && (
+          <p className="text-[12.5px] text-fg-muted">
+            {existingFeuillesCount === 1
+              ? 'Une feuille est déjà attachée'
+              : `${existingFeuillesCount} feuilles sont déjà attachées`}{' '}
+            — un nouveau fichier s&apos;ajoute sans la remplacer.
+          </p>
+        )}
         <Field label="Fichier" htmlFor="feuille">
           <Input
             id="feuille"
@@ -187,6 +218,14 @@ export function AbandonForm({
       </Section>
 
       <Section title="Justificatifs" subtitle="Tickets, factures, copie carte grise, etc. — optionnels.">
+        {existingJustifsCount > 0 && (
+          <p className="text-[12.5px] text-fg-muted">
+            {existingJustifsCount === 1
+              ? 'Un justificatif est déjà attaché'
+              : `${existingJustifsCount} justificatifs sont déjà attachés`}{' '}
+            — les nouveaux fichiers s&apos;ajoutent.
+          </p>
+        )}
         <FileMultiUploader
           name="justifs"
           accept="image/*,application/pdf"
@@ -199,12 +238,13 @@ export function AbandonForm({
           id="notes"
           name="notes"
           rows={2}
+          defaultValue={initial?.notes ?? undefined}
           placeholder="Ex. importé d'Airtable, signé RG le 26/01/2026..."
         />
       </Section>
 
       <div className="flex justify-end pt-2">
-        <PendingButton size="lg" pendingLabel="Création…">
+        <PendingButton size="lg" pendingLabel={pendingLabel}>
           {submitLabel}
         </PendingButton>
       </div>

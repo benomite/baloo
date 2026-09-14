@@ -17,10 +17,14 @@ const FAKE = {
   updated_at: '2026-05-18',
 };
 
-vi.mock('@/lib/services/abandons', () => ({
+vi.mock('@/lib/services/abandons', async (importOriginal) => ({
   listAbandons: vi.fn(async () => [FAKE]),
   createAbandon: vi.fn(async () => FAKE),
   updateAbandon: vi.fn(async () => FAKE),
+  getAbandon: vi.fn(async () => FAKE),
+  editAbandon: vi.fn(async () => FAKE),
+  canEditAbandon: (await importOriginal<typeof import('@/lib/services/abandons')>())
+    .canEditAbandon,
 }));
 
 vi.mock('@/lib/services/abandon-transition', () => ({
@@ -73,6 +77,40 @@ describe('abandons tools (Vague 3 + parité MCP)', () => {
     const r = await tools.update_abandon.handler({ id: 'ABF-2026-001', notes: 'ok' });
     const parsed = parseToolResult(r) as { id: string };
     expect(parsed.id).toBe('ABF-2026-001');
+  });
+
+  it('update_abandon édite les champs métier d’une demande à traiter', async () => {
+    const { getAbandon, editAbandon } = await import('@/lib/services/abandons');
+    vi.mocked(getAbandon).mockResolvedValueOnce({
+      ...FAKE,
+      prenom: 'Jean',
+      nom: 'Dupont',
+      submitted_by_user_id: 'u-autre',
+    } as never);
+    await tools.update_abandon.handler({
+      id: 'ABF-2026-001',
+      montant: '45,10',
+      date_depense: '2027-01-03',
+    });
+    expect(editAbandon).toHaveBeenCalledWith(
+      expect.anything(),
+      'ABF-2026-001',
+      expect.objectContaining({
+        amount_cents: 4510,
+        date_depense: '2027-01-03',
+        annee_fiscale: '2027',
+        donateur: 'Jean Dupont',
+        nature: 'Carburant',
+      }),
+    );
+  });
+
+  it('update_abandon refuse les champs métier hors a_traiter', async () => {
+    const { getAbandon, editAbandon } = await import('@/lib/services/abandons');
+    vi.mocked(getAbandon).mockResolvedValueOnce({ ...FAKE, status: 'valide' } as never);
+    const r = await tools.update_abandon.handler({ id: 'ABF-2026-001', montant: '1,00' });
+    expect(editAbandon).not.toHaveBeenCalled();
+    expect(JSON.stringify(r)).toMatch(/non modifiable/);
   });
 
   it('transition_abandon retourne { ok: true } via le service', async () => {

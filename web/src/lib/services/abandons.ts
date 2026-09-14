@@ -171,6 +171,62 @@ export async function createAbandon(
   return (await db.prepare('SELECT * FROM abandons_frais WHERE id = ?').get<Abandon>(id))!;
 }
 
+// Une demande reste modifiable (champs, pièces) tant qu'elle est `a_traiter` :
+// après validation, la feuille part au national et doit rester figée.
+export function canEditAbandon(
+  status: AbandonStatus,
+  who: { isAdmin: boolean; isOwner: boolean },
+): boolean {
+  return status === 'a_traiter' && (who.isAdmin || who.isOwner);
+}
+
+export interface EditAbandonInput {
+  donateur: string;
+  prenom: string | null;
+  nom: string | null;
+  email: string | null;
+  amount_cents: number;
+  date_depense: string;
+  nature: string;
+  unite_id: string | null;
+  annee_fiscale: string;
+  notes: string | null;
+}
+
+// Édition des champs métier d'une demande. Le garde-fou de statut est dans
+// la requête : une demande validée entre-temps n'est pas touchée (null).
+export async function editAbandon(
+  { groupId }: AbandonContext,
+  id: string,
+  input: EditAbandonInput,
+): Promise<Abandon | null> {
+  const result = await getDb()
+    .prepare(
+      `UPDATE abandons_frais
+       SET donateur = ?, prenom = ?, nom = ?, email = ?, amount_cents = ?,
+           date_depense = ?, nature = ?, unite_id = ?, annee_fiscale = ?,
+           notes = ?, updated_at = ?
+       WHERE id = ? AND group_id = ? AND status = 'a_traiter'`,
+    )
+    .run(
+      input.donateur,
+      nullIfEmpty(input.prenom),
+      nullIfEmpty(input.nom),
+      nullIfEmpty(input.email),
+      input.amount_cents,
+      input.date_depense,
+      input.nature,
+      nullIfEmpty(input.unite_id),
+      input.annee_fiscale,
+      nullIfEmpty(input.notes),
+      currentTimestamp(),
+      id,
+      groupId,
+    );
+  if (result.changes === 0) return null;
+  return getAbandon({ groupId }, id);
+}
+
 export interface UpdateAbandonInput {
   status?: AbandonStatus;
   motif_refus?: string | null;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isAllowedAbandonTransition, type AbandonStatus } from './abandons';
+import { canEditAbandon, isAllowedAbandonTransition, type AbandonStatus } from './abandons';
 
 describe('isAllowedAbandonTransition', () => {
   // a_traiter peut aller vers valide ou refuse
@@ -45,6 +45,24 @@ describe('isAllowedAbandonTransition', () => {
     const all: AbandonStatus[] = ['a_traiter', 'valide', 'envoye_national', 'refuse'];
     for (const s of all) {
       expect(isAllowedAbandonTransition(s, s)).toBe(false);
+    }
+  });
+});
+
+describe('canEditAbandon', () => {
+  it('le demandeur modifie sa demande à traiter', () => {
+    expect(canEditAbandon('a_traiter', { isAdmin: false, isOwner: true })).toBe(true);
+  });
+  it('un admin modifie une demande à traiter', () => {
+    expect(canEditAbandon('a_traiter', { isAdmin: true, isOwner: false })).toBe(true);
+  });
+  it('un tiers ne modifie pas', () => {
+    expect(canEditAbandon('a_traiter', { isAdmin: false, isOwner: false })).toBe(false);
+  });
+  it('plus rien de modifiable une fois sortie de à traiter, même admin', () => {
+    const figes: AbandonStatus[] = ['valide', 'envoye_national', 'refuse'];
+    for (const s of figes) {
+      expect(canEditAbandon(s, { isAdmin: true, isOwner: true })).toBe(false);
     }
   });
 });
