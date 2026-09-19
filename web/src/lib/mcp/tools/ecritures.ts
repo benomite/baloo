@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { McpContext } from '../auth';
 import { listEcritures, updateEcriture, batchUpdateEcritures } from '@/lib/services/ecritures';
+import { ventilateDraft, VENTILATE_MESSAGES } from '@/lib/services/ecritures-ventilate';
 import { ECRITURE_STATUSES, type EcritureStatus } from '@/lib/types';
 import { pendingStatuses } from '@/lib/services/ecritures-status';
 import { parseAmount } from '@/lib/format';
@@ -212,6 +213,69 @@ export function registerEcrituresTools(server: McpServer, ctx: McpContext) {
           {
             type: 'text' as const,
             text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    },
+  );
+  // ─── ventiler_ecriture ────────────────────────────────────────────────
+  //
+  // Éclatement d'un brouillon en N ventilations (parité MCP ↔ app,
+  // ADR-038 : l'app le fait depuis /inbox depuis 2026-07, le MCP pas
+  // encore — d'où ce tool). Délègue à `ventilateDraft`, le MÊME service
+  // que la route `PUT /api/ecritures/[id]/ventilations`, donc mêmes
+  // garde-fous : brouillon uniquement, Σ des lignes == total de la tête,
+  // refus si une ligne à retirer porte une pièce. L'opération est
+  // PUREMENT LOCALE — aucun push Comptaweb (cf. ADR-037) : la
+  // matérialisation reste une action humaine dans l'UI.
+  server.tool(
+    'ventiler_ecriture',
+    [
+      "Éclate un brouillon (draft) en PLUSIEURS ventilations : un même mouvement bancaire réparti sur",
+      'plusieurs imputations (ex. 300 € payés par une famille = 150 € LJ + 150 € SG, ou une dépense',
+      "unique = 150 € Hébergement + 100 € Petit matériel). La somme des ventilations DOIT être égale au",
+      "montant total de l'écriture — sinon le tool refuse (garde-fou anti perte/gain d'argent).",
+      "L'écriture de tête garde son id, ses justificatifs, ses notes et son identité bancaire ; les",
+      'lignes suivantes sont créées et rattachées au même groupe de ventilation.',
+      "Opération PUREMENT LOCALE : aucun envoi vers Comptaweb (la validation reste une action humaine dans l'app).",
+      "Ne marche que sur un brouillon : une écriture déjà dans Comptaweb n'est pas ventilable ici.",
+      "Repasser UNE seule ventilation refusionne le groupe (annule un découpage) — pratique pour corriger une erreur.",
+      "L'imputation (catégorie / unité / activité) peut être laissée vide et complétée ensuite via update_ecriture.",
+    ].join(' '),
+    {
+      id: z.string().describe("ID de l'écriture à ventiler (la tête du groupe, ex: ECR-2026-123)."),
+      ventilations: z
+        .array(
+          z.object({
+            montant: z.string().describe('Montant au format français, ex: "150,00".'),
+            category_id: z.string().nullish().describe('Nature / catégorie comptable (cf. list_categories).'),
+            unite_id: z.string().nullish().describe('Unité bénéficiaire (cf. list_unites).'),
+            activite_id: z.string().nullish().describe('Activité (cf. list_activites).'),
+          }),
+        )
+        .min(1)
+        .describe('Les lignes de détail. Leur somme doit égaler le montant total de l\'écriture.'),
+    },
+    async ({ id, ventilations }) => {
+      const lignes = ventilations.map((v) => ({
+        amount_cents: parseAmount(v.montant),
+        category_id: v.category_id ?? null,
+        unite_id: v.unite_id ?? null,
+        activite_id: v.activite_id ?? null,
+      }));
+      const result = await ventilateDraft(ecritureCtx, id, lignes);
+      if (!result.ok && result.reason) {
+        return { content: [{ type: 'text' as const, text: VENTILATE_MESSAGES[result.reason] }] };
+      }
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify(
+              { ok: true, ventilation_group_id: result.ventilation_group_id ?? null, ids: result.ids ?? [] },
+              null,
+              2,
+            ),
           },
         ],
       };

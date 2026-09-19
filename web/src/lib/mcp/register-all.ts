@@ -25,6 +25,12 @@ import { registerCampsTools } from './tools/camps';
 import { registerRepartitionsTools } from './tools/repartitions';
 import { registerAnneeTools } from './tools/annee';
 
+// Compteur Lot 5 : 77 tools = 76 existants + 1 ventilation
+//  - ventiler_ecriture : éclate un brouillon en N ventilations (parité
+//    MCP ↔ app — `ventilateDraft`, le service de la route
+//    `PUT /api/ecritures/[id]/ventilations`, livré côté app en 07-2026).
+//    Opération purement locale : aucun push Comptaweb (ADR-037 intact).
+//
 // Compteur Lot 4 : 76 tools = 74 existants + 2 vue Année
 //  - vue_annee : réalisé de l'exercice par unité, hors camps.
 //  - vue_annee_unite : détail d'une unité (par activité + écritures).

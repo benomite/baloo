@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const ventilateDraft = vi.fn();
-vi.mock('@/lib/services/ecritures-ventilate', () => ({ ventilateDraft: (...a: unknown[]) => ventilateDraft(...a) }));
+// Mock partiel : seul `ventilateDraft` est simulé. `VENTILATE_MESSAGES`
+// (les messages de refus, partagés avec le tool MCP `ventiler_ecriture`)
+// vient du vrai module — c'est ce que la route rend au client.
+vi.mock('@/lib/services/ecritures-ventilate', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/services/ecritures-ventilate')>()),
+  ventilateDraft: (...a: unknown[]) => ventilateDraft(...a),
+}));
 vi.mock('@/lib/api/route-helpers', () => ({
   requireApiContext: async () => ({ ctx: { groupId: 'g1', scopeUniteIds: [] } }),
   parseJsonBody: async (_req: Request, schema: { safeParse: (v: unknown) => { success: boolean; data?: unknown; error?: unknown } }) => {

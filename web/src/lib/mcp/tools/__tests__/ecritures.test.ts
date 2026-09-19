@@ -5,12 +5,21 @@ import { registerEcrituresTools } from '../ecritures';
 const listEcrituresMock = vi.fn();
 const updateEcritureMock = vi.fn();
 const batchUpdateEcrituresMock = vi.fn();
+const ventilateDraftMock = vi.fn();
 
 vi.mock('@/lib/services/ecritures', () => ({
   listEcritures: (...args: unknown[]) => listEcrituresMock(...args),
   updateEcriture: (...args: unknown[]) => updateEcritureMock(...args),
   batchUpdateEcritures: (...args: unknown[]) => batchUpdateEcrituresMock(...args),
 }));
+
+vi.mock('@/lib/services/ecritures-ventilate', async (orig) => {
+  const actual = (await orig()) as Record<string, unknown>;
+  return {
+    ...actual,
+    ventilateDraft: (...args: unknown[]) => ventilateDraftMock(...args),
+  };
+});
 
 vi.mock('@/lib/services/ecritures-status', async (orig) => {
   const actual = (await orig()) as Record<string, unknown>;
@@ -39,8 +48,13 @@ describe('ecritures tools (Vague 4 — étendus)', () => {
     });
   });
 
-  it('expose list_ecritures + update_ecriture + batch_update_ecritures (sans create_ecriture)', () => {
-    expect(Object.keys(tools).sort()).toEqual(['batch_update_ecritures', 'list_ecritures', 'update_ecriture']);
+  it('expose list_ecritures + update_ecriture + batch_update_ecritures + ventiler_ecriture (sans create_ecriture)', () => {
+    expect(Object.keys(tools).sort()).toEqual([
+      'batch_update_ecritures',
+      'list_ecritures',
+      'update_ecriture',
+      'ventiler_ecriture',
+    ]);
   });
 
   // ─── list_ecritures étendu ─────────────────────────────────────────────
@@ -189,5 +203,78 @@ describe('ecritures tools (Vague 4 — étendus)', () => {
     // Le patch est un z.object(), son shape est accessible via .shape dans zod
     // mais le test-helper capture le schéma brut. On vérifie que status n'y figure pas.
     expect(String(JSON.stringify(patchSchema))).not.toContain('"status"');
+  });
+  // ─── ventiler_ecriture ─────────────────────────────────────────────────
+
+  it('ventiler_ecriture convertit les montants FR en cents et délègue au service', async () => {
+    ventilateDraftMock.mockResolvedValue({ ok: true, ventilation_group_id: 'vg_1', ids: ['ECR-1', 'ECR-2'] });
+    await tools.ventiler_ecriture.handler({
+      id: 'ECR-1',
+      ventilations: [
+        { montant: '150,00', category_id: 'cat-part', unite_id: 'u-lj', activite_id: 'act-1' },
+        { montant: '150,00', category_id: 'cat-part', unite_id: 'u-sg', activite_id: 'act-1' },
+      ],
+    });
+    expect(ventilateDraftMock).toHaveBeenCalledWith(
+      expect.any(Object),
+      'ECR-1',
+      [
+        { amount_cents: 15000, category_id: 'cat-part', unite_id: 'u-lj', activite_id: 'act-1' },
+        { amount_cents: 15000, category_id: 'cat-part', unite_id: 'u-sg', activite_id: 'act-1' },
+      ],
+    );
+  });
+
+  it('ventiler_ecriture retourne les ids créés et le groupe de ventilation', async () => {
+    ventilateDraftMock.mockResolvedValue({ ok: true, ventilation_group_id: 'vg_1', ids: ['ECR-1', 'ECR-2'] });
+    const r = await tools.ventiler_ecriture.handler({
+      id: 'ECR-1',
+      ventilations: [
+        { montant: '150,00' },
+        { montant: '150,00' },
+      ],
+    });
+    const parsed = parseToolResult(r) as { ok: boolean; ventilation_group_id: string; ids: string[] };
+    expect(parsed.ok).toBe(true);
+    expect(parsed.ventilation_group_id).toBe('vg_1');
+    expect(parsed.ids).toEqual(['ECR-1', 'ECR-2']);
+  });
+
+  it('ventiler_ecriture accepte une imputation partielle (catégorie à compléter ensuite)', async () => {
+    ventilateDraftMock.mockResolvedValue({ ok: true, ventilation_group_id: 'vg_1', ids: ['ECR-1', 'ECR-2'] });
+    await tools.ventiler_ecriture.handler({
+      id: 'ECR-1',
+      ventilations: [{ montant: '10,00' }, { montant: '20,00' }],
+    });
+    expect(ventilateDraftMock).toHaveBeenCalledWith(
+      expect.any(Object),
+      'ECR-1',
+      [
+        { amount_cents: 1000, category_id: null, unite_id: null, activite_id: null },
+        { amount_cents: 2000, category_id: null, unite_id: null, activite_id: null },
+      ],
+    );
+  });
+
+  it('ventiler_ecriture traduit un refus du service en message métier', async () => {
+    ventilateDraftMock.mockResolvedValue({ ok: false, reason: 'sum_mismatch' });
+    const r = await tools.ventiler_ecriture.handler({
+      id: 'ECR-1',
+      ventilations: [{ montant: '10,00' }, { montant: '5,00' }],
+    });
+    expect(parseToolResult(r) as string).toContain('somme');
+  });
+
+  it('ventiler_ecriture refuse une écriture déjà dans Comptaweb avec un message explicite', async () => {
+    ventilateDraftMock.mockResolvedValue({ ok: false, reason: 'in_cw' });
+    const r = await tools.ventiler_ecriture.handler({
+      id: 'ECR-1',
+      ventilations: [{ montant: '10,00' }],
+    });
+    expect(parseToolResult(r) as string).toContain('Comptaweb');
+  });
+
+  it('ventiler_ecriture documente la refusion en une seule ventilation', () => {
+    expect(tools.ventiler_ecriture.description).toMatch(/refusionn|une seule ventilation/i);
   });
 });

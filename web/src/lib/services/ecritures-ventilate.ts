@@ -12,6 +12,19 @@ import { uniteScopeSql } from '../scope';
 export type VentilateReason =
   | 'not_found' | 'not_draft' | 'in_cw' | 'sum_mismatch' | 'incomplete' | 'child_has_attachments';
 
+// Messages métier d'un refus de ventilation. Partagés par la route API
+// (`/api/ecritures/[id]/ventilations`) et le tool MCP `ventiler_ecriture`
+// pour que l'app et l'agent donnent au trésorier la MÊME explication
+// (parité MCP ↔ app, ADR-038).
+export const VENTILATE_MESSAGES: Record<VentilateReason, string> = {
+  not_found: 'Écriture introuvable.',
+  not_draft: 'Seul un brouillon peut être ventilé.',
+  in_cw: 'Écriture déjà dans Comptaweb — non ventilable.',
+  sum_mismatch: 'La somme des détails doit être égale au total.',
+  incomplete: 'Chaque détail doit avoir un montant non nul.',
+  child_has_attachments: "Une ligne à retirer porte une pièce jointe — détachez-la d'abord.",
+};
+
 export interface VentilateDraftResult {
   ok: boolean;
   reason?: VentilateReason;
