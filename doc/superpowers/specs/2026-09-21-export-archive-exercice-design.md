@@ -113,6 +113,7 @@ Les emails sont **conservés** : un successeur doit pouvoir recontacter un deman
 - **Pas de budgets** dans le dossier d'exercice (ils restent dans le dump). Le prévisionnel éclaire le pilotage de l'année en cours, pas la lecture d'une année close.
 - **Signatures exportées** (`signatures.csv` dans `02-` et `03-`), en plus de l'encart déjà rendu dans les PDF. Sans la chaîne de signature — rôle, horodatage, `data_hash`, IP — un PDF signé n'est qu'un PDF : c'est la chaîne qui porte la valeur probante.
 - **Remboursements jamais signés** : pas de PDF en base (il n'est généré qu'à la signature, cf. `remboursement-signing.ts`). Ils sont listés dans le CSV et l'index avec la mention « non signé ». Aucun PDF n'est généré a posteriori — un document produit à l'export n'aurait rien signé.
+- **Périmètre temporel par entité** : les écritures sont bornées sur `date_ecriture`, les abandons sur `date_depense`, les mouvements de caisse sur leur date d'opération, les remboursements sur `COALESCE(date_depense, created_at)` — c'est la borne déjà retenue par `queries/cloture.ts`, une demande pouvant être déposée sans date de dépense.
 - **Justificatifs obsolètes** (`obsolete_at` non nul) : inclus, dans un sous-dossier `_obsoletes/` de leur écriture. Traçabilité sans polluer la lecture.
 - **Écritures en `draft` / `pending_cw` / `pending_sync`** à la date d'export : incluses, avec leur statut en clair dans le CSV et signalées dans les contrôles. Un successeur doit voir ce qui n'était pas matérialisé dans Comptaweb.
 
@@ -122,14 +123,25 @@ Le CSV d'écritures **réutilise le formateur existant** de `web/src/app/api/ecr
 
 Le script ne se contente pas de copier : il vérifie et écrit le résultat en tête du `README.md` du dossier d'exercice.
 
-- Écritures avec `justif_attendu = 1` et aucun justificatif attaché
-- Remboursements en statut `paye` sans PDF signé
-- Dépôts de justificatifs rattachés à aucune écriture
-- Blobs référencés en base et introuvables dans le store
-- Total Baloo vs total Comptaweb, mois par mois
-- Écritures encore en `draft` / `pending_cw` / `pending_sync`
+| Contrôle | Définition exacte |
+|---|---|
+| Écritures sans justificatif | `type = 'depense'`, `justif_attendu = 1`, aucun `justificatifs` avec `entity_type = 'ecriture'` et `obsolete_at IS NULL` |
+| Remboursements aboutis sans PDF signé | `status IN ('virement_effectue', 'termine')` et aucun `justificatifs` avec `entity_type = 'remboursement_feuille'` |
+| Dépôts orphelins | `depots_justificatifs` avec `ecriture_id IS NULL` et `remboursement_id IS NULL`, statut ≠ `rejete` |
+| Blobs manquants | `justificatifs.file_path` référencé en base, absent du store (seul contrôle avec I/O) |
+| Écarts de miroir | écritures dont le `status` ≠ `mirror`, groupées par statut et par mois, avec le montant total concerné |
+| Écritures divergentes | `status = 'divergent'` — Baloo et Comptaweb ne disent pas la même chose |
+
+Deux précisions qui ont leur importance :
+
+- **Les statuts de remboursement** sont `a_traiter`, `valide_tresorier`, `valide_rg`, `virement_effectue`, `termine`, `refuse`, `converti` (`lib/types.ts`). Il n'y a pas de statut « payé » : les deux statuts qui signifient « c'est allé au bout » sont `virement_effectue` et `termine`.
+- **L'écart de miroir ne se mesure pas contre `comptaweb_lignes`**, qui n'est que le cache du dernier import CSV et peut être périmé de plusieurs mois. La source fiable est le statut de l'écriture elle-même : une écriture `mirror` porte un `comptaweb_ecriture_id` et *est* Comptaweb (ADR-035). Tout ce qui n'est pas `mirror` est, par définition, un écart.
 
 C'est ce qui donne à l'export sa valeur opérationnelle : **lancé avant** de déclarer l'exercice clos, il dit ce qui manque pendant qu'il est encore temps de le corriger. Les contrôles ne bloquent jamais l'export — ils décrivent.
+
+**Relation avec `queries/cloture.ts`.** La page `/cloture` calcule déjà trois de ces règles, mais en **comptages** mensuels, et via `getCurrentContext()` — donc inutilisable depuis un script CLI, qui n'a pas de session HTTP. L'export a besoin des **listes**, pas des compteurs. Les contrôles sont donc écrits dans un module pur prenant `(db, groupId, bornes)` en paramètres, et `getClotureReport` est réécrit par-dessus en comptant les listes. Sans cette bascule, la même règle métier existerait en deux SQL divergeables, et l'export finirait par contredire la page.
+
+Cette bascule corrige au passage un écart réel : la requête actuelle de `/cloture` ne filtre pas `obsolete_at`, donc une écriture dont l'unique justificatif a été remplacé compte comme justifiée. Les chiffres de `/cloture` peuvent légèrement augmenter après ce chantier — c'est une correction, pas une régression.
 
 ### 6. Périmètre et découpage du code
 
