@@ -1564,4 +1564,37 @@ Constaté le 2026-09-11, onze jours après la bascule : les lignes bancaires de 
 
 ---
 
+## ADR-040 — Export d'archive : deux artefacts, script local, caviardage par défaut
+
+**Date** : 2026-09-21
+**Statut** : Acté
+**Lié à** : [ADR-013](#adr-013--multi-user-dès-larchitecture-aucune-donnée-user-dépendante-en-git) (schéma multi-tenant), [ADR-038](#adr-038--parité-mcp--app-comme-invariant) (asymétrie MCP assumée ici), [ADR-039](#adr-039--comptaweb--une-connexion-par-exercice-deux-exercices-actifs-en-période-de-clôture) (bornes d'exercice réutilisées).
+**Spec** : [`superpowers/specs/2026-09-21-export-archive-exercice-design.md`](superpowers/specs/2026-09-21-export-archive-exercice-design.md).
+
+### Contexte
+
+Baloo détient seul une part croissante de la compta du groupe : justificatifs uploadés, notes d'écriture, liens dépôt ↔ écriture, imputations corrigées à la main. Rien ne permettait d'en sortir une copie. Trois besoins distincts se présentent à la clôture de l'exercice 2025-2026 : se protéger d'une panne ou d'une migration ratée, rendre une année lisible sans accès à Baloo pour la passation, et pouvoir ressortir une pièce des années plus tard.
+
+Sécurité et passation ont des exigences opposées — fidélité brute et fréquence d'un côté, lisibilité et découpage annuel de l'autre.
+
+### Décision
+
+1. **Deux artefacts distincts**, pas un seul. Un **dump technique** (toute la base, toutes années, déclenchable à volonté, reste chez le trésorier) et un **dossier d'exercice** (un exercice, lisible, destiné au Drive du groupe). Le dump est découplé du calendrier de clôture : un export annuel ne protégerait pas les mois écoulés depuis la dernière clôture.
+2. **Génération par script local** (`web/scripts/export-{dump,exercice}.ts`, accès base direct via `getCliContext()`), pas par la webapp. Vercel plafonne à 60 s avec un filesystem éphémère, et surtout le filet de sécurité ne doit pas dépendre de ce qu'il protège : un script local fonctionne le jour où l'UI est cassée.
+3. **Caviardage par défaut, non désactivable**, sur le seul artefact qui circule. `remboursements.rib_texte`, `rib_file_path`, `edit_token` et `validate_token` ne sortent jamais dans le dossier d'exercice. Les tokens sont des liens d'accès direct actifs : diffusés, ils permettraient de modifier ou valider un remboursement en production.
+4. **Liste d'exclusion des tables d'authentification vérifiée par un test de complétude** : toute table du schéma doit être explicitement incluse ou exclue, sinon la suite échoue. Une table d'auth ajoutée plus tard ne peut pas partir silencieusement dans un dump.
+5. **Logique de collecte pure, isolée de l'I/O** (`services/export-archive.ts` vs `scripts/`), pour qu'un `/admin/export` en P3 n'ait que la couche I/O à réécrire.
+
+### Conséquences
+
+- **Seul le trésorier disposant des accès locaux peut exporter.** Acceptable en mono-groupe ; à reprendre si la P3 ouvre l'outil à d'autres trésoriers.
+- **L'export devient un outil de clôture, pas seulement d'archivage** : les contrôles de cohérence (justifs manquants, remboursements payés non signés, dépôts orphelins, écart Baloo ↔ Comptaweb par mois, écritures non matérialisées) sont écrits en tête du `README.md`. Lancé avant de déclarer l'exercice clos, il dit ce qui manque tant qu'il est encore temps.
+- **Aucun tool MCP ajouté** — asymétrie volontaire au titre d'ADR-038 : l'export est un utilitaire d'administration local, pas une opération métier sur les données.
+- **La restauration n'est pas couverte.** Le dump est fidèle et relisible, mais aucun script de réimport n'est écrit : un import qui respecte la règle « JAMAIS de DELETE » est un chantier à part entière.
+- Les budgets prévisionnels et la table `camps` n'ont pas de section dans le dossier d'exercice (le bilan de camp est dérivé des écritures) ; `avances_camp` en a une, car `montant_rendu_cents` et `statut` n'existent nulle part ailleurs.
+
+**Liens** : `web/src/lib/services/export-archive.ts`, `web/scripts/export-{dump,exercice}.ts`, `web/src/app/api/ecritures/export/route.ts` (formateur CSV réutilisé).
+
+---
+
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*
