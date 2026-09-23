@@ -6,13 +6,18 @@
 // Filet de sécurité, pas archive de passation : le contenu est FIDÈLE (RIB et
 // tokens compris) et reste chez le trésorier. Cf. ADR-040.
 //
-// Reprenable : un blob déjà présent avec la bonne taille n'est pas
-// retéléchargé. Relancer après une coupure reprend où ça s'est arrêté.
+// Reprenable : un blob est écrit dans un fichier temporaire (`.part`) puis
+// `rename`é vers son nom final une fois l'écriture terminée — `rename` est
+// atomique sur un même système de fichiers, donc un fichier présent sous
+// son nom final est forcément complet. Relancer après une coupure (réseau,
+// Ctrl-C, disque plein) ne retéléchargera donc jamais un fichier déjà
+// intégralement écrit, et ne laissera jamais passer un fichier tronqué pour
+// complet.
 //
 // Un blob manquant du store n'interrompt pas le dump : il est consigné dans
 // manifest.json (`blobs.manquants`) et le dump continue — un fichier perdu
 // ne doit pas empêcher de sauvegarder les autres.
-import { mkdir, writeFile, stat } from 'node:fs/promises';
+import { mkdir, writeFile, stat, rename, unlink } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { execSync } from 'node:child_process';
 import { getDb } from '../src/lib/db';
@@ -80,16 +85,24 @@ async function main() {
       octets = (await stat(cible)).size;
       sautes += 1;
     } catch {
+      // `storage.fetch` avale toute exception (réseau, auth, timeout) et
+      // renvoie null exactement comme pour un fichier réellement absent —
+      // impossible de distinguer les deux cas ici. D'où l'avertissement de
+      // proportion posé plus bas sur `manquants`.
       const res = await storage.fetch(j.file_path);
       if (!res) {
-        // Fichier référencé en base mais absent du store : on consigne et
-        // on continue, ce n'est pas un motif d'arrêt du dump.
+        // Fichier référencé en base mais absent du store (ou store
+        // injoignable, cf. commentaire ci-dessus) : on consigne et on
+        // continue, ce n'est pas un motif d'arrêt du dump.
         manquants.push({ id: j.id, file_path: j.file_path, original_filename: j.original_filename });
         continue;
       }
       const buf = await toBuffer(res.body);
+      const partiel = `${cible}.part`;
       await mkdir(dirname(cible), { recursive: true });
-      await writeFile(cible, buf);
+      await unlink(partiel).catch(() => {}); // .part résiduel d'un run interrompu précédent
+      await writeFile(partiel, buf);
+      await rename(partiel, cible); // atomique : le fichier final n'apparaît que complet
       octets = buf.byteLength;
       telecharges += 1;
     }
@@ -105,6 +118,20 @@ async function main() {
     console.warn(`\n⚠️  ${controleBlobs.lignes.length} fichier(s) introuvable(s) dans le store (cf. manifest.json).`);
   }
 
+  // `storage.fetch` ne distingue pas un fichier réellement absent d'une
+  // erreur de lecture (réseau, auth, timeout) : les deux renvoient null. Une
+  // proportion massive de "manquants" ressemble donc bien plus à une panne
+  // d'accès au store qu'à une perte réelle de fichiers — on le signale
+  // explicitement plutôt que de laisser croire à une hécatombe de pièces.
+  let avertissement: string | null = null;
+  if (justifs.length > 0 && manquants.length > justifs.length / 2) {
+    avertissement =
+      `${manquants.length} fichier(s) sur ${justifs.length} sont ressortis "manquants" — une telle ` +
+      `proportion indique plus probablement un problème d'accès au store (réseau, authentification) ` +
+      `qu'une perte réelle de fichiers. Vérifie l'accès au store et relance le dump avant de conclure.`;
+    console.warn(`\n⚠️  ${avertissement}`);
+  }
+
   const manifest = {
     genere_le: new Date().toISOString(),
     group_id: groupId,
@@ -118,6 +145,7 @@ async function main() {
         nombre: controleBlobs.lignes.length,
         lignes: manquants,
       },
+      ...(avertissement ? { avertissement } : {}),
     },
     tables_exclues: TABLES_EXCLUES,
   };
