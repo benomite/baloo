@@ -4,6 +4,7 @@ import {
 } from '@/lib/services/ecritures';
 import { requireApiContext } from '@/lib/api/route-helpers';
 import { listCategories, listUnites, listModesPaiement, listActivites } from '@/lib/services/reference';
+import { escapeCsv, formatAmountCsv, buildCsv } from '@/lib/csv';
 
 // Export CSV des écritures avec les mêmes filtres que la page
 // /ecritures. Renvoie un text/csv téléchargé directement par le
@@ -13,26 +14,6 @@ import { listCategories, listUnites, listModesPaiement, listActivites } from '@/
 // l'admin doit affiner ses filtres (période, type, etc.).
 
 const MAX_ROWS = 10_000;
-
-function escapeCsv(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  const s = String(value);
-  // Échappement RFC 4180 : si le champ contient virgule, guillemet ou
-  // saut de ligne, on entoure de guillemets et on double les guillemets
-  // internes.
-  if (/[",\n\r]/.test(s)) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
-}
-
-function formatAmountCsv(cents: number): string {
-  // Format français pour Excel FR : virgule décimale, pas de séparateur
-  // milliers (Excel l'ajoute lui-même selon la locale du poste).
-  const sign = cents < 0 ? '-' : '';
-  const abs = Math.abs(cents);
-  return `${sign}${Math.floor(abs / 100)},${String(abs % 100).padStart(2, '0')}`;
-}
 
 export async function GET(request: Request) {
   const ctxR = await requireApiContext(request);
@@ -88,30 +69,24 @@ export async function GET(request: Request) {
     'notes',
   ];
 
-  const rows = ecritures.map((e) =>
-    [
-      e.id,
-      e.date_ecriture,
-      e.type,
-      e.description,
-      formatAmountCsv(e.amount_cents),
-      e.unite_id ? un.get(e.unite_id) ?? '' : '',
-      e.category_id ? cat.get(e.category_id) ?? '' : '',
-      e.mode_paiement_id ? mp.get(e.mode_paiement_id) ?? '' : '',
-      e.activite_id ? ac.get(e.activite_id) ?? '' : '',
-      e.status,
-      e.numero_piece ?? '',
-      e.comptaweb_ecriture_id ?? '',
-      e.justif_attendu ? 'oui' : 'non',
-      e.notes ?? '',
-    ]
-      .map(escapeCsv)
-      .join(','),
-  );
+  const rows = ecritures.map((e) => [
+    e.id,
+    e.date_ecriture,
+    e.type,
+    e.description,
+    formatAmountCsv(e.amount_cents),
+    e.unite_id ? un.get(e.unite_id) ?? '' : '',
+    e.category_id ? cat.get(e.category_id) ?? '' : '',
+    e.mode_paiement_id ? mp.get(e.mode_paiement_id) ?? '' : '',
+    e.activite_id ? ac.get(e.activite_id) ?? '' : '',
+    e.status,
+    e.numero_piece ?? '',
+    e.comptaweb_ecriture_id ?? '',
+    e.justif_attendu ? 'oui' : 'non',
+    e.notes ?? '',
+  ]);
 
-  // BOM UTF-8 pour qu'Excel reconnaisse l'encodage tout seul (sinon
-  // les accents partent en charabia à l'ouverture).
-  const csv = '﻿' + [headers.join(','), ...rows].join('\r\n');
+  const csv = buildCsv(headers, rows);
 
   const today = new Date().toISOString().slice(0, 10);
   return new Response(csv, {
