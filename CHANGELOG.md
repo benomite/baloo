@@ -4,6 +4,10 @@ Tous les changements notables sont documentés ici. Format inspiré de [Keep a C
 
 ## [Unreleased]
 
+### Ajouts
+
+- **Export d'archive** : deux artefacts distincts — un dump technique complet (`pnpm export:dump`, toutes tables + fichiers, fidèle, reste chez le trésorier) et un dossier d'exercice lisible (`pnpm export:exercice`, caviardé à la source, destiné au Drive du groupe) — plus un rapport de contrôles de cohérence (`pnpm export:controles`) utilisable avant de déclarer un exercice clos. Cf. [ADR-040](doc/decisions.md).
+
 ### À venir
 
 - Activation terrain P2 : ≥ 2 chefs d'unité actifs, ≥ 1 parent connecté.
