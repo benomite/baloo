@@ -25,7 +25,8 @@
     "link:rembs-ecritures": "tsx scripts/link-rembs-to-ecritures.ts",
     "demote:unlinked-termine": "tsx scripts/demote-unlinked-termine.ts",
     "export:controles": "tsx scripts/export-controles.ts",
-    "export:dump": "tsx scripts/export-dump.ts"
+    "export:dump": "tsx scripts/export-dump.ts",
+    "export:exercice": "tsx scripts/export-exercice.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",
