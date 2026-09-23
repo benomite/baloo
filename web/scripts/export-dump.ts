@@ -17,14 +17,15 @@
 // Un blob manquant du store n'interrompt pas le dump : il est consigné dans
 // manifest.json (`blobs.manquants`) et le dump continue — un fichier perdu
 // ne doit pas empêcher de sauvegarder les autres.
-import { mkdir, writeFile, stat, rename, unlink } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { mkdir, writeFile, stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { getDb } from '../src/lib/db';
 import { getStorage } from '../src/lib/storage';
 import { TABLES_INCLUSES, TABLES_EXCLUES, classifierTables } from '../src/lib/services/export/tables';
 import { collecterTable } from '../src/lib/services/export/collecte';
 import { controleBlobsManquants } from '../src/lib/services/export/controles';
+import { toBuffer, ecrireAtomique } from './lib/blob-io';
 import { getCliContext } from './cli-context';
 
 async function main() {
@@ -98,11 +99,7 @@ async function main() {
         continue;
       }
       const buf = await toBuffer(res.body);
-      const partiel = `${cible}.part`;
-      await mkdir(dirname(cible), { recursive: true });
-      await unlink(partiel).catch(() => {}); // .part résiduel d'un run interrompu précédent
-      await writeFile(partiel, buf);
-      await rename(partiel, cible); // atomique : le fichier final n'apparaît que complet
+      await ecrireAtomique(cible, buf);
       octets = buf.byteLength;
       telecharges += 1;
     }
@@ -151,18 +148,6 @@ async function main() {
   };
   await writeFile(join(racine, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
   console.log(`\nDump écrit dans ${racine} (${justifs.length} fichiers, ${telecharges} téléchargés).`);
-}
-
-async function toBuffer(body: Uint8Array | ReadableStream<Uint8Array>): Promise<Buffer> {
-  if (body instanceof Uint8Array) return Buffer.from(body.buffer, body.byteOffset, body.byteLength);
-  const chunks: Uint8Array[] = [];
-  const reader = body.getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value) chunks.push(value);
-  }
-  return Buffer.concat(chunks);
 }
 
 function gitCommit(): string | null {
