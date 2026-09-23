@@ -273,6 +273,8 @@ describe('formatRapportTexte', () => {
     );
     expect(texte).toContain('Écritures sans justificatif (1)');
     expect(texte).toContain('ECR-1');
-    expect(texte).toContain('87,77 €');
+    // formatAmount sépare montant et `€` par un NBSP (cf. src/lib/format.ts) :
+    // pas un espace normal comme dans le libellé du cahier des charges.
+    expect(texte).toContain('87,77 €');
   });
 });

@@ -6,6 +6,7 @@
 // fonctions tournent aussi bien depuis un script CLI (pas de session HTTP)
 // que depuis une server action.
 import type { DbWrapper } from '../../db';
+import { formatAmount } from '../../format';
 import type { BornesExercice } from './bornes';
 
 export interface LigneControle {
@@ -229,12 +230,6 @@ export async function rapportControles(
   return [sansJustif, sansPdf, orphelins, ...miroir];
 }
 
-function montantFr(cents: number): string {
-  const sign = cents < 0 ? '-' : '';
-  const abs = Math.abs(cents);
-  return `${sign}${Math.floor(abs / 100)},${String(abs % 100).padStart(2, '0')} €`;
-}
-
 /** Rendu texte du rapport, réutilisé tel quel en tête du README.md du dossier. */
 export function formatRapportTexte(controles: Controle[], bornes: BornesExercice): string {
   const out: string[] = [`Contrôles de cohérence — exercice ${bornes.exercice} (${bornes.debut} → ${bornes.fin})`, ''];
@@ -248,7 +243,7 @@ export function formatRapportTexte(controles: Controle[], bornes: BornesExercice
     out.push(`⚠️  ${c.titre} (${c.lignes.length})`);
     for (const l of c.lignes) {
       const detail = l.detail ? ` — ${l.detail}` : '';
-      out.push(`     ${l.date ?? '?'}  ${l.id}  ${montantFr(l.montantCents)}  ${l.libelle}${detail}`);
+      out.push(`     ${l.date ?? '?'}  ${l.id}  ${formatAmount(l.montantCents)}  ${l.libelle}${detail}`);
     }
     out.push('');
   }
