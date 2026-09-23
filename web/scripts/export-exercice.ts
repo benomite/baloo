@@ -5,16 +5,19 @@
 //
 // Destiné au Drive du groupe : le contenu est CAVIARDÉ (ni RIB, ni tokens
 // d'accès). Cf. ADR-040.
-import { mkdir, writeFile, stat, rename, unlink } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { mkdir, writeFile, stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import { getDb, type DbWrapper } from '../src/lib/db';
 import { getStorage } from '../src/lib/storage';
 import { buildCsv, formatAmountCsv } from '../src/lib/csv';
 import { bornesPourExercice, type BornesExercice } from '../src/lib/services/export/bornes';
-import { rapportControles, formatRapportTexte, type Controle } from '../src/lib/services/export/controles';
+import {
+  rapportControles, formatRapportTexte, controleBlobsManquants, type Controle,
+} from '../src/lib/services/export/controles';
 import { collecterTable } from '../src/lib/services/export/collecte';
 import { TABLES_INCLUSES } from '../src/lib/services/export/tables';
 import { dossierEcriture, dossierRemboursement, slug } from '../src/lib/services/export/arborescence';
+import { toBuffer, ecrireAtomique } from './lib/blob-io';
 import { getCliContext } from './cli-context';
 
 type Storage = ReturnType<typeof getStorage>;
@@ -27,27 +30,18 @@ interface JustificatifRow {
 }
 
 // Écrit un blob à son emplacement final, avec les deux mêmes garanties que
-// `export:dump` (cf. `export-dump.ts`) : écriture atomique (`.part` puis
-// `rename`, donc un fichier présent sous son nom final est forcément
-// complet) et reprise (un fichier déjà là n'est pas retéléchargé). Un blob
-// absent du store (`storage.fetch` rend `null`) n'interrompt pas l'export :
-// il est consigné dans `blobsManquants` et l'appelant continue.
-const blobsManquants: Array<{ id: string; file_path: string }> = [];
-
-async function toBuffer(body: Uint8Array | ReadableStream<Uint8Array>): Promise<Buffer> {
-  if (body instanceof Uint8Array) return Buffer.from(body.buffer, body.byteOffset, body.byteLength);
-  const chunks: Uint8Array[] = [];
-  const reader = body.getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value) chunks.push(value);
-  }
-  return Buffer.concat(chunks);
-}
+// `export:dump` (cf. `blob-io.ts`, partagé entre les deux scripts) :
+// écriture atomique (donc reprise fiable) et lecture du corps de réponse
+// quel que soit le backend de stockage. Un blob absent du store
+// (`storage.fetch` rend `null`) n'interrompt pas l'export : il est
+// consigné dans `blobsManquants` — qui alimente à la fois un
+// `console.warn` en fin de run ET un `Controle` inséré dans le README
+// (l'archive doit porter la trace de ce qui lui manque, pas seulement le
+// terminal qui l'a produite) — et l'appelant continue.
+const blobsManquants: Array<{ id: string; file_path: string; original_filename: string | null }> = [];
 
 async function ecrireBlobVersFichier(
-  j: { id: string; file_path: string },
+  j: { id: string; file_path: string; original_filename: string | null },
   cible: string,
   storage: Storage,
 ): Promise<void> {
@@ -59,15 +53,11 @@ async function ecrireBlobVersFichier(
   }
   const res = await storage.fetch(j.file_path);
   if (!res) {
-    blobsManquants.push({ id: j.id, file_path: j.file_path });
+    blobsManquants.push({ id: j.id, file_path: j.file_path, original_filename: j.original_filename });
     return;
   }
   const buf = await toBuffer(res.body);
-  await mkdir(dirname(cible), { recursive: true });
-  const partiel = `${cible}.part`;
-  await unlink(partiel).catch(() => {}); // .part résiduel d'un run interrompu précédent
-  await writeFile(partiel, buf);
-  await rename(partiel, cible); // atomique : le fichier final n'apparaît que complet
+  await ecrireAtomique(cible, buf);
 }
 
 // Écrit un justificatif dans `dossier`. Piège traité ici : collision de
@@ -162,10 +152,16 @@ async function main() {
   await telechargerAbandons(db, groupId, bornes, racine, storage);
   await telechargerDepotsOrphelins(db, controles, racine, groupId, storage);
 
+  // `blobsManquants` a été constitué à partir d'un `storage.fetch` déjà
+  // résolu à `null` pendant les téléchargements ci-dessus : pas de second
+  // accès réseau ici, `existe` répond juste ce qu'on sait déjà. Inséré dans
+  // `controles` AVANT l'écriture du README, pas seulement en `console.warn` :
+  // sinon l'archive elle-même ne porte aucune trace de ce qu'il lui manque,
+  // et un lecteur qui la rouvre dans trois ans n'a aucun moyen de le savoir.
   if (blobsManquants.length > 0) {
-    console.warn(`\n⚠️  ${blobsManquants.length} fichier(s) référencé(s) en base introuvable(s) dans le store :`);
-    for (const b of blobsManquants) console.warn(`   - ${b.id} (${b.file_path})`);
+    console.warn(`\n⚠️  ${blobsManquants.length} fichier(s) référencé(s) en base introuvable(s) dans le store.`);
   }
+  controles.push(await controleBlobsManquants(blobsManquants, async () => false));
 
   // 4. Le README, avec les contrôles en tête.
   await writeFile(
@@ -606,16 +602,17 @@ async function telechargerRemboursements(
       await ecrireBlobVersFichier(feuille, join(dossier, 'feuille.pdf'), storage);
     } else {
       // Dossier vide = ambigu (pièce manquante ou jamais existé ?) : ce
-      // fichier tranche explicitement pour le second cas.
-      await mkdir(dossier, { recursive: true });
+      // fichier tranche explicitement pour le second cas. Même motif
+      // atomique que les blobs (via `ecrireAtomique`), pour la même raison :
+      // une coupure ne doit jamais laisser un fichier tronqué que la
+      // reprise, qui ne fait qu'un `stat`, prendrait pour complet.
       const cible = join(dossier, 'NON-SIGNE.txt');
       try {
         await stat(cible);
       } catch {
-        await writeFile(
+        await ecrireAtomique(
           cible,
-          "Aucune feuille n'a été générée pour cette demande : elle n'a jamais été signée.\n",
-          'utf-8',
+          Buffer.from("Aucune feuille n'a été générée pour cette demande : elle n'a jamais été signée.\n", 'utf-8'),
         );
       }
     }
