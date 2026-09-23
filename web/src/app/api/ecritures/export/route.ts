@@ -4,7 +4,7 @@ import {
 } from '@/lib/services/ecritures';
 import { requireApiContext } from '@/lib/api/route-helpers';
 import { listCategories, listUnites, listModesPaiement, listActivites } from '@/lib/services/reference';
-import { escapeCsv, formatAmountCsv, buildCsv } from '@/lib/csv';
+import { formatAmountCsv, buildCsv } from '@/lib/csv';
 
 // Export CSV des écritures avec les mêmes filtres que la page
 // /ecritures. Renvoie un text/csv téléchargé directement par le

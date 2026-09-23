@@ -69,7 +69,11 @@ export async function getClotureReport(
   const [ecrSansJustif, depotsOrphelins, rembsNonTermine, abandonsNonTermine] =
     await Promise.all([
       controleEcrituresSansJustif(db, groupId, bornesMois),
-      controleDepotsOrphelins(db, groupId, bornesMois),
+      // Cumulatif : un dépôt orphelin jamais rattaché doit continuer de
+      // bloquer la clôture, même s'il date d'un mois antérieur (cf. I4 —
+      // une page "mois clôturable" vit de ce cumul, contrairement au
+      // contrôle "écriture sans justif" qui reste mensuel à juste titre).
+      controleDepotsOrphelins(db, groupId, bornesMois, { cumulatif: true }),
       db
         .prepare(
           `SELECT COUNT(*) AS n

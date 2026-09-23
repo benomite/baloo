@@ -87,14 +87,14 @@ exercice-2025-2026/
     signatures.csv
     <REMB-id>-<nom>/feuille.pdf + justificatifs
   03-abandons/
-    abandons.csv
-    <ABD-id>/cerfa.pdf + justificatifs
+    abandons.csv                 (colonne cerfa_emis + date : cf. note ci-dessous)
+    <ABD-id>/ justificatifs
   04-caisse/
     mouvements.csv  ·  depots-especes.csv  ·  depots-cheques.csv
   05-depots-orphelins/         dépôts rattachés à aucune écriture + leurs fichiers
   06-referentiels/
-    unites.csv · categories.csv · activites.csv · modes-paiement.csv
-    comptes.csv · cartes.csv · camps.csv · personnes.csv
+    unites.csv · categories.csv · activites.csv · modes_paiement.csv
+    comptes_bancaires.csv · cartes.csv · camps.csv · personnes.csv
   07-memoire/
     notes.md  ·  todos.md
   avances-camp.csv
@@ -114,6 +114,7 @@ Les emails sont **conservés** : un successeur doit pouvoir recontacter un deman
 - **`avances-camp.csv` à la racine**, en revanche : `avances_camp` porte `beneficiaire`, `montant_rendu_cents`, `statut` et `notes`, qui n'existent nulle part ailleurs. Le versement d'une avance est une écriture, mais *combien est revenu et si l'avance est soldée* n'est que là. Une avance non clôturée au 31/08 est exactement ce qu'un successeur doit voir.
 - **Pas de budgets** dans le dossier d'exercice (ils restent dans le dump). Le prévisionnel éclaire le pilotage de l'année en cours, pas la lecture d'une année close.
 - **Signatures exportées** (`signatures.csv` dans `02-` uniquement), en plus de l'encart déjà rendu dans les PDF. Sans la chaîne de signature — rôle, horodatage, `data_hash`, IP — un PDF signé n'est qu'un PDF : c'est la chaîne qui porte la valeur probante. Les abandons de frais ne sont **jamais** signés électroniquement dans Baloo (la seule valeur de `signatures.document_type` jamais écrite en base est `'remboursement'`) : `03-abandons/` n'a donc pas de `signatures.csv`.
+- **Pas de `cerfa.pdf`** dans `03-abandons/<id>/` : Baloo ne génère aucun CERFA, il revient du national après envoi — `abandons_frais.cerfa_emis` n'est qu'un drapeau booléen (posé à la main par le trésorier), sans fichier associé. Il est exporté tel quel, avec sa date, dans `abandons.csv`. Le dossier `<id>/` ne contient donc que les justificatifs de la demande.
 - **Remboursements jamais signés** : pas de PDF en base (il n'est généré qu'à la signature, cf. `remboursement-signing.ts`). Ils sont listés dans le CSV et l'index avec la mention « non signé ». Aucun PDF n'est généré a posteriori — un document produit à l'export n'aurait rien signé.
 - **Périmètre temporel par entité** : les écritures sont bornées sur `date_ecriture`, les abandons sur `date_depense`, les mouvements de caisse sur leur date d'opération, les remboursements sur `COALESCE(date_depense, created_at)` — c'est la borne déjà retenue par `queries/cloture.ts`, une demande pouvant être déposée sans date de dépense.
 - **Justificatifs obsolètes** (`obsolete_at` non nul) : inclus, dans un sous-dossier `_obsoletes/` de leur écriture. Traçabilité sans polluer la lecture.

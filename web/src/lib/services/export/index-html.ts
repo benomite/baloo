@@ -25,9 +25,9 @@ export function escapeHtml(value: unknown): string {
 
 // Encode un chemin relatif pour un `href` : préserve les `/` (séparateurs
 // de dossiers), encode chaque segment (espaces, accents, `#`, `?`…). Les
-// noms de dossiers dérivent parfois d'une saisie libre (ex. `numero_piece`
-// Comptaweb, jamais slugifié dans `dossierEcriture`) : rien ne garantit
-// qu'ils soient déjà utilisables tels quels dans une URL.
+// noms de dossiers dérivent d'une saisie libre (description, demandeur…),
+// slugifiée mais pas garantie ASCII-URL-safe à 100% : ce filet côté `href`
+// reste nécessaire même après le slug côté système de fichiers.
 export function hrefRelatif(chemin: string): string {
   return chemin
     .split('/')

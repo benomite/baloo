@@ -93,4 +93,16 @@ describe('getClotureReport', () => {
     const report = await getClotureReport(2026, 8);
     expect(countOf(report, 'justif_orphelin')).toBe(1);
   });
+
+  it('compte aussi un dépôt orphelin d’un mois antérieur (I4 : le comptage est cumulatif)', async () => {
+    await testDb
+      .prepare(
+        `INSERT INTO depots_justificatifs
+           (id, group_id, titre, amount_cents, date_estimee, statut, ecriture_id, remboursement_id, created_at)
+         VALUES ('DEP-MARS', 'g', 'Leclerc', 2340, '2026-03-12', 'a_traiter', NULL, NULL, '2026-03-12T10:00:00Z')`,
+      )
+      .run();
+    const report = await getClotureReport(2026, 8);
+    expect(countOf(report, 'justif_orphelin')).toBe(1);
+  });
 });

@@ -7,6 +7,14 @@
 // dérive entre deux copies collées.
 import { mkdir, writeFile, rename, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { createHash } from 'node:crypto';
+
+// Empreinte d'intégrité d'un blob, cf. ADR-040 (l'archive doit être
+// vérifiable, pas juste présente) et spec §3 (`blobs/index.json` porte le
+// sha256 de chaque fichier).
+export function sha256Hex(buf: Buffer): string {
+  return createHash('sha256').update(buf).digest('hex');
+}
 
 // Convertit le corps d'une réponse `storage.fetch` en `Buffer`. Le FS local
 // renvoie un `Uint8Array`, Vercel Blob renvoie un `ReadableStream` — les

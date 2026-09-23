@@ -42,12 +42,17 @@ interface JustificatifRow {
 // (l'archive doit porter la trace de ce qui lui manque, pas seulement le
 // terminal qui l'a produite) — et l'appelant continue.
 const blobsManquants: Array<{ id: string; file_path: string; original_filename: string | null }> = [];
+// Total de blobs traités (présents, téléchargés ou manquants) : sert à
+// juger la PROPORTION de `blobsManquants` — cf. avertissement de panne de
+// store plus bas, même logique que `export:dump`.
+let blobsTraites = 0;
 
 async function ecrireBlobVersFichier(
   j: { id: string; file_path: string; original_filename: string | null },
   cible: string,
   storage: Storage,
 ): Promise<void> {
+  blobsTraites += 1;
   try {
     await stat(cible); // présent sous son nom final => forcément complet (reprise)
     return;
@@ -204,15 +209,34 @@ async function main() {
   }
   controles.push(await controleBlobsManquants(blobsManquants, async () => false));
 
+  // `storage.fetch` ne distingue pas un fichier réellement absent d'une
+  // erreur de lecture (réseau, auth, timeout) : les deux renvoient null. Une
+  // proportion massive de "manquants" ressemble donc bien plus à une panne
+  // d'accès au store qu'à une perte réelle de fichiers (même logique que
+  // `export:dump`). Le signaler SEULEMENT au terminal ne suffit pas : un
+  // lecteur qui rouvre cette archive dans trois ans ne verra que "fichiers
+  // introuvables" dans le README, sans savoir que c'était une panne d'accès
+  // au moment de l'export — d'où le paragraphe dédié plus bas.
+  let avertissementStore: string | null = null;
+  if (blobsTraites > 0 && blobsManquants.length > blobsTraites / 2) {
+    avertissementStore =
+      `${blobsManquants.length} fichier(s) sur ${blobsTraites} sont ressortis « manquants » — une telle ` +
+      `proportion indique plus probablement un problème d’accès au store (réseau, authentification) ` +
+      `qu’une perte réelle de fichiers. Vérifie l’accès au store et relance l’export avant de conclure ` +
+      `à des pièces perdues.`;
+    console.warn(`\n⚠️  ${avertissementStore}`);
+  }
+
   // 4. Le README, avec les contrôles en tête.
   await writeFile(
     join(racine, 'README.md'),
     [
       `# Archive de l'exercice ${exercice}`,
       '',
-      `Groupe : ${groupId} · Période : ${bornes.debut} → ${bornes.fin}`,
+      `Groupe : ${groupeNom} · Période : ${bornes.debut} → ${bornes.fin}`,
       `Export généré le ${new Date().toISOString().slice(0, 10)} par \`pnpm export:exercice\`.`,
       '',
+      ...(avertissementStore ? [`⚠️ **${avertissementStore}**`, ''] : []),
       CAVIARDAGE_PARAGRAPHES[0],
       '',
       CAVIARDAGE_PARAGRAPHES[1],
@@ -721,10 +745,12 @@ async function ecrireAvancesCamp(
               av.montant_rendu_cents, av.mode, av.statut, av.ecriture_id, av.notes
          FROM avances_camp av
          LEFT JOIN camps c ON c.id = av.camp_id
-        WHERE av.group_id = ? AND av.date_versement >= ? AND av.date_versement <= ?
-        ORDER BY av.date_versement, av.id`,
+        WHERE av.group_id = ?
+          AND COALESCE(av.date_versement, av.created_at) >= ?
+          AND COALESCE(av.date_versement, av.created_at) <= ?
+        ORDER BY COALESCE(av.date_versement, av.created_at), av.id`,
     )
-    .all<Record<string, unknown>>(groupId, bornes.debut, bornes.fin);
+    .all<Record<string, unknown>>(groupId, bornes.debut, bornes.finInclusiveTs);
 
   const headers = [
     'id', 'camp', 'beneficiaire', 'montant_verse', 'montant_rendu',
