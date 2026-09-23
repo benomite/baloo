@@ -2,7 +2,12 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createClient } from '@libsql/client';
 import { wrapClient, type DbWrapper } from '../../../db';
 import { bornesPourExercice } from '../bornes';
-import { controleEcrituresSansJustif, controleRembsSansPdf } from '../controles';
+import {
+  controleEcrituresSansJustif,
+  controleRembsSansPdf,
+  controleDepotsOrphelins,
+  controleEcartsMiroir,
+} from '../controles';
 
 const BORNES = bornesPourExercice('2025-2026');
 let db: DbWrapper;
@@ -135,5 +140,88 @@ describe('controleRembsSansPdf', () => {
       .run();
     const r = await controleRembsSansPdf(db, 'g', BORNES);
     expect(r.lignes.map((l) => l.id)).toEqual(['REMB-N']);
+  });
+});
+
+describe('controleDepotsOrphelins', () => {
+  beforeEach(async () => {
+    await db.exec(`
+      CREATE TABLE depots_justificatifs (
+        id TEXT PRIMARY KEY, group_id TEXT, titre TEXT, amount_cents INTEGER,
+        date_estimee TEXT, statut TEXT, ecriture_id TEXT, remboursement_id TEXT,
+        created_at TEXT
+      );
+    `);
+  });
+
+  async function insertDepot(o: {
+    id: string;
+    statut?: string;
+    ecriture?: string | null;
+    remb?: string | null;
+    date?: string;
+  }) {
+    await db
+      .prepare(
+        `INSERT INTO depots_justificatifs
+           (id, group_id, titre, amount_cents, date_estimee, statut, ecriture_id, remboursement_id, created_at)
+         VALUES (?, 'g', 'Ticket Vival', 1059, ?, ?, ?, ?, '2026-08-06T10:00:00Z')`,
+      )
+      .run(o.id, o.date ?? '2026-08-06', o.statut ?? 'a_traiter', o.ecriture ?? null, o.remb ?? null);
+  }
+
+  it('signale un dépôt rattaché à rien', async () => {
+    await insertDepot({ id: 'DEP-1' });
+    const r = await controleDepotsOrphelins(db, 'g', BORNES);
+    expect(r.lignes.map((l) => l.id)).toEqual(['DEP-1']);
+  });
+
+  it('ne signale pas un dépôt rattaché à une écriture ou à un remboursement', async () => {
+    await insertDepot({ id: 'DEP-E', ecriture: 'ECR-1' });
+    await insertDepot({ id: 'DEP-R', remb: 'REMB-1' });
+    const r = await controleDepotsOrphelins(db, 'g', BORNES);
+    expect(r.lignes).toEqual([]);
+  });
+
+  it('ne signale pas un dépôt rejeté', async () => {
+    await insertDepot({ id: 'DEP-X', statut: 'rejete' });
+    const r = await controleDepotsOrphelins(db, 'g', BORNES);
+    expect(r.lignes).toEqual([]);
+  });
+});
+
+describe('controleEcartsMiroir', () => {
+  async function insertAvecStatut(id: string, status: string) {
+    await db
+      .prepare(
+        `INSERT INTO ecritures (id, group_id, date_ecriture, description, amount_cents, type, justif_attendu, status)
+         VALUES (?, 'g', '2026-08-05', 'Essence', 6500, 'depense', 0, ?)`,
+      )
+      .run(id, status);
+  }
+
+  it('sépare les écarts de miroir des vraies divergences', async () => {
+    await insertAvecStatut('ECR-D', 'draft');
+    await insertAvecStatut('ECR-P', 'pending_sync');
+    await insertAvecStatut('ECR-V', 'divergent');
+    await insertAvecStatut('ECR-M', 'mirror');
+    const [ecarts, divergentes] = await controleEcartsMiroir(db, 'g', BORNES);
+    expect(ecarts.cle).toBe('ecart_miroir');
+    expect(ecarts.lignes.map((l) => l.id).sort()).toEqual(['ECR-D', 'ECR-P', 'ECR-V']);
+    expect(divergentes.cle).toBe('ecriture_divergente');
+    expect(divergentes.lignes.map((l) => l.id)).toEqual(['ECR-V']);
+  });
+
+  it('ne compte pas les états terminaux normaux du miroir', async () => {
+    await insertAvecStatut('ECR-S', 'supprimee_cw');
+    await insertAvecStatut('ECR-A', 'agrege_remplace');
+    const [ecarts] = await controleEcartsMiroir(db, 'g', BORNES);
+    expect(ecarts.lignes).toEqual([]);
+  });
+
+  it('porte le statut dans le détail de chaque ligne', async () => {
+    await insertAvecStatut('ECR-D', 'draft');
+    const [ecarts] = await controleEcartsMiroir(db, 'g', BORNES);
+    expect(ecarts.lignes[0].detail).toBe('statut draft');
   });
 });
