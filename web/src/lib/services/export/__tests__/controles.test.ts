@@ -7,6 +7,7 @@ import {
   controleRembsSansPdf,
   controleDepotsOrphelins,
   controleEcartsMiroir,
+  controleBlobsManquants,
   rapportControles,
   formatRapportTexte,
 } from '../controles';
@@ -225,6 +226,25 @@ describe('controleEcartsMiroir', () => {
     await insertAvecStatut('ECR-D', 'draft');
     const [ecarts] = await controleEcartsMiroir(db, 'g', BORNES);
     expect(ecarts.lignes[0].detail).toBe('statut draft');
+  });
+});
+
+describe('controleBlobsManquants', () => {
+  const justifs = [
+    { id: 'JUS-1', file_path: 'blob/ok.jpg', original_filename: 'ok.jpg' },
+    { id: 'JUS-2', file_path: 'blob/perdu.jpg', original_filename: 'perdu.jpg' },
+  ];
+
+  it('signale uniquement les fichiers absents du store', async () => {
+    const existe = async (p: string) => p !== 'blob/perdu.jpg';
+    const r = await controleBlobsManquants(justifs, existe);
+    expect(r.lignes.map((l) => l.id)).toEqual(['JUS-2']);
+    expect(r.lignes[0].libelle).toBe('perdu.jpg');
+  });
+
+  it('ne signale rien quand tout est là', async () => {
+    const r = await controleBlobsManquants(justifs, async () => true);
+    expect(r.lignes).toEqual([]);
   });
 });
 
