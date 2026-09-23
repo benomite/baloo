@@ -111,3 +111,101 @@ export async function controleRembsSansPdf(
     })),
   };
 }
+
+export async function controleDepotsOrphelins(
+  db: DbWrapper,
+  groupId: string,
+  bornes: BornesExercice,
+): Promise<Controle> {
+  const rows = await db
+    .prepare(
+      `SELECT id, titre, amount_cents, date_estimee, created_at, statut
+         FROM depots_justificatifs
+        WHERE group_id = ?
+          AND ecriture_id IS NULL
+          AND remboursement_id IS NULL
+          AND statut <> 'rejete'
+          AND COALESCE(date_estimee, created_at) >= ?
+          AND COALESCE(date_estimee, created_at) <= ?
+        ORDER BY COALESCE(date_estimee, created_at), id`,
+    )
+    .all<{
+      id: string;
+      titre: string | null;
+      amount_cents: number | null;
+      date_estimee: string | null;
+      created_at: string | null;
+      statut: string;
+    }>(groupId, bornes.debut, bornes.finInclusiveTs);
+
+  return {
+    cle: 'depot_orphelin',
+    titre: 'Dépôts rattachés à rien',
+    lignes: rows.map((r) => ({
+      id: r.id,
+      date: r.date_estimee ?? (r.created_at ? r.created_at.slice(0, 10) : null),
+      libelle: r.titre ?? '',
+      montantCents: r.amount_cents ?? 0,
+      detail: `statut ${r.statut}`,
+    })),
+  };
+}
+
+// Les écritures `supprimee_cw` et `agrege_remplace` sont des états terminaux
+// normaux du miroir (supprimée côté CW, agrégat DSP2 remplacé par ses
+// sous-lignes) : ce ne sont pas des écarts à corriger.
+const STATUTS_TERMINAUX = ['mirror', 'supprimee_cw', 'agrege_remplace'];
+
+export async function controleEcartsMiroir(
+  db: DbWrapper,
+  groupId: string,
+  bornes: BornesExercice,
+): Promise<Controle[]> {
+  const placeholders = STATUTS_TERMINAUX.map(() => '?').join(', ');
+  const rows = await db
+    .prepare(
+      `SELECT id, date_ecriture, description, amount_cents, status
+         FROM ecritures
+        WHERE group_id = ?
+          AND date_ecriture >= ?
+          AND date_ecriture <= ?
+          AND status NOT IN (${placeholders})
+        ORDER BY date_ecriture, id`,
+    )
+    .all<{
+      id: string;
+      date_ecriture: string | null;
+      description: string | null;
+      amount_cents: number;
+      status: string;
+    }>(groupId, bornes.debut, bornes.fin, ...STATUTS_TERMINAUX);
+
+  const lignes: LigneControle[] = rows.map((r) => ({
+    id: r.id,
+    date: r.date_ecriture,
+    libelle: r.description ?? '',
+    montantCents: r.amount_cents,
+    detail: `statut ${r.status}`,
+  }));
+
+  return [
+    {
+      cle: 'ecart_miroir',
+      titre: 'Écritures non matérialisées dans Comptaweb',
+      lignes,
+    },
+    {
+      cle: 'ecriture_divergente',
+      titre: 'Écritures divergentes (Baloo ≠ Comptaweb)',
+      lignes: rows
+        .filter((r) => r.status === 'divergent')
+        .map((r) => ({
+          id: r.id,
+          date: r.date_ecriture,
+          libelle: r.description ?? '',
+          montantCents: r.amount_cents,
+          detail: 'divergent',
+        })),
+    },
+  ];
+}
