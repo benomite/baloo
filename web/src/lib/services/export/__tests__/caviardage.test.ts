@@ -53,4 +53,81 @@ describe('caviarder', () => {
       ['edit_token', 'rib_file_path', 'rib_texte', 'validate_token'],
     );
   });
+
+  it('retire IBAN et BIC d`un compte bancaire', () => {
+    const compte = {
+      id: 'COMPTE-1',
+      code: 'CHEC',
+      nom: 'Compte chèques',
+      banque: 'Crédit Mutuel',
+      comptaweb_id: 'CW-789',
+      iban: 'FR7630004000051234567890143',
+      bic: 'CMCIFR2A',
+    };
+    const c = caviarder('comptes_bancaires', compte);
+    expect(c).not.toHaveProperty('iban');
+    expect(c).not.toHaveProperty('bic');
+  });
+
+  it('conserve les champs d`identification du compte', () => {
+    const compte = {
+      id: 'COMPTE-1',
+      code: 'CHEC',
+      nom: 'Compte chèques',
+      banque: 'Crédit Mutuel',
+      comptaweb_id: 'CW-789',
+      iban: 'FR7630004000051234567890143',
+      bic: 'CMCIFR2A',
+    };
+    const c = caviarder('comptes_bancaires', compte);
+    expect(c.code).toBe('CHEC');
+    expect(c.nom).toBe('Compte chèques');
+    expect(c.banque).toBe('Crédit Mutuel');
+    expect(c.comptaweb_id).toBe('CW-789');
+  });
+
+  it('ne laisse aucun IBAN dans la sortie sérialisée d`un compte', () => {
+    const compte = {
+      id: 'COMPTE-1',
+      code: 'CHEC',
+      iban: 'FR7630004000051234567890143',
+      bic: 'CMCIFR2A',
+    };
+    const serialise = JSON.stringify(caviarder('comptes_bancaires', compte));
+    expect(serialise).not.toContain('FR76');
+    expect(serialise).not.toContain('CMCIFR2A');
+  });
+
+  it('retire iban_principal d`un groupe', () => {
+    const groupe = {
+      id: 'GRP-1',
+      nom: 'Groupe des Castors',
+      email_contact: 'tresorier@castors.fr',
+      iban_principal: 'FR7630004000051234567890143',
+    };
+    const g = caviarder('groupes', groupe);
+    expect(g).not.toHaveProperty('iban_principal');
+  });
+
+  it('conserve les champs d`identification du groupe', () => {
+    const groupe = {
+      id: 'GRP-1',
+      nom: 'Groupe des Castors',
+      email_contact: 'tresorier@castors.fr',
+      iban_principal: 'FR7630004000051234567890143',
+    };
+    const g = caviarder('groupes', groupe);
+    expect(g.nom).toBe('Groupe des Castors');
+    expect(g.email_contact).toBe('tresorier@castors.fr');
+  });
+
+  it('ne laisse aucun IBAN dans la sortie sérialisée d`un groupe', () => {
+    const groupe = {
+      id: 'GRP-1',
+      nom: 'Groupe des Castors',
+      iban_principal: 'FR7630004000051234567890143',
+    };
+    const serialise = JSON.stringify(caviarder('groupes', groupe));
+    expect(serialise).not.toContain('FR76');
+  });
 });
