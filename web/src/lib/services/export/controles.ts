@@ -212,6 +212,30 @@ export async function controleEcartsMiroir(
 }
 
 /**
+ * Fichiers référencés en base et introuvables dans le store. Seul contrôle
+ * exigeant de la I/O : `existe` est injecté pour que la logique reste pure
+ * et testable, et que l'accès réseau reste dans le script appelant.
+ */
+export async function controleBlobsManquants(
+  justifs: Array<{ id: string; file_path: string; original_filename: string | null }>,
+  existe: (filePath: string) => Promise<boolean>,
+): Promise<Controle> {
+  const lignes: LigneControle[] = [];
+  for (const j of justifs) {
+    if (!(await existe(j.file_path))) {
+      lignes.push({
+        id: j.id,
+        date: null,
+        libelle: j.original_filename ?? j.file_path,
+        montantCents: 0,
+        detail: j.file_path,
+      });
+    }
+  }
+  return { cle: 'blob_manquant', titre: 'Fichiers introuvables dans le store', lignes };
+}
+
+/**
  * Tous les contrôles réalisables sans I/O, dans un ordre stable (celui de
  * lecture du rapport). Le contrôle `blob_manquant` n'est pas ici : il exige
  * d'interroger le store de fichiers, et vit donc côté script.
