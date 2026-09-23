@@ -155,7 +155,7 @@ async function main() {
 
   for (const d of [
     '01-ecritures', '02-remboursements', '03-abandons', '04-caisse',
-    '05-depots-orphelins', '06-referentiels', '07-memoire', '08-comptaweb',
+    '05-depots-orphelins', '06-referentiels', '07-memoire',
   ]) {
     await mkdir(join(racine, d), { recursive: true });
   }
@@ -229,6 +229,11 @@ async function main() {
       '- `05-depots-orphelins/<id>-<titre>/` — fichiers d’un dépôt rattaché à rien (ni écriture, ni ' +
         'remboursement).',
       '',
+      'Pas de dossier dédié au rapprochement avec Comptaweb : le numéro de pièce, l’identifiant ' +
+        'Comptaweb et le statut de miroir figurent déjà sur chaque ligne de ' +
+        '`01-ecritures/ecritures.csv`, et les écarts éventuels sont listés dans les contrôles de ' +
+        'cohérence ci-dessous.',
+      '',
       '## Contrôles de cohérence',
       '',
       '```',
@@ -286,7 +291,7 @@ interface DonneesSectionsIndex {
   controles: Controle[];
 }
 
-// Construit les données des 8 sections d'index.html à partir de ce qui a
+// Construit les données des sections d'index.html à partir de ce qui a
 // déjà été écrit sur disque — aucune nouvelle requête BDD ici (les rows
 // viennent des `ecrire*` déjà exécutés). Les liens vers un dossier de
 // pièces sont validés par `dossierRelatifSiExiste` (vérité disque, pas
@@ -437,12 +442,6 @@ async function construireSectionsIndex(d: DonneesSectionsIndex): Promise<Section
     videTexte: 'Aucune todo.',
   };
 
-  const blocComptaweb: BlocTableau = {
-    headers: [{ label: 'Fichier' }],
-    lignes: [],
-    videTexte: "Aucun contenu généré dans ce dossier par cet export.",
-  };
-
   return [
     {
       id: '01-ecritures', titre: 'Écritures',
@@ -488,10 +487,6 @@ async function construireSectionsIndex(d: DonneesSectionsIndex): Promise<Section
         { nom: 'todos.md', relatif: '07-memoire/todos.md' },
       ],
       blocs: [blocNotes, blocTodos],
-    },
-    {
-      id: '08-comptaweb', titre: 'Comptaweb',
-      blocs: [blocComptaweb],
     },
   ];
 }
