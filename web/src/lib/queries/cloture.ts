@@ -1,6 +1,8 @@
 import { getCurrentContext } from '../context';
 import { getDb } from '../db';
 import { ensureDepotsSchema } from '../services/depots';
+import { controleEcrituresSansJustif, controleDepotsOrphelins } from '../services/export/controles';
+import type { BornesExercice } from '../services/export/bornes';
 
 // Vue "Mois clôturable" : agrège les blocages qui empêcheraient une
 // clôture propre du mois sélectionné. Pas d'effet de bord — c'est
@@ -51,32 +53,23 @@ export async function getClotureReport(
   const startDate = `${year}-${pad2(month)}-01`;
   const endDate = endOfMonthIso(year, month);
 
-  const [ecrSansJustif, justifsOrphelins, rembsNonTermine, abandonsNonTermine] =
+  // Un mois est une borne comme une autre : les contrôles de l'export
+  // prennent leurs bornes en paramètre, donc la même règle métier sert ici
+  // et là. Sans ça, "écriture sans justif" aurait deux définitions SQL
+  // divergeables. `exercice` reste un libellé libre (pas un code d'exercice
+  // comptable "2025-2026") : on le préfixe pour ne pas induire en erreur si
+  // la valeur affleure un jour dans un affichage.
+  const bornesMois: BornesExercice = {
+    exercice: `mois ${year}-${pad2(month)}`,
+    debut: startDate,
+    fin: endDate,
+    finInclusiveTs: `${endDate}T23:59:59Z`,
+  };
+
+  const [ecrSansJustif, depotsOrphelins, rembsNonTermine, abandonsNonTermine] =
     await Promise.all([
-      db
-        .prepare(
-          `SELECT COUNT(*) AS n
-           FROM ecritures e
-           WHERE e.group_id = ?
-             AND e.type = 'depense'
-             AND e.justif_attendu = 1
-             AND e.date_ecriture >= ?
-             AND e.date_ecriture <= ?
-             AND NOT EXISTS (
-               SELECT 1 FROM justificatifs j
-               WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id
-             )`,
-        )
-        .get<{ n: number }>(groupId, startDate, endDate),
-      db
-        .prepare(
-          `SELECT COUNT(*) AS n
-           FROM depots_justificatifs
-           WHERE group_id = ?
-             AND statut = 'a_traiter'
-             AND created_at <= ?`,
-        )
-        .get<{ n: number }>(groupId, `${endDate}T23:59:59Z`),
+      controleEcrituresSansJustif(db, groupId, bornesMois),
+      controleDepotsOrphelins(db, groupId, bornesMois),
       db
         .prepare(
           `SELECT COUNT(*) AS n
@@ -106,14 +99,14 @@ export async function getClotureReport(
   const blockers: ClotureBlocker[] = [
     {
       kind: 'ecriture_sans_justif',
-      count: ecrSansJustif?.n ?? 0,
+      count: ecrSansJustif.lignes.length,
       href: '/inbox?period=tout',
       label: 'écriture(s) sans justif',
       hint: 'Lie un justif depuis l’inbox, ou marque "Pas de justif attendu".',
     },
     {
       kind: 'justif_orphelin',
-      count: justifsOrphelins?.n ?? 0,
+      count: depotsOrphelins.lignes.length,
       href: '/inbox?period=tout',
       label: 'justif(s) orphelin(s)',
       hint: 'Rattache à une écriture ou rejette depuis l’inbox.',
