@@ -7,6 +7,8 @@ import {
   controleRembsSansPdf,
   controleDepotsOrphelins,
   controleEcartsMiroir,
+  rapportControles,
+  formatRapportTexte,
 } from '../controles';
 
 const BORNES = bornesPourExercice('2025-2026');
@@ -223,5 +225,54 @@ describe('controleEcartsMiroir', () => {
     await insertAvecStatut('ECR-D', 'draft');
     const [ecarts] = await controleEcartsMiroir(db, 'g', BORNES);
     expect(ecarts.lignes[0].detail).toBe('statut draft');
+  });
+});
+
+describe('rapportControles', () => {
+  it('renvoie les cinq contrôles hors I/O, dans un ordre stable', async () => {
+    await db.exec(`
+      CREATE TABLE depots_justificatifs (
+        id TEXT PRIMARY KEY, group_id TEXT, titre TEXT, amount_cents INTEGER,
+        date_estimee TEXT, statut TEXT, ecriture_id TEXT, remboursement_id TEXT,
+        created_at TEXT
+      );
+    `);
+    const r = await rapportControles(db, 'g', BORNES);
+    expect(r.map((c) => c.cle)).toEqual([
+      'ecriture_sans_justif',
+      'remb_sans_pdf',
+      'depot_orphelin',
+      'ecart_miroir',
+      'ecriture_divergente',
+    ]);
+  });
+});
+
+describe('formatRapportTexte', () => {
+  it('annonce le sans-faute quand rien n’est signalé', () => {
+    const texte = formatRapportTexte(
+      [{ cle: 'depot_orphelin', titre: 'Dépôts rattachés à rien', lignes: [] }],
+      BORNES,
+    );
+    expect(texte).toContain('2025-2026');
+    expect(texte).toContain('Rien à signaler');
+  });
+
+  it('liste chaque ligne avec son montant en format français', () => {
+    const texte = formatRapportTexte(
+      [
+        {
+          cle: 'ecriture_sans_justif',
+          titre: 'Écritures sans justificatif',
+          lignes: [
+            { id: 'ECR-1', date: '2026-08-05', libelle: 'Intermarché', montantCents: 8777, detail: null },
+          ],
+        },
+      ],
+      BORNES,
+    );
+    expect(texte).toContain('Écritures sans justificatif (1)');
+    expect(texte).toContain('ECR-1');
+    expect(texte).toContain('87,77 €');
   });
 });

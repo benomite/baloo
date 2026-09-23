@@ -23,7 +23,8 @@
     "import:airtable-rembs": "tsx scripts/import-airtable-rembs.ts",
     "import:airtable-caisse": "tsx scripts/import-airtable-caisse.ts",
     "link:rembs-ecritures": "tsx scripts/link-rembs-to-ecritures.ts",
-    "demote:unlinked-termine": "tsx scripts/demote-unlinked-termine.ts"
+    "demote:unlinked-termine": "tsx scripts/demote-unlinked-termine.ts",
+    "export:controles": "tsx scripts/export-controles.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",

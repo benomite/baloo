@@ -209,3 +209,49 @@ export async function controleEcartsMiroir(
     },
   ];
 }
+
+/**
+ * Tous les contrôles réalisables sans I/O, dans un ordre stable (celui de
+ * lecture du rapport). Le contrôle `blob_manquant` n'est pas ici : il exige
+ * d'interroger le store de fichiers, et vit donc côté script.
+ */
+export async function rapportControles(
+  db: DbWrapper,
+  groupId: string,
+  bornes: BornesExercice,
+): Promise<Controle[]> {
+  const [sansJustif, sansPdf, orphelins, miroir] = await Promise.all([
+    controleEcrituresSansJustif(db, groupId, bornes),
+    controleRembsSansPdf(db, groupId, bornes),
+    controleDepotsOrphelins(db, groupId, bornes),
+    controleEcartsMiroir(db, groupId, bornes),
+  ]);
+  return [sansJustif, sansPdf, orphelins, ...miroir];
+}
+
+function montantFr(cents: number): string {
+  const sign = cents < 0 ? '-' : '';
+  const abs = Math.abs(cents);
+  return `${sign}${Math.floor(abs / 100)},${String(abs % 100).padStart(2, '0')} €`;
+}
+
+/** Rendu texte du rapport, réutilisé tel quel en tête du README.md du dossier. */
+export function formatRapportTexte(controles: Controle[], bornes: BornesExercice): string {
+  const out: string[] = [`Contrôles de cohérence — exercice ${bornes.exercice} (${bornes.debut} → ${bornes.fin})`, ''];
+  let total = 0;
+  for (const c of controles) {
+    total += c.lignes.length;
+    if (c.lignes.length === 0) {
+      out.push(`✅ ${c.titre} : rien à signaler`);
+      continue;
+    }
+    out.push(`⚠️  ${c.titre} (${c.lignes.length})`);
+    for (const l of c.lignes) {
+      const detail = l.detail ? ` — ${l.detail}` : '';
+      out.push(`     ${l.date ?? '?'}  ${l.id}  ${montantFr(l.montantCents)}  ${l.libelle}${detail}`);
+    }
+    out.push('');
+  }
+  if (total === 0) out.push('', 'Rien à signaler : l’exercice est prêt à être clos.');
+  return out.join('\n');
+}
