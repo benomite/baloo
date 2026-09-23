@@ -10,6 +10,8 @@ import { join } from 'node:path';
 import { getDb, type DbWrapper } from '../src/lib/db';
 import { getStorage } from '../src/lib/storage';
 import { buildCsv, formatAmountCsv } from '../src/lib/csv';
+import { formatAmount } from '../src/lib/format';
+import { getGroupe } from '../src/lib/services/groupes';
 import { bornesPourExercice, type BornesExercice } from '../src/lib/services/export/bornes';
 import {
   rapportControles, formatRapportTexte, controleBlobsManquants, type Controle,
@@ -17,6 +19,7 @@ import {
 import { collecterTable } from '../src/lib/services/export/collecte';
 import { TABLES_INCLUSES } from '../src/lib/services/export/tables';
 import { dossierEcriture, dossierRemboursement, slug } from '../src/lib/services/export/arborescence';
+import { genererIndexHtml, type SectionIndex, type BlocTableau } from '../src/lib/services/export/index-html';
 import { toBuffer, ecrireAtomique } from './lib/blob-io';
 import { getCliContext } from './cli-context';
 
@@ -100,9 +103,43 @@ function dossierEcritureUnique(e: Parameters<typeof dossierEcriture>[0]): string
   return `${base}-${e.id}`;
 }
 
+// Chemin (relatif à `racine`, toujours en `/` quel que soit l'OS de la
+// machine qui lance l'export — c'est ce qu'attend un `href` HTML) du
+// dossier de pièces d'une écriture, une fois `dossierEcritureUnique`
+// tranché pendant `telechargerJustificatifsEcritures`. Alimente `index.html`
+// (tâche 14) SANS recalculer le nom de dossier d'un autre côté — sinon un
+// nom recalculé isolément pourrait diverger du registre anti-collision.
+const dossierParEcriture = new Map<string, string>();
+
+// Un chemin candidat ne devient un lien dans `index.html` que si le dossier
+// existe VRAIMENT sur disque (ex. tous les blobs d'une écriture peuvent être
+// `blob_manquant` — le dossier n'est alors jamais créé). Vérité disque
+// plutôt qu'un calcul déclaratif : évite un lien mort dans une archive
+// relue des années plus tard, sans réseau pour vérifier.
+async function dossierRelatifSiExiste(racine: string, relatif: string | undefined): Promise<string | null> {
+  if (!relatif) return null;
+  try {
+    await stat(join(racine, relatif));
+    return relatif;
+  } catch {
+    return null;
+  }
+}
+
 const REFERENTIELS = [
   'unites', 'categories', 'activites', 'modes_paiement',
   'comptes_bancaires', 'cartes', 'camps', 'personnes',
+];
+
+// Mention du caviardage : source unique, reprise telle quelle dans le
+// README.md ET dans l'en-tête d'index.html — pour ne jamais laisser les
+// deux formulations diverger (cf. brief tâche 14 : « reprends la
+// formulation déjà présente, ne la réinvente pas »).
+const CAVIARDAGE_PARAGRAPHES = [
+  'Les RIB, les liens d’accès direct aux remboursements, les IBAN et BIC des comptes bancaires ' +
+    'et l’IBAN du groupe ont été retirés de cette archive.',
+  'Les abandons de frais ne font pas l’objet d’une signature électronique dans Baloo : seules ' +
+    'les demandes de remboursement le sont (cf. `02-remboursements/signatures.csv`).',
 ];
 
 async function main() {
@@ -113,6 +150,8 @@ async function main() {
   const { groupId } = await getCliContext();
   const db = getDb();
   const storage = getStorage();
+  const groupe = await getGroupe({ groupId });
+  const groupeNom = groupe?.nom ?? groupId;
 
   for (const d of [
     '01-ecritures', '02-remboursements', '03-abandons', '04-caisse',
@@ -126,6 +165,7 @@ async function main() {
   const controles = await rapportControles(db, groupId, bornes);
 
   // 2. Les référentiels : sans eux, les CSV ne contiennent que des ids.
+  const referentielsResume: { nom: string; lignes: number }[] = [];
   for (const nom of REFERENTIELS) {
     const t = TABLES_INCLUSES.find((x) => x.nom === nom);
     if (!t) throw new Error(`Référentiel ${nom} absent de TABLES_INCLUSES`);
@@ -136,15 +176,16 @@ async function main() {
       buildCsv(headers, rows.map((r) => headers.map((h) => r[h]))),
       'utf-8',
     );
+    referentielsResume.push({ nom, lignes: rows.length });
   }
 
   // 3. Les CSV de chaque section, bornés à l'exercice.
-  await ecrireEcritures(db, groupId, bornes, racine);
-  await ecrireRemboursements(db, groupId, bornes, racine);
-  await ecrireAbandons(db, groupId, bornes, racine);
-  await ecrireCaisse(db, groupId, bornes, racine);
-  await ecrireAvancesCamp(db, groupId, bornes, racine);
-  await ecrireMemoire(db, groupId, racine);
+  const ecrituresRows = await ecrireEcritures(db, groupId, bornes, racine);
+  const remboursementsRows = await ecrireRemboursements(db, groupId, bornes, racine);
+  const abandonsRows = await ecrireAbandons(db, groupId, bornes, racine);
+  const caisse = await ecrireCaisse(db, groupId, bornes, racine);
+  const avancesCampRows = await ecrireAvancesCamp(db, groupId, bornes, racine);
+  const memoire = await ecrireMemoire(db, groupId, racine);
 
   // 3bis. Les fichiers eux-mêmes, dans l'arborescence construite ci-dessus.
   await telechargerJustificatifsEcritures(db, groupId, bornes, racine, storage);
@@ -172,11 +213,9 @@ async function main() {
       `Groupe : ${groupId} · Période : ${bornes.debut} → ${bornes.fin}`,
       `Export généré le ${new Date().toISOString().slice(0, 10)} par \`pnpm export:exercice\`.`,
       '',
-      'Les RIB, les liens d’accès direct aux remboursements, les IBAN et BIC des comptes bancaires ' +
-        'et l’IBAN du groupe ont été retirés de cette archive.',
+      CAVIARDAGE_PARAGRAPHES[0],
       '',
-      'Les abandons de frais ne font pas l’objet d’une signature électronique dans Baloo : seules ' +
-        'les demandes de remboursement le sont (cf. `02-remboursements/signatures.csv`).',
+      CAVIARDAGE_PARAGRAPHES[1],
       '',
       '## Fichiers',
       '',
@@ -200,7 +239,261 @@ async function main() {
     'utf-8',
   );
 
+  // 5. index.html : page navigable hors-ligne, résumant tout ce qui
+  //    précède. Générée en dernier — elle a besoin des dossiers de pièces
+  //    (créés par les `telecharger*` ci-dessus) pour savoir lesquels lier.
+  const sections: SectionIndex[] = await construireSectionsIndex({
+    racine,
+    ecrituresRows,
+    remboursementsRows,
+    abandonsRows,
+    caisse,
+    avancesCampRows,
+    memoire,
+    referentielsResume,
+    controles,
+  });
+  await writeFile(
+    join(racine, 'index.html'),
+    genererIndexHtml({
+      entete: {
+        groupeNom,
+        exercice,
+        debut: bornes.debut,
+        fin: bornes.fin,
+        genereLe: new Date().toISOString().slice(0, 10),
+        caviardage: CAVIARDAGE_PARAGRAPHES,
+      },
+      bornes,
+      controles,
+      sections,
+    }),
+    'utf-8',
+  );
+
   console.log(`Dossier écrit dans ${racine}.`);
+}
+
+interface DonneesSectionsIndex {
+  racine: string;
+  ecrituresRows: Record<string, unknown>[];
+  remboursementsRows: Record<string, unknown>[];
+  abandonsRows: Record<string, unknown>[];
+  caisse: DonneesCaisse;
+  avancesCampRows: Record<string, unknown>[];
+  memoire: DonneesMemoire;
+  referentielsResume: { nom: string; lignes: number }[];
+  controles: Controle[];
+}
+
+// Construit les données des 8 sections d'index.html à partir de ce qui a
+// déjà été écrit sur disque — aucune nouvelle requête BDD ici (les rows
+// viennent des `ecrire*` déjà exécutés). Les liens vers un dossier de
+// pièces sont validés par `dossierRelatifSiExiste` (vérité disque, pas
+// déclarative) : un blob manquant peut faire qu'un dossier attendu n'a
+// jamais été créé.
+async function construireSectionsIndex(d: DonneesSectionsIndex): Promise<SectionIndex[]> {
+  const blocEcritures: BlocTableau = {
+    headers: [
+      { label: 'Date' }, { label: 'Description' }, { label: 'Montant', align: 'right' },
+      { label: 'Unité' }, { label: 'Catégorie' }, { label: 'Statut' },
+    ],
+    lignes: await Promise.all(d.ecrituresRows.map(async (r) => ({
+      cellules: [
+        String(r.date_ecriture ?? ''),
+        String(r.description ?? ''),
+        formatAmount(Number(r.amount_cents ?? 0)),
+        String(r.unite ?? ''),
+        String(r.categorie ?? ''),
+        String(r.status ?? ''),
+      ],
+      dossierRelatif: await dossierRelatifSiExiste(d.racine, dossierParEcriture.get(String(r.id))),
+    }))),
+    videTexte: 'Aucune écriture pour cet exercice.',
+  };
+
+  const blocRemboursements: BlocTableau = {
+    headers: [
+      { label: 'Date' }, { label: 'Demandeur' }, { label: 'Montant', align: 'right' },
+      { label: 'Statut' }, { label: 'Feuille signée' },
+    ],
+    lignes: await Promise.all(d.remboursementsRows.map(async (r) => {
+      const relatif = `02-remboursements/${dossierRemboursement({
+        id: String(r.id), demandeur: (r.demandeur as string | null) ?? null,
+      })}`;
+      return {
+        cellules: [
+          String(r.date_depense ?? (r.created_at ? String(r.created_at).slice(0, 10) : '')),
+          String(r.demandeur ?? ''),
+          formatAmount(Number(r.total_cents ?? 0)),
+          String(r.status ?? ''),
+          r.feuille_signee ? 'oui' : 'non',
+        ],
+        dossierRelatif: await dossierRelatifSiExiste(d.racine, relatif),
+      };
+    })),
+    videTexte: 'Aucun remboursement pour cet exercice.',
+  };
+
+  const blocAbandons: BlocTableau = {
+    headers: [
+      { label: 'Date' }, { label: 'Donateur' }, { label: 'Montant', align: 'right' }, { label: 'Statut' },
+    ],
+    lignes: await Promise.all(d.abandonsRows.map(async (r) => ({
+      cellules: [
+        String(r.date_depense ?? ''),
+        String(r.donateur ?? ''),
+        formatAmount(Number(r.amount_cents ?? 0)),
+        String(r.status ?? ''),
+      ],
+      dossierRelatif: await dossierRelatifSiExiste(d.racine, `03-abandons/${String(r.id)}`),
+    }))),
+    videTexte: 'Aucun abandon de frais pour cet exercice.',
+  };
+
+  const blocMouvements: BlocTableau = {
+    titre: 'Mouvements de caisse',
+    headers: [
+      { label: 'Date' }, { label: 'Description' }, { label: 'Montant', align: 'right' },
+      { label: 'Type' }, { label: 'Statut' },
+    ],
+    lignes: d.caisse.mouvements.map((r) => ({
+      cellules: [
+        String(r.date_mouvement ?? ''), String(r.description ?? ''),
+        formatAmount(Number(r.amount_cents ?? 0)), String(r.type ?? ''), String(r.status ?? ''),
+      ],
+    })),
+    videTexte: 'Aucun mouvement de caisse pour cet exercice.',
+  };
+  const blocDepotsEspeces: BlocTableau = {
+    titre: 'Dépôts espèces',
+    headers: [{ label: 'Date' }, { label: 'Montant', align: 'right' }, { label: 'Écriture liée' }],
+    lignes: d.caisse.depotsEspeces.map((r) => ({
+      cellules: [
+        String(r.date_depot ?? ''), formatAmount(Number(r.total_amount_cents ?? 0)), String(r.ecriture_id ?? ''),
+      ],
+    })),
+    videTexte: 'Aucun dépôt espèces pour cet exercice.',
+  };
+  const blocDepotsCheques: BlocTableau = {
+    titre: 'Dépôts chèques',
+    headers: [
+      { label: 'Date' }, { label: 'Type' }, { label: 'Montant', align: 'right' }, { label: 'Statut confirmation' },
+    ],
+    lignes: d.caisse.depotsCheques.map((r) => ({
+      cellules: [
+        String(r.date_depot ?? ''), String(r.type_depot ?? ''),
+        formatAmount(Number(r.total_amount_cents ?? 0)), String(r.confirmation_status ?? ''),
+      ],
+    })),
+    videTexte: 'Aucun dépôt chèques pour cet exercice.',
+  };
+  const blocAvancesCamp: BlocTableau = {
+    titre: 'Avances de camp',
+    headers: [
+      { label: 'Camp' }, { label: 'Bénéficiaire' }, { label: 'Versé', align: 'right' },
+      { label: 'Rendu', align: 'right' }, { label: 'Statut' },
+    ],
+    lignes: d.avancesCampRows.map((r) => ({
+      cellules: [
+        String(r.camp ?? ''), String(r.beneficiaire ?? ''),
+        formatAmount(Number(r.montant_cents ?? 0)),
+        r.montant_rendu_cents != null ? formatAmount(Number(r.montant_rendu_cents)) : '',
+        String(r.statut ?? ''),
+      ],
+    })),
+    videTexte: 'Aucune avance de camp pour cet exercice.',
+  };
+
+  const orphelinsControle = d.controles.find((c) => c.cle === 'depot_orphelin');
+  const blocOrphelins: BlocTableau = {
+    headers: [{ label: 'Date' }, { label: 'Libellé' }, { label: 'Montant', align: 'right' }, { label: 'Statut' }],
+    lignes: await Promise.all((orphelinsControle?.lignes ?? []).map(async (l) => ({
+      cellules: [l.date ?? '', l.libelle, formatAmount(l.montantCents), l.detail ?? ''],
+      dossierRelatif: await dossierRelatifSiExiste(d.racine, `05-depots-orphelins/${l.id}-${slug(l.libelle)}`),
+    }))),
+    videTexte: 'Aucun dépôt orphelin pour cet exercice.',
+  };
+
+  const blocReferentiels: BlocTableau = {
+    headers: [{ label: 'Référentiel' }, { label: 'Lignes', align: 'right' }],
+    lignes: d.referentielsResume.map((r) => ({ cellules: [r.nom, String(r.lignes)] })),
+  };
+
+  const blocNotes: BlocTableau = {
+    titre: 'Notes',
+    headers: [{ label: 'Topic' }, { label: 'Titre' }, { label: 'Créée le' }],
+    lignes: d.memoire.notes.map((n) => ({
+      cellules: [n.topic, n.title ?? '(sans titre)', n.created_at.slice(0, 10)],
+    })),
+    videTexte: 'Aucune note.',
+  };
+  const blocTodos: BlocTableau = {
+    titre: 'Todos',
+    headers: [{ label: 'Statut' }, { label: 'Titre' }, { label: 'Échéance' }],
+    lignes: d.memoire.todos.map((t) => ({
+      cellules: [t.status, t.title, t.due_date ?? ''],
+    })),
+    videTexte: 'Aucune todo.',
+  };
+
+  const blocComptaweb: BlocTableau = {
+    headers: [{ label: 'Fichier' }],
+    lignes: [],
+    videTexte: "Aucun contenu généré dans ce dossier par cet export.",
+  };
+
+  return [
+    {
+      id: '01-ecritures', titre: 'Écritures',
+      fichiers: [{ nom: 'ecritures.csv', relatif: '01-ecritures/ecritures.csv' }],
+      blocs: [blocEcritures],
+    },
+    {
+      id: '02-remboursements', titre: 'Remboursements',
+      fichiers: [
+        { nom: 'remboursements.csv', relatif: '02-remboursements/remboursements.csv' },
+        { nom: 'signatures.csv', relatif: '02-remboursements/signatures.csv' },
+      ],
+      blocs: [blocRemboursements],
+    },
+    {
+      id: '03-abandons', titre: 'Abandons de frais',
+      fichiers: [{ nom: 'abandons.csv', relatif: '03-abandons/abandons.csv' }],
+      blocs: [blocAbandons],
+    },
+    {
+      id: '04-caisse', titre: 'Caisse',
+      fichiers: [
+        { nom: 'mouvements.csv', relatif: '04-caisse/mouvements.csv' },
+        { nom: 'depots-especes.csv', relatif: '04-caisse/depots-especes.csv' },
+        { nom: 'depots-cheques.csv', relatif: '04-caisse/depots-cheques.csv' },
+        { nom: 'avances-camp.csv', relatif: 'avances-camp.csv' },
+      ],
+      blocs: [blocMouvements, blocDepotsEspeces, blocDepotsCheques, blocAvancesCamp],
+    },
+    {
+      id: '05-depots-orphelins', titre: 'Dépôts rattachés à rien',
+      blocs: [blocOrphelins],
+    },
+    {
+      id: '06-referentiels', titre: 'Référentiels',
+      fichiers: d.referentielsResume.map((r) => ({ nom: `${r.nom}.csv`, relatif: `06-referentiels/${r.nom}.csv` })),
+      blocs: [blocReferentiels],
+    },
+    {
+      id: '07-memoire', titre: 'Mémoire (notes & todos)',
+      fichiers: [
+        { nom: 'notes.md', relatif: '07-memoire/notes.md' },
+        { nom: 'todos.md', relatif: '07-memoire/todos.md' },
+      ],
+      blocs: [blocNotes, blocTodos],
+    },
+    {
+      id: '08-comptaweb', titre: 'Comptaweb',
+      blocs: [blocComptaweb],
+    },
+  ];
 }
 
 // Le `status` est une colonne à part entière du CSV : c'est ce qui permet à
@@ -211,7 +504,7 @@ async function ecrireEcritures(
   groupId: string,
   bornes: BornesExercice,
   racine: string,
-) {
+): Promise<Record<string, unknown>[]> {
   const rows = await db
     .prepare(
       `SELECT e.id, e.date_ecriture, e.type, e.description, e.amount_cents,
@@ -244,6 +537,8 @@ async function ecrireEcritures(
     ])),
     'utf-8',
   );
+
+  return rows;
 }
 
 // Jamais `rib_texte`, `rib_file_path`, `edit_token`, `validate_token` : ce
@@ -255,7 +550,7 @@ async function ecrireRemboursements(
   groupId: string,
   bornes: BornesExercice,
   racine: string,
-) {
+): Promise<Record<string, unknown>[]> {
   const rows = await db
     .prepare(
       `SELECT r.id, r.demandeur, r.email, r.total_cents, r.date_depense, r.created_at,
@@ -292,6 +587,8 @@ async function ecrireRemboursements(
   );
 
   await ecrireSignatures(db, groupId, 'remboursement', '02-remboursements', racine);
+
+  return rows;
 }
 
 async function ecrireAbandons(
@@ -299,7 +596,7 @@ async function ecrireAbandons(
   groupId: string,
   bornes: BornesExercice,
   racine: string,
-) {
+): Promise<Record<string, unknown>[]> {
   const rows = await db
     .prepare(
       `SELECT a.id, a.donateur, a.email, a.amount_cents, a.date_depense, a.nature,
@@ -331,6 +628,14 @@ async function ecrireAbandons(
   // électroniquement dans Baloo (seule `document_type = 'remboursement'`
   // existe en base). Un fichier vide laisserait croire à des preuves
   // manquantes plutôt qu'à un process sans signature.
+
+  return rows;
+}
+
+interface DonneesCaisse {
+  mouvements: Record<string, unknown>[];
+  depotsEspeces: Record<string, unknown>[];
+  depotsCheques: Record<string, unknown>[];
 }
 
 async function ecrireCaisse(
@@ -338,7 +643,7 @@ async function ecrireCaisse(
   groupId: string,
   bornes: BornesExercice,
   racine: string,
-) {
+): Promise<DonneesCaisse> {
   const mouvements = await db
     .prepare(
       `SELECT m.id, m.date_mouvement, m.description, m.amount_cents, m.type,
@@ -403,6 +708,8 @@ async function ecrireCaisse(
     ),
     'utf-8',
   );
+
+  return { mouvements, depotsEspeces, depotsCheques };
 }
 
 // avances_camp porte sa propre colonne group_id (cf. camp-avances.ts) : la
@@ -412,7 +719,7 @@ async function ecrireAvancesCamp(
   groupId: string,
   bornes: BornesExercice,
   racine: string,
-) {
+): Promise<Record<string, unknown>[]> {
   const rows = await db
     .prepare(
       `SELECT av.id, c.name AS camp, av.beneficiaire, av.montant_cents,
@@ -438,6 +745,8 @@ async function ecrireAvancesCamp(
     ])),
     'utf-8',
   );
+
+  return rows;
 }
 
 // La chaîne de signature est la valeur probante : sans elle, un PDF signé
@@ -470,7 +779,12 @@ async function ecrireSignatures(
   );
 }
 
-async function ecrireMemoire(db: DbWrapper, groupId: string, racine: string) {
+interface DonneesMemoire {
+  notes: { topic: string; title: string | null; content_md: string; created_at: string }[];
+  todos: { title: string; description: string | null; status: string; due_date: string | null }[];
+}
+
+async function ecrireMemoire(db: DbWrapper, groupId: string, racine: string): Promise<DonneesMemoire> {
   const notes = await db
     .prepare(
       `SELECT topic, title, content_md, created_at
@@ -514,6 +828,8 @@ async function ecrireMemoire(db: DbWrapper, groupId: string, racine: string) {
   ];
   if (todos.length === 0) todosMd.push('Aucune todo.');
   await writeFile(join(racine, '07-memoire', 'todos.md'), todosMd.join('\n'), 'utf-8');
+
+  return { notes, todos };
 }
 
 // Une requête jointe (écritures + justificatifs) plutôt qu'une requête par
@@ -549,13 +865,13 @@ async function telechargerJustificatifsEcritures(
     }>(groupId, bornes.debut, bornes.fin);
 
   for (const r of rows) {
-    const base = join(
-      racine, '01-ecritures', 'justificatifs',
-      dossierEcritureUnique({
-        id: r.ecriture_id, date_ecriture: r.date_ecriture,
-        numero_piece: r.numero_piece, description: r.description,
-      }),
-    );
+    const nomDossier = dossierEcritureUnique({
+      id: r.ecriture_id, date_ecriture: r.date_ecriture,
+      numero_piece: r.numero_piece, description: r.description,
+    });
+    const relatif = `01-ecritures/justificatifs/${nomDossier}`;
+    dossierParEcriture.set(r.ecriture_id, relatif);
+    const base = join(racine, relatif);
     const dossier = r.obsolete_at ? join(base, '_obsoletes') : base;
     await ecrireJustificatif(
       { id: r.justif_id, file_path: r.file_path, original_filename: r.original_filename },
