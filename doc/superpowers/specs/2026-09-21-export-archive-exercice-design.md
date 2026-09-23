@@ -64,7 +64,10 @@ baloo-dump-YYYY-MM-DD/
 
 Le troisième régime est le piège : ces tables n'ont pas de `group_id`, et un `SELECT *` y exporterait les données de tous les groupes le jour où le multi-tenant sera activé (P3). Le régime de chaque table est déclaré dans la même constante que la classification incluse/exclue, donc couvert par le test de complétude.
 
-**Tables exclues en dur** (secrets et authentification) : `comptaweb_credentials`, `api_tokens`, `oauth_clients`, `oauth_access_tokens`, `oauth_authorization_codes`, `sessions`, `login_codes`, `signin_attempts`, `verification_tokens`, `invite_links`.
+**Tables exclues en dur**, en deux catégories :
+
+- **Secrets et authentification** : `comptaweb_credentials`, `api_tokens`, `oauth_clients`, `oauth_access_tokens`, `oauth_authorization_codes`, `sessions`, `login_codes`, `signin_attempts`, `verification_tokens`, `invite_links`.
+- **Sans rattachement à un groupe** : `error_log`. Ce n'est pas un secret, mais elle n'a aucune colonne exploitable pour la borner (ni `group_id`, ni clé étrangère) — l'exporter entière ferait fuiter les erreurs de tous les groupes dès l'activation du multi-tenant (P3).
 
 Cette liste est une constante, et la classification de **chaque** table du schéma est vérifiée par un test : une table nouvelle qui n'est ni dans la liste incluse ni dans la liste exclue fait échouer la suite. Sans ce garde-fou, une table d'auth ajoutée plus tard partirait silencieusement dans les dumps suivants.
 
@@ -85,7 +88,6 @@ exercice-2025-2026/
     <REMB-id>-<nom>/feuille.pdf + justificatifs
   03-abandons/
     abandons.csv
-    signatures.csv
     <ABD-id>/cerfa.pdf + justificatifs
   04-caisse/
     mouvements.csv  ·  depots-especes.csv  ·  depots-cheques.csv
@@ -100,9 +102,9 @@ exercice-2025-2026/
   avances-camp.csv
 ```
 
-**Champs caviardés**, systématiquement : `remboursements.rib_texte`, `remboursements.rib_file_path` (et le fichier RIB lui-même n'est pas copié), `remboursements.edit_token`, `remboursements.validate_token`.
+**Champs caviardés**, systématiquement : `remboursements.rib_texte`, `remboursements.rib_file_path` (et le fichier RIB lui-même n'est pas copié), `remboursements.edit_token`, `remboursements.validate_token`, ainsi que `comptes_bancaires.iban`, `comptes_bancaires.bic` et `groupes.iban_principal`.
 
-Les tokens sont le point le plus important : ce sont les liens d'accès direct introduits le 2026-06-17. Exportés tels quels dans un Drive partagé, ils permettraient à quiconque détient le dossier de **modifier ou valider un remboursement en production**. Les RIB, eux, n'ont aucune valeur d'archive : ils ne servent qu'à payer, et le paiement est fait.
+Les tokens sont le point le plus important : ce sont les liens d'accès direct introduits le 2026-06-17. Exportés tels quels dans un Drive partagé, ils permettraient à quiconque détient le dossier de **modifier ou valider un remboursement en production**. Les RIB et les IBAN/BIC, eux, n'ont aucune valeur d'archive une fois l'exercice clos : ils ne servent qu'à effectuer des paiements, et les paiements sont faits — un compte reste identifiable par son code, son nom et sa banque.
 
 Les emails sont **conservés** : un successeur doit pouvoir recontacter un demandeur.
 
@@ -111,7 +113,7 @@ Les emails sont **conservés** : un successeur doit pouvoir recontacter un deman
 - **Pas de section « camps »**. La table `camps` ne porte que nom, unité, activité, dates, statut et notes ; le bilan financier est dérivé des écritures. Elle est exportée comme référentiel (`06-referentiels/camps.csv`) pour que les libellés restent lisibles, sans section dédiée.
 - **`avances-camp.csv` à la racine**, en revanche : `avances_camp` porte `beneficiaire`, `montant_rendu_cents`, `statut` et `notes`, qui n'existent nulle part ailleurs. Le versement d'une avance est une écriture, mais *combien est revenu et si l'avance est soldée* n'est que là. Une avance non clôturée au 31/08 est exactement ce qu'un successeur doit voir.
 - **Pas de budgets** dans le dossier d'exercice (ils restent dans le dump). Le prévisionnel éclaire le pilotage de l'année en cours, pas la lecture d'une année close.
-- **Signatures exportées** (`signatures.csv` dans `02-` et `03-`), en plus de l'encart déjà rendu dans les PDF. Sans la chaîne de signature — rôle, horodatage, `data_hash`, IP — un PDF signé n'est qu'un PDF : c'est la chaîne qui porte la valeur probante.
+- **Signatures exportées** (`signatures.csv` dans `02-` uniquement), en plus de l'encart déjà rendu dans les PDF. Sans la chaîne de signature — rôle, horodatage, `data_hash`, IP — un PDF signé n'est qu'un PDF : c'est la chaîne qui porte la valeur probante. Les abandons de frais ne sont **jamais** signés électroniquement dans Baloo (la seule valeur de `signatures.document_type` jamais écrite en base est `'remboursement'`) : `03-abandons/` n'a donc pas de `signatures.csv`.
 - **Remboursements jamais signés** : pas de PDF en base (il n'est généré qu'à la signature, cf. `remboursement-signing.ts`). Ils sont listés dans le CSV et l'index avec la mention « non signé ». Aucun PDF n'est généré a posteriori — un document produit à l'export n'aurait rien signé.
 - **Périmètre temporel par entité** : les écritures sont bornées sur `date_ecriture`, les abandons sur `date_depense`, les mouvements de caisse sur leur date d'opération, les remboursements sur `COALESCE(date_depense, created_at)` — c'est la borne déjà retenue par `queries/cloture.ts`, une demande pouvant être déposée sans date de dépense.
 - **Justificatifs obsolètes** (`obsolete_at` non nul) : inclus, dans un sous-dossier `_obsoletes/` de leur écriture. Traçabilité sans polluer la lecture.
