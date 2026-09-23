@@ -28,7 +28,7 @@
 |---|---|---|
 | **1 — Contrôles** | 1 → 5 | `pnpm export:controles` : la liste de ce qui manque avant clôture. **Utilisable immédiatement.** |
 | **2 — Dump technique** | 6 → 9 | `pnpm export:dump` : le filet de sécurité. |
-| **3 — Dossier d'exercice** | 10 → 14 | `pnpm export:exercice` : l'archive Drive. |
+| **3 — Dossier d'exercice** | 10 → 15 | `pnpm export:exercice` : l'archive Drive. |
 
 Chaque phase est autonome : on peut s'arrêter après la 1 et avoir gagné quelque chose.
 
