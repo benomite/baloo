@@ -97,10 +97,10 @@ exercice-2025-2026/
     comptes.csv · cartes.csv · camps.csv · personnes.csv
   07-memoire/
     notes.md  ·  todos.md
-  08-comptaweb/
-    rapprochement.csv          numero_piece ↔ écriture, écarts éventuels
   avances-camp.csv
 ```
+
+**Pas de dossier `08-comptaweb/` dédié.** Le pont ligne à ligne avec la comptabilité officielle (`numero_piece`, `comptaweb_id`) est déjà une colonne de `01-ecritures/ecritures.csv`, au grain le plus fin ; les écarts entre Baloo et Comptaweb sont déjà remontés par les contrôles `ecart_miroir` et `ecriture_divergente` (§5), en tête du README de l'archive. Un fichier séparé n'aurait fait que dupliquer ces données, avec le risque classique qu'elles finissent par diverger entre les deux sources.
 
 **Champs caviardés**, systématiquement : `remboursements.rib_texte`, `remboursements.rib_file_path` (et le fichier RIB lui-même n'est pas copié), `remboursements.edit_token`, `remboursements.validate_token`, ainsi que `comptes_bancaires.iban`, `comptes_bancaires.bic` et `groupes.iban_principal`.
 
