@@ -163,20 +163,20 @@ describe('genererIndexHtml', () => {
       baseData({
         sections: [
           {
-            id: '08-comptaweb',
-            titre: 'Comptaweb',
+            id: '05-depots-orphelins',
+            titre: 'Dépôts rattachés à rien',
             blocs: [
               {
-                headers: [{ label: 'Fichier' }],
+                headers: [{ label: 'Libellé' }],
                 lignes: [],
-                videTexte: 'Aucun export Comptaweb rattaché à cet exercice.',
+                videTexte: 'Aucun dépôt orphelin pour cet exercice.',
               },
             ],
           },
         ],
       }),
     );
-    expect(html).toContain('Aucun export Comptaweb rattaché à cet exercice.');
+    expect(html).toContain('Aucun dépôt orphelin pour cet exercice.');
     expect(html).not.toContain('<table>');
   });
 
