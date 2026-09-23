@@ -28,7 +28,7 @@ describe('dossierEcriture', () => {
         id: 'ECR-2026-042', date_ecriture: '2026-08-05',
         numero_piece: 'PI-17', description: 'Intermarché camp',
       }),
-    ).toBe('2026-08-05-PI-17-intermarche-camp');
+    ).toBe('2026-08-05-pi-17-intermarche-camp');
   });
   it('retombe sur l\'id quand la pièce manque', () => {
     expect(
@@ -36,12 +36,20 @@ describe('dossierEcriture', () => {
         id: 'ECR-2026-042', date_ecriture: '2026-08-05',
         numero_piece: null, description: 'Essence',
       }),
-    ).toBe('2026-08-05-ECR-2026-042-essence');
+    ).toBe('2026-08-05-ecr-2026-042-essence');
   });
   it('gère une écriture sans date', () => {
     expect(
       dossierEcriture({ id: 'ECR-1', date_ecriture: null, numero_piece: null, description: null }),
-    ).toBe('sans-date-ECR-1-sans-titre');
+    ).toBe('sans-date-ecr-1-sans-titre');
+  });
+  it('slugifie numero_piece : un `/` ne doit pas créer de sous-dossier fantôme', () => {
+    expect(
+      dossierEcriture({
+        id: 'ECR-2026-050', date_ecriture: '2026-08-05',
+        numero_piece: 'PC25- 01 À 05', description: 'Lot de tickets',
+      }),
+    ).toBe('2026-08-05-pc25-01-a-05-lot-de-tickets');
   });
 });
 

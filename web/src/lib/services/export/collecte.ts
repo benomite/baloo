@@ -24,6 +24,8 @@ function clauseJointure(j: Jointure, callerAlias: string, profondeur: number): s
 
 export function sqlPourTable(t: TableExport): { sql: string; args: (groupId: string) => string[] } {
   switch (t.regime) {
+    case 'racine':
+      return { sql: `SELECT * FROM ${t.nom} WHERE id = ?`, args: (g) => [g] };
     case 'global':
       return { sql: `SELECT * FROM ${t.nom}`, args: () => [] };
     case 'group_id':

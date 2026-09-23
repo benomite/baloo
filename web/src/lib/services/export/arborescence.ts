@@ -30,7 +30,11 @@ export function dossierEcriture(e: {
   description: string | null;
 }): string {
   const date = e.date_ecriture ?? 'sans-date';
-  const piece = e.numero_piece ?? e.id;
+  // Slugifié : `numero_piece` vient de Comptaweb, pas du code — un `/` y
+  // créerait un sous-dossier fantôme, un `:` ou un `?` casserait la synchro
+  // Drive sur Windows. `index-html.ts` compense déjà côté `href`, mais rien
+  // ne compensait côté système de fichiers avant ce correctif.
+  const piece = slug(e.numero_piece ?? e.id, 40);
   return `${date}-${piece}-${slug(e.description ?? '')}`;
 }
 

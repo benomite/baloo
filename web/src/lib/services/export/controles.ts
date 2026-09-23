@@ -117,7 +117,13 @@ export async function controleDepotsOrphelins(
   db: DbWrapper,
   groupId: string,
   bornes: BornesExercice,
+  options: { cumulatif?: boolean } = {},
 ): Promise<Controle> {
+  // `cumulatif` omet la borne basse : un dépôt orphelin jamais rattaché doit
+  // continuer de bloquer indéfiniment (cf. /cloture, qui vérifie "rien ne
+  // traîne", pas "rien n'est apparu ce mois-ci"). L'export d'exercice, lui,
+  // reste borné à la période — un dépôt orphelin d'un exercice précédent
+  // relève du rapport de CET exercice-là, pas de celui-ci.
   const rows = await db
     .prepare(
       `SELECT id, titre, amount_cents, date_estimee, created_at, statut
@@ -126,7 +132,7 @@ export async function controleDepotsOrphelins(
           AND ecriture_id IS NULL
           AND remboursement_id IS NULL
           AND statut <> 'rejete'
-          AND COALESCE(date_estimee, created_at) >= ?
+          ${options.cumulatif ? '' : 'AND COALESCE(date_estimee, created_at) >= ?'}
           AND COALESCE(date_estimee, created_at) <= ?
         ORDER BY COALESCE(date_estimee, created_at), id`,
     )
@@ -137,7 +143,7 @@ export async function controleDepotsOrphelins(
       date_estimee: string | null;
       created_at: string | null;
       statut: string;
-    }>(groupId, bornes.debut, bornes.finInclusiveTs);
+    }>(groupId, ...(options.cumulatif ? [] : [bornes.debut]), bornes.finInclusiveTs);
 
   return {
     cle: 'depot_orphelin',

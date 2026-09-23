@@ -17,7 +17,7 @@
 // Un blob manquant du store n'interrompt pas le dump : il est consigné dans
 // manifest.json (`blobs.manquants`) et le dump continue — un fichier perdu
 // ne doit pas empêcher de sauvegarder les autres.
-import { mkdir, writeFile, stat } from 'node:fs/promises';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { getDb } from '../src/lib/db';
@@ -25,7 +25,7 @@ import { getStorage } from '../src/lib/storage';
 import { TABLES_INCLUSES, TABLES_EXCLUES, classifierTables } from '../src/lib/services/export/tables';
 import { collecterTable } from '../src/lib/services/export/collecte';
 import { controleBlobsManquants } from '../src/lib/services/export/controles';
-import { toBuffer, ecrireAtomique } from './lib/blob-io';
+import { toBuffer, ecrireAtomique, sha256Hex } from './lib/blob-io';
 import { getCliContext } from './cli-context';
 
 async function main() {
@@ -39,22 +39,38 @@ async function main() {
   const toutes = await db
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
     .all<{ name: string }>();
-  const { manquantes } = classifierTables(toutes.map((t) => t.name));
+  const { manquantes, inconnues } = classifierTables(toutes.map((t) => t.name));
   if (manquantes.length > 0) {
     throw new Error(
       `Tables non classées dans export/tables.ts : ${manquantes.join(', ')}.\n` +
         `Ajoute-les à TABLES_INCLUSES ou à TABLES_EXCLUES avant d'exporter.`,
     );
   }
+  if (inconnues.length > 0) {
+    console.warn(
+      `\n⚠️  Table(s) déclarée(s) dans export/tables.ts mais absente(s) du schéma réel : ` +
+        `${inconnues.join(', ')}. Schéma pas encore migré sur cette BDD, ou déclaration obsolète.`,
+    );
+  }
 
   await mkdir(join(racine, 'tables'), { recursive: true });
   const compteurs: Record<string, number> = {};
+  const tablesEnEchec: Array<{ table: string; erreur: string }> = [];
   for (const t of TABLES_INCLUSES) {
-    const rows = await collecterTable(db, groupId, t);
-    const jsonl = rows.map((r) => JSON.stringify(r)).join('\n');
-    await writeFile(join(racine, 'tables', `${t.nom}.jsonl`), jsonl + (rows.length ? '\n' : ''), 'utf-8');
-    compteurs[t.nom] = rows.length;
-    console.log(`  ${t.nom.padEnd(36)} ${rows.length}`);
+    try {
+      const rows = await collecterTable(db, groupId, t);
+      const jsonl = rows.map((r) => JSON.stringify(r)).join('\n');
+      await writeFile(join(racine, 'tables', `${t.nom}.jsonl`), jsonl + (rows.length ? '\n' : ''), 'utf-8');
+      compteurs[t.nom] = rows.length;
+      console.log(`  ${t.nom.padEnd(36)} ${rows.length}`);
+    } catch (err) {
+      // Une table à schéma paresseux (lazy-init) pas encore créée, ou tout
+      // autre écart, ne doit pas faire tomber les tables déjà écrites — même
+      // philosophie que `blobs.manquants` : consigner et continuer.
+      const erreur = err instanceof Error ? err.message : String(err);
+      tablesEnEchec.push({ table: t.nom, erreur });
+      console.warn(`  ${t.nom.padEnd(36)} ÉCHEC : ${erreur}`);
+    }
   }
 
   // Les blobs : écrits sous leur id (stable), avec un index qui garde le nom
@@ -78,12 +94,21 @@ async function main() {
   const manquants: Array<{ id: string; file_path: string; original_filename: string | null }> = [];
   let telecharges = 0;
   let sautes = 0;
+  let octetsTotaux = 0;
   for (const j of justifs) {
     const ext = (j.original_filename?.match(/\.[a-z0-9]+$/i) ?? [''])[0];
     const cible = join(racine, 'blobs', `${j.id}${ext}`);
     let octets: number;
+    let sha256: string;
     try {
-      octets = (await stat(cible)).size;
+      // Présent sous son nom final => forcément complet (reprise, cf.
+      // `ecrireAtomique`). On relit son contenu (pas seulement `stat`) pour
+      // fonder l'entrée d'index sur un sha256 réellement vérifié, pas sur la
+      // seule présence du fichier — cf. spec §3 et ADR-040 : une sauvegarde
+      // doit être vérifiable.
+      const buf = await readFile(cible);
+      octets = buf.byteLength;
+      sha256 = sha256Hex(buf);
       sautes += 1;
     } catch {
       // `storage.fetch` avale toute exception (réseau, auth, timeout) et
@@ -101,9 +126,11 @@ async function main() {
       const buf = await toBuffer(res.body);
       await ecrireAtomique(cible, buf);
       octets = buf.byteLength;
+      sha256 = sha256Hex(buf);
       telecharges += 1;
     }
-    index.push({ ...j, fichier: `blobs/${j.id}${ext}`, octets });
+    octetsTotaux += octets;
+    index.push({ ...j, fichier: `blobs/${j.id}${ext}`, octets, sha256 });
   }
   await writeFile(join(racine, 'blobs', 'index.json'), JSON.stringify(index, null, 2), 'utf-8');
 
@@ -134,10 +161,13 @@ async function main() {
     group_id: groupId,
     commit: gitCommit(),
     lignes_par_table: compteurs,
+    tables_en_echec: tablesEnEchec,
+    tables_inconnues: inconnues,
     blobs: {
       total: justifs.length,
       telecharges,
       deja_presents: sautes,
+      octets_totaux: octetsTotaux,
       manquants: {
         nombre: controleBlobs.lignes.length,
         lignes: manquants,

@@ -17,7 +17,7 @@
 //   (ex. remboursement_ligne_justificatifs → remboursement_lignes →
 //   remboursements).
 
-export type RegimeSelection = 'group_id' | 'global' | 'par_fk';
+export type RegimeSelection = 'group_id' | 'racine' | 'global' | 'par_fk';
 
 export interface Jointure {
   table: string; // la table parente
@@ -52,7 +52,7 @@ export const TABLES_EXCLUES: string[] = [
 ];
 
 export const TABLES_INCLUSES: TableExport[] = [
-  { nom: 'groupes', regime: 'group_id' },
+  { nom: 'groupes', regime: 'racine' },
   { nom: 'ecritures', regime: 'group_id' },
   { nom: 'justificatifs', regime: 'group_id' },
   { nom: 'depots_justificatifs', regime: 'group_id' },
