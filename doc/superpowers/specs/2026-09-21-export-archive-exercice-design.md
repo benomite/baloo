@@ -71,7 +71,9 @@ Le troisième régime est le piège : ces tables n'ont pas de `group_id`, et un 
 
 Cette liste est une constante, et la classification de **chaque** table du schéma est vérifiée par un test : une table nouvelle qui n'est ni dans la liste incluse ni dans la liste exclue fait échouer la suite. Sans ce garde-fou, une table d'auth ajoutée plus tard partirait silencieusement dans les dumps suivants.
 
-**Reprenable** : le script écrit au fil de l'eau et saute un blob déjà présent dont le sha256 correspond. Une coupure réseau se rattrape en relançant.
+**Reprenable** : le script écrit chaque blob dans un fichier temporaire puis le renomme vers son nom final. `rename` étant atomique sur un même système de fichiers, un fichier présent sous son nom final est **forcément complet** — la simple présence suffit donc à sauter un blob, et une coupure (réseau, interruption, disque plein) se rattrape en relançant.
+
+Le `sha256` de `blobs/index.json` sert à **vérifier l'intégrité de l'archive**, pas à décider d'un saut : refaire le hash de chaque fichier à chaque run coûterait une relecture complète du dump pour une garantie que l'atomicité donne déjà. *(Précision apportée le 2026-09-28 : la rédaction initiale de cette section fondait la reprise sur le hash, ce qui était à la fois plus coûteux et moins sûr que l'écriture atomique retenue à l'implémentation.)*
 
 ### 4. Artefact B — dossier d'exercice
 
