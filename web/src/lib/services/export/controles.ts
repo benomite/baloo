@@ -163,6 +163,14 @@ export async function controleDepotsOrphelins(
 // sous-lignes) : ce ne sont pas des écarts à corriger.
 const STATUTS_TERMINAUX = ['mirror', 'supprimee_cw', 'agrege_remplace'];
 
+interface RowEcartMiroir {
+  id: string;
+  date_ecriture: string | null;
+  description: string | null;
+  amount_cents: number;
+  status: string;
+}
+
 export async function controleEcartsMiroir(
   db: DbWrapper,
   groupId: string,
@@ -179,21 +187,17 @@ export async function controleEcartsMiroir(
           AND status NOT IN (${placeholders})
         ORDER BY date_ecriture, id`,
     )
-    .all<{
-      id: string;
-      date_ecriture: string | null;
-      description: string | null;
-      amount_cents: number;
-      status: string;
-    }>(groupId, bornes.debut, bornes.fin, ...STATUTS_TERMINAUX);
+    .all<RowEcartMiroir>(groupId, bornes.debut, bornes.fin, ...STATUTS_TERMINAUX);
 
-  const lignes: LigneControle[] = rows.map((r) => ({
+  const toLigne = (r: RowEcartMiroir, detail: string): LigneControle => ({
     id: r.id,
     date: r.date_ecriture,
     libelle: r.description ?? '',
     montantCents: r.amount_cents,
-    detail: `statut ${r.status}`,
-  }));
+    detail,
+  });
+
+  const lignes: LigneControle[] = rows.map((r) => toLigne(r, `statut ${r.status}`));
 
   return [
     {
@@ -204,15 +208,7 @@ export async function controleEcartsMiroir(
     {
       cle: 'ecriture_divergente',
       titre: 'Écritures divergentes (Baloo ≠ Comptaweb)',
-      lignes: rows
-        .filter((r) => r.status === 'divergent')
-        .map((r) => ({
-          id: r.id,
-          date: r.date_ecriture,
-          libelle: r.description ?? '',
-          montantCents: r.amount_cents,
-          detail: 'divergent',
-        })),
+      lignes: rows.filter((r) => r.status === 'divergent').map((r) => toLigne(r, 'divergent')),
     },
   ];
 }

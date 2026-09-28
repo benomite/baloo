@@ -50,19 +50,21 @@ baloo-dump-YYYY-MM-DD/
   tables/<table>.jsonl      une ligne JSON par enregistrement
   blobs/<justif_id>.<ext>   tous les fichiers, nommés par id (stable)
   blobs/index.json          id → nom d'origine, entity_type/id, mime, sha256, octets
-  manifest.json             date, commit git, lignes par table, nb blobs,
-                            octets totaux, liste des tables exclues
+  manifest.json             date, commit git, lignes par table, tables en échec,
+                            tables inconnues, nb blobs, octets totaux,
+                            liste des tables exclues
 ```
 
-**Sélection des lignes** — trois régimes, car toutes les tables ne portent pas `group_id` :
+**Sélection des lignes** — quatre régimes, car toutes les tables ne portent pas `group_id` :
 
 | Régime | Tables | Règle |
 |---|---|---|
+| Racine | `groupes` | `WHERE id = ?` — la table EST le groupe, pas de colonne `group_id` |
 | Portant `group_id` | `ecritures`, `remboursements`, `abandons_frais`, `justificatifs`, `depots_justificatifs`, `mouvements_caisse`, `unites`, `activites`, `cartes`, `personnes`, `camps`, `notes`, `todos`… | `WHERE group_id = ?` |
 | Référentiels globaux | `categories`, `modes_paiement` | exportées entières (elles ne sont pas propres au groupe) |
 | Atteintes par FK | `signatures`, `remboursement_lignes`, `remboursement_ligne_justificatifs`, `budget_lignes`, `avances_camp` | filtrées par jointure sur leur parent déjà retenu |
 
-Le troisième régime est le piège : ces tables n'ont pas de `group_id`, et un `SELECT *` y exporterait les données de tous les groupes le jour où le multi-tenant sera activé (P3). Le régime de chaque table est déclaré dans la même constante que la classification incluse/exclue, donc couvert par le test de complétude.
+Le régime par FK est le piège : ces tables n'ont pas de `group_id`, et un `SELECT *` y exporterait les données de tous les groupes le jour où le multi-tenant sera activé (P3). Le régime de chaque table est déclaré dans la même constante que la classification incluse/exclue, donc couvert par le test de complétude.
 
 **Tables exclues en dur**, en deux catégories :
 

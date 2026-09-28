@@ -5,6 +5,11 @@
 // services) au 2026-09-23. Elle est codée en dur ici (pas de requête BDD)
 // pour que ce test tourne sans DB_URL. Le test « complétude face au schéma
 // réel » plus bas, lui, touche la vraie base et est encadré en conséquence.
+//
+// Liste figée à resynchroniser à chaque migration de schéma (nouvelle
+// table, table renommée ou supprimée) : sinon ce test dérive silencieusement
+// de la base réelle et ne détecte plus une table oubliée dans
+// TABLES_INCLUSES / TABLES_EXCLUES.
 import { describe, it, expect } from 'vitest';
 import { TABLES_INCLUSES, TABLES_EXCLUES, classifierTables } from '../tables';
 

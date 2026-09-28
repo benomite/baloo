@@ -228,4 +228,28 @@ describe('genererIndexHtml', () => {
     expect(html).toContain('Achat matériel');
     expect(html).toContain('100,00 €');
   });
+
+  it('n’affiche pas de bloc avertissement en l’absence de panne de store', () => {
+    const html = genererIndexHtml(baseData());
+    expect(html).not.toContain('<div class="avertissement">');
+  });
+
+  it('affiche l’avertissement « panne de store » dans l’en-tête quand il est fourni', () => {
+    const html = genererIndexHtml(
+      baseData({
+        entete: {
+          groupeNom: 'Groupe Test',
+          exercice: '2025-2026',
+          debut: bornes.debut,
+          fin: bornes.fin,
+          genereLe: '2026-09-23',
+          caviardage: ["Les RIB et les tokens d'accès ont été retirés de cette archive."],
+          avertissement:
+            '12 fichier(s) sur 20 sont ressortis « manquants » — probable panne d’accès au store.',
+        },
+      }),
+    );
+    expect(html).toContain('<div class="avertissement">');
+    expect(html).toContain('probable panne d’accès au store.');
+  });
 });

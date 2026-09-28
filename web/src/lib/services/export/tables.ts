@@ -6,8 +6,10 @@
 // nouvelle n'a pas été classée — sinon une table d'authentification
 // ajoutée plus tard partirait silencieusement dans les dumps suivants.
 //
-// Trois régimes de sélection (`RegimeSelection`) :
+// Quatre régimes de sélection (`RegimeSelection`) :
 // - 'group_id' : la table porte directement une colonne group_id.
+// - 'racine'   : la table EST le groupe (clé 'id', pas de colonne
+//   group_id) — une seule ligne sélectionnée par id. Cas de `groupes`.
 // - 'global'   : référentiel partagé par tous les groupes (pas de
 //   group_id) — exporté en entier.
 // - 'par_fk'   : pas de group_id, bornée par jointure vers un ou
