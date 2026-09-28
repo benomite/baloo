@@ -130,4 +130,22 @@ describe('caviarder', () => {
     const serialise = JSON.stringify(caviarder('groupes', groupe));
     expect(serialise).not.toContain('FR76');
   });
+
+  it('retire le téléphone d`une personne, conserve le reste', () => {
+    const personne = {
+      id: 'PERS-1',
+      prenom: 'Julie',
+      nom: 'Martin',
+      email: 'julie.martin@example.org',
+      telephone: '06 12 34 56 78',
+      role_groupe: 'tresoriere',
+    };
+    const p = caviarder('personnes', personne);
+    expect(p).not.toHaveProperty('telephone');
+    expect(p.prenom).toBe('Julie');
+    expect(p.nom).toBe('Martin');
+    expect(p.email).toBe('julie.martin@example.org');
+    expect(p.role_groupe).toBe('tresoriere');
+    expect(JSON.stringify(p)).not.toContain('06 12 34 56 78');
+  });
 });
