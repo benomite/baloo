@@ -177,6 +177,12 @@ async function main() {
     tables_exclues: TABLES_EXCLUES,
   };
   await writeFile(join(racine, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
+  if (tablesEnEchec.length > 0) {
+    console.warn(`\n⚠️  ${tablesEnEchec.length} table(s) en échec — voir tables_en_echec dans manifest.json.`);
+  }
+  if (inconnues.length > 0) {
+    console.warn(`⚠️  ${inconnues.length} table(s) déclarée(s) mais absente(s) du schéma — voir tables_inconnues dans manifest.json.`);
+  }
   console.log(`\nDump écrit dans ${racine} (${justifs.length} fichiers, ${telecharges} téléchargés).`);
 }
 

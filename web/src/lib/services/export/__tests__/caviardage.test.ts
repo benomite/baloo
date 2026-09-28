@@ -13,7 +13,7 @@ describe('caviarder', () => {
     total_cents: 4200,
   };
 
-  it('retire RIB et tokens d`un remboursement', () => {
+  it('retire RIB et tokens d’un remboursement', () => {
     const r = caviarder('remboursements', remb);
     expect(r).not.toHaveProperty('rib_texte');
     expect(r).not.toHaveProperty('rib_file_path');
@@ -21,7 +21,7 @@ describe('caviarder', () => {
     expect(r).not.toHaveProperty('validate_token');
   });
 
-  it('conserve les champs nécessaires à la lecture de l`archive', () => {
+  it('conserve les champs nécessaires à la lecture de l’archive', () => {
     const r = caviarder('remboursements', remb);
     expect(r.id).toBe('REMB-1');
     expect(r.demandeur).toBe('Pierre');
@@ -54,7 +54,7 @@ describe('caviarder', () => {
     );
   });
 
-  it('retire IBAN et BIC d`un compte bancaire', () => {
+  it('retire IBAN et BIC d’un compte bancaire', () => {
     const compte = {
       id: 'COMPTE-1',
       code: 'CHEC',
@@ -69,7 +69,7 @@ describe('caviarder', () => {
     expect(c).not.toHaveProperty('bic');
   });
 
-  it('conserve les champs d`identification du compte', () => {
+  it('conserve les champs d’identification du compte', () => {
     const compte = {
       id: 'COMPTE-1',
       code: 'CHEC',
@@ -86,7 +86,7 @@ describe('caviarder', () => {
     expect(c.comptaweb_id).toBe('CW-789');
   });
 
-  it('ne laisse aucun IBAN dans la sortie sérialisée d`un compte', () => {
+  it('ne laisse aucun IBAN dans la sortie sérialisée d’un compte', () => {
     const compte = {
       id: 'COMPTE-1',
       code: 'CHEC',
@@ -98,7 +98,7 @@ describe('caviarder', () => {
     expect(serialise).not.toContain('CMCIFR2A');
   });
 
-  it('retire iban_principal d`un groupe', () => {
+  it('retire iban_principal d’un groupe', () => {
     const groupe = {
       id: 'GRP-1',
       nom: 'Groupe des Castors',
@@ -109,7 +109,7 @@ describe('caviarder', () => {
     expect(g).not.toHaveProperty('iban_principal');
   });
 
-  it('conserve les champs d`identification du groupe', () => {
+  it('conserve les champs d’identification du groupe', () => {
     const groupe = {
       id: 'GRP-1',
       nom: 'Groupe des Castors',
@@ -121,7 +121,7 @@ describe('caviarder', () => {
     expect(g.email_contact).toBe('tresorier@castors.fr');
   });
 
-  it('ne laisse aucun IBAN dans la sortie sérialisée d`un groupe', () => {
+  it('ne laisse aucun IBAN dans la sortie sérialisée d’un groupe', () => {
     const groupe = {
       id: 'GRP-1',
       nom: 'Groupe des Castors',
@@ -131,7 +131,7 @@ describe('caviarder', () => {
     expect(serialise).not.toContain('FR76');
   });
 
-  it('retire le téléphone d`une personne, conserve le reste', () => {
+  it('retire le téléphone d’une personne, conserve le reste', () => {
     const personne = {
       id: 'PERS-1',
       prenom: 'Julie',

@@ -2345,6 +2345,8 @@ async function ecrireJustificatif(
 
 Pour chaque remboursement : `02-remboursements/<dossierRemboursement(r)>/`, contenant la feuille PDF (`justificatifs` avec `entity_type = 'remboursement_feuille'`, nommée `feuille.pdf`) et les justificatifs des lignes. Un remboursement sans feuille reçoit un fichier `NON-SIGNE.txt` expliquant qu'aucune feuille n'a été générée faute de signature — le dossier vide serait ambigu.
 
+> **Note du 2026-09-28** : la feuille PDF et le fichier `NON-SIGNE.txt` décrits ci-dessus ont été retirés en cours de chantier — la feuille signée imprime les coordonnées bancaires du demandeur, incompatibles avec un artefact caviardé destiné à circuler. Cf. `doc/superpowers/specs/2026-09-21-export-archive-exercice-design.md` pour le comportement retenu. Ce plan reste tel quel pour l'historique.
+
 Pour les abandons : même patron dans `03-abandons/<id>/`.
 
 - [ ] **Step 3: Add orphan deposits**

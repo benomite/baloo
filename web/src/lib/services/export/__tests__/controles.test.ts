@@ -61,13 +61,13 @@ beforeEach(async () => {
 });
 
 describe('controleEcrituresSansJustif', () => {
-  it("signale une dépense attendant un justif qui n'en a aucun", async () => {
+  it('signale une dépense attendant un justif qui n’en a aucun', async () => {
     await insertEcriture({ id: 'ECR-1' });
     const r = await controleEcrituresSansJustif(db, 'g', BORNES);
     expect(r.lignes.map((l) => l.id)).toEqual(['ECR-1']);
   });
 
-  it("ne signale pas une dépense qui a un justif vivant", async () => {
+  it('ne signale pas une dépense qui a un justif vivant', async () => {
     await insertEcriture({ id: 'ECR-1' });
     await insertJustif({ id: 'JUS-1', entity: 'ECR-1' });
     const r = await controleEcrituresSansJustif(db, 'g', BORNES);
@@ -218,8 +218,9 @@ describe('controleEcartsMiroir', () => {
   it('ne compte pas les états terminaux normaux du miroir', async () => {
     await insertAvecStatut('ECR-S', 'supprimee_cw');
     await insertAvecStatut('ECR-A', 'agrege_remplace');
-    const [ecarts] = await controleEcartsMiroir(db, 'g', BORNES);
+    const [ecarts, divergentes] = await controleEcartsMiroir(db, 'g', BORNES);
     expect(ecarts.lignes).toEqual([]);
+    expect(divergentes.lignes).toEqual([]);
   });
 
   it('porte le statut dans le détail de chaque ligne', async () => {

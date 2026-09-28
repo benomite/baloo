@@ -85,6 +85,12 @@ export interface EnteteIndex {
   // README (cf. brief : « reprends la formulation déjà présente, ne la
   // réinvente pas »).
   caviardage: string[];
+  // Avertissement « panne de store » (cf. export-exercice.ts) : présent
+  // seulement si une proportion massive de fichiers est ressortie
+  // manquante, signe probable d'une panne d'accès plutôt qu'une perte
+  // réelle. Doit apparaître ici ET dans le README — un lecteur qui
+  // n'ouvre que l'un des deux ne doit pas manquer la mise en garde.
+  avertissement?: string | null;
 }
 
 export interface IndexHtmlData {
@@ -124,6 +130,8 @@ const STYLES = `
   .caviardage { font-size: .9rem; color: #55584f; border-top: 1px solid #eae7de; padding-top: .75rem; margin-top: .75rem; }
   .caviardage p { margin: 0 0 .5rem; }
   .caviardage p:last-child { margin-bottom: 0; }
+  .avertissement { font-size: .9rem; color: #7a3b0c; background: #fbf1e6; border: 1px solid #e3c39a; border-radius: 6px; padding: .75rem 1rem; margin: 0 0 1rem; }
+  .avertissement p { margin: 0; }
   nav.sommaire {
     background: #ffffff;
     border: 1px solid #d8d5cc;
@@ -246,6 +254,10 @@ export function genererIndexHtml(data: IndexHtmlData): string {
 
   const caviardageHtml = entete.caviardage.map((p) => `<p>${escapeHtml(p)}</p>`).join('');
 
+  const avertissementHtml = entete.avertissement
+    ? `<div class="avertissement"><p>⚠️ ${escapeHtml(entete.avertissement)}</p></div>`
+    : '';
+
   const sommaireHtml = [
     `<a href="#controles">Contrôles</a>`,
     ...sections.map((s) => `<a href="#${escapeHtml(s.id)}">${escapeHtml(s.titre)}</a>`),
@@ -272,6 +284,7 @@ export function genererIndexHtml(data: IndexHtmlData): string {
     <h1>Archive de l'exercice ${escapeHtml(entete.exercice)}</h1>
     <p class="sous-titre">${escapeHtml(entete.groupeNom)}</p>
     <dl>${enteteDl}</dl>
+    ${avertissementHtml}
     <div class="caviardage">${caviardageHtml}</div>
   </header>
 

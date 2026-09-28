@@ -298,6 +298,7 @@ async function main() {
         fin: bornes.fin,
         genereLe: new Date().toISOString().slice(0, 10),
         caviardage: CAVIARDAGE_PARAGRAPHES,
+        avertissement: avertissementStore,
       },
       bornes,
       controles,

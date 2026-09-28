@@ -35,7 +35,7 @@ export function caviarder(
   ligne: Record<string, unknown>,
 ): Record<string, unknown> {
   const champs = CHAMPS_SENSIBLES[table];
-  if (!champs) return ligne;
+  if (!champs) return { ...ligne };
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(ligne)) {
     if (!champs.includes(k)) out[k] = v;
