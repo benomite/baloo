@@ -87,7 +87,7 @@ exercice-2025-2026/
   02-remboursements/
     remboursements.csv
     signatures.csv
-    <REMB-id>-<nom>/feuille.pdf + justificatifs
+    <REMB-id>-<nom>/ justificatifs   (pas de feuille.pdf : cf. note ci-dessous)
   03-abandons/
     abandons.csv                 (colonne cerfa_emis + date : cf. note ci-dessous)
     <ABD-id>/ justificatifs
@@ -104,11 +104,11 @@ exercice-2025-2026/
 
 **Pas de dossier `08-comptaweb/` dédié.** Le pont ligne à ligne avec la comptabilité officielle (`numero_piece`, `comptaweb_id`) est déjà une colonne de `01-ecritures/ecritures.csv`, au grain le plus fin ; les écarts entre Baloo et Comptaweb sont déjà remontés par les contrôles `ecart_miroir` et `ecriture_divergente` (§5), en tête du README de l'archive. Un fichier séparé n'aurait fait que dupliquer ces données, avec le risque classique qu'elles finissent par diverger entre les deux sources.
 
-**Champs caviardés**, systématiquement : `remboursements.rib_texte`, `remboursements.rib_file_path` (et le fichier RIB lui-même n'est pas copié), `remboursements.edit_token`, `remboursements.validate_token`, ainsi que `comptes_bancaires.iban`, `comptes_bancaires.bic` et `groupes.iban_principal`.
+**Champs caviardés**, systématiquement : `remboursements.rib_texte`, `remboursements.rib_file_path` (et le fichier RIB lui-même n'est pas copié), `remboursements.edit_token`, `remboursements.validate_token`, ainsi que `comptes_bancaires.iban`, `comptes_bancaires.bic`, `groupes.iban_principal` et `personnes.telephone`.
 
 Les tokens sont le point le plus important : ce sont les liens d'accès direct introduits le 2026-06-17. Exportés tels quels dans un Drive partagé, ils permettraient à quiconque détient le dossier de **modifier ou valider un remboursement en production**. Les RIB et les IBAN/BIC, eux, n'ont aucune valeur d'archive une fois l'exercice clos : ils ne servent qu'à effectuer des paiements, et les paiements sont faits — un compte reste identifiable par son code, son nom et sa banque.
 
-Les emails sont **conservés** : un successeur doit pouvoir recontacter un demandeur.
+Les emails sont **conservés** : un successeur doit pouvoir recontacter un demandeur. Le téléphone, lui, est retiré : plus intrusif que l'email et sans valeur d'archive — ce point n'avait pas été tranché à la rédaction initiale de cette section.
 
 **Décisions de contenu** :
 
@@ -118,6 +118,7 @@ Les emails sont **conservés** : un successeur doit pouvoir recontacter un deman
 - **Signatures exportées** (`signatures.csv` dans `02-` uniquement), en plus de l'encart déjà rendu dans les PDF. Sans la chaîne de signature — rôle, horodatage, `data_hash`, IP — un PDF signé n'est qu'un PDF : c'est la chaîne qui porte la valeur probante. Les abandons de frais ne sont **jamais** signés électroniquement dans Baloo (la seule valeur de `signatures.document_type` jamais écrite en base est `'remboursement'`) : `03-abandons/` n'a donc pas de `signatures.csv`.
 - **Pas de `cerfa.pdf`** dans `03-abandons/<id>/` : Baloo ne génère aucun CERFA, il revient du national après envoi — `abandons_frais.cerfa_emis` n'est qu'un drapeau booléen (posé à la main par le trésorier), sans fichier associé. Il est exporté tel quel, avec sa date, dans `abandons.csv`. Le dossier `<id>/` ne contient donc que les justificatifs de la demande.
 - **Remboursements jamais signés** : pas de PDF en base (il n'est généré qu'à la signature, cf. `remboursement-signing.ts`). Ils sont listés dans le CSV et l'index avec la mention « non signé ». Aucun PDF n'est généré a posteriori — un document produit à l'export n'aurait rien signé.
+- **`feuille.pdf` n'est PAS copiée dans l'archive**, signée ou non — décision utilisateur du 2026-09-28. `feuille-remboursement.ts` imprime l'IBAN du demandeur en clair pour permettre le paiement ; le copier dans une archive destinée à un Drive partagé contournerait tout le caviardage par un simple fichier. Ce qui reste dans `02-remboursements/` : la colonne `feuille_signee` de `remboursements.csv` (laquelle a été signée), `signatures.csv` (la chaîne de signature, valeur probante), et les justificatifs des lignes de la demande, qui ne contiennent aucun IBAN. La feuille elle-même reste consultable dans Baloo. Pas de fichier `NON-SIGNE.txt` non plus : il levait l'ambiguïté d'un dossier sans feuille, question qui ne se pose plus puisqu'aucun dossier n'en a.
 - **Périmètre temporel par entité** : les écritures sont bornées sur `date_ecriture`, les abandons sur `date_depense`, les mouvements de caisse sur leur date d'opération, les remboursements sur `COALESCE(date_depense, created_at)` — c'est la borne déjà retenue par `queries/cloture.ts`, une demande pouvant être déposée sans date de dépense.
 - **Justificatifs obsolètes** (`obsolete_at` non nul) : inclus, dans un sous-dossier `_obsoletes/` de leur écriture. Traçabilité sans polluer la lecture.
 - **Écritures en `draft` / `pending_cw` / `pending_sync`** à la date d'export : incluses, avec leur statut en clair dans le CSV et signalées dans les contrôles. Un successeur doit voir ce qui n'était pas matérialisé dans Comptaweb.

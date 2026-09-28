@@ -14,11 +14,16 @@
 //    des paiements. Une fois l'exercice clos, tous les paiements sont faits.
 //    Ces champs n'ont aucune valeur archivale — un compte reste identifiable
 //    par son `code`, son `nom`, sa `banque` et son `comptaweb_id`.
+//
+// 3. **Téléphone** : contrairement à l'email (conservé : un successeur doit
+//    pouvoir recontacter quelqu'un), le numéro de téléphone est plus
+//    intrusif et n'a aucune valeur d'archive.
 
 export const CHAMPS_SENSIBLES: Record<string, string[]> = {
   remboursements: ['rib_texte', 'rib_file_path', 'edit_token', 'validate_token'],
   comptes_bancaires: ['iban', 'bic'],
   groupes: ['iban_principal'],
+  personnes: ['telephone'],
 };
 
 /**

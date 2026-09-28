@@ -141,10 +141,15 @@ const REFERENTIELS = [
 // deux formulations diverger (cf. brief tâche 14 : « reprends la
 // formulation déjà présente, ne la réinvente pas »).
 const CAVIARDAGE_PARAGRAPHES = [
-  'Les RIB, les liens d’accès direct aux remboursements, les IBAN et BIC des comptes bancaires ' +
-    'et l’IBAN du groupe ont été retirés de cette archive.',
+  'Les RIB, les liens d’accès direct aux remboursements, les IBAN et BIC des comptes bancaires, ' +
+    'l’IBAN du groupe et les numéros de téléphone ont été retirés de cette archive.',
   'Les abandons de frais ne font pas l’objet d’une signature électronique dans Baloo : seules ' +
     'les demandes de remboursement le sont (cf. `02-remboursements/signatures.csv`).',
+  'Les feuilles de remboursement signées ne figurent pas dans cette archive : elles impriment ' +
+    'les coordonnées bancaires du demandeur. La colonne `feuille_signee` de ' +
+    '`02-remboursements/remboursements.csv` indique lesquelles ont été signées, et ' +
+    '`02-remboursements/signatures.csv` porte la chaîne de signature qui en fait la valeur ' +
+    'probante. Les feuilles elles-mêmes restent consultables dans Baloo.',
 ];
 
 async function main() {
@@ -241,14 +246,15 @@ async function main() {
       '',
       CAVIARDAGE_PARAGRAPHES[1],
       '',
+      CAVIARDAGE_PARAGRAPHES[2],
+      '',
       '## Fichiers',
       '',
       '- `01-ecritures/justificatifs/<dossier de l’écriture>/` — pièces jointes à une écriture. ' +
         'Un sous-dossier `_obsoletes/` regroupe les pièces remplacées (traçabilité, à ne pas lire ' +
         'comme des pièces valides).',
-      '- `02-remboursements/<dossier du remboursement>/` — `feuille.pdf` (la demande signée) et les ' +
-        'justificatifs de ses lignes. Un fichier `NON-SIGNE.txt` signale une demande dont aucune ' +
-        'feuille n’a jamais été générée, faute de signature.',
+      '- `02-remboursements/<dossier du remboursement>/` — justificatifs des lignes de la demande ' +
+        '(pas d’IBAN). Pas de feuille signée ici : cf. le paragraphe ci-dessus.',
       '- `03-abandons/<id>/` — justificatifs d’un abandon de frais.',
       '- `05-depots-orphelins/<id>-<titre>/` — fichiers d’un dépôt rattaché à rien (ni écriture, ni ' +
         'remboursement).',
@@ -925,34 +931,14 @@ async function telechargerRemboursements(
   for (const r of rembs) {
     const dossier = join(racine, '02-remboursements', dossierRemboursement(r));
 
-    const feuille = await db
-      .prepare(
-        `SELECT id, file_path, original_filename
-           FROM justificatifs
-          WHERE group_id = ? AND entity_type = 'remboursement_feuille' AND entity_id = ?
-            AND obsolete_at IS NULL
-          ORDER BY uploaded_at DESC LIMIT 1`,
-      )
-      .get<{ id: string; file_path: string; original_filename: string | null }>(groupId, r.id);
-
-    if (feuille) {
-      await ecrireBlobVersFichier(feuille, join(dossier, 'feuille.pdf'), storage);
-    } else {
-      // Dossier vide = ambigu (pièce manquante ou jamais existé ?) : ce
-      // fichier tranche explicitement pour le second cas. Même motif
-      // atomique que les blobs (via `ecrireAtomique`), pour la même raison :
-      // une coupure ne doit jamais laisser un fichier tronqué que la
-      // reprise, qui ne fait qu'un `stat`, prendrait pour complet.
-      const cible = join(dossier, 'NON-SIGNE.txt');
-      try {
-        await stat(cible);
-      } catch {
-        await ecrireAtomique(
-          cible,
-          Buffer.from("Aucune feuille n'a été générée pour cette demande : elle n'a jamais été signée.\n", 'utf-8'),
-        );
-      }
-    }
+    // La feuille signée (`feuille.pdf`) n'est PAS copiée dans l'archive :
+    // elle imprime en clair l'IBAN du demandeur (`feuille-remboursement.ts`),
+    // et l'archive part vers un Drive partagé — la copier contournerait tout
+    // le caviardage par un simple fichier. Ce qui reste consultable ici :
+    // la colonne `feuille_signee` du CSV (laquelle a été signée),
+    // `signatures.csv` (la chaîne probante complète), et les justificatifs
+    // des LIGNES de remboursement ci-dessous, qui ne contiennent aucun IBAN.
+    // Les feuilles elles-mêmes restent consultables dans Baloo.
 
     const lignes = await db
       .prepare(
