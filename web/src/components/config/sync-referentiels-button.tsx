@@ -30,6 +30,7 @@ export function SyncReferentielsButton() {
           }
           const r = result.report;
           const lines = [
+            `Exercices ${r.exercices.join(', ')}`,
             summarise('Branches', r.unites),
             summarise('Natures', r.categories),
             summarise('Activités', r.activites),

@@ -59,6 +59,8 @@ beforeAll(async () => {
     CREATE TABLE categories (id TEXT, comptaweb_id INTEGER);
     CREATE TABLE activites (id TEXT, comptaweb_id INTEGER);
     CREATE TABLE unites (id TEXT, comptaweb_id INTEGER);
+    CREATE TABLE referentiels_cw_exercice (kind TEXT, local_id TEXT, exercice TEXT, group_id TEXT,
+      comptaweb_id INTEGER, updated_at TEXT);
     CREATE TABLE modes_paiement (id TEXT, comptaweb_id INTEGER);
     CREATE TABLE cartes (id TEXT, type TEXT, comptaweb_id INTEGER);
   `);
@@ -78,6 +80,7 @@ async function resetData(): Promise<void> {
     INSERT INTO categories VALUES ('c-int', 11), ('c-pharma', 22);
     INSERT INTO activites VALUES ('a-camps', 5);
     INSERT INTO unites VALUES ('u-farfa', 7);
+    INSERT INTO referentiels_cw_exercice VALUES ('activite', 'a-camps', '2025-2026', 'g1', 5, ''), ('unite', 'u-farfa', '2025-2026', 'g1', 7, '');
     INSERT INTO modes_paiement VALUES ('m-cb', 3);
     INSERT INTO ecritures (
       id, group_id, date_ecriture, description, amount_cents, type, unite_id, category_id,

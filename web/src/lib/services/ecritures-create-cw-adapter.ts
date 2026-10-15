@@ -30,6 +30,8 @@
 import { createEcriture } from '../comptaweb/ecritures-write';
 import { loadConfig } from '../comptaweb/auth';
 import { getDb } from '../db';
+import { lookupReferentielCwId } from '../comptaweb/sync-referentiels-logic';
+import { exerciceCodeForDate } from './exercices-affichage';
 import type { ComptawebConfig, CreateEcritureInput } from '../comptaweb/types';
 import type { CwScraper, EcriturePayload } from './ecritures-create';
 
@@ -54,11 +56,16 @@ function centsToMontantFr(cents: number): string {
   return (cents / 100).toFixed(2).replace('.', ',');
 }
 
+// Unités et activités : ID de l'exercice demandé (Comptaweb les renumérote à
+// chaque exercice, ADR-041). Natures et modes : ID stable, colonne directe.
 async function lookupComptawebId(
   table: 'categories' | 'activites' | 'unites' | 'modes_paiement',
   id: string | null | undefined,
+  exercice: string,
 ): Promise<number | null> {
   if (!id) return null;
+  if (table === 'unites') return lookupReferentielCwId(getDb(), 'unite', id, exercice);
+  if (table === 'activites') return lookupReferentielCwId(getDb(), 'activite', id, exercice);
   const row = await getDb()
     .prepare(`SELECT comptaweb_id FROM ${table} WHERE id = ?`)
     .get<{ comptaweb_id: number | null }>(id);
@@ -78,6 +85,7 @@ export interface ResolveDeps {
   lookupComptawebId?: (
     table: 'categories' | 'activites' | 'unites' | 'modes_paiement',
     id: string | null | undefined,
+    exercice: string,
   ) => Promise<number | null>;
   /** Override pour tests : remplace le lookup carte. */
   lookupCarte?: (id: string | null | undefined) => Promise<CarteRow | null>;
@@ -97,9 +105,12 @@ export async function buildCwInputFromPayload(
 ): Promise<CreateEcritureInput> {
   const luComptawebId = deps.lookupComptawebId ?? lookupComptawebId;
   const luCarte = deps.lookupCarte ?? lookupCarte;
+  // L'exercice de LA DATE de l'écriture : c'est dans sa session qu'elle part
+  // (ADR-039), donc avec ses IDs d'unités et d'activités (ADR-041).
+  const exercice = exerciceCodeForDate(payload.date_ecriture);
 
   // En-tête : mode de paiement (obligatoire pour CW).
-  const modeCw = await luComptawebId('modes_paiement', payload.mode_paiement_id);
+  const modeCw = await luComptawebId('modes_paiement', payload.mode_paiement_id, exercice);
   if (!payload.mode_paiement_id) {
     throw new Error(
       `Impossible d'envoyer à Comptaweb — il manque : mode de paiement. ` +
@@ -131,23 +142,23 @@ export async function buildCwInputFromPayload(
   for (let i = 0; i < payload.ventilations.length; i++) {
     const v = payload.ventilations[i];
     const [natureCw, activiteCw, uniteCw] = await Promise.all([
-      luComptawebId('categories', v.category_id),
-      luComptawebId('activites', v.activite_id),
-      luComptawebId('unites', v.unite_id),
+      luComptawebId('categories', v.category_id, exercice),
+      luComptawebId('activites', v.activite_id, exercice),
+      luComptawebId('unites', v.unite_id, exercice),
     ]);
 
     const missing: string[] = [];
     if (!v.category_id) missing.push('catégorie');
     else if (natureCw === null) missing.push('mapping CW de la catégorie');
     if (!v.activite_id) missing.push('activité');
-    else if (activiteCw === null) missing.push('mapping CW de l\'activité');
+    else if (activiteCw === null) missing.push(`mapping CW de l'activité pour l'exercice ${exercice}`);
     if (!v.unite_id) missing.push('unité');
-    else if (uniteCw === null) missing.push('mapping CW de l\'unité');
+    else if (uniteCw === null) missing.push(`mapping CW de l'unité pour l'exercice ${exercice}`);
 
     if (missing.length > 0) {
       throw new Error(
         `Ventilation ${i + 1} — il manque : ${missing.join(', ')}. ` +
-        `Mappe les référentiels (page Sync référentiels) ou utilise "Tout copier".`,
+        `Mappe les référentiels (bouton « Synchroniser les configs ») ou utilise "Tout copier".`,
       );
     }
 

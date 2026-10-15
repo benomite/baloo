@@ -31,6 +31,7 @@
 import { getDb, type DbWrapper } from '../db';
 import { ensureBusinessSchema } from '../db/business-schema';
 import { inferBrancheSGDF } from '../branches-sgdf';
+import { fusionnerDoublonsReferentiels } from '../comptaweb/sync-referentiels-logic';
 
 let ensured = false;
 // Fusion des rôles applicatifs equipier + parent → membre (spec 2026-06-17).
@@ -665,6 +666,11 @@ export async function ensureAuthSchema(): Promise<void> {
 
   await migrateKmColumns(db);
   await migrateSignaturesSuperseded(db);
+
+  // Doublons d'unités/activités créés par l'ancienne sync des référentiels au
+  // passage d'exercice (ADR-041, constat 2026-10-15). Idempotent : sans
+  // doublon, ne fait que lire.
+  await fusionnerDoublonsReferentiels(db);
 
   // Multi-ventilation (S0, 2026-07-08) : relie N lignes ecritures d'une
   // même pièce AVANT que comptaweb_ecriture_id soit connu. Nullable

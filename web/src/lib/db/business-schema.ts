@@ -256,6 +256,20 @@ export async function ensureBusinessSchema(): Promise<void> {
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
+    -- IDs Comptaweb des unites et activites PAR EXERCICE (ADR-041) : Comptaweb
+    -- les renumérote à chaque exercice. kind = 'unite' ou 'activite',
+    -- exercice = '2026-2027'. C'est l'ID à envoyer pour une écriture de cet
+    -- exercice ; unites.comptaweb_id n'est que le dernier ID vu.
+    CREATE TABLE IF NOT EXISTS referentiels_cw_exercice (
+      kind TEXT NOT NULL,
+      local_id TEXT NOT NULL,
+      exercice TEXT NOT NULL,
+      group_id TEXT NOT NULL,
+      comptaweb_id INTEGER NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (kind, local_id, exercice)
+    );
+
     CREATE TABLE IF NOT EXISTS cartes (
       id TEXT PRIMARY KEY,
       group_id TEXT NOT NULL,

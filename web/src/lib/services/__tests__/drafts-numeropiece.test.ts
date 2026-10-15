@@ -54,11 +54,14 @@ async function setup(): Promise<DbWrapper> {
     CREATE TABLE categories (id TEXT, comptaweb_id INTEGER);
     CREATE TABLE activites (id TEXT, comptaweb_id INTEGER);
     CREATE TABLE unites (id TEXT, comptaweb_id INTEGER);
+    CREATE TABLE referentiels_cw_exercice (kind TEXT, local_id TEXT, exercice TEXT, group_id TEXT,
+      comptaweb_id INTEGER, updated_at TEXT);
     CREATE TABLE modes_paiement (id TEXT, comptaweb_id INTEGER);
     CREATE TABLE cartes (id TEXT, type TEXT, comptaweb_id INTEGER);
     INSERT INTO categories VALUES ('c1', 10);
     INSERT INTO activites VALUES ('a1', 40);
     INSERT INTO unites VALUES ('u1', 20);
+    INSERT INTO referentiels_cw_exercice VALUES ('activite', 'a1', '2025-2026', 'g', 40, ''), ('unite', 'u1', '2025-2026', 'g', 20, '');
     INSERT INTO modes_paiement VALUES ('m1', 30);
   `);
   return db;

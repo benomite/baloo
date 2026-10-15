@@ -1,47 +1,26 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { getDb } from '../db';
-import { currentTimestamp } from '../ids';
 import { getCurrentContext } from '../context';
 import { ensureComptawebEnv } from '../comptaweb/env-loader';
+import { ComptawebSessionExpiredError } from '../comptaweb';
 import {
-  applyReferentielsSync,
-  fetchReferentielsCreer,
-  fetchAllCartes,
-  withAutoReLogin,
-  ComptawebSessionExpiredError,
-} from '../comptaweb';
-import type { SyncReferentielsReport } from '../comptaweb';
+  syncReferentielsTousExercices,
+  type SyncReferentielsTousExercicesReport,
+} from '../services/referentiels-sync';
 
 ensureComptawebEnv();
 
 export interface SyncActionResult {
   ok: boolean;
-  report?: SyncReferentielsReport;
+  report?: SyncReferentielsTousExercicesReport;
   erreur?: string;
 }
 
 export async function syncReferentielsFromComptaweb(): Promise<SyncActionResult> {
   try {
     const ctx = await getCurrentContext();
-    const [refs, cartes] = await withAutoReLogin(async (cfg) => {
-      const r = await fetchReferentielsCreer(cfg);
-      const c = await fetchAllCartes(cfg);
-      return [r, c] as const;
-    });
-    const report = await applyReferentielsSync(
-      getDb(),
-      ctx.groupId,
-      {
-        brancheprojet: refs.brancheprojet,
-        nature: refs.nature,
-        activite: refs.activite,
-        modetransaction: refs.modetransaction,
-        cartes,
-      },
-      currentTimestamp(),
-    );
+    const report = await syncReferentielsTousExercices(ctx.groupId);
     revalidatePath('/ecritures');
     revalidatePath('/ecritures/[id]', 'page');
     revalidatePath('/ecritures/nouveau');

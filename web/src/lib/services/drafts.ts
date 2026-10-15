@@ -10,6 +10,8 @@ import {
   ComptawebSessionExpiredError,
 } from '../comptaweb';
 import { resoudreExercicePourDate } from './exercice-pour-ecriture';
+import { exerciceCodeForDate } from './exercices-affichage';
+import { lookupReferentielCwId } from '../comptaweb/sync-referentiels-logic';
 import type {
   EcritureBancaireNonRapprochee,
   EcritureComptableNonRapprochee,
@@ -531,8 +533,12 @@ function isoToFr(iso: string): string {
   return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
-async function lookupComptawebId(table: string, id: string | null): Promise<number | null> {
+// Unités et activités : ID de l'exercice demandé (Comptaweb les renumérote à
+// chaque exercice, ADR-041). Natures et modes : ID stable, colonne directe.
+async function lookupComptawebId(table: string, id: string | null, exercice: string): Promise<number | null> {
   if (!id) return null;
+  if (table === 'unites') return lookupReferentielCwId(getDb(), 'unite', id, exercice);
+  if (table === 'activites') return lookupReferentielCwId(getDb(), 'activite', id, exercice);
   const row = await getDb().prepare(`SELECT comptaweb_id FROM ${table} WHERE id = ?`).get<{ comptaweb_id: number | null }>(id);
   return row?.comptaweb_id ?? null;
 }
@@ -573,7 +579,10 @@ export async function syncDraftToComptaweb(
       : [{ id: ecr.id, amount_cents: ecr.amount_cents, category_id: ecr.category_id, activite_id: ecr.activite_id, unite_id: ecr.unite_id }];
     const totalCents = groupRows.reduce((s, r) => s + r.amount_cents, 0);
 
-    const modeCw = await lookupComptawebId('modes_paiement', ecr.mode_paiement_id);
+    // IDs d'unités/activités de l'exercice de LA DATE (ADR-041) — le même
+    // que celui de la session d'envoi, résolue plus bas (ADR-039).
+    const exerciceCode = exerciceCodeForDate(ecr.date_ecriture);
+    const modeCw = await lookupComptawebId('modes_paiement', ecr.mode_paiement_id, exerciceCode);
     const justRow = await db.prepare("SELECT COUNT(*) as n FROM justificatifs WHERE entity_type = 'ecriture' AND entity_id = ?").get<{ n: number }>(ecr.id);
     const hasJust = (justRow?.n ?? 0) > 0;
 
@@ -595,16 +604,16 @@ export async function syncDraftToComptaweb(
     // effectivement plusieurs lignes (pas de bruit sur le cas mono-ligne).
     const ventilations: CreateEcritureInput['ventilations'] = [];
     for (const [i, r] of groupRows.entries()) {
-      const natureCw = await lookupComptawebId('categories', r.category_id);
-      const activiteCw = await lookupComptawebId('activites', r.activite_id);
-      const uniteCw = await lookupComptawebId('unites', r.unite_id);
+      const natureCw = await lookupComptawebId('categories', r.category_id, exerciceCode);
+      const activiteCw = await lookupComptawebId('activites', r.activite_id, exerciceCode);
+      const uniteCw = await lookupComptawebId('unites', r.unite_id, exerciceCode);
       const prefix = groupRows.length > 1 ? `Ventilation ${i + 1} — ` : '';
       if (!r.category_id) missing.push(`${prefix}nature`);
       else if (natureCw === null) missing.push(`${prefix}mapping nature`);
       if (!r.activite_id) missing.push(`${prefix}activité`);
-      else if (activiteCw === null) missing.push(`${prefix}mapping activité`);
+      else if (activiteCw === null) missing.push(`${prefix}mapping activité ${exerciceCode}`);
       if (!r.unite_id) missing.push(`${prefix}unité`);
-      else if (uniteCw === null) missing.push(`${prefix}mapping unité`);
+      else if (uniteCw === null) missing.push(`${prefix}mapping unité ${exerciceCode}`);
       ventilations.push({
         montant: (r.amount_cents / 100).toFixed(2).replace('.', ','),
         natureId: natureCw !== null ? String(natureCw) : '',

@@ -1025,7 +1025,7 @@ async function syncUnExercice(ctx: ContexteExercice): Promise<CompteursExercice>
  * suffit — son propre contexte n'importe pas pour LIRE la liste) croisé avec le
  * réglage `dernier_exercice_clos` du groupe.
  */
-async function decouvrirExercices(groupId: string): Promise<ExerciceActif[]> {
+export async function decouvrirExercices(groupId: string): Promise<ExerciceActif[]> {
   const [groupe, page] = await Promise.all([
     getGroupe({ groupId }),
     withAutoReLogin((cfg) => fetchExercices(cfg)),

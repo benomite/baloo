@@ -1,14 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpContext } from '../auth';
+import type { SyncReferentielsReport } from '@/lib/comptaweb';
 import {
-  withAutoReLogin,
-  fetchReferentielsCreer,
-  fetchAllCartes,
-  applyReferentielsSync,
-  type SyncReferentielsReport,
-} from '@/lib/comptaweb';
-import { getDb } from '@/lib/db';
-import { currentTimestamp } from '@/lib/ids';
+  syncReferentielsTousExercices,
+  type SyncReferentielsTousExercicesReport,
+} from '@/lib/services/referentiels-sync';
 
 function formatStats(label: string, s: SyncReferentielsReport['unites']): string {
   const parts = [
@@ -21,8 +17,9 @@ function formatStats(label: string, s: SyncReferentielsReport['unites']): string
   return `${label}: ${parts.join(', ')}`;
 }
 
-function formatReport(r: SyncReferentielsReport): string {
+function formatReport(r: SyncReferentielsTousExercicesReport): string {
   const lines = [
+    `Exercices : ${r.exercices.join(', ')}`,
     formatStats('Unités (branches/projets)', r.unites),
     formatStats('Natures (catégories)', r.categories),
     formatStats('Activités', r.activites),
@@ -37,7 +34,7 @@ function formatReport(r: SyncReferentielsReport): string {
     ...r.cartes.orphelines.map((id) => `carte ${id}`),
   ];
   if (orphelines.length) {
-    lines.push('', 'Orphelines (entrées locales avec comptaweb_id introuvable côté CW) :');
+    lines.push('', "Orphelines (entrées locales absentes de Comptaweb sur l'exercice le plus récent) :");
     lines.push(...orphelines.map((o) => `  - ${o}`));
   }
   return lines.join('\n');
@@ -46,27 +43,11 @@ function formatReport(r: SyncReferentielsReport): string {
 export function registerSyncReferentielsTools(server: McpServer, ctx: McpContext) {
   server.tool(
     'cw_sync_referentiels',
-    "Synchronise les référentiels Comptaweb (branches/projets → unites, natures → categories, activités → activites, modes de transaction → modes_paiement, cartes CB + procurement → cartes). Additif : ajoute les entrées manquantes, mappe les entrées locales non mappées par name, signale les orphelines. Ne supprime jamais.",
+    "Synchronise les référentiels Comptaweb (branches/projets → unites, natures → categories, activités → activites, modes de transaction → modes_paiement, cartes CB + procurement → cartes) sur chaque exercice actif. Comptaweb renumérote unités et activités à chaque exercice : leurs IDs sont tenus par exercice, l'unité locale restant unique (rattachée par nom). Additif : ajoute les entrées manquantes, signale les orphelines. Ne supprime jamais.",
     {},
     async () => {
       try {
-        const [refs, cartes] = await withAutoReLogin(async (cfg) => {
-          const r = await fetchReferentielsCreer(cfg);
-          const c = await fetchAllCartes(cfg);
-          return [r, c] as const;
-        });
-        const report = await applyReferentielsSync(
-          getDb(),
-          ctx.groupId,
-          {
-            brancheprojet: refs.brancheprojet,
-            nature: refs.nature,
-            activite: refs.activite,
-            modetransaction: refs.modetransaction,
-            cartes,
-          },
-          currentTimestamp(),
-        );
+        const report = await syncReferentielsTousExercices(ctx.groupId);
         return { content: [{ type: 'text' as const, text: formatReport(report) }] };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

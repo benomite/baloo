@@ -49,6 +49,48 @@ const fakeDeps = {
 };
 
 describe('buildCwInputFromPayload', () => {
+  it("résout unité et activité avec les IDs CW de l'exercice de la date (ADR-041)", async () => {
+    // Comptaweb renumérote unités et activités à chaque exercice : une écriture
+    // d'octobre 2026 doit partir avec les IDs 2026-2027, pas ceux de 2025-2026.
+    const lookupComptawebId = vi.fn(
+      async (table: string, id: string | null | undefined, exercice: string) => {
+        if (table === 'modes_paiement') return 1;
+        if (table === 'categories') return 42;
+        const ids: Record<string, number> = {
+          'unites|2025-2026': 904730,
+          'unites|2026-2027': 1001727,
+          'activites|2025-2026': 904729,
+          'activites|2026-2027': 1001726,
+        };
+        return id ? ids[`${table}|${exercice}`] ?? null : null;
+      },
+    );
+
+    const octobre = await buildCwInputFromPayload(
+      { ...VALID_PAYLOAD, date_ecriture: '2026-10-02' },
+      { lookupComptawebId, lookupCarte: async () => null },
+    );
+    const aout = await buildCwInputFromPayload(
+      { ...VALID_PAYLOAD, date_ecriture: '2026-08-28' },
+      { lookupComptawebId, lookupCarte: async () => null },
+    );
+
+    expect(octobre.ventilations[0]).toMatchObject({ brancheprojetId: '1001727', activiteId: '1001726' });
+    expect(aout.ventilations[0]).toMatchObject({ brancheprojetId: '904730', activiteId: '904729' });
+  });
+
+  it("nomme l'exercice quand l'unité n'est pas mappée pour lui", async () => {
+    await expect(
+      buildCwInputFromPayload(
+        { ...VALID_PAYLOAD, date_ecriture: '2026-10-02' },
+        {
+          lookupComptawebId: async (table) => (table === 'unites' ? null : 1),
+          lookupCarte: async () => null,
+        },
+      ),
+    ).rejects.toThrow(/mapping CW de l'unité pour l'exercice 2026-2027/);
+  });
+
   it('mappe category_id Baloo → natureId CW via comptaweb_id', async () => {
     const lookupComptawebId = vi.fn(async (table: string, id: string | null | undefined) => {
       if (id === 'cat-1' && table === 'categories') return 42;
