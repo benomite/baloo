@@ -18,6 +18,7 @@ import {
   type RefSyncStats,
   type SyncReferentielsReport,
 } from '../comptaweb';
+import { fusionnerDoublonsReferentiels } from '../comptaweb/sync-referentiels-logic';
 import { decouvrirExercices } from './sync-cycle';
 
 export interface SyncReferentielsTousExercicesReport extends SyncReferentielsReport {
@@ -40,6 +41,12 @@ export async function syncReferentielsTousExercices(groupId: string): Promise<Sy
   if (actifs.length === 0) {
     throw new Error('Aucun exercice actif trouvé dans Comptaweb.');
   }
+  // Fusion des doublons AVANT toute application : la migration ne tourne
+  // qu'avec `ensureAuthSchema`, que le MCP ne déclenche pas. Sync d'abord, les
+  // IDs de l'exercice courant iraient aux lignes `-2` (leur ancienne colonne
+  // comptaweb_id) et disparaîtraient avec elles à la fusion. Idempotent.
+  await fusionnerDoublonsReferentiels(getDb());
+
   // Du plus ancien au plus récent : le dernier ID vu (colonne historique
   // comptaweb_id) est ainsi celui de l'exercice courant.
   const ordre = [...actifs].reverse();
