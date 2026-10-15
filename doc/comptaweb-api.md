@@ -101,7 +101,7 @@ compta/src/comptaweb-client/
 ### Phase 4 — Synchronisation baloo-compta ↔ Comptaweb
 
 - **Écritures sortantes** (✅ livré 2026-04-19) : tool `cw_sync_draft` — un draft local passe en `saisie_comptaweb` après création de l'écriture côté Comptaweb. Dry-run par défaut. Bloque si validation échoue (nature / activité / unité / mode / justif attendu).
-- **Référentiels** (✅ livré 2026-04-22, cf. [ADR-015](decisions.md)) : tool `cw_sync_referentiels` + bouton « Synchroniser les configs » sur `/import`. Pull additif des 4 référentiels (branches/projets → `unites`, natures → `categories`, activités → `activites`, modes de transaction → `modes_paiement`), match par `comptaweb_id` puis par nom normalisé, INSERT sinon. Orphelines signalées, jamais supprimées.
+- **Référentiels** (✅ livré 2026-04-22, cf. [ADR-015](decisions.md)) : tool `cw_sync_referentiels` + bouton « Synchroniser les configs » sur `/import`. Pull additif des 4 référentiels (branches/projets → `unites`, natures → `categories`, activités → `activites`, modes de transaction → `modes_paiement`), match par `comptaweb_id` puis par nom normalisé, INSERT sinon. Orphelines signalées, jamais supprimées. Depuis le 2026-10-15 ([ADR-041](decisions.md)) : lecture de chaque exercice actif dans sa session, IDs d'unités et d'activités tenus par exercice (`referentiels_cw_exercice`) car Comptaweb les renumérote chaque année.
 - **Écritures entrantes** (via CSV pour l'instant) : `import_comptaweb_csv` depuis un export manuel. Remplacement par un pull API reste à faire, non prioritaire tant que l'export CSV reste simple.
 
 ## Dépendances et inconnues

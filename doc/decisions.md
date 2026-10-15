@@ -1597,4 +1597,36 @@ Sécurité et passation ont des exigences opposées — fidélité brute et fré
 
 ---
 
+## ADR-041 — Référentiels Comptaweb : IDs d'unités et d'activités tenus par exercice
+
+**Date** : 2026-10-15
+**Statut** : Acté
+**Lié à** : [ADR-015](decisions.md) (sync des référentiels), [ADR-038](#adr-038--parité-mcp--app-comme-invariant), [ADR-039](#adr-039--comptaweb--une-connexion-par-exercice-deux-exercices-actifs-en-période-de-clôture) (dont il tranche le point laissé ouvert sur les référentiels).
+
+### Contexte
+
+Constaté en prod le 2026-10-15 : après le passage à l'exercice 2026-2027, toutes les unités et toutes les activités existaient **en double** (« Groupe » GR et « Groupe » GR2, « Camps » et « Camps »…), chaque menu déroulant les affichant deux fois. Les natures (catégories) et les modes de paiement, eux, étaient intacts.
+
+Cause : Comptaweb **renumérote les branches/projets et les activités à chaque exercice** (« Groupe » = 904730 en 2025-2026, 1001727 en 2026-2027), alors que les natures relèvent d'un référentiel national à IDs stables. La sync des référentiels matchait par `comptaweb_id`, puis par nom **seulement parmi les lignes sans `comptaweb_id`** : au changement d'exercice, aucun ID ne correspondait et toutes les lignes étaient déjà mappées, donc tout était recréé.
+
+Le modèle « un `comptaweb_id` par unité » était faux de toute façon : pendant la clôture, deux exercices sont actifs en même temps (ADR-039), et une écriture d'août doit partir avec les IDs de l'ancien exercice, une écriture de septembre avec ceux du nouveau.
+
+### Décision
+
+1. **L'identité locale d'une unité / activité est son nom** (normalisé, par groupe). Ses IDs Comptaweb sont tenus **par exercice** dans `referentiels_cw_exercice (kind, local_id, exercice, comptaweb_id)`.
+2. **La sync des référentiels lit chaque exercice actif dans sa propre session** (`services/referentiels-sync.ts`, partagé par le bouton « Synchroniser les configs » et le tool MCP `cw_sync_referentiels`). Rattachement : mapping déjà tenu pour cet exercice → ancienne colonne `comptaweb_id` → nom. Une ligne locale ne reçoit qu'une option par exercice : deux options homonymes restent deux lignes.
+3. **À l'envoi vers Comptaweb, l'ID est celui de l'exercice de la date de l'écriture** — le même exercice que la session d'envoi (ADR-039). Pas de repli sur la colonne `comptaweb_id` : ce repli enverrait justement l'ID d'un autre exercice. Un mapping manquant est refusé avec un message qui nomme l'exercice.
+4. **`unites.comptaweb_id` / `activites.comptaweb_id` ne sont plus que le dernier ID vu** : un marqueur « connu de Comptaweb » (filtre des listes sélectionnables, préparation à la sync), jamais l'ID envoyé.
+5. **Les doublons déjà créés sont fusionnés par une migration** idempotente (`fusionnerDoublonsReferentiels`, lancée par `ensureAuthSchema`) : les références (toutes les FK déclarées vers la table, découvertes dans le schéma réel) sont rattachées à la ligne la plus ancienne, puis le doublon vidé est retiré. Exception assumée à la règle « jamais de DELETE », validée par le trésorier : ces lignes sont des référentiels générés par une sync fautive, pas des saisies. Les lignes purement locales (sans `comptaweb_id`) ne sont jamais touchées, et un doublon dont une référence ne peut pas être rattachée sans perte reste en place.
+
+### Conséquences
+
+- **Après déploiement, les envois vers Comptaweb sont refusés tant que la sync des référentiels n'a pas tourné** : la table de correspondance démarre vide, et l'exercice d'un ancien `comptaweb_id` ne peut pas être deviné. Un clic sur « Synchroniser les configs » suffit ; à refaire à chaque nouvel exercice (le message d'erreur le dit).
+- Natures, modes de paiement et cartes gardent leur modèle à ID unique.
+- La sync miroir (lecture des écritures CW) résout déjà unités et activités par nom : inchangée.
+
+**Liens** : `web/src/lib/comptaweb/sync-referentiels-logic.ts`, `web/src/lib/services/{referentiels-sync,drafts,ecritures-create-cw-adapter}.ts`, `web/AGENTS.md` (section « Unités et activités : Comptaweb les renumérote à chaque exercice »).
+
+---
+
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*

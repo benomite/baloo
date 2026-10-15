@@ -355,6 +355,22 @@ exercice, jamais listées → faussement `supprimee_cw`. `reconcile` borne donc
 la détection des suppressions aux **dates de l'exercice couvert par le
 snapshot** en plus de la plage d'ids. Ne jamais revenir à un critère id seul.
 
+### Unités et activités : Comptaweb les renumérote à chaque exercice
+
+« Groupe » vaut 904730 en 2025-2026 et 1001727 en 2026-2027 ; même chose pour
+les activités. Les natures (référentiel national) et les modes de paiement,
+eux, gardent leur ID. Conséquences :
+
+- **Ne jamais envoyer `unites.comptaweb_id` / `activites.comptaweb_id`** à
+  Comptaweb : c'est le dernier ID vu, potentiellement celui d'un autre
+  exercice. L'ID à envoyer se lit dans `referentiels_cw_exercice` pour
+  l'exercice de la date de l'écriture (`lookupReferentielCwId`).
+- **Ne jamais identifier une unité / activité locale par son ID CW seul** :
+  c'est le nom qui fait l'identité (ADR-041).
+
+Vu le bug : 2026-10-15, toutes les unités et activités recréées en double
+(GR / GR2…) par la sync des référentiels au passage à 2026-2027.
+
 ### Sous-lignes DSP2 : montants en VALEUR ABSOLUE, le signe est sur le parent
 
 Le détail DSP2 d'une ligne bancaire (« PAIEMENT C. PROC … », un paiement carte
