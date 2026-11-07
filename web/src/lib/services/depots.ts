@@ -323,6 +323,23 @@ export interface UpdateDepotInput {
   activite_id?: string | null;
 }
 
+// Qui peut voir / modifier un dépôt : un admin (trésorier / RG) ou le déposeur
+// lui-même. Comme `canEditAbandon` : le statut `a_traiter` reste exigé pour
+// modifier (le service le re-vérifie), seul le déposeur ou un admin y accède.
+export function canViewDepot(
+  depot: Pick<Depot, 'submitted_by_user_id'>,
+  { userId, isAdmin }: { userId: string; isAdmin: boolean },
+): boolean {
+  return isAdmin || (!!userId && depot.submitted_by_user_id === userId);
+}
+
+export function canEditDepot(
+  depot: Pick<Depot, 'submitted_by_user_id' | 'statut'>,
+  actor: { userId: string; isAdmin: boolean },
+): boolean {
+  return depot.statut === 'a_traiter' && canViewDepot(depot, actor);
+}
+
 // Édition trésorier d'un dépôt encore « à traiter ». Garde-fou identique à
 // rejectDepot : on refuse d'éditer un dépôt déjà rattaché / rejeté (il n'est
 // plus dans la file à traiter et son imputation est figée dans l'écriture).
