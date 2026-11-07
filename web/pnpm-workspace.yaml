@@ -1,3 +1,11 @@
-ignoredBuiltDependencies:
-  - sharp
-  - unrs-resolver
+# Install scripts stay off: none of these is needed to build, test or run the
+# app (sharp, unrs-resolver and canvas ship prebuilt or unused binaries; msw's
+# postinstall only copies its browser worker; esbuild resolves its platform
+# package). Deciding them here keeps pnpm from rewriting this file in every
+# fresh worktree.
+allowBuilds:
+  canvas: false
+  esbuild: false
+  msw: false
+  sharp: false
+  unrs-resolver: false
