@@ -2,10 +2,12 @@ import { headers } from 'next/headers';
 import { getDb } from '../../db';
 import { parseAmount } from '../../format';
 import { parseDistanceToDixiemes, computeKmAmountCents } from '../../services/km';
+import { JustificatifValidationError } from '../../services/justificatifs';
 import {
-  JustificatifValidationError,
-  validateJustifAttachment,
-} from '../../services/justificatifs';
+  resolveTeleversementsFromForm,
+  type Televersement,
+  type TeleversementOwner,
+} from '../../services/justif-televersements';
 
 // Helpers partagés par les server actions du domaine remboursement.
 // Pas de directive 'use server' ici : ces fonctions sont consommées
@@ -111,22 +113,22 @@ export interface LigneInput {
   distance_km_dixiemes: number | null;
 }
 
-// Pré-valide les justificatifs uploadés (taille, extension, MIME)
-// avant tout INSERT. Permet d'échouer tôt avec un message clair côté
-// utilisateur, plutôt que de créer la demande puis d'avaler les
-// erreurs au moment d'attacher (ce qui laisserait une rembs sans
-// justif, contre-intuitif).
-export function validateJustifFiles(
-  files: File[],
+// Résout les justificatifs déjà téléversés (navigateur → storage, ticket
+// #28) soumis sous `field` : propriétaire, taille, extension, MIME. Appelé
+// avant tout INSERT pour échouer tôt avec un message clair, plutôt que de
+// créer la demande puis d'avaler les erreurs au moment d'attacher (ce qui
+// laisserait une rembs sans justif, contre-intuitif).
+export async function resolveFormUploads(
+  owner: TeleversementOwner,
+  formData: FormData,
+  field: string,
   fail: (msg: string) => never,
-): void {
-  for (const f of files) {
-    try {
-      validateJustifAttachment({ filename: f.name, size: f.size, mime_type: f.type || null });
-    } catch (err) {
-      if (err instanceof JustificatifValidationError) fail(`${f.name} : ${err.message}`);
-      throw err;
-    }
+): Promise<Televersement[]> {
+  try {
+    return await resolveTeleversementsFromForm(owner, formData, field);
+  } catch (err) {
+    if (err instanceof JustificatifValidationError) fail(err.message);
+    throw err;
   }
 }
 

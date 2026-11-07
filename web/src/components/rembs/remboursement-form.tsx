@@ -8,11 +8,11 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert } from '@/components/ui/alert';
 import { FileMultiUploader } from '@/components/ui/file-multi-uploader';
+import { FileDrop } from '@/components/ui/file-drop';
 import { Field } from '@/components/shared/field';
 import { Section } from '@/components/shared/section';
 import { NativeSelect } from '@/components/ui/native-select';
 import { PendingButton } from '@/components/shared/pending-button';
-import { validateClientFile, validateUploadTotal } from '@/lib/justif-allowed';
 
 // État renvoyé par les server actions du form en cas d'échec de
 // validation. `null` = pas encore soumis / succès (le succès redirige).
@@ -110,16 +110,10 @@ export function RemboursementForm({
   tauxKmMillicents,
 }: Props) {
   const [state, formAction] = useActionState(action, null);
-  const [ribFileError, setRibFileError] = useState<string | null>(null);
 
-  // Garde d'envoi : sur Vercel le body serverless est rejeté à ~4,5 MB au
-  // niveau edge (413 opaque, avant la server action → aucun message custom
-  // possible côté serveur). On somme les NOUVEAUX fichiers (justifs +
-  // RIB — les justifs déjà stockés ne repartent pas dans le body) et on
-  // bloque l'envoi AVANT, avec un message clair.
-  const [justifsBytes, setJustifsBytes] = useState(0);
-  const [ribBytes, setRibBytes] = useState(0);
-  const uploadTotalError = validateUploadTotal(justifsBytes + ribBytes);
+  // Justifs et RIB partent directement du navigateur vers le storage dès
+  // leur sélection (ticket #28) : la server action ne reçoit que des
+  // références, donc plus de plafond edge Vercel (~4,5 Mo) à surveiller ici.
 
   // Champs contrôlés : React réinitialise les inputs NON contrôlés d'un
   // `<form action>` après l'exécution de l'action (y compris sur erreur).
@@ -169,7 +163,7 @@ export function RemboursementForm({
   });
 
   return (
-    <form action={formAction} encType="multipart/form-data" className="space-y-6">
+    <form action={formAction} className="space-y-6">
       {introNode}
 
       {state?.error && (
@@ -305,7 +299,6 @@ export function RemboursementForm({
           required={existingJustifsCount === 0}
           accept="image/*,application/pdf"
           helpText="Tu peux glisser-déposer plusieurs fichiers d'un coup."
-          onTotalSizeChange={setJustifsBytes}
         />
         {hasKm && (
           <Alert variant="info" className="mt-3">
@@ -331,31 +324,8 @@ export function RemboursementForm({
             onChange={(e) => setRibTexte(e.target.value)}
           />
         </Field>
-        <Field label="RIB (fichier)" htmlFor="rib_file" hint="optionnel si IBAN renseigné">
-          <Input
-            id="rib_file"
-            name="rib_file"
-            type="file"
-            accept="image/*,application/pdf"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              const err = f ? validateClientFile(f) : null;
-              if (err) {
-                // Refus immédiat : on vide l'input pour qu'un fichier
-                // invalide ne parte jamais au serveur.
-                e.target.value = '';
-                setRibFileError(err);
-                setRibBytes(0);
-              } else {
-                setRibFileError(null);
-                setRibBytes(f?.size ?? 0);
-              }
-            }}
-            className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-brand-50 file:text-brand file:font-medium file:text-[13px] file:cursor-pointer hover:file:bg-brand-100 file:transition-colors"
-          />
-          {ribFileError && (
-            <p className="mt-1.5 text-xs text-destructive">{ribFileError}</p>
-          )}
+        <Field label="RIB (fichier)" hint="optionnel si IBAN renseigné">
+          <FileDrop name="rib_file" accept="image/*,application/pdf" hint="PDF ou photo" />
         </Field>
       </Section>
 
@@ -415,12 +385,8 @@ export function RemboursementForm({
         </label>
       </div>
 
-      {uploadTotalError && (
-        <Alert variant="error">{uploadTotalError}</Alert>
-      )}
-
       <div className="flex justify-end pt-2">
-        <PendingButton size="lg" pendingLabel="Envoi…" disabled={!!uploadTotalError}>
+        <PendingButton size="lg" pendingLabel="Envoi…">
           {submitLabel}
         </PendingButton>
       </div>

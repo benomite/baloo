@@ -1,6 +1,7 @@
 import { getDb } from '../db';
 import { currentTimestamp, nextId } from '../ids';
 import { attachJustificatif } from './justificatifs';
+import { attachTeleversement, depotFilesSql, type Televersement } from './justif-televersements';
 
 // Service de dépôt de justificatif libre (chantier 1, ADR à venir).
 //
@@ -106,11 +107,15 @@ export interface CreateDepotInput {
   // Fichiers joints (au moins un, obligatoire à la création). Un même
   // dépôt peut regrouper plusieurs pièces (ticket + facture, recto/verso,
   // pages multiples…).
-  files: {
+  // `files` : contenu reçu par le serveur (API multipart). `televersements` :
+  // fichiers déjà envoyés par le navigateur vers le storage (formulaire
+  // web, ticket #28), résolus au préalable par `resolveTeleversements`.
+  files?: {
     filename: string;
     content: Buffer;
     mime_type?: string | null;
   }[];
+  televersements?: Televersement[];
 }
 
 export async function createDepot(
@@ -144,13 +149,16 @@ export async function createDepot(
     now,
   );
 
-  if (!input.files || input.files.length === 0) {
+  if ((input.files?.length ?? 0) + (input.televersements?.length ?? 0) === 0) {
     throw new Error('Au moins un fichier justificatif est requis.');
   }
 
   // Les fichiers vivent dans `justificatifs` avec entity_type='depot'.
   // Un dépôt peut en regrouper plusieurs.
-  for (const f of input.files) {
+  for (const tv of input.televersements ?? []) {
+    await attachTeleversement({ groupId, userId }, tv, { entity_type: 'depot', entity_id: id });
+  }
+  for (const f of input.files ?? []) {
     await attachJustificatif(
       { groupId },
       {
@@ -246,14 +254,14 @@ export async function listRattacheDepotsForSharing(
               d.date_estimee AS date_estimee, d.ecriture_id AS ecriture_id,
               ea.description AS ecriture_description,
               (SELECT group_concat(file_path, char(10)) FROM justificatifs
-                 WHERE group_id = d.group_id AND file_path LIKE 'depot/' || d.id || '/%') AS justif_paths,
+                 WHERE group_id = d.group_id AND ${depotFilesSql('d.id')}) AS justif_paths,
               (SELECT COUNT(*) FROM justificatifs
-                 WHERE group_id = d.group_id AND file_path LIKE 'depot/' || d.id || '/%') AS justif_count
+                 WHERE group_id = d.group_id AND ${depotFilesSql('d.id')}) AS justif_count
        FROM depots_justificatifs d
        LEFT JOIN ecritures ea ON ea.id = d.ecriture_id
        WHERE d.group_id = ? AND d.statut = 'rattache'
          AND EXISTS(SELECT 1 FROM justificatifs
-                      WHERE group_id = d.group_id AND file_path LIKE 'depot/' || d.id || '/%')
+                      WHERE group_id = d.group_id AND ${depotFilesSql('d.id')})
        ORDER BY d.created_at DESC`,
     )
     .all<DepotForSharing>(groupId);
@@ -489,9 +497,9 @@ export async function detachDepotFromEcriture(
         `UPDATE justificatifs
          SET entity_type = 'depot', entity_id = ?
          WHERE group_id = ? AND entity_type = 'ecriture' AND entity_id = ?
-           AND file_path LIKE ?`,
+           AND ${depotFilesSql('?')}`,
       )
-      .run(depotId, groupId, previousEcritureId, `depot/${depotId}/%`);
+      .run(depotId, groupId, previousEcritureId, depotId, depotId);
   }
 
   await db
@@ -545,16 +553,15 @@ export async function shareDepotToEcriture(
     .get<{ id: string; status: string }>(ecritureId, groupId);
   if (!ecriture) throw new Error(`Écriture ${ecritureId} introuvable dans ce groupe.`);
 
-  // Fichiers du dépôt, identifiés par le préfixe de chemin du blob (figé à la
-  // création), indépendamment de l'entité vers laquelle la ligne pointe
-  // aujourd'hui (le 1er rattachement a re-pointé vers l'écriture A).
-  const pathPrefix = `depot/${depotId}/%`;
+  // Fichiers du dépôt, identifiés par leur chemin (figé à la création),
+  // indépendamment de l'entité vers laquelle la ligne pointe aujourd'hui
+  // (le 1er rattachement a re-pointé vers l'écriture A). Cf. depotFilesSql.
   const sources = await db
     .prepare(
       `SELECT file_path, original_filename, mime_type
-       FROM justificatifs WHERE group_id = ? AND file_path LIKE ?`,
+       FROM justificatifs WHERE group_id = ? AND ${depotFilesSql('?')}`,
     )
-    .all<{ file_path: string; original_filename: string; mime_type: string | null }>(groupId, pathPrefix);
+    .all<{ file_path: string; original_filename: string; mime_type: string | null }>(groupId, depotId, depotId);
   if (sources.length === 0) {
     throw new Error(`Le dépôt ${depotId} n'a aucun justificatif à partager.`);
   }

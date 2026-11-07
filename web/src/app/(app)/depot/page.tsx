@@ -63,7 +63,7 @@ export default async function DepotPage({ searchParams }: { searchParams: Promis
         </Alert>
       )}
 
-      <form action={createDepot} encType="multipart/form-data" className="space-y-6">
+      <form action={createDepot} className="space-y-6">
         <Section title="Le justificatif" subtitle="Photo, PDF ou scan. Tu peux joindre plusieurs pièces (ticket + facture, recto/verso…).">
           <Field label="Fichiers" htmlFor="file" required hint="une ou plusieurs pièces">
             <JustifMultiCapture name="file" required />

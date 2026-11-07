@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, X, UploadCloud } from 'lucide-react';
 import { JustifCapture } from './justif-capture';
 import { acceptJustifFiles } from './justif-accept';
+import { UploadedJustifInputs, useJustifUploads } from './use-justif-uploads';
 
 // JustifMultiCapture : permet de joindre PLUSIEURS pièces à un même
 // dépôt, chacune passant par le workflow riche de `JustifCapture`
@@ -14,10 +15,12 @@ import { acceptJustifFiles } from './justif-accept';
 //     vignettes au-dessus.
 //   - `draft` : la pièce en cours de capture, remontée par l'instance
 //     active de `JustifCapture` via `onReady`.
-//   - Un seul <input type="file" name multiple> caché embarque
-//     l'ensemble (committed + draft) dans le FormData au submit. Du coup
+//   - Chaque pièce (committed + draft) part directement vers le storage
+//     (téléversement direct, ticket #28) ; des inputs cachés `name`
+//     embarquent leurs références dans le FormData au submit. Du coup
 //     le cas mono-fichier « marche tout seul » : pas besoin de cliquer
-//     « Ajouter » si on ne dépose qu'une pièce.
+//     « Ajouter » si on ne dépose qu'une pièce. Le draft n'est envoyé
+//     qu'une fois stable (une retouche produit un nouveau fichier).
 //   - « Ajouter un autre fichier » fige le draft dans `committed` et
 //     remonte une instance vierge de `JustifCapture` (via `captureKey`).
 
@@ -40,7 +43,6 @@ export function JustifMultiCapture({
   const [draft, setDraft] = useState<File | null>(null);
   const [captureKey, setCaptureKey] = useState(0);
   const [dragActive, setDragActive] = useState(false);
-  const realInputRef = useRef<HTMLInputElement>(null);
   // Compteur d'entrée/sortie de drag : les événements dragenter/dragleave
   // se déclenchent aussi sur les enfants ; on ne repasse « inactif » que
   // lorsque le curseur a vraiment quitté le bloc (compteur revenu à 0).
@@ -50,31 +52,7 @@ export function JustifMultiCapture({
     () => [...committed.map((c) => c.file), ...(draft ? [draft] : [])],
     [committed, draft],
   );
-  const allFilesRef = useRef<File[]>(allFiles);
-
-  const syncInput = useCallback(() => {
-    if (!realInputRef.current) return;
-    const dt = new DataTransfer();
-    for (const f of allFilesRef.current) dt.items.add(f);
-    realInputRef.current.files = dt.files;
-  }, []);
-
-  // Synchronise l'input file caché (celui qui part dans le FormData).
-  useEffect(() => {
-    allFilesRef.current = allFiles;
-    syncInput();
-  }, [allFiles, syncInput]);
-
-  // React vide l'input après chaque exécution de l'action (même sur
-  // erreur) en réinitialisant le <form>. On ré-applique nos fichiers
-  // pour qu'un renvoi ne les perde pas silencieusement.
-  useEffect(() => {
-    const form = realInputRef.current?.form;
-    if (!form) return;
-    const onReset = () => queueMicrotask(syncInput);
-    form.addEventListener('reset', onReset);
-    return () => form.removeEventListener('reset', onReset);
-  }, [syncInput]);
+  const uploads = useJustifUploads(allFiles, { settleMs: 800 });
 
   // Cleanup des object URLs au démontage.
   useEffect(() => {
@@ -153,17 +131,7 @@ export function JustifMultiCapture({
           <span className="text-[11.5px] font-medium text-brand/80">Photo, PDF ou scan</span>
         </div>
       )}
-      <input
-        ref={realInputRef}
-        type="file"
-        name={name}
-        multiple
-        accept="image/*,application/pdf"
-        required={required && allFiles.length === 0}
-        className="sr-only"
-        tabIndex={-1}
-        aria-hidden
-      />
+      <UploadedJustifInputs name={name} uploads={uploads} required={required} />
 
       {committed.length > 0 && (
         <ul className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -221,6 +189,12 @@ export function JustifMultiCapture({
         <p className="text-[11.5px] text-fg-subtle">
           {allFiles.length} pièce{allFiles.length > 1 ? 's' : ''} sur ce dépôt
           {draft ? ' (dont la capture en cours)' : ''}.
+        </p>
+      )}
+
+      {allFiles.length > 0 && (uploads.pending || uploads.errors.length > 0) && (
+        <p className={`text-[11.5px] ${uploads.errors.length > 0 ? 'text-destructive' : 'text-fg-subtle'}`}>
+          {uploads.errors.length > 0 ? uploads.errors.join(' ') : 'Envoi des pièces en cours…'}
         </p>
       )}
     </div>

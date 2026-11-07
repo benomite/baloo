@@ -555,6 +555,33 @@ export async function ensureBusinessSchema(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_just_entity ON justificatifs(entity_type, entity_id);
 
+    -- justificatifs_televersements : fichiers envoyés directement du
+    -- navigateur vers Vercel Blob (ticket #28), pas encore rattachés à une
+    -- pièce. Inscrits par le callback onUploadCompleted en prod (fiable,
+    -- non falsifiable par le client), par le serveur au submit hors prod.
+    -- Le submit du formulaire rattache (justificatif_id) : un
+    -- téléversement ne sert qu'une fois. entity_type / entity_id = cible
+    -- du PREMIER rattachement, figée (la ligne justificatifs peut être
+    -- re-pointée ensuite, ex. dépôt → écriture) : c'est l'équivalent du
+    -- préfixe de chemin 'depot/<id>/' des fichiers envoyés par le serveur.
+    -- Rien n'est supprimé : un téléversement jamais rattaché reste une trace.
+    CREATE TABLE IF NOT EXISTS justificatifs_televersements (
+      pathname TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      original_filename TEXT NOT NULL,
+      mime_type TEXT,
+      size_bytes INTEGER,
+      source TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      justificatif_id TEXT,
+      claimed_at TEXT,
+      entity_type TEXT,
+      entity_id TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_just_televersements_group ON justificatifs_televersements(group_id, user_id);
+    CREATE INDEX IF NOT EXISTS idx_just_televersements_entity ON justificatifs_televersements(entity_type, entity_id);
+
     -- ============ Mémoire ====================================
     CREATE TABLE IF NOT EXISTS notes (
       id TEXT PRIMARY KEY,

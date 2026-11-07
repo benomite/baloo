@@ -32,7 +32,8 @@ import { listJustificatifs } from '@/lib/queries/justificatifs';
 import { patchNotesAndRib, updateRemboursementStatus } from '@/lib/actions/remboursements';
 import { convertRembToDepot } from '@/lib/actions/remboursements/convert';
 import { canConvertRemboursement } from '@/lib/actions/remboursements/convert-guard';
-import { retirerJustificatif, uploadJustificatif } from '@/lib/actions/justificatifs';
+import { retirerJustificatif } from '@/lib/actions/justificatifs';
+import { JustifUploadZone } from '@/components/ecritures/justif-upload-zone';
 import { getCurrentContext } from '@/lib/context';
 import { cn } from '@/lib/utils';
 
@@ -233,22 +234,7 @@ export default async function RemboursementDetailPage({
           </Section>
 
           <Section title="Ajouter un justificatif">
-            <form action={uploadJustificatif}>
-              <input type="hidden" name="entity_type" value="remboursement" />
-              <input type="hidden" name="entity_id" value={id} />
-              <Field label="Fichier">
-                <input
-                  type="file"
-                  name="file"
-                  className="block w-full text-[13px] file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-brand-50 file:text-brand file:font-medium file:text-[13px] file:cursor-pointer hover:file:bg-brand-100 file:transition-colors"
-                />
-              </Field>
-              <div className="flex justify-end mt-3">
-                <PendingButton variant="outline" size="sm">
-                  Ajouter
-                </PendingButton>
-              </div>
-            </form>
+            <JustifUploadZone entityType="remboursement" entityId={id} />
           </Section>
 
           {canPatchNotes && (

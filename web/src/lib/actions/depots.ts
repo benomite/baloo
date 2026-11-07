@@ -13,7 +13,8 @@ import {
   detachDepotFromEcriture as detachDepotFromEcritureService,
 } from '../services/depots';
 import { parseAmount } from '../format';
-import { validateJustifAttachment, JustificatifValidationError } from '../services/justificatifs';
+import { JustificatifValidationError } from '../services/justificatifs';
+import { resolveTeleversementsFromForm, type Televersement } from '../services/justif-televersements';
 import { setRembsEcritureLink } from '@/lib/services/remboursement-ecriture-link';
 import { rejectSuggestion } from '@/lib/services/inbox-rejets';
 import { listTresorierEmails, deriveAppUrl } from '@/lib/actions/remboursements/_helpers';
@@ -36,10 +37,17 @@ export async function createDepot(formData: FormData): Promise<void> {
     redirect('/depot?error=' + encodeURIComponent('Rôle non autorisé à déposer.'));
   }
 
-  const files = formData
-    .getAll('file')
-    .filter((f): f is File => f instanceof File && f.size > 0);
-  if (files.length === 0) {
+  // Fichiers déjà téléversés par le navigateur (ticket #28) : on résout
+  // leurs références (propriétaire / taille / extension / MIME) avant tout
+  // INSERT — un fichier refusé ne doit pas laisser de dépôt orphelin.
+  let televersements: Televersement[] = [];
+  try {
+    televersements = await resolveTeleversementsFromForm(ctx, formData, 'file');
+  } catch (err) {
+    const msg = err instanceof JustificatifValidationError ? err.message : String(err);
+    redirect('/depot?error=' + encodeURIComponent(msg));
+  }
+  if (televersements.length === 0) {
     redirect('/depot?error=' + encodeURIComponent('Photo ou PDF du justificatif requis.'));
   }
 
@@ -58,25 +66,6 @@ export async function createDepot(formData: FormData): Promise<void> {
     }
   }
 
-  // Pré-validation (taille / extension / MIME) avant tout INSERT : un
-  // fichier refusé ne doit pas laisser de dépôt orphelin.
-  for (const f of files) {
-    try {
-      validateJustifAttachment({ filename: f.name, size: f.size, mime_type: f.type || null });
-    } catch (err) {
-      const msg = err instanceof JustificatifValidationError ? `${f.name} : ${err.message}` : String(err);
-      redirect('/depot?error=' + encodeURIComponent(msg));
-    }
-  }
-
-  const filesPayload = await Promise.all(
-    files.map(async (f) => ({
-      filename: f.name,
-      content: Buffer.from(await f.arrayBuffer()),
-      mime_type: f.type || null,
-    })),
-  );
-
   let depotId: string;
   try {
     const depot = await createDepotService(
@@ -90,7 +79,7 @@ export async function createDepot(formData: FormData): Promise<void> {
         date_estimee: (formData.get('date_estimee') as string | null) || null,
         carte_id: (formData.get('carte_id') as string | null) || null,
         activite_id: (formData.get('activite_id') as string | null) || null,
-        files: filesPayload,
+        televersements,
       },
     );
     depotId = depot.id;

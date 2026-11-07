@@ -53,6 +53,9 @@ async function setup(): Promise<DbWrapper> {
       mime_type TEXT, entity_type TEXT, entity_id TEXT, uploaded_at TEXT,
     obsolete_at TEXT
     );
+    CREATE TABLE justificatifs_televersements (
+      pathname TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT
+    );
     CREATE TABLE depots_especes (id TEXT PRIMARY KEY, ecriture_id TEXT, date_depot TEXT);
     CREATE TABLE remboursements (id TEXT PRIMARY KEY, ecriture_id TEXT, demandeur TEXT);
     CREATE TABLE avances_camp (id TEXT PRIMARY KEY, ecriture_id TEXT, beneficiaire TEXT);
