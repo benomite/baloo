@@ -178,3 +178,15 @@ Sans déclencheur explicite, **tu ne modifies pas** `doc/`, `skills/`, `sgdf-cor
 - Un outil externe ne répond pas → signale-le et propose un plan B manuel.
 - Un process n'a pas de skill → guide l'utilisateur pas à pas et **propose** d'en créer un skill après coup.
 - La demande est hors scope (dev produit, choix techno lourd) → rappelle les phases de la roadmap et demande si on doit basculer en mode dev.
+
+## Équipe multi-agents (plugin brigade)
+
+The bold labels of the bindings below stay in French: Brigade looks them up by these exact words.
+
+- **Branche d'intégration** : `main`
+- **Worktrees** : `<parent of the repo>/baloo-wt/<n>-<slug>` — a sibling of the repo, the parent is computed (`dirname "$(git rev-parse --show-toplevel)"`)
+- **Setup worktree** : `.claude/brigade/worktree-setup.sh <n> <WT>`
+- **Gates** : `.claude/brigade/gates.sh <WT>`
+- **Zones de fichiers** : web/src (Next.js app: services, MCP tools, UI), web/scripts, doc, skills, sgdf-core
+- **Dev local** : cd web && pnpm dev (local env vars from web/.env.example); unit tests with pnpm test
+- **Doc vivante** : doc/ (ADRs in doc/decisions.md, pitfalls in web/AGENTS.md)
