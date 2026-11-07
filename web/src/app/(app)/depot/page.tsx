@@ -56,6 +56,11 @@ export default async function DepotPage({ searchParams }: { searchParams: Promis
         {' '}<Link href="/remboursements/nouveau" className="font-medium underline underline-offset-2">Fais plutôt une demande de remboursement</Link>.
       </Alert>
 
+      <p className="mb-6 text-[13px] text-fg-muted">
+        <Link href="/depots/mes" className="font-medium text-brand underline underline-offset-2">Voir mes dépôts</Link>
+        {' '}pour consulter ou corriger ceux déjà envoyés.
+      </p>
+
       {params.error && <Alert variant="error" className="mb-6">{params.error}</Alert>}
       {params.success && (
         <Alert variant="success" className="mb-6">

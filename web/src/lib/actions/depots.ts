@@ -7,6 +7,8 @@ import {
   createDepot as createDepotService,
   rejectDepot as rejectDepotService,
   updateDepot as updateDepotService,
+  getDepot as getDepotService,
+  canEditDepot,
   attachDepotToEcriture as attachDepotToEcritureService,
   attachDepotToRemboursement as attachDepotToRemboursementService,
   shareDepotToEcriture as shareDepotToEcritureService,
@@ -144,13 +146,34 @@ export async function rejectDepot(formData: FormData): Promise<void> {
 
 export async function updateDepot(formData: FormData): Promise<void> {
   const ctx = await getCurrentContext();
-  if (!isAdminRole(ctx.role)) {
-    redirect('/depots?error=' + encodeURIComponent('Action réservée aux trésoriers / RG.'));
-  }
+  const isAdmin = isAdminRole(ctx.role);
   const id = formData.get('id') as string | null;
+  // Le déposeur (non admin) revient toujours sur son détail ; l'admin aussi
+  // s'il édite depuis la page détail (champ `from`), sinon sur la file.
+  const back = (query: string) =>
+    isAdmin && formData.get('from') !== 'detail'
+      ? `/depots?${query}`
+      : id
+        ? `/depots/${encodeURIComponent(id)}/edit?${query}`
+        : `/depots/mes?${query}`;
+  const done = (query: string) =>
+    isAdmin && formData.get('from') !== 'detail'
+      ? `/depots?${query}`
+      : `/depots/${encodeURIComponent(id ?? '')}?${query}`;
+
+  if (!isAdmin && !isSubmitRole(ctx.role)) {
+    redirect('/depots/mes?error=' + encodeURIComponent('Rôle non autorisé.'));
+  }
   const titre = (formData.get('titre') as string | null)?.trim() ?? '';
   if (!id || !titre) {
-    redirect('/depots?error=' + encodeURIComponent('Titre obligatoire.'));
+    redirect(back('error=' + encodeURIComponent('Titre obligatoire.')));
+  }
+  if (!isAdmin) {
+    // Ownership : un non-admin ne modifie que ses propres dépôts.
+    const existing = await getDepotService({ groupId: ctx.groupId }, id);
+    if (!existing || !canEditDepot(existing, { userId: ctx.userId, isAdmin })) {
+      redirect('/depots/mes?error=' + encodeURIComponent('Dépôt introuvable ou non modifiable.'));
+    }
   }
 
   const amountRaw = (formData.get('amount') as string | null)?.trim() || null;
@@ -159,7 +182,7 @@ export async function updateDepot(formData: FormData): Promise<void> {
     try {
       amount_cents = parseAmount(amountRaw);
     } catch {
-      redirect('/depots?error=' + encodeURIComponent(`Montant invalide : "${amountRaw}". Utilise le format 12,50.`));
+      redirect(back('error=' + encodeURIComponent(`Montant invalide : "${amountRaw}". Utilise le format 12,50.`)));
     }
   }
 
@@ -179,10 +202,12 @@ export async function updateDepot(formData: FormData): Promise<void> {
       },
     );
   } catch (err) {
-    redirect('/depots?error=' + encodeURIComponent(err instanceof Error ? err.message : String(err)));
+    redirect(back('error=' + encodeURIComponent(err instanceof Error ? err.message : String(err))));
   }
   revalidatePath('/depots');
-  redirect('/depots?updated=' + encodeURIComponent(id));
+  revalidatePath('/depots/mes');
+  revalidatePath(`/depots/${id}`);
+  redirect(done('updated=' + encodeURIComponent(id)));
 }
 
 export async function attachDepotToEcriture(formData: FormData): Promise<void> {
