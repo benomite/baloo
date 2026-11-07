@@ -89,6 +89,19 @@ describe('findEcritureCandidatesForRembs', () => {
     const c = await findEcritureCandidatesForRembs('g', 'RBT-1');
     expect(c.map((x) => x.id)).not.toContain('ECR-CHILD');
   });
+
+  it('garde une tête ventilée qui porte des rembs, masque seulement l\'enfant', async () => {
+    await testDb.prepare(
+      "INSERT INTO ecritures (id, group_id, type, amount_cents, date_ecriture, description, status, ventilation_group_id) VALUES ('ECR-HEAD','g','depense',30000,'2026-07-01','Tête ventilée','draft','vgY')",
+    ).run();
+    await testDb.prepare(
+      "INSERT INTO ecritures (id, group_id, type, amount_cents, date_ecriture, description, status, ventilation_group_id) VALUES ('ECR-KID','g','depense',20000,'2026-07-01','Enfant ventilé','draft','vgY')",
+    ).run();
+    await testDb.prepare("UPDATE remboursements SET ecriture_id='ECR-HEAD' WHERE id='RBT-2'").run();
+    const ids = (await findEcritureCandidatesForRembs('g', 'RBT-1')).map((x) => x.id);
+    expect(ids).toContain('ECR-HEAD');
+    expect(ids).not.toContain('ECR-KID');
+  });
 });
 
 describe('setRembsEcritureLink', () => {
