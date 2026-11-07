@@ -9,7 +9,7 @@ import {
   createRemboursement as createRemboursementService,
   addLigne,
 } from '../../services/remboursements';
-import { attachJustificatif } from '../../services/justificatifs';
+import { attachTeleversement } from '../../services/justif-televersements';
 import { getGroupe } from '../../services/groupes';
 import { sendRemboursementCreatedEmail } from '../../email/remboursement';
 import { signAndRefreshRemboursementPdf } from '../../services/remboursement-signing';
@@ -23,8 +23,8 @@ import {
   parseIdentiteFromForm,
   parseLignesFromForm,
   resolveLignesWithRate,
+  resolveFormUploads,
   runFormAction,
-  validateJustifFiles,
   type RembFormState,
 } from './_helpers';
 
@@ -57,17 +57,15 @@ async function createRemboursementFromForm(
   const tauxKm = groupe?.taux_km_millicents ?? 354;
   const resolvedLignes = resolveLignesWithRate(lignes, tauxKm);
 
-  const justifFiles = formData.getAll('justifs').filter((f): f is File => f instanceof File && f.size > 0);
-  if (justifFiles.length === 0) fail('Au moins un justificatif (photo / PDF) est requis.');
+  // Fichiers déjà téléversés par le navigateur : on ne reçoit que des
+  // références, vérifiées (propriétaire / taille / extension / MIME) avant
+  // tout INSERT pour ne pas laisser de demande orpheline si l'une est
+  // refusée.
+  const justifs = await resolveFormUploads(ctx, formData, 'justifs', fail);
+  if (justifs.length === 0) fail('Au moins un justificatif (photo / PDF) est requis.');
 
-  const ribFileRaw = formData.get('rib_file');
-  const ribFile = ribFileRaw instanceof File && ribFileRaw.size > 0 ? ribFileRaw : null;
+  const [ribFile = null] = await resolveFormUploads(ctx, formData, 'rib_file', fail);
   const ribTexte = (formData.get('rib_texte') as string | null)?.trim() || null;
-
-  // Pré-validation : taille / extension / MIME. Échoue avant tout
-  // INSERT pour ne pas laisser de demande orpheline si un fichier est
-  // refusé.
-  validateJustifFiles(ribFile ? [...justifFiles, ribFile] : justifFiles, fail);
 
   const fullName = `${prenom} ${nom}`.trim();
   const totalEstime = resolvedLignes.reduce((s, l) => s + l.amount_cents, 0);
@@ -114,19 +112,9 @@ async function createRemboursementFromForm(
     });
   }
 
-  for (const file of justifFiles) {
+  for (const tv of justifs) {
     try {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      await attachJustificatif(
-        { groupId: ctx.groupId },
-        {
-          entity_type: 'remboursement',
-          entity_id: created.id,
-          filename: file.name,
-          content: buffer,
-          mime_type: file.type || null,
-        },
-      );
+      await attachTeleversement(ctx, tv, { entity_type: 'remboursement', entity_id: created.id });
     } catch (err) {
       logError('remboursements', 'Attach justif échoué', err);
     }
@@ -134,20 +122,10 @@ async function createRemboursementFromForm(
 
   if (ribFile) {
     try {
-      const buffer = Buffer.from(await ribFile.arrayBuffer());
-      await attachJustificatif(
-        { groupId: ctx.groupId },
-        {
-          entity_type: 'remboursement_rib',
-          entity_id: created.id,
-          filename: ribFile.name,
-          content: buffer,
-          mime_type: ribFile.type || null,
-        },
-      );
+      await attachTeleversement(ctx, ribFile, { entity_type: 'remboursement_rib', entity_id: created.id });
       await getDb()
         .prepare('UPDATE remboursements SET rib_file_path = ?, updated_at = ? WHERE id = ?')
-        .run(`remboursement_rib/${created.id}/${ribFile.name}`, new Date().toISOString(), created.id);
+        .run(ribFile.pathname, new Date().toISOString(), created.id);
     } catch (err) {
       logError('remboursements', 'Attach RIB file échoué', err);
     }

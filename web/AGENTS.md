@@ -48,6 +48,15 @@ Variable `process.env.VERCEL` est définie automatiquement sur Vercel (valeur `'
 const DATA_DIR = process.env.VERCEL ? '/tmp' : resolve(__dirname, '../../data');
 ```
 
+### Plafond edge du body serverless (~4,5 Mo)
+L'edge Vercel rejette tout body de requête au-delà d'environ 4,5 Mo, **avant** la fonction, avec un 413 opaque. `serverActions.bodySizeLimit` (côté Next) n'y change rien, et la server action ne peut renvoyer aucun message clair. Ne jamais faire transiter un fichier utilisateur par une server action ou un route handler.
+
+Les justificatifs partent donc **directement du navigateur vers Vercel Blob** (ADR-042) : `useJustifUploads` + `<UploadedJustifInputs>` côté client (`FileMultiUploader`, `FileDrop`, `JustifMultiCapture` les utilisent), puis `resolveTeleversementsFromForm` + `attachTeleversement` dans la server action, qui ne reçoit que des références. Pour un nouveau formulaire avec pièces, réutiliser ces briques plutôt qu'un `<input type="file" name>`.
+
+Le callback `onUploadCompleted` ne part jamais en dev local, car il exige une URL publique. Le repli serveur (inscription au submit) n'existe que hors prod.
+
+Vu le bug : PDF de 12,8 Mo refusé le 2026-08-17 (ticket #28).
+
 ### Logs CLI quasi inutilisable
 `vercel logs <url>` ne retourne que les **nouveaux** logs en streaming, jamais l'historique. Pour debugger un crash passé, le mieux est d'avoir un journal d'erreurs interne (cf. `/admin/errors` + `logError()` dans `lib/log.ts`).
 

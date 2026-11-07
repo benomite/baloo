@@ -8,6 +8,7 @@ import { Field } from '@/components/shared/field';
 import { Section } from '@/components/shared/section';
 import { NativeSelect } from '@/components/ui/native-select';
 import { FileMultiUploader } from '@/components/ui/file-multi-uploader';
+import { FileDrop } from '@/components/ui/file-drop';
 import { PendingButton } from '@/components/shared/pending-button';
 
 interface UniteOption {
@@ -66,7 +67,7 @@ export function AbandonForm({
   pendingLabel = 'Création…',
 }: Props) {
   return (
-    <form action={action} encType="multipart/form-data" className="space-y-6">
+    <form action={action} className="space-y-6">
       {showSgdfInfo && (
         <Alert variant="info" icon={Info} className="mb-6">
           <div className="space-y-2">
@@ -206,13 +207,11 @@ export function AbandonForm({
             — un nouveau fichier s&apos;ajoute sans la remplacer.
           </p>
         )}
-        <Field label="Fichier" htmlFor="feuille">
-          <Input
-            id="feuille"
+        <Field label="Fichier">
+          <FileDrop
             name="feuille"
-            type="file"
             accept="application/pdf,image/*,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-            className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-brand-50 file:text-brand file:font-medium file:text-[13px] file:cursor-pointer hover:file:bg-brand-100 file:transition-colors"
+            hint="PDF, photo ou xlsx"
           />
         </Field>
       </Section>

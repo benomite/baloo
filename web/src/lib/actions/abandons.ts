@@ -16,11 +16,13 @@ import {
   type EditAbandonInput,
 } from '../services/abandons';
 import { applyAbandonTransition } from '../services/abandon-transition';
+import { JustificatifValidationError } from '../services/justificatifs';
 import {
-  attachJustificatif,
-  JustificatifValidationError,
-  validateJustifAttachment,
-} from '../services/justificatifs';
+  attachTeleversement,
+  resolveTeleversementsFromForm,
+  type Televersement,
+  type TeleversementOwner,
+} from '../services/justif-televersements';
 import { parseAmount } from '../format';
 import { sendAbandonCreatedEmail } from '../email/abandon';
 import { currentTimestamp } from '../ids';
@@ -44,18 +46,6 @@ async function listAdminEmails(groupId: string): Promise<string[]> {
     )
     .all<{ email: string }>(groupId);
   return rows.map((r) => r.email);
-}
-
-function pickFile(formData: FormData, key: string): File | null {
-  const value = formData.get(key);
-  if (value instanceof File && value.size > 0) return value;
-  return null;
-}
-
-function pickFiles(formData: FormData, key: string): File[] {
-  return formData
-    .getAll(key)
-    .filter((v): v is File => v instanceof File && v.size > 0);
 }
 
 // Champs métier du formulaire abandon, communs à la création et à l'édition.
@@ -110,68 +100,45 @@ function readAbandonFields(
 }
 
 // Feuille + justifs optionnels (rattrapage d'historique : on saisit pour ne
-// pas perdre l'info, on attache apres). Validation taille / mime avant
-// toute ecriture en BDD.
-function readAbandonFiles(
+// pas perdre l'info, on attache apres). Les fichiers sont deja televerses
+// par le navigateur (ticket #28) : on resout leurs references
+// (proprietaire / taille / mime) avant toute ecriture en BDD.
+type AbandonFiles = { feuille: Televersement | null; justifs: Televersement[] };
+
+async function readAbandonFiles(
+  owner: TeleversementOwner,
   formData: FormData,
   errorPath: string,
-): { feuille: File | null; justifs: File[] } {
-  const feuille = pickFile(formData, 'feuille');
-  const justifs = pickFiles(formData, 'justifs');
+): Promise<AbandonFiles> {
   try {
-    for (const f of feuille ? [feuille, ...justifs] : justifs) {
-      validateJustifAttachment({ filename: f.name, size: f.size, mime_type: f.type || null });
-    }
+    const [feuille = null] = await resolveTeleversementsFromForm(owner, formData, 'feuille');
+    const justifs = await resolveTeleversementsFromForm(owner, formData, 'justifs');
+    return { feuille, justifs };
   } catch (err) {
     if (err instanceof JustificatifValidationError) {
       redirect(`${errorPath}?error=` + encodeURIComponent(err.message));
     }
     throw err;
   }
-  return { feuille, justifs };
 }
 
 async function attachAbandonFiles(
-  groupId: string,
+  owner: TeleversementOwner,
   abandonId: string,
-  files: { feuille: File | null; justifs: File[] },
+  files: AbandonFiles,
 ): Promise<void> {
   // Si l'attache echoue on log mais on ne bloque pas — la demande est
   // enregistree, on pourra rajouter la piece depuis l'edition.
   try {
     if (files.feuille) {
-      await attachFile(groupId, 'abandon_feuille', abandonId, files.feuille);
+      await attachTeleversement(owner, files.feuille, { entity_type: 'abandon_feuille', entity_id: abandonId });
     }
     for (const j of files.justifs) {
-      await attachFile(groupId, 'abandon', abandonId, j);
+      await attachTeleversement(owner, j, { entity_type: 'abandon', entity_id: abandonId });
     }
   } catch (err) {
     console.error('[abandons] Attache fichiers echouee :', err);
   }
-}
-
-async function attachFile(
-  groupId: string,
-  entityType: string,
-  entityId: string,
-  file: File,
-): Promise<void> {
-  validateJustifAttachment({
-    filename: file.name,
-    size: file.size,
-    mime_type: file.type || null,
-  });
-  const buffer = Buffer.from(await file.arrayBuffer());
-  await attachJustificatif(
-    { groupId },
-    {
-      entity_type: entityType,
-      entity_id: entityId,
-      filename: file.name,
-      content: buffer,
-      mime_type: file.type || null,
-    },
-  );
 }
 
 // Saisie d'un abandon depuis le formulaire unifie /abandons/nouveau.
@@ -186,7 +153,7 @@ export async function createAbandon(formData: FormData): Promise<void> {
 
   const errorPath = '/abandons/nouveau';
   const fields = readAbandonFields(formData, errorPath, ctx.scopeUniteIds);
-  const { feuille, justifs } = readAbandonFiles(formData, errorPath);
+  const { feuille, justifs } = await readAbandonFiles(ctx, formData, errorPath);
 
   let created;
   try {
@@ -206,7 +173,7 @@ export async function createAbandon(formData: FormData): Promise<void> {
     );
   }
 
-  await attachAbandonFiles(ctx.groupId, created.id, { feuille, justifs });
+  await attachAbandonFiles(ctx, created.id, { feuille, justifs });
 
   // Notif admins (hors le declarant lui-meme s'il est deja admin).
   const admins = (await listAdminEmails(ctx.groupId)).filter((e) => e !== ctx.email);
@@ -253,7 +220,7 @@ export async function updateAbandon(id: string, formData: FormData): Promise<voi
   }
 
   const fields = readAbandonFields(formData, errorPath, ctx.scopeUniteIds);
-  const files = readAbandonFiles(formData, errorPath);
+  const files = await readAbandonFiles(ctx, formData, errorPath);
 
   const updated = await editAbandon({ groupId: ctx.groupId }, id, fields);
   if (!updated) {
@@ -263,7 +230,7 @@ export async function updateAbandon(id: string, formData: FormData): Promise<voi
     );
   }
 
-  await attachAbandonFiles(ctx.groupId, id, files);
+  await attachAbandonFiles(ctx, id, files);
 
   revalidatePath('/');
   revalidatePath('/abandons');

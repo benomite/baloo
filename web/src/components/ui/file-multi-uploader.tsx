@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { validateClientFile } from '@/lib/justif-allowed';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { MAX_FILE_SIZE_LABEL, validateClientFile } from '@/lib/justif-allowed';
+import { UploadedJustifInputs, useJustifUploads } from '@/components/shared/use-justif-uploads';
 
 interface FileItem {
   id: number;
@@ -14,57 +15,28 @@ interface Props {
   required?: boolean;
   accept?: string;
   helpText?: string;
-  // Remonte le cumul (octets) des fichiers sélectionnés au parent, qui
-  // s'en sert pour la garde d'envoi (plafond edge Vercel). Le RIB est un
-  // input séparé : le total complet se calcule côté formulaire.
-  onTotalSizeChange?: (bytes: number) => void;
 }
 
 let _seq = 0;
 
+// Chaque fichier ajouté part AUSSITÔT vers le storage (téléversement direct,
+// ticket #28) ; le formulaire ne soumet que des références (`name` = champ
+// des inputs cachés). Plus de plafond cumulé : les fichiers ne traversent
+// plus la server action.
 export function FileMultiUploader({
   name,
   required = false,
   accept = 'image/*,application/pdf',
   helpText,
-  onTotalSizeChange,
 }: Props) {
   const [items, setItems] = useState<FileItem[]>([]);
   const [rejected, setRejected] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
-  const realInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const captureInputRef = useRef<HTMLInputElement>(null);
-  // Ref miroir des items pour les ré-appliquer depuis un handler natif
-  // (event `reset`) sans recréer le listener à chaque changement.
-  const itemsRef = useRef<FileItem[]>(items);
 
-  const syncInput = useCallback(() => {
-    if (!realInputRef.current) return;
-    const dt = new DataTransfer();
-    for (const it of itemsRef.current) dt.items.add(it.file);
-    realInputRef.current.files = dt.files;
-  }, []);
-
-  // Synchronise l'input file natif (caché) avec notre liste interne :
-  // c'est lui qui sera embarqué dans le FormData au submit du <form>.
-  useEffect(() => {
-    itemsRef.current = items;
-    syncInput();
-    onTotalSizeChange?.(items.reduce((s, it) => s + it.file.size, 0));
-  }, [items, syncInput, onTotalSizeChange]);
-
-  // React réinitialise le `<form action>` après chaque exécution de
-  // l'action (y compris sur erreur), ce qui vide cet input file. On
-  // ré-applique nos fichiers après le reset pour qu'un renvoi ne les
-  // perde pas silencieusement (l'UI, elle, garde l'état `items`).
-  useEffect(() => {
-    const form = realInputRef.current?.form;
-    if (!form) return;
-    const onReset = () => queueMicrotask(syncInput);
-    form.addEventListener('reset', onReset);
-    return () => form.removeEventListener('reset', onReset);
-  }, [syncInput]);
+  const files = useMemo(() => items.map((it) => it.file), [items]);
+  const uploads = useJustifUploads(files);
 
   // Cleanup des object URLs quand le component démonte ou que les items changent.
   useEffect(() => {
@@ -82,9 +54,8 @@ export function FileMultiUploader({
       // Filtre minimal pour éviter les doublons exacts (même nom + taille).
       const dup = items.some((it) => it.file.name === file.name && it.file.size === file.size);
       if (dup) continue;
-      // Validation type / taille AVANT submit : un fichier refusé n'est
-      // jamais ajouté, donc il ne peut pas déclencher un aller-retour
-      // serveur qui viderait le formulaire.
+      // Validation type / taille AVANT envoi : un fichier refusé n'est
+      // jamais ajouté (le serveur revalide de toute façon à la signature).
       const err = validateClientFile(file);
       if (err) {
         errors.push(err);
@@ -129,17 +100,7 @@ export function FileMultiUploader({
 
   return (
     <div className="space-y-3">
-      <input
-        ref={realInputRef}
-        type="file"
-        name={name}
-        multiple
-        accept={accept}
-        required={required && items.length === 0}
-        className="sr-only"
-        tabIndex={-1}
-        aria-hidden
-      />
+      <UploadedJustifInputs name={name} uploads={uploads} required={required} />
       {/* Inputs invisibles qui ouvrent le picker / la caméra. */}
       <input
         ref={fileInputRef}
@@ -192,7 +153,9 @@ export function FileMultiUploader({
               prendre une photo
             </button>
           </div>
-          {helpText && <p className="text-xs text-muted-foreground/70">{helpText}</p>}
+          <p className="text-xs text-muted-foreground/70">
+            {helpText ? `${helpText} ` : ''}{MAX_FILE_SIZE_LABEL} max par fichier.
+          </p>
         </div>
       </div>
 
@@ -211,38 +174,49 @@ export function FileMultiUploader({
             <span>{sizeLabel}</span>
           </div>
           <ul className="border rounded divide-y">
-            {items.map((it) => (
-              <li key={it.id} className="flex items-center gap-3 px-3 py-2 text-sm">
-                {it.previewUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={it.previewUrl}
-                    alt=""
-                    className="h-10 w-10 object-cover rounded border"
-                  />
-                ) : (
-                  <div className="h-10 w-10 flex items-center justify-center bg-muted rounded border text-lg">
-                    📄
+            {items.map((it) => {
+              const st = uploads.stateOf(it.file);
+              return (
+                <li key={it.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                  {it.previewUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={it.previewUrl}
+                      alt=""
+                      className="h-10 w-10 object-cover rounded border"
+                    />
+                  ) : (
+                    <div className="h-10 w-10 flex items-center justify-center bg-muted rounded border text-lg">
+                      📄
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="truncate font-medium">{it.file.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {it.file.size > 1024 * 1024
+                        ? `${(it.file.size / (1024 * 1024)).toFixed(1)} Mo`
+                        : `${Math.round(it.file.size / 1024)} Ko`}
+                      {' · '}
+                      {st?.status === 'done' ? (
+                        <span className="text-emerald-700">envoyé</span>
+                      ) : st?.status === 'error' ? (
+                        <span className="text-destructive">{st.message}</span>
+                      ) : (
+                        <span>envoi… {st?.status === 'uploading' ? `${st.progress} %` : ''}</span>
+                      )}
+                    </div>
                   </div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="truncate font-medium">{it.file.name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {it.file.size > 1024 * 1024
-                      ? `${(it.file.size / (1024 * 1024)).toFixed(1)} Mo`
-                      : `${Math.round(it.file.size / 1024)} Ko`}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => removeItem(it.id)}
-                  className="text-muted-foreground hover:text-destructive text-sm px-2"
-                  aria-label="Retirer ce fichier"
-                >
-                  ✕
-                </button>
-              </li>
-            ))}
+                  <button
+                    type="button"
+                    onClick={() => removeItem(it.id)}
+                    className="text-muted-foreground hover:text-destructive text-sm px-2"
+                    aria-label="Retirer ce fichier"
+                  >
+                    ✕
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

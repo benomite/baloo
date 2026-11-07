@@ -14,8 +14,9 @@
 // donc le `public` historique exposait les fichiers à qui les nommait
 // correctement.
 
-import { writeFile, mkdir, readFile } from 'fs/promises';
+import { writeFile, mkdir, readFile, stat } from 'fs/promises';
 import { join, resolve } from 'path';
+import { mimeFromFilename } from './justif-allowed';
 
 export interface FetchResult {
   // `Uint8Array` pour le FS local, `ReadableStream` pour Vercel Blob.
@@ -24,9 +25,20 @@ export interface FetchResult {
   contentType: string | null;
 }
 
+// Métadonnées d'un fichier déjà stocké (sans le lire). Sert à confirmer
+// côté serveur un téléversement direct client → Blob quand le callback
+// `onUploadCompleted` ne passe pas (dev local, cf. justif-televersements).
+export interface StoredFileInfo {
+  size: number;
+  contentType: string | null;
+  // URL du blob (Vercel Blob uniquement) : permet de vérifier qu'il est privé.
+  url: string | null;
+}
+
 interface StorageBackend {
   put(opts: { path: string; content: Buffer; contentType?: string | null }): Promise<void>;
   fetch(path: string): Promise<FetchResult | null>;
+  head(path: string): Promise<StoredFileInfo | null>;
 }
 
 class FsBackend implements StorageBackend {
@@ -43,6 +55,15 @@ class FsBackend implements StorageBackend {
       const buffer = await readFile(join(this.rootDir, relPath));
       const bytes = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
       return { body: bytes, contentType: guessMime(relPath) };
+    } catch {
+      return null;
+    }
+  }
+
+  async head(relPath: string): Promise<StoredFileInfo | null> {
+    try {
+      const s = await stat(join(this.rootDir, relPath));
+      return { size: s.size, contentType: guessMime(relPath), url: null };
     } catch {
       return null;
     }
@@ -70,6 +91,16 @@ class VercelBlobBackend implements StorageBackend {
       return null;
     }
   }
+
+  async head(relPath: string): Promise<StoredFileInfo | null> {
+    const { head } = await import('@vercel/blob');
+    try {
+      const meta = await head(relPath);
+      return { size: meta.size, contentType: meta.contentType ?? null, url: meta.url };
+    } catch {
+      return null;
+    }
+  }
 }
 
 function dirname(p: string): string {
@@ -77,21 +108,16 @@ function dirname(p: string): string {
   return i === -1 ? '.' : p.slice(0, i);
 }
 
-const MIME_TYPES: Record<string, string> = {
-  pdf: 'application/pdf',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  gif: 'image/gif',
-  webp: 'image/webp',
-  csv: 'text/csv',
-  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  xls: 'application/vnd.ms-excel',
-};
-
 export function guessMime(filename: string): string | null {
-  const ext = filename.split('.').pop()?.toLowerCase();
-  return ext ? MIME_TYPES[ext] ?? null : null;
+  return mimeFromFilename(filename);
+}
+
+// Mode de stockage courant. `blob` : les justificatifs partent directement
+// du navigateur vers Vercel Blob (route `/api/justificatifs/televersement`).
+// `local` : pas de Blob configuré (dev) → le navigateur envoie le fichier à
+// cette même route, qui l'écrit sur le FS.
+export function storageMode(): 'blob' | 'local' {
+  return process.env.BLOB_READ_WRITE_TOKEN ? 'blob' : 'local';
 }
 
 let cached: StorageBackend | null = null;

@@ -1629,4 +1629,34 @@ Le modèle « un `comptaweb_id` par unité » était faux de toute façon : pend
 
 ---
 
+## ADR-042 — Justificatifs : téléversement direct navigateur → Vercel Blob
+
+**Date** : 2026-11-07
+**Statut** : Acté (ticket #28)
+**Lié à** : [ADR-018](decisions.md) (stockage des justificatifs).
+
+### Contexte
+
+Le 2026-08-17, un PDF de 12,8 Mo est refusé. Les fichiers passaient par la server action, donc par la fonction serverless, dont le body est rejeté par l'edge Vercel au-delà d'environ 4,5 Mo (413 opaque, avant la fonction ; `bodySizeLimit` n'y change rien). L'interface annonçait pourtant « Limite : 10 MB ».
+
+### Décision
+
+1. **Le navigateur envoie le fichier directement à Vercel Blob** (`@vercel/blob/client`, `access: 'private'`), dès sa sélection, avec un token à courte durée signé par `/api/justificatifs/televersement`. Le formulaire ne soumet plus que des références `{ pathname, filename }`.
+2. **Tout se décide à la signature** (`buildUploadTokenOptions`) : extension, MIME, taille et propriétaire. Le pathname doit être sous `televersements/<group>/<user>/`. `justif-allowed.ts` reste la seule autorité. Le token impose la whitelist MIME et `MAX_FILE_SIZE_BYTES` (100 Mo, plafond métier ; la limite Blob est d'environ 5 Go).
+3. **L'inscription en BDD (`justificatifs_televersements`) passe par le callback `onUploadCompleted` en prod** : il est appelé par Vercel et signé, donc le client ne peut pas le falsifier, et le propriétaire est lu dans le token. Le callback exige une URL publique et ne part pas en dev : **hors prod seulement** (`VERCEL_ENV !== 'production'`), le serveur inscrit lui-même le fichier au submit, après l'avoir constaté dans le storage (`head`). En prod, le submit attend quelques secondes un callback en retard, sans jamais se rabattre sur ce repli.
+4. **Le submit rattache** : la ligne `justificatifs` pointe sur le blob existant (`file_path = pathname`), sans recopie. Un téléversement ne sert qu'une fois (claim `justificatif_id IS NULL`). La cible du premier rattachement est figée sur le téléversement (`entity_type`, `entity_id`). Les fichiers d'un dépôt, qu'on retrouvait jusqu'ici par le préfixe `depot/<id>/`, se retrouvent maintenant aussi par cette cible (`depotFilesSql`, arbitrage) : le rattachement à une écriture re-pointe la ligne `justificatifs`, pas le téléversement.
+5. **Les blobs restent privés.** Le client force `access: 'private'`. Un blob dont l'URL est publique n'est jamais inscrit, ni par le callback ni par le repli. La lecture passe toujours par `GET /api/justificatifs/...`.
+6. Sans Blob configuré (dev FS), le navigateur envoie le fichier à la même route en `PUT`, qui l'écrit et l'inscrit. Cette voie est désactivée sur Vercel.
+
+### Conséquences
+
+- Plus de plafond cumulé par envoi : `MAX_UPLOAD_TOTAL_BYTES` et la garde du formulaire de remboursement disparaissent.
+- Un fichier sélectionné puis abandonné (formulaire jamais soumis, capture retouchée) laisse un blob et une ligne non rattachés. Pas de purge (règle « jamais de DELETE ») : à réévaluer si le stockage le justifie.
+- Les routes API multipart (`POST /api/justificatifs`, `POST /api/depots/upload`) et le tool MCP gardent l'envoi serveur et donc le plafond edge. Ils ne sont pas concernés par l'UI.
+- Compression d'images côté client : hors périmètre, à rouvrir en issue séparée.
+
+**Liens** : `web/src/lib/services/justif-televersements.ts`, `web/src/app/api/justificatifs/televersement/route.ts`, `web/src/lib/justif-upload-client.ts`, `web/src/components/shared/use-justif-uploads.tsx`, `web/AGENTS.md` (section « Plafond edge du body serverless »).
+
+---
+
 *Ajouter ici toute nouvelle décision significative, avec un numéro ADR-00X incrémental.*

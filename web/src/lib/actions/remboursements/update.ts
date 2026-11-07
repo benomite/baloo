@@ -6,7 +6,7 @@ import { getCurrentContext } from '../../context';
 import { resolveScopedUnite } from '../../scope';
 import { getDb } from '../../db';
 import { getRemboursement, reconcileLignes } from '../../services/remboursements';
-import { attachJustificatif } from '../../services/justificatifs';
+import { attachTeleversement } from '../../services/justif-televersements';
 import { getGroupe } from '../../services/groupes';
 import { signAndRefreshRemboursementPdf } from '../../services/remboursement-signing';
 import { supersedeSignatures } from '../../services/signatures';
@@ -19,8 +19,8 @@ import {
   parseIdentiteFromForm,
   parseLignesFromForm,
   resolveLignesWithRate,
+  resolveFormUploads,
   runFormAction,
-  validateJustifFiles,
   type RembFormState,
 } from './_helpers';
 
@@ -83,13 +83,11 @@ async function updateMyRemboursementBody(id: string, formData: FormData): Promis
   }
   const notes = (formData.get('notes') as string | null)?.trim() || null;
 
-  // Pré-validation des éventuels nouveaux justifs / RIB avant tout
-  // UPDATE — on évite un état partiellement modifié si un fichier est
-  // refusé.
-  const newJustifs = formData.getAll('justifs').filter((f): f is File => f instanceof File && f.size > 0);
-  const ribFileRaw = formData.get('rib_file');
-  const ribFile = ribFileRaw instanceof File && ribFileRaw.size > 0 ? ribFileRaw : null;
-  validateJustifFiles(ribFile ? [...newJustifs, ribFile] : newJustifs, fail);
+  // Résolution des éventuels nouveaux justifs / RIB (déjà téléversés par
+  // le navigateur) avant tout UPDATE — on évite un état partiellement
+  // modifié si un fichier est refusé.
+  const newJustifs = await resolveFormUploads(ctx, formData, 'justifs', fail);
+  const [ribFile = null] = await resolveFormUploads(ctx, formData, 'rib_file', fail);
 
   await getDb().prepare(
     `UPDATE remboursements
@@ -119,19 +117,9 @@ async function updateMyRemboursementBody(id: string, formData: FormData): Promis
     taux_km_millicents: l.taux_km_millicents,
   })));
 
-  for (const file of newJustifs) {
+  for (const tv of newJustifs) {
     try {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      await attachJustificatif(
-        { groupId: ctx.groupId },
-        {
-          entity_type: 'remboursement',
-          entity_id: id,
-          filename: file.name,
-          content: buffer,
-          mime_type: file.type || null,
-        },
-      );
+      await attachTeleversement(ctx, tv, { entity_type: 'remboursement', entity_id: id });
     } catch (err) {
       logError('remboursements', 'Attach justif (edit) échoué', err);
     }
@@ -139,20 +127,10 @@ async function updateMyRemboursementBody(id: string, formData: FormData): Promis
 
   if (ribFile) {
     try {
-      const buffer = Buffer.from(await ribFile.arrayBuffer());
-      await attachJustificatif(
-        { groupId: ctx.groupId },
-        {
-          entity_type: 'remboursement_rib',
-          entity_id: id,
-          filename: ribFile.name,
-          content: buffer,
-          mime_type: ribFile.type || null,
-        },
-      );
+      await attachTeleversement(ctx, ribFile, { entity_type: 'remboursement_rib', entity_id: id });
       await getDb()
         .prepare('UPDATE remboursements SET rib_file_path = ?, updated_at = ? WHERE id = ?')
-        .run(`remboursement_rib/${id}/${ribFile.name}`, new Date().toISOString(), id);
+        .run(ribFile.pathname, new Date().toISOString(), id);
     } catch (err) {
       logError('remboursements', 'Attach RIB file (edit) échoué', err);
     }

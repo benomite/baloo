@@ -3,13 +3,7 @@ import { nextId, currentTimestamp } from '../ids';
 import { getStorage, guessMime } from '../storage';
 import { getVentilationGroupTotal } from './ventilation-group';
 import type { Justificatif } from '../types';
-import {
-  ALLOWED_EXTENSIONS,
-  ALLOWED_LABEL,
-  ALLOWED_MIME_TYPES,
-  MAX_FILE_SIZE_BYTES,
-  extOf,
-} from '../justif-allowed';
+import { checkJustifMeta } from '../justif-allowed';
 
 // Whitelist double (extension + MIME) sur les justificatifs uploadés.
 // Un attaquant peut renommer un fichier (extension) OU mentir sur le
@@ -186,31 +180,17 @@ export interface AttachJustificatifInput {
 // Exporté pour pré-check côté action (rembs, depots, abandons) avant
 // de créer la demande en BDD : on échoue tôt sans laisser d'état
 // orphelin si un fichier est invalide.
+// La logique vit dans `checkJustifMeta` (module pur partagé avec le client
+// et la route de signature d'upload) ; ici on la lève en erreur typée.
+// `size: null` = taille inconnue (téléversement direct : bornée par le
+// token d'upload Vercel Blob).
 export function validateJustifAttachment(opts: {
   filename: string;
-  size: number;
+  size: number | null;
   mime_type?: string | null;
 }): void {
-  if (opts.size > MAX_FILE_SIZE_BYTES) {
-    const sizeMb = Math.round((opts.size / 1024 / 1024) * 10) / 10;
-    throw new JustificatifValidationError(
-      `Fichier trop volumineux (${sizeMb} MB). Limite : 10 MB.`,
-    );
-  }
-
-  const ext = extOf(opts.filename);
-  if (!ALLOWED_EXTENSIONS.has(ext)) {
-    throw new JustificatifValidationError(
-      `Type de fichier non autorisé : .${ext || '(sans extension)'}. ` +
-        `Autorisés : ${ALLOWED_LABEL}.`,
-    );
-  }
-
-  if (opts.mime_type && !ALLOWED_MIME_TYPES.has(opts.mime_type)) {
-    throw new JustificatifValidationError(
-      `Type MIME non autorisé : ${opts.mime_type}.`,
-    );
-  }
+  const err = checkJustifMeta(opts);
+  if (err) throw new JustificatifValidationError(err);
 }
 
 export async function attachJustificatif(

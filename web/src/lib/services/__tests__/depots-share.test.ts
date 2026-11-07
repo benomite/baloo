@@ -46,6 +46,9 @@ async function setup(): Promise<DbWrapper> {
       entity_id TEXT NOT NULL, uploaded_at TEXT,
     obsolete_at TEXT
     );
+    CREATE TABLE justificatifs_televersements (
+      pathname TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT
+    );
   `);
   return db;
 }
@@ -123,6 +126,24 @@ describe('shareDepotToEcriture', () => {
     // Dépôt inchangé.
     const dep = await testDb.prepare('SELECT statut, ecriture_id FROM depots_justificatifs WHERE id=?').get<{ statut: string; ecriture_id: string }>('DEP-1');
     expect(dep).toEqual({ statut: 'rattache', ecriture_id: 'ECR-A' });
+  });
+
+  it('retrouve aussi un justif téléversé en direct (chemin televersements/…, ticket #28)', async () => {
+    await insertDepot(testDb, { statut: 'rattache', ecritureId: 'ECR-A' });
+    await insertEcriture(testDb, { id: 'ECR-A', status: 'mirror' });
+    await insertEcriture(testDb, { id: 'ECR-B', status: 'draft' });
+    const path = 'televersements/g/u1/ticket-x7Yz.jpg';
+    await insertJustifOnA(testDb, { path, filename: 'ticket.jpg' });
+    // Premier rattachement du téléversement : le dépôt (figé, même après
+    // re-pointage de la ligne justificatifs vers ECR-A).
+    await testDb
+      .prepare(`INSERT INTO justificatifs_televersements (pathname, entity_type, entity_id) VALUES (?, 'depot', 'DEP-1')`)
+      .run(path);
+
+    const res = await shareDepotToEcriture({ groupId: 'g' }, 'DEP-1', 'ECR-B');
+
+    expect(res.copied).toBe(1);
+    expect((await justifsOn(testDb, 'ECR-B')).map((j) => j.file_path)).toEqual([path]);
   });
 
   it('idempotent : un 2ᵉ appel ne recrée pas de doublon sur B', async () => {

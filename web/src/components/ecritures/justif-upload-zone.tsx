@@ -1,75 +1,86 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { UploadCloud, Paperclip, X } from 'lucide-react';
 import { uploadJustificatif } from '@/lib/actions/justificatifs';
 import { acceptJustifFiles } from '@/components/shared/justif-accept';
+import { UploadedJustifInputs, useJustifUploads } from '@/components/shared/use-justif-uploads';
 
 // Zone de dépôt COMPACTE d'un justificatif sur une écriture : une barre fine
-// dashed cliquable + drag & drop. Choisir/déposer un fichier affiche son nom ;
-// « Ajouter » l'envoie (server action). Remplace l'ancien input file brut qui
-// prenait beaucoup de place.
+// dashed cliquable + drag & drop. Choisir/déposer un fichier l'envoie
+// aussitôt au storage (téléversement direct, ticket #28) et affiche son
+// nom ; « Ajouter » le rattache à l'écriture (server action).
 
-function AddButton() {
+function AddButton({ uploading }: { uploading: boolean }) {
   const { pending } = useFormStatus();
   return (
     <button
       type="submit"
-      disabled={pending}
+      disabled={pending || uploading}
       className="shrink-0 rounded-md bg-brand px-2.5 py-1 text-[12px] font-medium text-brand-fg hover:opacity-90 disabled:opacity-60"
     >
-      {pending ? 'Envoi…' : 'Ajouter'}
+      {uploading ? 'Envoi…' : pending ? 'Ajout…' : 'Ajouter'}
     </button>
   );
 }
 
-export function JustifUploadZone({ entityId }: { entityId: string }) {
+export function JustifUploadZone({
+  entityId,
+  entityType = 'ecriture',
+}: {
+  entityId: string;
+  entityType?: 'ecriture' | 'remboursement';
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState(false);
-  const [name, setName] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
 
-  const setFromFile = (f: File | undefined) => {
-    if (f) setName(f.name);
-  };
+  const files = useMemo(() => (file ? [file] : []), [file]);
+  const uploads = useJustifUploads(files);
+  const st = file ? uploads.stateOf(file) : undefined;
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDrag(false);
     const accepted = acceptJustifFiles(Array.from(e.dataTransfer.files));
-    if (accepted[0] && inputRef.current) {
-      const dt = new DataTransfer();
-      dt.items.add(accepted[0]);
-      inputRef.current.files = dt.files;
-      setName(accepted[0].name);
-    }
+    if (accepted[0]) setFile(accepted[0]);
   };
 
   const clear = () => {
-    setName(null);
+    setFile(null);
     if (inputRef.current) inputRef.current.value = '';
   };
 
   return (
-    <form action={uploadJustificatif}>
-      <input type="hidden" name="entity_type" value="ecriture" />
+    <form
+      action={async (fd) => {
+        await uploadJustificatif(fd);
+        // Le téléversement est rattaché : il ne peut plus resservir.
+        clear();
+      }}
+    >
+      <input type="hidden" name="entity_type" value={entityType} />
       <input type="hidden" name="entity_id" value={entityId} />
+      <UploadedJustifInputs name="file" uploads={uploads} required />
       <input
         ref={inputRef}
         type="file"
-        name="file"
         accept="image/*,application/pdf"
         className="sr-only"
-        onChange={(e) => setFromFile(e.target.files?.[0])}
+        onChange={(e) => setFile(e.target.files?.[0] ?? null)}
       />
-      {name ? (
+      {file ? (
         <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-[13px]">
           <Paperclip size={13} className="shrink-0 text-fg-subtle" />
-          <span className="min-w-0 flex-1 truncate">{name}</span>
+          <span className="min-w-0 flex-1 truncate">
+            {file.name}
+            {st?.status === 'error' && <span className="ml-2 text-destructive">{st.message}</span>}
+          </span>
           <button type="button" onClick={clear} aria-label="Retirer" className="shrink-0 text-fg-subtle hover:text-fg">
             <X size={14} />
           </button>
-          <AddButton />
+          <AddButton uploading={uploads.pending} />
         </div>
       ) : (
         <button

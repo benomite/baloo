@@ -42,6 +42,9 @@ async function setup(): Promise<DbWrapper> {
       mime_type TEXT, entity_type TEXT, entity_id TEXT, uploaded_at TEXT,
     obsolete_at TEXT
     );
+    CREATE TABLE justificatifs_televersements (
+      pathname TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT
+    );
   `);
   return db;
 }

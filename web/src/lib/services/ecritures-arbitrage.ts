@@ -52,8 +52,9 @@ export interface Attachment {
   label: string;
   /**
    * Pour un justificatif : le dépôt d'où vient le fichier, déduit du préfixe de
-   * `file_path` (`depot/<id>/…`, figé à la création et jamais déplacé). Permet
-   * à l'UI de regrouper les fichiers sous le dépôt, seul objet détachable.
+   * `file_path` (`depot/<id>/…`, figé à la création et jamais déplacé), ou du
+   * premier rattachement d'un téléversement direct. Permet à l'UI de
+   * regrouper les fichiers sous le dépôt, seul objet détachable.
    */
   from_depot_id: string | null;
 }
@@ -107,12 +108,32 @@ export async function listAttachmentsFor(
       )
       .all<JustifRow>(...ecritureIds);
   }
+  // Téléversement direct (ticket #28) : chemin `televersements/…`, le dépôt
+  // d'origine est noté au premier rattachement dans
+  // `justificatifs_televersements` (équivalent figé du préfixe `depot/<id>/`).
+  const depotByPath = new Map<string, string>();
+  const televersePaths = justifs
+    .map((j) => j.file_path)
+    .filter((p): p is string => !!p && !depotIdFromPath(p));
+  if (televersePaths.length > 0) {
+    try {
+      const rows = await db
+        .prepare(
+          `SELECT pathname, entity_id FROM justificatifs_televersements
+           WHERE entity_type = 'depot' AND pathname IN (${televersePaths.map(() => '?').join(',')})`,
+        )
+        .all<{ pathname: string; entity_id: string }>(...televersePaths);
+      for (const r of rows) depotByPath.set(r.pathname, r.entity_id);
+    } catch {
+      // Table absente : aucune origine dépôt connue, le décompte reste juste.
+    }
+  }
   for (const j of justifs) {
     push(j.entity_id, {
       kind: 'justificatif',
       id: j.id,
       label: j.original_filename || j.id,
-      from_depot_id: depotIdFromPath(j.file_path),
+      from_depot_id: depotIdFromPath(j.file_path) ?? (j.file_path ? depotByPath.get(j.file_path) ?? null : null),
     });
   }
 
