@@ -3,6 +3,7 @@ import { ventilateDraft } from './ecritures-ventilate';
 import type { EcritureContext } from './ecritures';
 import type { VentilationInput } from './ecritures-create';
 import { currentTimestamp, nextIdOn } from '../ids';
+import { getVentilationGroupTotal } from './ventilation-group';
 import { logError } from '../log';
 import { canLinkEcriture } from '../actions/remboursements/link-guard';
 
@@ -256,13 +257,7 @@ export async function getEcritureRembsCoverage(
     .get<{ amount_cents: number; ventilation_group_id: string | null }>(ecritureId, groupId);
   let virement = ecr?.amount_cents ?? 0;
   if (ecr?.ventilation_group_id) {
-    const g = await db
-      .prepare(
-        `SELECT COALESCE(SUM(amount_cents), 0) AS t
-         FROM ecritures WHERE group_id = ? AND ventilation_group_id = ?`,
-      )
-      .get<{ t: number }>(groupId, ecr.ventilation_group_id);
-    virement = g?.t ?? virement;
+    virement = await getVentilationGroupTotal(db, groupId, ecr.ventilation_group_id);
   }
   const rows = await db
     .prepare(
@@ -307,13 +302,7 @@ export async function syncEcritureVentilationFromRembs(
   // son propre montant. Invariant : Σ groupe = montant du virement d'origine.
   let virement = Math.abs(ecr.amount_cents);
   if (ecr.ventilation_group_id) {
-    const g = await db
-      .prepare(
-        `SELECT COALESCE(SUM(amount_cents), 0) AS t
-         FROM ecritures WHERE group_id = ? AND ventilation_group_id = ?`,
-      )
-      .get<{ t: number }>(groupId, ecr.ventilation_group_id);
-    virement = Math.abs(g?.t ?? ecr.amount_cents);
+    virement = Math.abs(await getVentilationGroupTotal(db, groupId, ecr.ventilation_group_id));
   }
 
   // Demandes liées, tri déterministe.
