@@ -4,4 +4,4 @@
 set -euo pipefail
 WT="${1:-$(git rev-parse --show-toplevel)}"
 cd "$WT"
-cd web && pnpm test
+cd web && pnpm exec tsc --noEmit && pnpm test
