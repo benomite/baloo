@@ -177,6 +177,18 @@ describe('setRembsEcritureLink → ventilation auto', () => {
     expect(rows.map((r) => r.amount_cents).sort((a, b) => a - b)).toEqual([17032, 30000]);
   });
 
+  it('premier lien d\'une demande unique → COALESCE unité, pas de ventilation', async () => {
+    await testDb.prepare(
+      "INSERT INTO remboursements (id, group_id, amount_cents, total_cents, unite_id, created_at) VALUES ('R1','g',47032,47032,'u-lj','2026-07-01')",
+    ).run();
+    const res = await setRembsEcritureLink('g', 'R1', 'ECR');
+    expect(res.ok).toBe(true);
+    const rows = await lignes();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].vg).toBeNull();
+    expect(rows[0].unite_id).toBe('u-lj');
+  });
+
   it('délier la 2e demande replie en mono-ligne', async () => {
     await addRemb('R1', 30000, 'u-lj', '2026-07-01');
     await addRemb('R2', 17032, 'u-far', '2026-07-02');
