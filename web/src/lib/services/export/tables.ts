@@ -81,6 +81,12 @@ export const TABLES_INCLUSES: TableExport[] = [
   // avances_camp porte SA PROPRE colonne group_id (cf. camp-avances.ts) :
   // pas besoin de jointure vers camps, malgré l'apparence de table fille.
   { nom: 'avances_camp', regime: 'group_id' },
+  // IDs Comptaweb des unités/activités par exercice (ADR-041) : sans eux, un
+  // dump restauré ne saurait plus envoyer une écriture vers CW.
+  { nom: 'referentiels_cw_exercice', regime: 'group_id' },
+  // Fichiers téléversés directement vers Vercel Blob (#28), rattachés ou non
+  // à une pièce : un téléversement jamais rattaché reste une trace.
+  { nom: 'justificatifs_televersements', regime: 'group_id' },
 
   // Référentiels partagés par tous les groupes : pas de colonne group_id.
   { nom: 'categories', regime: 'global' },

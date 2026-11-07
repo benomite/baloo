@@ -1,8 +1,8 @@
 // Classification des tables pour l'export d'archive d'exercice.
 //
-// La table de complétude ci-dessous (44 tables) est extraite des fichiers
+// La table de complétude ci-dessous (46 tables) est extraite des fichiers
 // de schéma (business-schema.ts, auth/schema.ts, et les ensure*Schema des
-// services) au 2026-09-23. Elle est codée en dur ici (pas de requête BDD)
+// services) au 2026-11-08. Elle est codée en dur ici (pas de requête BDD)
 // pour que ce test tourne sans DB_URL. Le test « complétude face au schéma
 // réel » plus bas, lui, touche la vraie base et est encadré en conséquence.
 //
@@ -18,9 +18,10 @@ const TOUTES_LES_TABLES_REELLES = [
   'camps', 'cartes', 'categories', 'comptaweb_credentials', 'comptaweb_imports',
   'comptaweb_lignes', 'comptes_bancaires', 'cw_link_suggestions', 'depots_cheques',
   'depots_especes', 'depots_justificatifs', 'ecritures', 'error_log', 'groupes',
-  'inbox_suggestion_rejets', 'invite_links', 'justificatifs', 'login_codes',
+  'inbox_suggestion_rejets', 'invite_links', 'justificatifs', 'justificatifs_televersements',
+  'login_codes',
   'modes_paiement', 'mouvements_caisse', 'notes', 'oauth_access_tokens',
-  'oauth_authorization_codes', 'oauth_clients', 'personnes',
+  'oauth_authorization_codes', 'oauth_clients', 'personnes', 'referentiels_cw_exercice',
   'remboursement_ligne_justificatifs', 'remboursement_lignes', 'remboursements',
   'repartitions_unites', 'sessions', 'signatures', 'signin_attempts', 'sync_runs', 'todos',
   'unites', 'user_unites', 'users', 'verification_tokens',
@@ -116,7 +117,7 @@ describe('classification des tables', () => {
     expect(r.inconnues).toContain('justificatifs');
   });
 
-  it('classe les 44 tables réelles du schéma sans manquante ni inconnue', () => {
+  it('classe les 46 tables réelles du schéma sans manquante ni inconnue', () => {
     // Liste figée à la main depuis les fichiers de schéma (cf. commentaire
     // en tête de fichier) : garde-fou qui ne dépend pas d'une BDD vivante.
     const r = classifierTables(TOUTES_LES_TABLES_REELLES);
