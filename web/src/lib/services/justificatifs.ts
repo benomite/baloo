@@ -1,6 +1,7 @@
 import { getDb, type DbWrapper } from '../db';
 import { nextId, currentTimestamp } from '../ids';
 import { getStorage, guessMime } from '../storage';
+import { getVentilationGroupTotal } from './ventilation-group';
 import type { Justificatif } from '../types';
 import {
   ALLOWED_EXTENSIONS,
@@ -168,10 +169,7 @@ export async function listJustificatifsForEcriture(
 
   let ventilationGroupTotalCents = ecr?.amount_cents ?? 0;
   if (ecr?.ventilation_group_id) {
-    const g = await db
-      .prepare('SELECT COALESCE(SUM(amount_cents), 0) AS t FROM ecritures WHERE group_id = ? AND ventilation_group_id = ?')
-      .get<{ t: number }>(groupId, ecr.ventilation_group_id);
-    ventilationGroupTotalCents = g?.t ?? ventilationGroupTotalCents;
+    ventilationGroupTotalCents = await getVentilationGroupTotal(db, groupId, ecr.ventilation_group_id);
   }
 
   return { direct, viaRemboursement, ventilationGroupTotalCents };
