@@ -46,6 +46,14 @@ describe('classification des tables', () => {
     expect(TABLES_EXCLUES).toContain('error_log');
   });
 
+  it('exclut les tables héritées de la prod (secrets, migration interrompue)', () => {
+    // Présentes sur la prod au 2026-11-08 sans être créées par le code :
+    // non classées, elles bloquaient l'export (« Tables non classées »).
+    for (const t of ['user_credentials', 'user_preferences', 'users_new']) {
+      expect(TABLES_EXCLUES).toContain(t);
+    }
+  });
+
   it('ne déclare jamais une table à la fois incluse et exclue', () => {
     const incluses = TABLES_INCLUSES.map((t) => t.nom);
     expect(incluses.filter((n) => TABLES_EXCLUES.includes(n))).toEqual([]);
@@ -120,9 +128,11 @@ describe('classification des tables', () => {
   it('classe les 46 tables réelles du schéma sans manquante ni inconnue', () => {
     // Liste figée à la main depuis les fichiers de schéma (cf. commentaire
     // en tête de fichier) : garde-fou qui ne dépend pas d'une BDD vivante.
+    // Les tables héritées de la prod ne sont pas dans le schéma du code :
+    // seule « inconnue » tolérée.
     const r = classifierTables(TOUTES_LES_TABLES_REELLES);
     expect(r.manquantes).toEqual([]);
-    expect(r.inconnues).toEqual([]);
+    expect(r.inconnues).toEqual(['user_credentials', 'user_preferences', 'users_new']);
   });
 });
 
