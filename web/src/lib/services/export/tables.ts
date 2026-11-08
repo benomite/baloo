@@ -51,6 +51,14 @@ export const TABLES_EXCLUES: string[] = [
   // pas) ni 'global' (ferait fuiter les erreurs de tous les groupes dans
   // l'archive d'un seul). Pas une donnée de compta de toute façon.
   'error_log',
+  // Tables héritées présentes seulement sur la prod, que le code ne crée
+  // plus (constat 2026-11-08) : user_credentials (secrets, vide),
+  // user_preferences (vide), users_new (reste d'une migration de `users`
+  // interrompue — `users` est exporté). Absentes ailleurs : le dump les
+  // signale alors en « tables_inconnues », sans bloquer.
+  'user_credentials',
+  'user_preferences',
+  'users_new',
 ];
 
 export const TABLES_INCLUSES: TableExport[] = [
