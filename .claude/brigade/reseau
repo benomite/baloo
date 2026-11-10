@@ -1,0 +1,8 @@
+# Sites the project may reach, besides Anthropic and GitHub.
+# One host per line; `*.` in front for its subdomains, `:port` after for a
+# port other than 443 and 80; `#` comments.
+#
+# worktree-setup.sh runs `pnpm install --frozen-lockfile` in web/: no .npmrc,
+# so the default registry; web/pnpm-lock.yaml names no other tarball host.
+# gates.sh (tsc, eslint, vitest) reaches nothing.
+registry.npmjs.org
