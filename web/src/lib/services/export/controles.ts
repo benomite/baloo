@@ -23,6 +23,7 @@ export interface Controle {
     | 'remb_sans_pdf'
     | 'depot_orphelin'
     | 'blob_manquant'
+    | 'feuille_non_reproduite'
     | 'ecart_miroir'
     | 'ecriture_divergente';
   titre: string;

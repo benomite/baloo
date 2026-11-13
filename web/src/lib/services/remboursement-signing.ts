@@ -44,16 +44,10 @@ export async function signAndRefreshRemboursementPdf(input: SignAndRefreshInput)
   });
 
   // Régénère le PDF avec l'encart Signatures à jour.
-  const groupRow = await getDb()
-    .prepare('SELECT nom FROM groupes WHERE id = ?')
-    .get<{ nom: string }>(input.groupId);
-  const allSigs = await listSignatures('remboursement', input.rbtId);
-  const pdfBuffer = await renderFeuilleRemboursementPdf({
-    rbt,
-    lignes,
-    groupName: groupRow?.nom ?? 'le groupe',
+  const pdfBuffer = await renderFeuilleRemboursementCourante({
+    groupId: input.groupId,
+    rbtId: input.rbtId,
     submittedAt: new Date().toISOString().slice(0, 10),
-    signatures: allSigs,
   });
   await attachJustificatif(
     { groupId: input.groupId },
@@ -65,4 +59,32 @@ export async function signAndRefreshRemboursementPdf(input: SignAndRefreshInput)
       mime_type: 'application/pdf',
     },
   );
+}
+
+// Rend la feuille d'une demande telle qu'elle est en base : la demande, ses
+// lignes et sa chaîne de signatures COURANTE (les périmées n'y figurent pas,
+// cf. `supersedeSignatures`). Source unique du rendu, partagée par la
+// signature ci-dessus et par la copie d'archive (`export/feuilles.ts`, qui
+// seule passe `masquerCoordonneesBancaires`).
+export async function renderFeuilleRemboursementCourante(input: {
+  groupId: string;
+  rbtId: string;
+  submittedAt: string;
+  masquerCoordonneesBancaires?: boolean;
+}): Promise<Buffer> {
+  const rbt = await getRemboursement({ groupId: input.groupId }, input.rbtId);
+  if (!rbt) throw new Error(`Remboursement ${input.rbtId} introuvable.`);
+  const lignes = await listLignes(input.rbtId);
+  const groupRow = await getDb()
+    .prepare('SELECT nom FROM groupes WHERE id = ?')
+    .get<{ nom: string }>(input.groupId);
+  const allSigs = await listSignatures('remboursement', input.rbtId);
+  return await renderFeuilleRemboursementPdf({
+    rbt,
+    lignes,
+    groupName: groupRow?.nom ?? 'le groupe',
+    submittedAt: input.submittedAt,
+    signatures: allSigs,
+    masquerCoordonneesBancaires: input.masquerCoordonneesBancaires,
+  });
 }
