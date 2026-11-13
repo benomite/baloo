@@ -1,16 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import {
-  ArrowRight,
-  HandCoins,
-  Receipt,
-  Wallet,
-  Users,
-  ShieldCheck,
-  Smartphone,
-  Sparkles,
-  type LucideIcon,
-} from 'lucide-react';
+import { ArrowRight, MessagesSquare, Paperclip, type LucideIcon } from 'lucide-react';
 
 function GithubMark(props: { className?: string }) {
   return (
@@ -25,18 +15,20 @@ function GithubMark(props: { className?: string }) {
   );
 }
 
-// Landing publique de Baloo. Indexable, sans auth. Pour SEO + découverte.
-// Cf. doc/distribution.md.
+// Présentation publique de Baloo, sans auth. C'est aussi la home des
+// visiteurs non connectés : `proxy.ts` réécrit `/` vers cette page quand il
+// n'y a pas de cookie de session (#21). Ton voulu : sobre, factuel — on dit
+// à quoi ça sert, pas plus. Cf. doc/distribution.md.
 
 export const metadata: Metadata = {
   title: 'Baloo — Le carnet du trésorier d\'un groupe SGDF',
   description:
-    "Webapp et serveur MCP pour tenir la compta opérationnelle d'un groupe Scouts et Guides de France : remboursements, abandons de frais, justificatifs, caisse, budgets par unité. Open source, sync Compta-Web.",
+    "Baloo aide un groupe Scouts et Guides de France à gérer ses process et ses pièces (remboursements, justificatifs, abandons de frais, caisse, camps) et branche Claude sur Compta-Web via un serveur MCP. Open source.",
   alternates: { canonical: '/about' },
   openGraph: {
     title: 'Baloo — Le carnet du trésorier SGDF',
     description:
-      "L'outil open source qui aide les trésoriers de groupes Scouts et Guides de France à tenir la compta opérationnelle de leur groupe.",
+      "Les process et les pièces d'un groupe SGDF au même endroit, et Claude branché sur Compta-Web. Open source.",
     url: 'https://baloo.benomite.com/about',
     siteName: 'Baloo',
     locale: 'fr_FR',
@@ -46,7 +38,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Baloo — Le carnet du trésorier SGDF',
     description:
-      "L'outil open source qui aide les trésoriers de groupes SGDF à tenir leur compta opérationnelle.",
+      "Les process et les pièces d'un groupe SGDF au même endroit, et Claude branché sur Compta-Web.",
   },
 };
 
@@ -55,14 +47,11 @@ export default function AboutPage() {
     <div className="min-h-screen bg-bg">
       <PublicNav />
 
-      <main className="max-w-5xl mx-auto px-4 py-12 lg:py-20">
+      <main className="max-w-4xl mx-auto px-4 py-10 lg:py-16">
         <Hero />
-        <Features />
-        <ForWhom />
-        <HowItWorks />
-        <Tech />
+        <Interests />
+        <Access />
         <FAQ />
-        <CTA />
       </main>
 
       <PublicFooter />
@@ -75,8 +64,8 @@ export default function AboutPage() {
 function PublicNav() {
   return (
     <nav className="border-b border-border-soft bg-bg-elevated/80 backdrop-blur sticky top-0 z-10">
-      <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-        <Link href="/about" className="flex items-center gap-2 font-display text-lg">
+      <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+        <Link href="/" className="flex items-center gap-2 font-display text-lg">
           <span className="text-2xl" aria-hidden>
             🐻
           </span>
@@ -107,101 +96,96 @@ function PublicNav() {
 
 function Hero() {
   return (
-    <section className="py-12 lg:py-16 text-center">
-      <div className="inline-flex items-center gap-2 px-3 py-1 mb-6 rounded-full bg-brand-50 text-brand text-sm">
-        <Sparkles className="h-3.5 w-3.5" />
-        Open source · MIT · Bénévole pour bénévoles
-      </div>
-
-      <h1 className="font-display text-4xl lg:text-6xl font-bold tracking-tight mb-6">
+    <section className="py-8 lg:py-12">
+      <h1 className="font-display text-4xl lg:text-5xl font-bold tracking-tight mb-5">
         Le carnet du trésorier
         <br />
         <span className="text-brand">d&apos;un groupe SGDF</span>
       </h1>
 
-      <p className="text-lg lg:text-xl text-fg-muted max-w-2xl mx-auto mb-8">
-        Une webapp qui aide les trésoriers de groupes Scouts et Guides de France à tenir
-        la compta opérationnelle de leur groupe : remboursements, abandons de frais,
-        justificatifs, caisse, budgets par unité. <strong>Sync avec Compta-Web</strong>,
-        sans jamais le remplacer.
+      <p className="text-lg text-fg-muted max-w-2xl mb-8">
+        Baloo aide un groupe Scouts et Guides de France à tenir sa compta au
+        quotidien. Il travaille à côté de Compta-Web, qui reste la compta officielle
+        du groupe : il ne le remplace pas.
       </p>
 
-      <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <Link
           href="/login"
           className="inline-flex items-center justify-center gap-2 bg-brand text-brand-fg hover:bg-brand-hover px-5 py-3 rounded-md font-medium transition-colors w-full sm:w-auto"
         >
-          Se connecter à mon groupe
+          Se connecter
           <ArrowRight className="h-4 w-4" />
         </Link>
-        <Link
-          href="https://github.com/benomite/baloo"
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center justify-center gap-2 border border-border hover:border-border-strong px-5 py-3 rounded-md font-medium transition-colors w-full sm:w-auto"
-        >
-          <GithubMark className="h-4 w-4" />
-          Voir le code
-        </Link>
+        <p className="text-sm text-fg-subtle">
+          Accès sur invitation : demande-le au trésorier de ton groupe.
+        </p>
       </div>
-
-      <p className="mt-6 text-sm text-fg-subtle">
-        En prod chez l&apos;auteur (groupe Val de Saône) depuis 2026.
-      </p>
     </section>
   );
 }
 
-function Features() {
-  const features: { icon: LucideIcon; title: string; desc: string }[] = [
+// Les 2 intérêts de Baloo (#21), chacun avec son public.
+function Interests() {
+  const interests: {
+    icon: LucideIcon;
+    audience: string;
+    title: string;
+    desc: string;
+    points: string[];
+  }[] = [
     {
-      icon: Receipt,
-      title: 'Écritures et rapprochement',
-      desc: "Import CSV Comptaweb, sync des écritures, rapprochement bancaire DSP2 (sous-lignes de paiement enrichies).",
+      icon: Paperclip,
+      audience: 'Pour les chefs, les parents et le trésorier',
+      title: 'Gérer les process et les fichiers du groupe',
+      desc: "Chacun fait sa démarche lui-même, depuis son téléphone ou son ordinateur, et les pièces arrivent rangées au bon endroit, reliées aux écritures qu'elles justifient.",
+      points: [
+        'Remboursements : la demande se dépose en ligne, et se suit.',
+        'Justificatifs : déposés directement, sans passer par un mail.',
+        'Abandons de frais, avec le CERFA.',
+        'Caisse et camps.',
+      ],
     },
     {
-      icon: HandCoins,
-      title: 'Remboursements',
-      desc: 'Feuilles multi-lignes, signature électronique, génération PDF, 5 statuts, notifs email à chaque étape.',
-    },
-    {
-      icon: Wallet,
-      title: 'Caisse et chèques',
-      desc: 'Mouvements de caisse synchronisés avec Comptaweb, dépôts de chèques (banque + ANCV), abandons de frais avec CERFA.',
-    },
-    {
-      icon: Users,
-      title: 'Budgets par unité',
-      desc: "Vue par unité (Farfadets, LJ, SG, Pi, Co, Groupe), prévisionnel, répartitions inter-unités, audit de couverture.",
-    },
-    {
-      icon: Smartphone,
-      title: 'PWA mobile',
-      desc: 'Installable sur Chrome et iOS. Les chefs déposent leurs justifs depuis leur téléphone, sans email.',
-    },
-    {
-      icon: ShieldCheck,
-      title: 'RGPD pris au sérieux',
-      desc: 'Magic link sans mot de passe, justifs en blob privé avec URLs signées, données minimales sur les mineurs.',
+      icon: MessagesSquare,
+      audience: 'Pour le trésorier',
+      title: 'Connecter Claude à Compta-Web',
+      desc: "Baloo expose un serveur MCP : depuis Claude (Code ou Desktop), le trésorier pilote la compta du groupe en conversation. Baloo sert de miroir de Compta-Web, qui reste la source de vérité.",
+      points: [
+        'Synchronisation des écritures avec Compta-Web.',
+        'Brouillons préparés à partir des lignes bancaires pas encore rapprochées.',
+        'Aide au rapprochement bancaire.',
+      ],
     },
   ];
 
   return (
-    <section className="py-12 lg:py-16">
-      <h2 className="font-display text-3xl lg:text-4xl font-bold text-center mb-12">
-        Ce que Baloo sait faire
+    <section className="py-8 lg:py-12 border-t border-border-soft">
+      <h2 className="font-display text-2xl lg:text-3xl font-bold mb-8">
+        À quoi sert Baloo
       </h2>
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {features.map((f) => (
+      <div className="grid md:grid-cols-2 gap-4">
+        {interests.map((i) => (
           <div
-            key={f.title}
-            className="p-5 rounded-lg border border-border bg-bg-elevated"
+            key={i.title}
+            className="p-5 lg:p-6 rounded-lg border border-border bg-bg-elevated"
           >
-            <div className="inline-flex p-2 rounded-md bg-brand-50 text-brand mb-3">
-              <f.icon className="h-5 w-5" />
+            <div className="inline-flex p-2 rounded-md bg-brand-50 text-brand mb-4">
+              <i.icon className="h-5 w-5" />
             </div>
-            <h3 className="font-semibold mb-1.5">{f.title}</h3>
-            <p className="text-sm text-fg-muted">{f.desc}</p>
+            <p className="text-overline mb-1.5">{i.audience}</p>
+            <h3 className="font-semibold text-lg mb-2">{i.title}</h3>
+            <p className="text-sm text-fg-muted mb-4">{i.desc}</p>
+            <ul className="space-y-1.5 text-sm">
+              {i.points.map((p) => (
+                <li key={p} className="flex gap-2">
+                  <span className="text-fg-subtle" aria-hidden>
+                    —
+                  </span>
+                  <span>{p}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         ))}
       </div>
@@ -209,122 +193,39 @@ function Features() {
   );
 }
 
-function ForWhom() {
-  const personas = [
-    {
-      role: 'Trésorier·ère',
-      desc: "Tu veux automatiser ce qui peut l'être (rapprochement DSP2, relances justificatifs, états mensuels) et garder une vue claire.",
-    },
-    {
-      role: "Chef·fe d'unité",
-      desc: 'Tu veux suivre le budget de ton unité et déposer tes justifs depuis ton mobile, sans envoyer un email à chaque fois.',
-    },
-    {
-      role: 'Parent / donateur',
-      desc: 'Tu veux voir tes paiements au groupe et récupérer ton reçu fiscal en autonomie.',
-    },
-    {
-      role: 'Curieux MCP',
-      desc: "Un cas réel d'app full-stack avec un serveur MCP qui agit comme client HTTP de la webapp, utilisable depuis Claude Code.",
-    },
-  ];
-
+// Pas de self-signup : l'accès passe par une invitation du trésorier.
+function Access() {
   return (
-    <section className="py-12 lg:py-16 border-t border-border-soft">
-      <h2 className="font-display text-3xl lg:text-4xl font-bold text-center mb-12">
-        Pour qui ?
+    <section className="py-8 lg:py-12 border-t border-border-soft">
+      <h2 className="font-display text-2xl lg:text-3xl font-bold mb-4">
+        Comment y accéder
       </h2>
-      <div className="grid sm:grid-cols-2 gap-4">
-        {personas.map((p) => (
-          <div
-            key={p.role}
-            className="p-5 rounded-lg border border-border bg-bg-elevated"
+      <div className="space-y-3 text-fg-muted max-w-2xl">
+        <p>
+          Il n&apos;y a pas d&apos;inscription libre. Le trésorier de ton groupe
+          t&apos;ouvre un accès : demande-le lui.
+        </p>
+        <p>
+          Une fois ton accès ouvert,{' '}
+          <Link href="/login" className="underline text-fg hover:text-brand">
+            connecte-toi
+          </Link>{' '}
+          avec ton adresse mail : tu reçois un lien et un code, sans mot de passe.
+        </p>
+        <p>
+          Ton groupe n&apos;utilise pas Baloo ? Le code est ouvert : tu peux en parler
+          en{' '}
+          <Link
+            href="https://github.com/benomite/baloo/issues/new/choose"
+            target="_blank"
+            rel="noreferrer"
+            className="underline text-fg hover:text-brand"
           >
-            <h3 className="font-semibold text-brand mb-1.5">{p.role}</h3>
-            <p className="text-sm text-fg-muted">{p.desc}</p>
-          </div>
-        ))}
+            ouvrant une issue sur GitHub
+          </Link>
+          .
+        </p>
       </div>
-    </section>
-  );
-}
-
-function HowItWorks() {
-  return (
-    <section className="py-12 lg:py-16 border-t border-border-soft">
-      <h2 className="font-display text-3xl lg:text-4xl font-bold text-center mb-4">
-        Comment ça marche
-      </h2>
-      <p className="text-center text-fg-muted mb-12 max-w-2xl mx-auto">
-        Compta-Web reste la source de vérité comptable imposée par la fédération. Baloo
-        travaille en amont : il aide à préparer, à matcher, à relancer — pas à remplacer.
-      </p>
-      <ol className="space-y-4 max-w-2xl mx-auto">
-        {[
-          {
-            title: '1. Import depuis Comptaweb',
-            desc: "Export CSV ou sync API (auth Keycloak automatisée). Les écritures et lignes bancaires arrivent dans Baloo.",
-          },
-          {
-            title: '2. Travail opérationnel dans Baloo',
-            desc: "Tu rapproches, tu catégorises, tu valides les remboursements. Les chefs déposent leurs justifs. Les parents consultent leur reçu fiscal.",
-          },
-          {
-            title: '3. Saisie dans Compta-Web',
-            desc: "Baloo te prépare les données pré-formatées prêtes à recopier. À terme, automation navigateur sur les opérations simples.",
-          },
-        ].map((step) => (
-          <li
-            key={step.title}
-            className="p-5 rounded-lg border border-border bg-bg-elevated"
-          >
-            <h3 className="font-semibold mb-1.5">{step.title}</h3>
-            <p className="text-sm text-fg-muted">{step.desc}</p>
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
-}
-
-function Tech() {
-  return (
-    <section className="py-12 lg:py-16 border-t border-border-soft">
-      <h2 className="font-display text-3xl lg:text-4xl font-bold text-center mb-12">
-        Stack technique
-      </h2>
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-        {[
-          ['Framework', 'Next.js 16, App Router'],
-          ['Langage', 'TypeScript strict'],
-          ['Base de données', 'Turso (libSQL)'],
-          ['Auth', 'NextAuth v5, magic link'],
-          ['Stockage', 'Vercel Blob privé'],
-          ['Email', 'Resend'],
-          ['UI', 'Tailwind v4, base-ui'],
-          ['MCP', 'Model Context Protocol'],
-        ].map(([label, value]) => (
-          <div
-            key={label}
-            className="p-4 rounded-md border border-border bg-bg-elevated"
-          >
-            <div className="text-xs text-fg-subtle">{label}</div>
-            <div className="font-medium">{value}</div>
-          </div>
-        ))}
-      </div>
-      <p className="text-center text-sm text-fg-muted mt-6">
-        Le code est sur{' '}
-        <Link
-          href="https://github.com/benomite/baloo"
-          target="_blank"
-          rel="noreferrer"
-          className="underline hover:text-fg"
-        >
-          GitHub
-        </Link>
-        , sous licence MIT.
-      </p>
     </section>
   );
 }
@@ -336,29 +237,21 @@ function FAQ() {
       a: "Non. C'est un projet indépendant développé par un bénévole pour les bénévoles. La fédération n'est pas impliquée. Compta-Web reste l'outil officiel SGDF et la source de vérité comptable.",
     },
     {
-      q: 'Mon groupe peut-il l\'utiliser ?',
-      a: "À ce stade, l'instance hébergée publiquement est dimensionnée pour un seul groupe (Val de Saône). Le code est open source : tu peux l'auto-héberger. Le multi-groupes hébergé est sur la roadmap (phase 3).",
-    },
-    {
       q: 'Comment sont protégées les données ?',
-      a: "Auth par magic link (pas de mot de passe stocké), justifs en stockage blob privé avec URLs signées, données minimales sur les mineurs, pre-commit hook qui bloque les fuites de données nominatives. Cf. SECURITY.md et doc/security-rgpd.md.",
+      a: "Connexion sans mot de passe (lien ou code par mail), justificatifs en stockage privé avec URLs signées, données minimales sur les mineurs. Cf. SECURITY.md et doc/security-rgpd.md.",
     },
     {
       q: 'Pourquoi le nom Baloo ?',
       a: "L'ours bienveillant du Livre de la Jungle, mascotte des scouts. Il accompagne et veille, sans faire à la place.",
     },
-    {
-      q: 'Comment contribuer ?',
-      a: "Ouvre une issue sur GitHub. PRs bienvenues après discussion. Pour les bugs de sécurité, utilise GitHub Security Advisories. Cf. CONTRIBUTING.md.",
-    },
   ];
 
   return (
-    <section className="py-12 lg:py-16 border-t border-border-soft">
-      <h2 className="font-display text-3xl lg:text-4xl font-bold text-center mb-12">
+    <section className="py-8 lg:py-12 border-t border-border-soft">
+      <h2 className="font-display text-2xl lg:text-3xl font-bold mb-6">
         Questions fréquentes
       </h2>
-      <div className="space-y-3 max-w-3xl mx-auto">
+      <div className="space-y-3">
         {items.map((item) => (
           <details
             key={item.q}
@@ -378,45 +271,10 @@ function FAQ() {
   );
 }
 
-function CTA() {
-  return (
-    <section className="py-12 lg:py-16 border-t border-border-soft">
-      <div className="p-8 lg:p-12 rounded-xl bg-brand text-brand-fg text-center">
-        <h2 className="font-display text-2xl lg:text-3xl font-bold mb-3">
-          Envie d&apos;essayer ?
-        </h2>
-        <p className="opacity-90 mb-6 max-w-xl mx-auto">
-          Si tu es trésorier·ère d&apos;un groupe SGDF et tu veux un coup de main, ouvre
-          une issue sur GitHub. Si tu es curieux du code, c&apos;est par là.
-        </p>
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-          <Link
-            href="https://github.com/benomite/baloo/issues/new/choose"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center justify-center gap-2 bg-white text-brand hover:bg-white/90 px-5 py-3 rounded-md font-medium transition-colors w-full sm:w-auto"
-          >
-            Ouvrir une issue
-          </Link>
-          <Link
-            href="https://github.com/benomite/baloo"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center justify-center gap-2 border border-white/30 hover:border-white/60 px-5 py-3 rounded-md font-medium transition-colors w-full sm:w-auto"
-          >
-            <GithubMark className="h-4 w-4" />
-            Star sur GitHub
-          </Link>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function PublicFooter() {
   return (
-    <footer className="border-t border-border-soft py-8 mt-12">
-      <div className="max-w-5xl mx-auto px-4 text-sm text-fg-subtle text-center space-y-2">
+    <footer className="border-t border-border-soft py-8 mt-8">
+      <div className="max-w-4xl mx-auto px-4 text-sm text-fg-subtle text-center space-y-2">
         <p>
           Baloo — Open source MIT —{' '}
           <Link
