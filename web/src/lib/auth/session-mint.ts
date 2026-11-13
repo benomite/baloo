@@ -9,6 +9,13 @@ import type { DbWrapper } from '../db';
 // JOIN sessions ⋈ users. Donc : insérer une ligne sessions + poser le cookie
 // avec la même valeur de token suffit à connecter l'utilisateur.
 
+// Noms du cookie de session Auth.js : http (dev), puis https (prod).
+// Lus aussi par `proxy.ts` pour distinguer visiteur et connecté sur `/`.
+export const SESSION_COOKIE_NAMES = [
+  'authjs.session-token',
+  '__Secure-authjs.session-token',
+] as const;
+
 // 30 jours = maxAge par défaut des sessions database d'Auth.js.
 const SESSION_TTL_DAYS = 30;
 
@@ -43,7 +50,7 @@ export function buildSessionCookie(
   expires: Date,
   secure: boolean,
 ): SessionCookie {
-  const name = secure ? '__Secure-authjs.session-token' : 'authjs.session-token';
+  const name = secure ? SESSION_COOKIE_NAMES[1] : SESSION_COOKIE_NAMES[0];
   return {
     name,
     value: token,
