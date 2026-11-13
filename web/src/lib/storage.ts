@@ -17,6 +17,7 @@
 import { writeFile, mkdir, readFile, stat } from 'fs/promises';
 import { join, resolve } from 'path';
 import { mimeFromFilename } from './justif-allowed';
+import { encodeJustifPath } from './justif-url';
 
 export interface FetchResult {
   // `Uint8Array` pour le FS local, `ReadableStream` pour Vercel Blob.
@@ -84,7 +85,9 @@ class VercelBlobBackend implements StorageBackend {
   async fetch(relPath: string): Promise<FetchResult | null> {
     const { get } = await import('@vercel/blob');
     try {
-      const result = await get(relPath, { access: 'private' });
+      // `get` colle le chemin tel quel dans l'URL du blob : sans encodage, un
+      // `#` ou un `?` du nom de fichier coupe l'adresse (ticket #42).
+      const result = await get(encodeJustifPath(relPath), { access: 'private' });
       if (!result || result.statusCode !== 200) return null;
       return { body: result.stream, contentType: result.blob.contentType };
     } catch {

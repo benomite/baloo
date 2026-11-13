@@ -24,6 +24,7 @@ import { Section } from '@/components/shared/section';
 import { EcritureLinkCard } from '@/components/rembs/ecriture-link-card';
 import { CoordonneesBancairesCard } from '@/components/rembs/coordonnees-bancaires-card';
 import { DetailDepensesTable } from '@/components/rembs/detail-depenses-table';
+import { justifUrl } from '@/lib/justif-url';
 import { getRemboursement } from '@/lib/queries/remboursements';
 import { listLignes } from '@/lib/services/remboursements';
 import { listAssignationsLignes, computeCouverture } from '@/lib/services/remboursement-justifs';
@@ -311,7 +312,7 @@ export default async function RemboursementDetailPage({
               </p>
             ) : (
               <a
-                href={`/api/justificatifs/${feuilles[0].file_path}`}
+                href={justifUrl(feuilles[0].file_path)}
                 target="_blank"
                 rel="noopener"
                 className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-fg hover:bg-brand-50 hover:text-brand transition-colors"
@@ -332,7 +333,7 @@ export default async function RemboursementDetailPage({
                 {justificatifs.map((j) => (
                   <li key={j.id} className="flex items-center gap-1">
                     <a
-                      href={`/api/justificatifs/${j.file_path}`}
+                      href={justifUrl(j.file_path)}
                       target="_blank"
                       rel="noopener"
                       className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-fg hover:bg-brand-50 hover:text-brand transition-colors"

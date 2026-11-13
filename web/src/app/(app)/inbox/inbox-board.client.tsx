@@ -7,6 +7,7 @@ import { Amount } from '@/components/shared/amount';
 import { PendingButton } from '@/components/shared/pending-button';
 import { formatAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { justifUrl } from '@/lib/justif-url';
 import {
   lierEcritureJustif,
   markerJustifNonAttendu,
@@ -565,7 +566,7 @@ function JustifSummary({ justif }: { justif: InboxJustif }) {
         )}
         {justif.justif_path && (
           <Link
-            href={`/api/justificatifs/${justif.justif_path}`}
+            href={justifUrl(justif.justif_path)}
             target="_blank"
             rel="noopener"
             onClick={(e) => e.stopPropagation()}

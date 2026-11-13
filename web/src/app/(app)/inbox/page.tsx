@@ -25,6 +25,7 @@ import {
 import { applyAutoLinks } from '@/lib/services/inbox-auto';
 import { InboxBoard } from './inbox-board.client';
 import { cn } from '@/lib/utils';
+import { justifUrl } from '@/lib/justif-url';
 
 // La page tape la BDD à chaque requête (état frais des orphelins).
 export const dynamic = 'force-dynamic';
@@ -534,7 +535,7 @@ function JustifSummary({
         )}
         {justif.justif_path && (
           <Link
-            href={`/api/justificatifs/${justif.justif_path}`}
+            href={justifUrl(justif.justif_path)}
             target="_blank"
             rel="noopener"
             className="ml-auto inline-flex items-center gap-1 text-brand hover:underline underline-offset-2"

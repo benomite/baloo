@@ -1,5 +1,6 @@
 import { CreditCard } from 'lucide-react';
 import { Section } from '@/components/shared/section';
+import { justifUrl } from '@/lib/justif-url';
 
 interface Props {
   ribTexte: string | null;
@@ -24,7 +25,7 @@ export function CoordonneesBancairesCard({ ribTexte, ribFiles }: Props) {
           {ribFiles.map((j) => (
             <a
               key={j.id}
-              href={`/api/justificatifs/${j.file_path}`}
+              href={justifUrl(j.file_path)}
               target="_blank"
               rel="noopener"
               className="flex items-center gap-1.5 text-[12px] text-brand hover:underline underline-offset-2"

@@ -8,6 +8,7 @@ import { type EcritureJustifsBundle } from '@/lib/queries/justificatifs';
 import { type DepotEnriched, type DepotForSharing } from '@/lib/services/depots';
 import { computeRembsCoverage } from '@/lib/services/remboursement-ecriture-link';
 import { formatAmount } from '@/lib/format';
+import { justifUrl } from '@/lib/justif-url';
 
 // Bloc justificatifs COMPACT d'une écriture : liste des fichiers rattachés
 // (directs + via remboursements / RIB) toujours visible ; les actions
@@ -121,7 +122,7 @@ export function JustificatifsCard({
           {rb.rib.map((j) => (
             <a
               key={j.id}
-              href={`/api/justificatifs/${j.file_path}`}
+              href={justifUrl(j.file_path)}
               target="_blank"
               rel="noopener"
               className="flex items-center gap-2 px-2 py-1 rounded-md text-[12.5px] text-fg hover:bg-bg-elevated hover:text-brand transition-colors"
@@ -193,7 +194,7 @@ export function JustificatifsCard({
 function JustifLink({ filePath, filename }: { filePath: string; filename: string }) {
   return (
     <a
-      href={`/api/justificatifs/${filePath}`}
+      href={justifUrl(filePath)}
       target="_blank"
       rel="noopener"
       className="flex items-center gap-2 px-2 py-1 rounded-md text-[12.5px] text-fg hover:bg-brand-50 hover:text-brand transition-colors"
