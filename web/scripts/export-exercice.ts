@@ -14,11 +14,12 @@ import { formatAmount } from '../src/lib/format';
 import { getGroupe } from '../src/lib/services/groupes';
 import { bornesPourExercice, type BornesExercice } from '../src/lib/services/export/bornes';
 import {
-  rapportControles, formatRapportTexte, controleBlobsManquants, type Controle,
+  rapportControles, formatRapportTexte, controleBlobsManquants, type Controle, type LigneControle,
 } from '../src/lib/services/export/controles';
 import { collecterTable } from '../src/lib/services/export/collecte';
 import { TABLES_INCLUSES } from '../src/lib/services/export/tables';
 import { dossierEcriture, dossierRemboursement, slug } from '../src/lib/services/export/arborescence';
+import { feuilleArchiveMasquee } from '../src/lib/services/export/feuilles';
 import { genererIndexHtml, type SectionIndex, type BlocTableau } from '../src/lib/services/export/index-html';
 import { toBuffer, ecrireAtomique } from './lib/blob-io';
 import { getCliContext } from './cli-context';
@@ -46,6 +47,10 @@ const blobsManquants: Array<{ id: string; file_path: string; original_filename: 
 // juger la PROPORTION de `blobsManquants` — cf. avertissement de panne de
 // store plus bas, même logique que `export:dump`.
 let blobsTraites = 0;
+
+// Feuilles de remboursement qu'on n'a pas pu régénérer (cf.
+// `telechargerRemboursements`) : même traitement que `blobsManquants`.
+const feuillesEnEchec: LigneControle[] = [];
 
 async function ecrireBlobVersFichier(
   j: { id: string; file_path: string; original_filename: string | null },
@@ -145,11 +150,12 @@ const CAVIARDAGE_PARAGRAPHES = [
     'l’IBAN du groupe et les numéros de téléphone ont été retirés de cette archive.',
   'Les abandons de frais ne font pas l’objet d’une signature électronique dans Baloo : seules ' +
     'les demandes de remboursement le sont (cf. `02-remboursements/signatures.csv`).',
-  'Les feuilles de remboursement signées ne figurent pas dans cette archive : elles impriment ' +
-    'les coordonnées bancaires du demandeur. La colonne `feuille_signee` de ' +
-    '`02-remboursements/remboursements.csv` indique lesquelles ont été signées, et ' +
-    '`02-remboursements/signatures.csv` porte la chaîne de signature qui en fait la valeur ' +
-    'probante. Les feuilles elles-mêmes restent consultables dans Baloo.',
+  'Chaque feuille de remboursement générée figure dans le dossier de sa demande ' +
+    '(`02-remboursements/<dossier du remboursement>/feuille.pdf`), avec le même contenu et les ' +
+    'mêmes signatures, mais les coordonnées bancaires du demandeur (IBAN / BIC) y sont masquées. ' +
+    'La colonne `feuille_signee` de `02-remboursements/remboursements.csv` indique quelles ' +
+    'demandes en ont une, et `02-remboursements/signatures.csv` porte la chaîne de signature ' +
+    'qui en fait la valeur probante.',
 ];
 
 async function main() {
@@ -213,6 +219,16 @@ async function main() {
     console.warn(`\n⚠️  ${blobsManquants.length} fichier(s) référencé(s) en base introuvable(s) dans le store.`);
   }
   controles.push(await controleBlobsManquants(blobsManquants, async () => false));
+  // Même logique pour une feuille qu'on n'a pas pu reproduire : l'archive
+  // doit dire qu'elle lui manque, pas seulement le terminal.
+  if (feuillesEnEchec.length > 0) {
+    console.warn(`\n⚠️  ${feuillesEnEchec.length} feuille(s) de remboursement non reproduite(s) dans l'archive.`);
+  }
+  controles.push({
+    cle: 'feuille_non_reproduite',
+    titre: 'Feuilles de remboursement non reproduites dans l’archive',
+    lignes: feuillesEnEchec,
+  });
 
   // `storage.fetch` ne distingue pas un fichier réellement absent d'une
   // erreur de lecture (réseau, auth, timeout) : les deux renvoient null. Une
@@ -253,8 +269,9 @@ async function main() {
       '- `01-ecritures/justificatifs/<dossier de l’écriture>/` — pièces jointes à une écriture. ' +
         'Un sous-dossier `_obsoletes/` regroupe les pièces remplacées (traçabilité, à ne pas lire ' +
         'comme des pièces valides).',
-      '- `02-remboursements/<dossier du remboursement>/` — justificatifs des lignes de la demande ' +
-        '(pas d’IBAN). Pas de feuille signée ici : cf. le paragraphe ci-dessus.',
+      '- `02-remboursements/<dossier du remboursement>/` — feuille de remboursement ' +
+        '(`feuille.pdf`, coordonnées bancaires masquées : cf. le paragraphe ci-dessus) et ' +
+        'justificatifs des lignes de la demande.',
       '- `03-abandons/<id>/` — justificatifs d’un abandon de frais.',
       '- `05-depots-orphelins/<id>-<titre>/` — fichiers d’un dépôt rattaché à rien (ni écriture, ni ' +
         'remboursement).',
@@ -932,14 +949,29 @@ async function telechargerRemboursements(
   for (const r of rembs) {
     const dossier = join(racine, '02-remboursements', dossierRemboursement(r));
 
-    // La feuille signée (`feuille.pdf`) n'est PAS copiée dans l'archive :
-    // elle imprime en clair l'IBAN du demandeur (`feuille-remboursement.ts`),
-    // et l'archive part vers un Drive partagé — la copier contournerait tout
-    // le caviardage par un simple fichier. Ce qui reste consultable ici :
-    // la colonne `feuille_signee` du CSV (laquelle a été signée),
-    // `signatures.csv` (la chaîne probante complète), et les justificatifs
-    // des LIGNES de remboursement ci-dessous, qui ne contiennent aucun IBAN.
-    // Les feuilles elles-mêmes restent consultables dans Baloo.
+    // La feuille stockée imprime en clair l'IBAN du demandeur, et l'archive
+    // part vers un Drive partagé : on n'en copie jamais le blob. On écrit à
+    // sa place la même feuille régénérée, coordonnées bancaires masquées
+    // (`export/feuilles.ts`, ticket #43). Pas de feuille générée => pas de
+    // `feuille.pdf`. Son nom est réservé AVANT les justificatifs : un ticket
+    // uploadé sous le nom « feuille.pdf » sera suffixé, pas écrasé.
+    try {
+      const feuille = await feuilleArchiveMasquee(groupId, r.id);
+      if (feuille) {
+        nomsUtilises.set(dossier, new Set([...(nomsUtilises.get(dossier) ?? []), 'feuille.pdf']));
+        await ecrireAtomique(join(dossier, 'feuille.pdf'), feuille);
+      }
+    } catch (err) {
+      // Une feuille qui ne se régénère pas ne fait pas tomber l'export : elle
+      // est consignée dans les contrôles du README (cf. `main`).
+      feuillesEnEchec.push({
+        id: r.id,
+        date: null,
+        libelle: r.demandeur ?? '',
+        montantCents: 0,
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
 
     const lignes = await db
       .prepare(

@@ -25,12 +25,21 @@ interface FeuilleProps {
   groupName: string;
   submittedAt: string;
   signatures?: Signature[];
+  // Copie d'archive (`pnpm export:exercice`, ticket #43) : l'IBAN / BIC du
+  // demandeur n'est PAS écrit dans le PDF — ni en clair, ni sous un cache,
+  // ni en texte invisible : on écrit la mention à la place. La feuille de
+  // l'app et celle envoyée pour paiement ne passent jamais cette option.
+  masquerCoordonneesBancaires?: boolean;
 }
+
+export const MENTION_RIB_MASQUE = 'masqué dans cette copie d’archive';
 
 export async function renderFeuilleRemboursementPdf(
   props: FeuilleProps,
 ): Promise<Buffer> {
-  const { rbt, lignes, groupName, submittedAt, signatures = [] } = props;
+  const {
+    rbt, lignes, groupName, submittedAt, signatures = [], masquerCoordonneesBancaires = false,
+  } = props;
 
   return await new Promise<Buffer>((resolve, reject) => {
     try {
@@ -126,7 +135,9 @@ export async function renderFeuilleRemboursementPdf(
         doc.fontSize(12).font('Helvetica-Bold').text('Coordonnées bancaires');
         doc.moveDown(0.3);
         doc.fontSize(10).font('Helvetica');
-        if (rbt.rib_texte) drawKV(doc, 'IBAN / BIC', rbt.rib_texte);
+        if (rbt.rib_texte) {
+          drawKV(doc, 'IBAN / BIC', masquerCoordonneesBancaires ? MENTION_RIB_MASQUE : rbt.rib_texte);
+        }
         if (rbt.rib_file_path) drawKV(doc, 'RIB joint', 'fichier joint à la demande');
       }
 
