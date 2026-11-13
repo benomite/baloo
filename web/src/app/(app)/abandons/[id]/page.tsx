@@ -19,6 +19,7 @@ import { Section } from '@/components/shared/section';
 import { Input } from '@/components/ui/input';
 import { PendingButton } from '@/components/shared/pending-button';
 import { getCurrentContext } from '@/lib/context';
+import { justifUrl } from '@/lib/justif-url';
 import { canEditAbandon, getAbandon, type AbandonStatus } from '@/lib/services/abandons';
 import { Button } from '@/components/ui/button';
 import { listJustificatifs } from '@/lib/queries/justificatifs';
@@ -210,7 +211,7 @@ export default async function AbandonDetailPage({
                 {feuilles.map((f) => (
                   <li key={f.id}>
                     <a
-                      href={`/api/justificatifs/${f.file_path}`}
+                      href={justifUrl(f.file_path)}
                       target="_blank"
                       rel="noopener"
                       className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-fg hover:bg-brand-50 hover:text-brand transition-colors"
@@ -236,7 +237,7 @@ export default async function AbandonDetailPage({
                 {justifs.map((j) => (
                   <li key={j.id}>
                     <a
-                      href={`/api/justificatifs/${j.file_path}`}
+                      href={justifUrl(j.file_path)}
                       target="_blank"
                       rel="noopener"
                       className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-fg hover:bg-brand-50 hover:text-brand transition-colors"

@@ -7,6 +7,7 @@ import { Alert } from '@/components/ui/alert';
 import { Amount } from '@/components/shared/amount';
 import { DepotStatutBadge } from '@/components/depots/depot-statut-badge';
 import { getCurrentContext } from '@/lib/context';
+import { justifUrl } from '@/lib/justif-url';
 import { isAdminRole } from '@/components/layout/nav-config';
 import {
   canEditDepot,
@@ -108,7 +109,7 @@ export default async function DepotDetailPage({
             {paths.map((p, i) => (
               <Link
                 key={p}
-                href={`/api/justificatifs/${p}`}
+                href={justifUrl(p)}
                 target="_blank"
                 rel="noopener"
                 className="text-brand hover:underline underline-offset-2"

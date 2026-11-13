@@ -6,6 +6,7 @@ import { Amount } from '@/components/shared/amount';
 import { PendingButton } from '@/components/shared/pending-button';
 import { assignLigneJustifs } from '@/lib/actions/remboursements';
 import { formatKmRate, formatDistance } from '@/lib/services/km';
+import { justifUrl } from '@/lib/justif-url';
 
 export interface DetailLigne {
   id: string;
@@ -112,7 +113,7 @@ export function DetailDepensesTable({
                       {justifs.map((j) => (
                         <a
                           key={j.id}
-                          href={`/api/justificatifs/${j.file_path}`}
+                          href={justifUrl(j.file_path)}
                           target="_blank"
                           rel="noopener"
                           className="mt-1 flex items-center gap-1 text-[11.5px] text-fg-muted hover:text-brand transition-colors"

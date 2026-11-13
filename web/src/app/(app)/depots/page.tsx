@@ -12,6 +12,7 @@ import { CategoryPicker } from '@/components/shared/category-picker';
 import { EmptyState } from '@/components/shared/empty-state';
 import { PendingButton } from '@/components/shared/pending-button';
 import { getCurrentContext } from '@/lib/context';
+import { justifUrl } from '@/lib/justif-url';
 import { requireAdmin } from '@/lib/auth/access';
 import {
   listDepots,
@@ -268,7 +269,7 @@ function DepotRow({
               if (paths.length === 1) {
                 return (
                   <Link
-                    href={`/api/justificatifs/${paths[0]}`}
+                    href={justifUrl(paths[0])}
                     target="_blank"
                     rel="noopener"
                     className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-brand hover:underline underline-offset-2"
@@ -285,7 +286,7 @@ function DepotRow({
                   {paths.map((p, i) => (
                     <Link
                       key={p}
-                      href={`/api/justificatifs/${p}`}
+                      href={justifUrl(p)}
                       target="_blank"
                       rel="noopener"
                       className="text-brand hover:underline underline-offset-2"

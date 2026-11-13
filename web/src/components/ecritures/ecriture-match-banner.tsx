@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Amount } from '@/components/shared/amount';
 import { linkDepotToEcriture, linkRembToEcriture, rejectMatchForEcriture } from '@/lib/actions/depots';
 import type { EcritureMatch } from '@/lib/services/ecriture-match';
+import { justifUrl } from '@/lib/justif-url';
 
 // Bannière « un dépôt / remboursement semble correspondre ». Dépliable
 // (clic → détails pour vérifier le match), « Lier » en place (toast +
@@ -110,7 +111,7 @@ export function EcritureMatchBanner({
                 {match.justifPaths.map((p, i) => (
                   <a
                     key={p}
-                    href={`/api/justificatifs/${p}`}
+                    href={justifUrl(p)}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
