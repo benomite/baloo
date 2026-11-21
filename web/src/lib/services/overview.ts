@@ -1,6 +1,7 @@
 import { getDb } from '../db';
 import { formatAmount } from '../format';
 import type { Repartition } from './repartitions';
+import { horsFusionnesSql } from './ecritures-status';
 
 export interface OverviewContext {
   groupId: string;
@@ -127,12 +128,14 @@ export async function getOverview(
 ): Promise<OverviewData> {
   const db = getDb();
 
-  // Construction des bornes date pour le filtre exercice.
-  let dateClause = '';
+  // Construction des bornes date pour le filtre exercice. Porte aussi
+  // l'exclusion des brouillons absorbés par une fusion (montant déjà compté
+  // dans l'écriture fusionnée) : toutes les requêtes `e` ci-dessous la suivent.
+  let dateClause = horsFusionnesSql();
   const dateValues: unknown[] = [];
   if (filters.exercice) {
     const { start, end } = exerciceBounds(filters.exercice);
-    dateClause = ' AND e.date_ecriture >= ? AND e.date_ecriture <= ?';
+    dateClause += ' AND e.date_ecriture >= ? AND e.date_ecriture <= ?';
     dateValues.push(start, end);
   }
 
@@ -200,7 +203,7 @@ export async function getOverview(
 
   const sansJustif = await db.prepare(`
     SELECT COUNT(*) as count FROM ecritures e
-    WHERE e.group_id = ? AND e.type = 'depense' AND e.justif_attendu = 1
+    WHERE e.group_id = ? AND e.type = 'depense' AND e.justif_attendu = 1${horsFusionnesSql()}
     AND NOT EXISTS (SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id)
   `).get<{ count: number }>(groupId);
 
@@ -210,7 +213,7 @@ export async function getOverview(
   // pending_sync, divergent. `draft` est exclu car c'est un travail en
   // cours, pas un défaut de sync.
   const nonSync = await db.prepare(
-    "SELECT COUNT(*) as count FROM ecritures WHERE group_id = ? AND status NOT IN ('mirror', 'draft')"
+    `SELECT COUNT(*) as count FROM ecritures WHERE group_id = ? AND status NOT IN ('mirror', 'draft')${horsFusionnesSql('')}`
   ).get<{ count: number }>(groupId);
 
   const lastImport = await db.prepare(
@@ -221,7 +224,7 @@ export async function getOverview(
   // d'unité rattachée (tous statuts confondus, hors archived/refuse).
   // Pré-requis pour piloter des budgets par unité.
   const sansUniteEcr = await db.prepare(
-    "SELECT COUNT(*) as count FROM ecritures WHERE group_id = ? AND unite_id IS NULL",
+    `SELECT COUNT(*) as count FROM ecritures WHERE group_id = ? AND unite_id IS NULL${horsFusionnesSql('')}`,
   ).get<{ count: number }>(groupId);
 
   const sansUniteRbt = await db.prepare(
@@ -282,11 +285,12 @@ export async function getUniteOverview(
   );
   if (!unite) return null;
 
-  let dateClause = '';
+  // Exclut aussi les brouillons absorbés par une fusion (cf. getOverview).
+  let dateClause = horsFusionnesSql();
   const dateValues: unknown[] = [];
   if (filters.exercice) {
     const { start, end } = exerciceBounds(filters.exercice);
-    dateClause = ' AND e.date_ecriture >= ? AND e.date_ecriture <= ?';
+    dateClause += ' AND e.date_ecriture >= ? AND e.date_ecriture <= ?';
     dateValues.push(start, end);
   }
 
@@ -482,7 +486,7 @@ export async function getEcrituresHeaderTotals(
          COALESCE(SUM(CASE WHEN type = 'recette' THEN amount_cents ELSE 0 END), 0) as rec,
          COALESCE(SUM(CASE WHEN type = 'depense' THEN amount_cents ELSE 0 END), 0) as dep
        FROM ecritures
-       WHERE group_id = ? AND date_ecriture >= ? AND date_ecriture <= ?
+       WHERE group_id = ? AND date_ecriture >= ? AND date_ecriture <= ?${horsFusionnesSql('')}
          AND (category_id IS NULL OR category_id NOT IN (${exclus}))`,
     )
     .get<{ rec: number; dep: number }>(groupId, start, end, ...CATEGORIES_HORS_RESULTAT);

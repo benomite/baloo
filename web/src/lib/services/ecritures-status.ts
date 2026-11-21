@@ -74,6 +74,20 @@ export function pendingStatuses(): EcritureStatus[] {
   return [...PENDING_STATUSES];
 }
 
+// Brouillon absorbé par une fusion (ticket #49 : une famille qui paie en
+// plusieurs virements → une seule écriture). Il n'est jamais supprimé (règle
+// « JAMAIS de DELETE ») : il garde sa ligne bancaire — c'est ce qui empêche le
+// scan de le recréer — et pointe l'écriture qui l'a absorbé
+// (`fusionne_dans_id`). Son montant est déjà compté dans cette écriture :
+// toute somme, tout compte ou toute liste d'écritures doit l'exclure, d'où ce
+// fragment SQL à coller après un WHERE (alias de table en paramètre).
+export const STATUT_FUSIONNE = 'fusionne' as const satisfies EcritureStatus;
+
+export function horsFusionnesSql(alias = 'e'): string {
+  const col = alias ? `${alias}.status` : 'status';
+  return ` AND ${col} <> '${STATUT_FUSIONNE}'`;
+}
+
 // Frontière stricte du split UI « À traiter » / « Bouclées » :
 // seules les écritures `mirror` (miroir CW propre) sont bouclées.
 // Les `divergent` restent « À traiter » : un écart Baloo ↔ CW a été

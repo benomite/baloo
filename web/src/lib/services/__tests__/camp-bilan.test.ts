@@ -15,7 +15,8 @@ const SETUP_SQL = `
   CREATE TABLE ecritures (
     id TEXT PRIMARY KEY, group_id TEXT NOT NULL, activite_id TEXT, unite_id TEXT,
     date_ecriture TEXT NOT NULL, description TEXT NOT NULL, amount_cents INTEGER NOT NULL,
-    type TEXT NOT NULL, category_id TEXT, justif_attendu INTEGER NOT NULL DEFAULT 0
+    type TEXT NOT NULL, category_id TEXT, justif_attendu INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'mirror'
   );
   CREATE TABLE depots_justificatifs (
     id TEXT PRIMARY KEY, group_id TEXT NOT NULL, submitted_by_user_id TEXT,
@@ -76,6 +77,14 @@ describe('selectCampEcritures', () => {
   it('exclut les catégories hors résultat (transferts)', async () => {
     await insEcr(db, 'OK');
     await insEcr(db, 'T1', { cat: 'cat-depot-especes' });
+    const res = await selectCampEcritures(db, 'g1', 'ACT1', 'UNI1');
+    expect(res.map((e) => e.id)).toEqual(['OK']);
+  });
+
+  it('exclut un brouillon absorbé par une fusion (déjà compté dans l’écriture fusionnée, #49)', async () => {
+    await insEcr(db, 'OK');
+    await insEcr(db, 'F1');
+    await db.prepare("UPDATE ecritures SET status = 'fusionne' WHERE id = 'F1'").run();
     const res = await selectCampEcritures(db, 'g1', 'ACT1', 'UNI1');
     expect(res.map((e) => e.id)).toEqual(['OK']);
   });

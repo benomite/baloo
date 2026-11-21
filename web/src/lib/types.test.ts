@@ -13,9 +13,9 @@ import { describe, it, expect } from 'vitest';
 import { ECRITURE_STATUSES, type EcritureStatus } from './types';
 
 describe('ECRITURE_STATUSES', () => {
-  it('contient exactement les statuts cibles (pivot + réconciliation supprimee_cw)', () => {
+  it('contient exactement les statuts cibles (pivot + réconciliation supprimee_cw + fusion #49)', () => {
     expect([...ECRITURE_STATUSES].sort()).toEqual(
-      ['agrege_remplace', 'divergent', 'draft', 'mirror', 'pending_cw', 'pending_sync', 'supprimee_cw'],
+      ['agrege_remplace', 'divergent', 'draft', 'fusionne', 'mirror', 'pending_cw', 'pending_sync', 'supprimee_cw'],
     );
   });
 

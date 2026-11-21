@@ -8,6 +8,7 @@
 import type { DbWrapper } from '../../db';
 import { formatAmount } from '../../format';
 import type { BornesExercice } from './bornes';
+import { horsFusionnesSql, STATUT_FUSIONNE } from '../ecritures-status';
 
 export interface LigneControle {
   id: string;
@@ -43,7 +44,7 @@ export async function controleEcrituresSansJustif(
           AND e.type = 'depense'
           AND e.justif_attendu = 1
           AND e.date_ecriture >= ?
-          AND e.date_ecriture <= ?
+          AND e.date_ecriture <= ?${horsFusionnesSql()}
           AND NOT EXISTS (
             SELECT 1 FROM justificatifs j
              WHERE j.entity_type = 'ecriture'
@@ -161,8 +162,9 @@ export async function controleDepotsOrphelins(
 
 // Les écritures `supprimee_cw` et `agrege_remplace` sont des états terminaux
 // normaux du miroir (supprimée côté CW, agrégat DSP2 remplacé par ses
-// sous-lignes) : ce ne sont pas des écarts à corriger.
-const STATUTS_TERMINAUX = ['mirror', 'supprimee_cw', 'agrege_remplace'];
+// sous-lignes) : ce ne sont pas des écarts à corriger. Pas plus que `fusionne`
+// (brouillon absorbé par une fusion, compté dans l'écriture fusionnée).
+const STATUTS_TERMINAUX = ['mirror', 'supprimee_cw', 'agrege_remplace', STATUT_FUSIONNE];
 
 interface RowEcartMiroir {
   id: string;

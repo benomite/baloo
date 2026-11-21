@@ -63,6 +63,9 @@ const ECRITURES_COLUMNS_DDL = `
   -- libelle_origine → « à renommer »), (b) référence de rapprochement. Null
   -- pour les écritures saisies manuellement.
   libelle_origine TEXT,
+  -- Fusion de brouillons (ticket #49) : sur un brouillon absorbé (status
+  -- 'fusionne'), id de l écriture qui l a absorbé. Null sinon.
+  fusionne_dans_id TEXT,
   notes TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))

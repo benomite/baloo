@@ -1,6 +1,7 @@
 import { getDb } from '../db';
 import { currentTimestamp, nextId } from '../ids';
 import { attachJustificatif } from './justificatifs';
+import { STATUT_FUSIONNE } from './ecritures-status';
 import { attachTeleversement, depotFilesSql, type Televersement } from './justif-televersements';
 
 // Service de dépôt de justificatif libre (chantier 1, ADR à venir).
@@ -650,7 +651,9 @@ export async function listCandidateEcritures(
   opts: { amount_cents?: number | null; date_estimee?: string | null } = {},
 ): Promise<CandidateEcriture[]> {
   await ensureDepotsSchema();
-  const conditions: string[] = ['e.group_id = ?'];
+  // Un brouillon absorbé par une fusion ne reçoit plus de pièce : c'est
+  // l'écriture fusionnée qui les porte.
+  const conditions: string[] = ['e.group_id = ?', `e.status <> '${STATUT_FUSIONNE}'`];
   const values: unknown[] = [groupId];
 
   // Tolérance de matching : ±10% sur le montant, ±15j sur la date si fournis.
@@ -688,7 +691,7 @@ export async function listAllAttachableEcritures(
   opts: { excludeIds?: string[] } = {},
 ): Promise<CandidateEcriture[]> {
   await ensureDepotsSchema();
-  const conditions: string[] = ['e.group_id = ?'];
+  const conditions: string[] = ['e.group_id = ?', `e.status <> '${STATUT_FUSIONNE}'`];
   const values: unknown[] = [groupId];
   if (opts.excludeIds && opts.excludeIds.length > 0) {
     conditions.push(`e.id NOT IN (${opts.excludeIds.map(() => '?').join(',')})`);

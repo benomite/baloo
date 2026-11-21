@@ -2,6 +2,7 @@ import { getDb, type DbWrapper } from '../db';
 import { nextIdOn, currentTimestamp } from '../ids';
 import { uniteScopeSql } from '../scope';
 import { currentExercice, CATEGORIES_HORS_RESULTAT } from './overview';
+import { horsFusionnesSql } from './ecritures-status';
 import { ensureDepotsSchema } from './depots';
 import { buildCampBudgetRows, type CampBudgetRows, type CatAmount } from './camp-budget';
 
@@ -168,7 +169,7 @@ export async function selectCampRecettes(
             (SELECT r.id FROM remboursements r WHERE r.ecriture_id = e.id LIMIT 1) AS remboursement_id
      FROM ecritures e LEFT JOIN categories c ON c.id = e.category_id
      WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id = ? AND e.type = 'recette'
-       AND (e.category_id IS NULL OR e.category_id NOT IN (${EXCLUS}))
+       AND (e.category_id IS NULL OR e.category_id NOT IN (${EXCLUS}))${horsFusionnesSql()}
      ORDER BY e.date_ecriture DESC, e.id DESC`,
   ).all<EcritureCampRow>(groupId, activiteId, uniteId, ...CATEGORIES_HORS_RESULTAT);
 }
@@ -194,7 +195,7 @@ export async function getCampDashboard(ctx: CampContext, id: string): Promise<Ca
     `SELECT e.category_id AS categoryId, c.name AS categoryName, SUM(e.amount_cents) AS amountCents
      FROM ecritures e LEFT JOIN categories c ON c.id = e.category_id
      WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id = ? AND e.type = 'depense'
-       AND (e.category_id IS NULL OR e.category_id NOT IN (${EXCLUS}))
+       AND (e.category_id IS NULL OR e.category_id NOT IN (${EXCLUS}))${horsFusionnesSql()}
      GROUP BY e.category_id`,
   ).all<CatAmount>(ctx.groupId, camp.activite_id, camp.unite_id, ...CATEGORIES_HORS_RESULTAT);
 
@@ -212,7 +213,7 @@ export async function getCampDashboard(ctx: CampContext, id: string): Promise<Ca
     `SELECT e.category_id AS categoryId, c.name AS categoryName, SUM(e.amount_cents) AS amountCents
      FROM ecritures e LEFT JOIN categories c ON c.id = e.category_id
      WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id = ? AND e.type = 'recette'
-       AND (e.category_id IS NULL OR e.category_id NOT IN (${EXCLUS}))
+       AND (e.category_id IS NULL OR e.category_id NOT IN (${EXCLUS}))${horsFusionnesSql()}
      GROUP BY e.category_id`,
   ).all<CatAmount>(ctx.groupId, camp.activite_id, camp.unite_id, ...CATEGORIES_HORS_RESULTAT);
 
@@ -231,7 +232,7 @@ export async function getCampDashboard(ctx: CampContext, id: string): Promise<Ca
            EXISTS(SELECT 1 FROM justificatifs j WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id) AS has_justificatif,
            (SELECT r.id FROM remboursements r WHERE r.ecriture_id = e.id LIMIT 1) AS remboursement_id
     FROM ecritures e LEFT JOIN categories c ON c.id = e.category_id
-    WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id = ?`;
+    WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id = ?${horsFusionnesSql()}`;
 
   // Onglet Dépenses : ne montrer que les dépenses ici. Les recettes ont
   // leur propre onglet (« Paiements reçus », cf. selectCampRecettes).
@@ -263,7 +264,7 @@ export async function getCampDashboard(ctx: CampContext, id: string): Promise<Ca
   // pour éviter les trous silencieux ; à imputer depuis /ecritures.
   const orphelines = await db.prepare(
     `SELECT COUNT(*) AS n FROM ecritures e
-     WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id IS NULL`,
+     WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id IS NULL${horsFusionnesSql()}`,
   ).get<{ n: number }>(ctx.groupId, camp.activite_id);
 
   return { camp, rows, ecrituresRecentes, depotsEnAttente, justifsManquants, recettes, sansUniteCount: orphelines?.n ?? 0 };
