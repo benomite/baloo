@@ -67,7 +67,7 @@ async function submitEmail(email: string): Promise<string> {
 function logged(spy: ReturnType<typeof vi.spyOn>): string {
   return spy.mock.calls
     .flat()
-    .map((a) =>
+    .map((a: unknown) =>
       a instanceof Error ? `${a.name} ${a.message}` : typeof a === 'string' ? a : JSON.stringify(a),
     )
     .join('\n');
