@@ -76,6 +76,7 @@ const ECRITURE_STATUS_MAP: Record<string, { tone: StatusTone; label: string }> =
   divergent: { tone: 'danger', label: 'Divergent CW' },
   supprimee_cw: { tone: 'danger', label: 'Supprimée dans CW' },
   agrege_remplace: { tone: 'pending', label: 'Agrégat (doublon)' },
+  fusionne: { tone: 'neutral', label: 'Fusionné' },
 };
 
 export function EcritureStatusBadge({ status }: { status: string }) {

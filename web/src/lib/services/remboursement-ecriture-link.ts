@@ -5,6 +5,7 @@ import type { VentilationInput } from './ecritures-create';
 import { currentTimestamp, nextIdOn } from '../ids';
 import { getVentilationGroupTotal } from './ventilation-group';
 import { logError } from '../log';
+import { STATUT_FUSIONNE } from './ecritures-status';
 import { canLinkEcriture } from '../actions/remboursements/link-guard';
 
 // Service dédié à la liaison `remboursements.ecriture_id`. Trouve les
@@ -45,7 +46,7 @@ export async function findEcritureCandidatesForRembs(
   if (!rembs) return [];
   const target = Math.abs(rembs.total_cents ?? rembs.amount_cents ?? 0);
 
-  const conditions: string[] = ["e.group_id = ?", "e.type = 'depense'"];
+  const conditions: string[] = ["e.group_id = ?", "e.type = 'depense'", `e.status <> '${STATUT_FUSIONNE}'`];
   const params: unknown[] = [groupId];
 
   // Masque les sous-lignes internes d'un groupe de ventilation (pas de

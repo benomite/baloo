@@ -12,7 +12,8 @@ export type EcritureStatus =
   | 'mirror'
   | 'divergent'
   | 'supprimee_cw'
-  | 'agrege_remplace';
+  | 'agrege_remplace'
+  | 'fusionne';
 
 export const ECRITURE_STATUSES: readonly EcritureStatus[] = [
   'draft',
@@ -22,6 +23,7 @@ export const ECRITURE_STATUSES: readonly EcritureStatus[] = [
   'divergent',
   'supprimee_cw',
   'agrege_remplace',
+  'fusionne',
 ] as const;
 
 // Transitions provoquées par la sync ou l'arbitrage utilisateur. Les
@@ -35,6 +37,7 @@ const ALLOWED: Record<EcritureStatus, EcritureStatus[]> = {
   divergent: ['mirror', 'supprimee_cw'],
   supprimee_cw: ['draft'], // arbitrage : restaurer en brouillon local
   agrege_remplace: ['draft'], // arbitrage : restaurer si fausse détection
+  fusionne: [], // absorbé par une fusion de brouillons : ni la sync ni l'arbitrage n'y touchent
 };
 
 /**

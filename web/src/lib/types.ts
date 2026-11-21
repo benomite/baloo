@@ -44,6 +44,8 @@ export const ECRITURE_STATUSES = [
   'divergent',
   'supprimee_cw',
   'agrege_remplace',
+  // Brouillon absorbé par une fusion de brouillons (cf. ecritures-fusion.ts).
+  'fusionne',
 ] as const;
 export type EcritureStatus = (typeof ECRITURE_STATUSES)[number];
 
@@ -99,6 +101,8 @@ export interface Ecriture {
   // Libellé bancaire brut figé à la génération d'un brouillon depuis la banque
   // (null si saisie manuelle). Sert au nudge « titre à renommer » + rapprochement.
   libelle_origine: string | null;
+  // Brouillon absorbé (status 'fusionne') : id de l'écriture qui l'a absorbé.
+  fusionne_dans_id?: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;

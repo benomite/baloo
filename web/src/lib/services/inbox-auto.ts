@@ -2,6 +2,7 @@ import { getDb } from '../db';
 import { ensureDepotsSchema, attachDepotToEcriture } from './depots';
 import { loadRejectedPairKeys, rejetPairKey } from './inbox-rejets';
 import { logError } from '../log';
+import { horsFusionnesSql } from './ecritures-status';
 
 // Auto-rapprochement : appelé au chargement de /inbox. Lie en silence
 // les paires (écriture, justif) avec match ultra-parfait pour
@@ -45,7 +46,7 @@ export async function applyAutoLinks(groupId: string): Promise<AutoLinkResult> {
        FROM ecritures e
        WHERE e.group_id = ?
          AND e.type = 'depense'
-         AND e.justif_attendu = 1
+         AND e.justif_attendu = 1${horsFusionnesSql()}
          AND NOT EXISTS (
            SELECT 1 FROM justificatifs j
            WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id

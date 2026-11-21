@@ -3,7 +3,7 @@ import { currentTimestamp } from '../ids';
 import { nullIfEmpty } from '../utils/form';
 import { uniteScopeSql } from '../scope';
 import { isModeTransfert, type Ecriture, type EcritureStatus, type EcritureType, type ModeTransfert } from '../types';
-import { isMirrorStatus, pendingStatuses } from './ecritures-status';
+import { isMirrorStatus, pendingStatuses, STATUT_FUSIONNE } from './ecritures-status';
 import { purgeRejetsPourEcriture } from './inbox-rejets';
 
 export interface EcritureContext {
@@ -122,6 +122,11 @@ export async function listEcritures(
   } else if (filters.status) {
     conditions.push('e.status = ?');
     values.push(filters.status);
+  } else {
+    // Brouillon absorbé par une fusion : son montant est dans l'écriture
+    // fusionnée, le journal n'en montre qu'une ligne. Visible seulement en
+    // le demandant (filtre statut `fusionne`).
+    conditions.push(`e.status <> '${STATUT_FUSIONNE}'`);
   }
   if (filters.bucket === 'bouclees') {
     conditions.push("e.status = 'mirror'");
@@ -323,7 +328,10 @@ export async function updateEcriture(
   // les champs internes Baloo (notes, justif_attendu) modifiables ; la
   // résolution d'un divergent passera par la sync de retour, pas par
   // une édition locale.
-  const lockSync = isMirrorStatus(current.status);
+  // Un brouillon absorbé par une fusion est figé de la même façon : son
+  // montant vit dans l'écriture fusionnée, l'éditer ne changerait rien de
+  // visible et brouillerait la trace.
+  const lockSync = isMirrorStatus(current.status) || current.status === STATUT_FUSIONNE;
 
   const sets: string[] = [];
   const values: unknown[] = [];
@@ -542,7 +550,7 @@ export async function batchUpdateEcritures(
     .prepare(`SELECT id, status, description FROM ecritures WHERE group_id = ? AND id IN (${placeholders})`)
     .all<{ id: string; status: string; description: string }>(groupId, ...ids);
 
-  const editable = rows.filter((r) => !isMirrorStatus(r.status));
+  const editable = rows.filter((r) => !isMirrorStatus(r.status) && r.status !== STATUT_FUSIONNE);
   const skipped = ids.length - editable.length;
   if (editable.length === 0) return { updated: 0, skipped };
 

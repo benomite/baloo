@@ -48,9 +48,10 @@ describe('ecritures tools (Vague 4 — étendus)', () => {
     });
   });
 
-  it('expose list_ecritures + update_ecriture + batch_update_ecritures + ventiler_ecriture (sans create_ecriture)', () => {
+  it('expose list_ecritures + update_ecriture + batch_update_ecritures + ventiler_ecriture + fusionner_brouillons (sans create_ecriture)', () => {
     expect(Object.keys(tools).sort()).toEqual([
       'batch_update_ecritures',
+      'fusionner_brouillons',
       'list_ecritures',
       'update_ecriture',
       'ventiler_ecriture',

@@ -1,6 +1,7 @@
 import { getDb } from '../db';
 import { nextIdOn, currentTimestamp } from '../ids';
 import { ensureCampsSchema, getCamp, type CampContext } from './camps';
+import { horsFusionnesSql } from './ecritures-status';
 import {
   validateCloture,
   buildAvancesSummary,
@@ -204,7 +205,7 @@ export async function listEcrituresCandidatesAvance(
     .prepare(
       `SELECT e.id, e.date_ecriture, e.description, e.amount_cents
        FROM ecritures e
-       WHERE e.group_id = ? AND e.type = 'depense'
+       WHERE e.group_id = ? AND e.type = 'depense'${horsFusionnesSql()}
        ORDER BY e.date_ecriture DESC, e.id DESC
        LIMIT 30`,
     )
