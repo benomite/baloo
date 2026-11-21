@@ -202,14 +202,29 @@ export async function migrateEcrituresStatus(db: DbWrapper): Promise<void> {
  * Transfert interne (#51) : élargit la CHECK SQL de `ecritures.type` à
  * 'transfert_interne' et ajoute la colonne `mode_transfert`.
  *
- * SQLite ne sait pas modifier une CHECK : on reconstruit la table (même
- * schéma de DROP + RENAME que `migrateEcrituresStatus`). La copie porte sur
- * TOUTES les colonnes présentes dans l'ancienne table ET dans la nouvelle
- * (lues par PRAGMA, pas une liste figée : les colonnes ajoutées par ALTER au
- * fil des chantiers — cw_numero_piece, ventilation_group_id, libelle_origine…
- * — sont conservées). Aucune ligne perdue (règle CLAUDE.md « JAMAIS de
- * DELETE »). Les index d'écritures, y compris ceux posés par les `ensure*`,
- * sont recréés après le RENAME.
+ * #55 — JAMAIS de reconstruction de `ecritures` (CREATE ecritures_new +
+ * DROP TABLE ecritures + RENAME) : sur libSQL distant, `PRAGMA foreign_keys
+ * = OFF` envoyé à part n'a aucun effet (chaque appel peut partir sur une autre
+ * connexion) ; le DROP de la table peuplée est refusé par les clés étrangères
+ * de remboursements / depots_* / justificatifs… (panne prod du 2026-11-21).
+ *
+ * À la place, on remplace la seule colonne `type`, par ALTER, sans toucher aux
+ * lignes ni aux clés (`id` reste en place, aucune FK n'est vérifiée) :
+ *   1. ADD COLUMN type_v51 avec la CHECK élargie ;
+ *   2. UPDATE type_v51 = type (même ligne, rien d'autre ne bouge) ;
+ *   3. DROP des index qui portent sur `type` (DROP COLUMN les refuse) ;
+ *   4. DROP COLUMN type, puis RENAME COLUMN type_v51 TO type ;
+ *   5. ADD COLUMN mode_transfert s'il manque ; recréation des index de l'étape 3.
+ * Le tout part en UN SEUL `exec` encadré par BEGIN/COMMIT : une seule requête,
+ * donc une seule connexion même en distant, et atomique — si une étape échoue,
+ * la transaction est annulée (libsql local : ROLLBACK de `executeMultiple` ;
+ * distant : fermeture du flux) et la table reste telle qu'avant.
+ *
+ * ADD COLUMN NOT NULL exige un DEFAULT : `type` y gagne DEFAULT 'depense',
+ * inatteignable en pratique (tous les INSERT du code fournissent `type`).
+ *
+ * Une `ecritures_new` laissée par les tentatives échouées de l'ancienne
+ * migration est d'abord retirée (cf. `retirerEcrituresNewOrpheline`).
  *
  * Idempotente : no-op si la CHECK accepte déjà 'transfert_interne' ; dans ce
  * cas, ajoute seulement `mode_transfert` par ALTER s'il manque.
@@ -221,42 +236,97 @@ export async function migrateEcrituresTransfertInterne(db: DbWrapper): Promise<v
     .get<{ sql: string }>();
   if (!def?.sql) return; // table pas encore créée (BDD vierge : CREATE l'inclut)
 
+  await retirerEcrituresNewOrpheline(db);
+
+  const cols = await db.prepare('PRAGMA table_info(ecritures)').all<{ name: string }>();
+  const ajoutModeTransfert = cols.some((c) => c.name === 'mode_transfert')
+    ? ''
+    : 'ALTER TABLE ecritures ADD COLUMN mode_transfert TEXT;';
+
   const checkSansTransfert =
     /CHECK\s*\(\s*type\s+IN\s*\(/i.test(def.sql) && !def.sql.includes("'transfert_interne'");
   if (!checkSansTransfert) {
-    const cols = await db.prepare('PRAGMA table_info(ecritures)').all<{ name: string }>();
-    if (!cols.some((c) => c.name === 'mode_transfert')) {
-      await db.exec('ALTER TABLE ecritures ADD COLUMN mode_transfert TEXT');
-    }
+    if (ajoutModeTransfert) await db.exec(ajoutModeTransfert);
     return;
   }
 
-  const fkRow = await db.prepare('PRAGMA foreign_keys').get<{ foreign_keys: number }>();
-  const fkWasOn = (fkRow?.foreign_keys ?? 0) === 1;
-  await db.exec('PRAGMA foreign_keys = OFF');
-  try {
-    await db.exec('DROP TABLE IF EXISTS ecritures_new');
-    await db.exec(`CREATE TABLE ecritures_new (${ECRITURES_COLUMNS_DDL});`);
-    const anciennes = await db.prepare('PRAGMA table_info(ecritures)').all<{ name: string }>();
-    const nouvelles = new Set(
-      (await db.prepare('PRAGMA table_info(ecritures_new)').all<{ name: string }>()).map((c) => c.name),
-    );
-    const copyCols = anciennes.map((c) => c.name).filter((n) => nouvelles.has(n)).join(', ');
-    await db.exec(`
-      INSERT INTO ecritures_new (${copyCols}) SELECT ${copyCols} FROM ecritures;
-      DROP TABLE ecritures;
-      ALTER TABLE ecritures_new RENAME TO ecritures;
-    `);
-    await db.exec(ECRITURES_INDEXES_DDL);
-    await db.exec(`
+  // Index (explicites) qui portent sur `type` : à retirer avant DROP COLUMN,
+  // recréés à l'identique (leur SQL d'origine) une fois la colonne renommée.
+  const indexes = await db
+    .prepare("SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name='ecritures' AND sql IS NOT NULL")
+    .all<{ name: string; sql: string }>();
+  const surType: { name: string; sql: string }[] = [];
+  for (const idx of indexes) {
+    const info = await db.prepare(`PRAGMA index_info("${idx.name}")`).all<{ name: string | null }>();
+    if (info.some((c) => c.name === 'type')) surType.push(idx);
+  }
+  // Index canoniques d'écritures (comme l'ancienne reconstruction les
+  // reposait), en IF NOT EXISTS, pour ceux dont les colonnes existent.
+  const presentes = new Set([...cols.map((c) => c.name), 'mode_transfert']);
+  const canoniques = [
+    ...`${ECRITURES_INDEXES_DDL}
       CREATE INDEX IF NOT EXISTS idx_ecritures_cw_numero_piece ON ecritures(cw_numero_piece);
       CREATE INDEX IF NOT EXISTS idx_ecritures_ventilation_group ON ecritures(ventilation_group_id);
-    `);
-  } finally {
-    if (fkWasOn) {
-      await db.exec('PRAGMA foreign_keys = ON');
+    `.matchAll(/CREATE INDEX IF NOT EXISTS \w+ ON ecritures\(([^)]+)\);/g),
+  ]
+    .filter((m) => m[1].split(',').every((c) => presentes.has(c.trim())))
+    .map((m) => m[0]);
+
+  await db.exec(`
+    BEGIN;
+    ALTER TABLE ecritures ADD COLUMN type_v51 TEXT NOT NULL DEFAULT 'depense'
+      CHECK(type_v51 IN ('depense', 'recette', 'transfert_interne'));
+    UPDATE ecritures SET type_v51 = type;
+    ${surType.map((i) => `DROP INDEX "${i.name}";`).join('\n')}
+    ALTER TABLE ecritures DROP COLUMN type;
+    ALTER TABLE ecritures RENAME COLUMN type_v51 TO type;
+    ${ajoutModeTransfert}
+    ${surType.map((i) => `${i.sql};`).join('\n')}
+    ${canoniques.join('\n')}
+    COMMIT;
+  `);
+}
+
+/**
+ * #55 — Les tentatives échouées de l'ancienne migration (reconstruction) ont
+ * laissé une table `ecritures_new` en production. On la retire seulement si
+ * c'est sans risque :
+ *   - aucune table ne la référence par clé étrangère ;
+ *   - chacune de ses lignes a son `id` dans `ecritures` (simple copie : rien
+ *     qui n'existerait que là).
+ * Sinon on la laisse en place (avertissement en log) : jamais de donnée perdue.
+ */
+async function retirerEcrituresNewOrpheline(db: DbWrapper): Promise<void> {
+  const reste = await db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ecritures_new'")
+    .get<{ name: string }>();
+  if (!reste) return;
+
+  const tables = await db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+    .all<{ name: string }>();
+  for (const { name } of tables) {
+    const fks = await db.prepare(`PRAGMA foreign_key_list("${name}")`).all<{ table: string }>();
+    if (fks.some((f) => f.table === 'ecritures_new')) {
+      console.warn(`[business-schema] ecritures_new conservée : la table ${name} la référence.`);
+      return;
     }
   }
+
+  const colsNew = await db.prepare('PRAGMA table_info(ecritures_new)').all<{ name: string }>();
+  const absentes = colsNew.some((c) => c.name === 'id')
+    ? await db
+        .prepare(
+          'SELECT COUNT(*) AS n FROM ecritures_new n WHERE NOT EXISTS (SELECT 1 FROM ecritures e WHERE e.id = n.id)',
+        )
+        .get<{ n: number }>()
+    : await db.prepare('SELECT COUNT(*) AS n FROM ecritures_new').get<{ n: number }>();
+  if ((absentes?.n ?? 0) > 0) {
+    console.warn(`[business-schema] ecritures_new conservée : ${absentes?.n} ligne(s) absente(s) de ecritures.`);
+    return;
+  }
+
+  await db.exec('DROP TABLE ecritures_new');
 }
 
 // Schéma des tables métier (référentiels, annuaire, ecritures,
