@@ -1,5 +1,6 @@
 import { getDb, type DbWrapper } from '../db';
 import { currentExercice, CATEGORIES_HORS_RESULTAT } from './overview';
+import { horsFusionnesSql } from './ecritures-status';
 import { ensureDepotsSchema } from './depots';
 import { buildCampBudgetRows, type CampBudgetRows, type CatAmount } from './camp-budget';
 import { getCamp, ensureCampsSchema, type Camp, type CampContext } from './camps';
@@ -32,7 +33,7 @@ const BILAN_ECR_SELECT = `
          (SELECT r.id FROM remboursements r WHERE r.ecriture_id = e.id LIMIT 1) AS remboursement_id
   FROM ecritures e LEFT JOIN categories c ON c.id = e.category_id
   WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id = ?
-    AND (e.category_id IS NULL OR e.category_id NOT IN (${EXCLUS}))
+    AND (e.category_id IS NULL OR e.category_id NOT IN (${EXCLUS}))${horsFusionnesSql()}
   ORDER BY e.date_ecriture DESC, e.id DESC`;
 
 export async function selectCampEcritures(
@@ -149,7 +150,7 @@ export async function getCampBilan(ctx: CampContext, id: string): Promise<CampBi
   const sansUnite = await db
     .prepare(
       `SELECT COUNT(*) AS n FROM ecritures e
-       WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id IS NULL`,
+       WHERE e.group_id = ? AND e.activite_id = ? AND e.unite_id IS NULL${horsFusionnesSql()}`,
     )
     .get<{ n: number }>(groupId, act);
 

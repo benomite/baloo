@@ -1,6 +1,7 @@
 import { getDb } from '../db';
 import { nextId, currentTimestamp } from '../ids';
 import type { DepotEspeces } from '../types';
+import { horsFusionnesSql } from './ecritures-status';
 
 export interface DepotsEspecesContext {
   groupId: string;
@@ -117,7 +118,7 @@ export async function listCandidateEcrituresForDepot(
               e.numero_piece, e.status
        FROM ecritures e
        WHERE e.group_id = ?
-         AND e.type = 'recette'
+         AND e.type = 'recette'${horsFusionnesSql()}
          AND ABS(e.amount_cents - ?) <= ?
          AND ABS(julianday(e.date_ecriture) - julianday(?)) <= 15
          AND NOT EXISTS (

@@ -13,7 +13,8 @@ const SETUP_SQL = `
   CREATE TABLE ecritures (
     id TEXT PRIMARY KEY, group_id TEXT NOT NULL, activite_id TEXT, unite_id TEXT,
     date_ecriture TEXT NOT NULL, description TEXT NOT NULL, amount_cents INTEGER NOT NULL,
-    type TEXT NOT NULL, category_id TEXT, justif_attendu INTEGER NOT NULL DEFAULT 0
+    type TEXT NOT NULL, category_id TEXT, justif_attendu INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'mirror'
   );
 `;
 

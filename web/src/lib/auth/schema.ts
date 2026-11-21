@@ -687,5 +687,14 @@ export async function ensureAuthSchema(): Promise<void> {
     'CREATE INDEX IF NOT EXISTS idx_ecritures_ventilation_group ON ecritures(ventilation_group_id)',
   );
 
+  // Fusion de brouillons (ticket #49) : un brouillon absorbé pointe
+  // l'écriture qui l'a absorbé. Nullable, aucun backfill.
+  if (!hasEcr('fusionne_dans_id')) {
+    await db.exec('ALTER TABLE ecritures ADD COLUMN fusionne_dans_id TEXT');
+  }
+  await db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_ecritures_fusionne_dans ON ecritures(fusionne_dans_id)',
+  );
+
   ensured = true;
 }

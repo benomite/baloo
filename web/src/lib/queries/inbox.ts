@@ -2,7 +2,7 @@ import { getCurrentContext } from '../context';
 import { getDb } from '../db';
 import { ensureDepotsSchema } from '../services/depots';
 import { loadRejectedPairKeys } from '../services/inbox-rejets';
-import { pendingStatuses } from '../services/ecritures-status';
+import { pendingStatuses, horsFusionnesSql, STATUT_FUSIONNE } from '../services/ecritures-status';
 import {
   computeAutoSuggestions,
   computeRembSuggestions,
@@ -88,6 +88,7 @@ export async function listInboxItems(
   const conditions: string[] = [
     'e.group_id = ?',
     'e.justif_attendu = 1',
+    `e.status <> '${STATUT_FUSIONNE}'`,
     `NOT EXISTS (
        SELECT 1 FROM justificatifs j
        WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id
@@ -221,7 +222,7 @@ export async function countInboxItems(groupId: string): Promise<number> {
          FROM ecritures e
          WHERE e.group_id = ?
            AND e.type = 'depense'
-           AND e.justif_attendu = 1
+           AND e.justif_attendu = 1${horsFusionnesSql()}
            AND NOT EXISTS (
              SELECT 1 FROM justificatifs j
              WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id
@@ -271,7 +272,7 @@ export async function findSuggestionsForEcriture(
               un.code AS unite_code
        FROM ecritures e
        LEFT JOIN unites un ON un.id = e.unite_id
-       WHERE e.id = ? AND e.group_id = ? AND e.justif_attendu = 1`,
+       WHERE e.id = ? AND e.group_id = ? AND e.justif_attendu = 1${horsFusionnesSql()}`,
     )
     .get<InboxEcriture>(ecritureId, ctx.groupId);
 
@@ -340,7 +341,7 @@ export async function findSuggestionsForDepot(
        FROM ecritures e
        LEFT JOIN unites un ON un.id = e.unite_id
        WHERE e.group_id = ?
-         AND e.justif_attendu = 1
+         AND e.justif_attendu = 1${horsFusionnesSql()}
          AND NOT EXISTS (
            SELECT 1 FROM justificatifs j
            WHERE j.entity_type = 'ecriture' AND j.entity_id = e.id

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { McpContext } from '../auth';
 import { listEcritures, updateEcriture, batchUpdateEcritures } from '@/lib/services/ecritures';
 import { ventilateDraft, VENTILATE_MESSAGES } from '@/lib/services/ecritures-ventilate';
+import { fusionnerBrouillons } from '@/lib/services/ecritures-fusion';
 import { ECRITURE_STATUSES, type EcritureStatus } from '@/lib/types';
 import { pendingStatuses } from '@/lib/services/ecritures-status';
 import { parseAmount } from '@/lib/format';
@@ -22,7 +23,7 @@ export function registerEcrituresTools(server: McpServer, ctx: McpContext) {
   // lieu de l'ancien flag comptaweb_synced=0.
   server.tool(
     'list_ecritures',
-    'Liste les écritures comptables, filtrables par type, période, statut, catégorie, mode de paiement, carte, ID Comptaweb. Par défaut, renvoie toutes statuts confondus (ajuste avec `status` ou `pending_only`). Chaque écriture porte `titre_a_renommer` (1 = la description est encore le libellé bancaire brut, à personnaliser via update_ecriture) et `libelle_origine` (le libellé bancaire brut figé).',
+    'Liste les écritures comptables, filtrables par type, période, statut, catégorie, mode de paiement, carte, ID Comptaweb. Par défaut, renvoie tous statuts confondus sauf les brouillons absorbés par une fusion (`status: "fusionne"` pour les voir, avec `fusionne_dans_id`) ; ajuste avec `status` ou `pending_only`. Chaque écriture porte `titre_a_renommer` (1 = la description est encore le libellé bancaire brut, à personnaliser via update_ecriture) et `libelle_origine` (le libellé bancaire brut figé).',
     {
       type: z.enum(['depense', 'recette']).optional(),
       date_debut: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -279,6 +280,71 @@ export function registerEcrituresTools(server: McpServer, ctx: McpContext) {
           },
         ],
       };
+    },
+  );
+
+  // ─── fusionner_brouillons ─────────────────────────────────────────────
+  //
+  // Ticket #49 : une famille paie une même chose en plusieurs virements → un
+  // brouillon par ligne bancaire, une seule écriture en compta. Délègue à
+  // `fusionnerBrouillons` : la cible garde son id et reçoit la somme, les
+  // pièces et les notes des absorbés ; les absorbés passent en `fusionne`
+  // (jamais supprimés, gardent leur ligne bancaire → le scan ne les recrée
+  // pas). Purement local, aucun envoi Comptaweb (ADR-037).
+  server.tool(
+    'fusionner_brouillons',
+    [
+      "Fusionne plusieurs brouillons (draft) en UNE écriture — typiquement une famille qui paie une même chose en plusieurs virements.",
+      "La cible garde son id, ses justificatifs et sa ligne bancaire ; son montant devient la SOMME de tous les brouillons.",
+      "Les brouillons absorbés passent au statut 'fusionne' (fusionne_dans_id = la cible) : ils sortent du journal et des brouillons à traiter,",
+      "la sync ne les recrée pas, et leurs justificatifs / dépôts / remboursements / notes sont reportés sur la cible.",
+      "La cible reste reliée à toutes les lignes bancaires d'origine (champ lignes_bancaires de la réponse) pour le rapprochement dans Comptaweb.",
+      "Intitulé et imputation : ceux de la cible par défaut, ou ceux passés ici. `ventilations` découpe l'écriture fusionnée (somme = total).",
+      "Refusé pour toute écriture qui n'est pas un brouillon (déjà envoyée à Comptaweb ou miroir). Opération PUREMENT LOCALE, aucun envoi vers Comptaweb.",
+      "Pour retrouver une fusion : list_ecritures(status='fusionne').",
+    ].join(' '),
+    {
+      cible_id: z.string().describe("ID du brouillon conservé (ex: ECR-2026-123)."),
+      absorbes_ids: z
+        .array(z.string())
+        .min(1)
+        .describe('IDs des brouillons à absorber dans la cible.'),
+      description: z.string().optional().describe("Intitulé de l'écriture fusionnée (par défaut celui de la cible)."),
+      category_id: z.string().nullish().describe('Nature / catégorie (cf. list_categories). Par défaut celle de la cible.'),
+      unite_id: z.string().nullish().describe('Unité (cf. list_unites). Par défaut celle de la cible.'),
+      activite_id: z.string().nullish().describe('Activité (cf. list_activites). Par défaut celle de la cible.'),
+      ventilations: z
+        .array(
+          z.object({
+            montant: z.string().describe('Montant au format français, ex: "150,00".'),
+            category_id: z.string().nullish(),
+            unite_id: z.string().nullish(),
+            activite_id: z.string().nullish(),
+          }),
+        )
+        .min(1)
+        .optional()
+        .describe("Découpage optionnel de l'écriture fusionnée ; la somme doit égaler le total fusionné."),
+    },
+    async ({ cible_id, absorbes_ids, description, category_id, unite_id, activite_id, ventilations }) => {
+      const result = await fusionnerBrouillons(ecritureCtx, {
+        cibleId: cible_id,
+        absorbesIds: absorbes_ids,
+        description,
+        category_id,
+        unite_id,
+        activite_id,
+        ventilations: ventilations?.map((v) => ({
+          amount_cents: parseAmount(v.montant),
+          category_id: v.category_id ?? null,
+          unite_id: v.unite_id ?? null,
+          activite_id: v.activite_id ?? null,
+        })),
+      });
+      if (!result.ok) {
+        return { content: [{ type: 'text' as const, text: result.message }], isError: true };
+      }
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
     },
   );
 }

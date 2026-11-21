@@ -1,6 +1,7 @@
 import { getDb, type DbWrapper } from '../db';
 import { formatAmount } from '../format';
 import { CATEGORIES_HORS_RESULTAT, currentExercice, exerciceBounds } from './overview';
+import { horsFusionnesSql } from './ecritures-status';
 
 // Vue « Année » : le réalisé d'un exercice par unité, hors camps.
 //
@@ -86,7 +87,8 @@ function perimetreSql(excludeActiviteIds: string[]): string {
     ? ` AND (e.activite_id IS NULL OR e.activite_id NOT IN (${excludeActiviteIds.map(() => '?').join(',')}))`
     : '';
   const horsResultat = ` AND (e.category_id IS NULL OR e.category_id NOT IN (${CATEGORIES_HORS_RESULTAT.map(() => '?').join(',')}))`;
-  return ` AND e.date_ecriture >= ? AND e.date_ecriture <= ?${horsActivites}${horsResultat}`;
+  // Brouillon absorbé par une fusion : déjà compté dans l'écriture fusionnée.
+  return ` AND e.date_ecriture >= ? AND e.date_ecriture <= ?${horsActivites}${horsResultat}${horsFusionnesSql()}`;
 }
 
 function perimetreValues(bornes: Bornes, excludeActiviteIds: string[]): unknown[] {
