@@ -4,7 +4,7 @@ import type { McpContext } from '../auth';
 import { listEcritures, updateEcriture, batchUpdateEcritures } from '@/lib/services/ecritures';
 import { ventilateDraft, VENTILATE_MESSAGES } from '@/lib/services/ecritures-ventilate';
 import { fusionnerBrouillons } from '@/lib/services/ecritures-fusion';
-import { ECRITURE_STATUSES, type EcritureStatus } from '@/lib/types';
+import { ECRITURE_STATUSES, ECRITURE_TYPES, MODES_TRANSFERT, type EcritureStatus } from '@/lib/types';
 import { pendingStatuses } from '@/lib/services/ecritures-status';
 import { parseAmount } from '@/lib/format';
 
@@ -25,7 +25,7 @@ export function registerEcrituresTools(server: McpServer, ctx: McpContext) {
     'list_ecritures',
     'Liste les écritures comptables, filtrables par type, période, statut, catégorie, mode de paiement, carte, ID Comptaweb. Par défaut, renvoie tous statuts confondus sauf les brouillons absorbés par une fusion (`status: "fusionne"` pour les voir, avec `fusionne_dans_id`) ; ajuste avec `status` ou `pending_only`. Chaque écriture porte `titre_a_renommer` (1 = la description est encore le libellé bancaire brut, à personnaliser via update_ecriture) et `libelle_origine` (le libellé bancaire brut figé).',
     {
-      type: z.enum(['depense', 'recette']).optional(),
+      type: z.enum(ECRITURE_TYPES).optional(),
       date_debut: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       date_fin: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
@@ -121,6 +121,12 @@ export function registerEcrituresTools(server: McpServer, ctx: McpContext) {
       'BRUT (ex. « PAIEMENT C. PROC … FR FRANCE ») jamais personnalisé. Renseigner un titre parlant (ce qui a été payé / la',
       'famille / l\'objet) via `description` est une étape importante du nettoyage compta — non bloquante, mais à PROPOSER',
       'systématiquement quand tu traites un brouillon. Ce titre partira tel quel dans Comptaweb à la validation.',
+      'TRANSFERT INTERNE : un brouillon bancaire qui est un dépôt d\'espèces en banque, un retrait d\'espèces ou un',
+      'transfert d\'espèces n\'est ni une dépense ni une recette — qualifie-le avec `type: "transfert_interne"` et',
+      '`mode_transfert` (depot_especes / retrait_especes / transfert_especes). Il ne demande alors ni catégorie, ni',
+      'unité, ni activité, ni mode de paiement, ni justificatif, et sort des totaux. Lie-le ensuite à la caisse :',
+      'rapprocher_depot_especes (dépôt) ou rapprocher_retrait_especes (retrait), ou crée l\'opération avec',
+      'create_depot_especes / create_retrait_especes en passant `ecriture_id`.',
     ].join(' '),
     {
       id: z.string().describe('ID de l\'écriture (ex: DEP-2026-001 ou REC-2026-005)'),
@@ -136,7 +142,12 @@ export function registerEcrituresTools(server: McpServer, ctx: McpContext) {
       description: z.string().min(1).optional(),
       amount_cents: z.number().int().optional(),
       montant: z.string().optional().describe('Alternative à amount_cents : montant formaté FR (ex: "42,50").'),
-      type: z.enum(['depense', 'recette']).optional(),
+      type: z.enum(ECRITURE_TYPES).optional(),
+      mode_transfert: z
+        .enum(MODES_TRANSFERT)
+        .nullable()
+        .optional()
+        .describe('Mode du transfert interne (avec type="transfert_interne") : dépôt, retrait ou transfert d\'espèces.'),
       // Champs Baloo-only : modifiables quel que soit le statut.
       notes: z.string().nullable().optional(),
       justif_attendu: z.union([z.boolean(), z.literal(0), z.literal(1)]).optional(),
@@ -163,6 +174,8 @@ export function registerEcrituresTools(server: McpServer, ctx: McpContext) {
                 ecriture: {
                   id: updated.id,
                   status: updated.status as EcritureStatus,
+                  type: updated.type,
+                  mode_transfert: updated.mode_transfert ?? null,
                   category_id: updated.category_id,
                   unite_id: updated.unite_id,
                   activite_id: updated.activite_id,

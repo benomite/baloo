@@ -11,7 +11,7 @@ import {
 } from '@/lib/services/ecritures-create';
 import { getDb } from '@/lib/db';
 import { ensureBusinessSchema } from '@/lib/db/business-schema';
-import { ECRITURE_STATUSES } from '@/lib/types';
+import { ECRITURE_STATUSES, ECRITURE_TYPES } from '@/lib/types';
 import { jsonError, parseJsonBody, requireApiContext } from '@/lib/api/route-helpers';
 import { resolveStatusFilter } from './status-filter';
 import { ensureComptawebEnv } from '@/lib/comptaweb/env-loader';
@@ -31,7 +31,7 @@ const listSchema = z
   .object({
     unite_id: z.string().optional(),
     category_id: z.string().optional(),
-    type: z.enum(['depense', 'recette']).optional(),
+    type: z.enum(ECRITURE_TYPES).optional(),
     date_debut: z.string().optional(),
     date_fin: z.string().optional(),
     mode_paiement_id: z.string().optional(),

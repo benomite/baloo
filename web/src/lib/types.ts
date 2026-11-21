@@ -8,8 +8,22 @@
 // dans des CHECK fragiles (users.role, remboursements.status) a été
 // déplacée en code (ADR-019, P2-workflows 2-bis).
 
-export const ECRITURE_TYPES = ['depense', 'recette'] as const;
+// `transfert_interne` (#51) : « Transfert interne à la structure » de
+// Comptaweb — ni dépense ni recette (dépôt / retrait / transfert d'espèces
+// entre la banque et la caisse). Hors des totaux, qui filtrent sur
+// `type = 'depense'` / `type = 'recette'`.
+export const ECRITURE_TYPES = ['depense', 'recette', 'transfert_interne'] as const;
 export type EcritureType = (typeof ECRITURE_TYPES)[number];
+
+// Mode d'un transfert interne = mode de transaction Comptaweb du formulaire
+// « Transfert interne à la structure ». Libellés CW : cf. MODE_TRANSFERT_CW_LABELS
+// (comptaweb/ecritures-write.ts) ; libellés UI : TERMS.transfertInterne.
+export const MODES_TRANSFERT = ['depot_especes', 'retrait_especes', 'transfert_especes'] as const;
+export type ModeTransfert = (typeof MODES_TRANSFERT)[number];
+
+export function isModeTransfert(v: unknown): v is ModeTransfert {
+  return typeof v === 'string' && (MODES_TRANSFERT as readonly string[]).includes(v);
+}
 
 // Cycle de vie d'une écriture vis-à-vis de Comptaweb (pivot Phase 1
 // "miroir strict + MCP-first") :
@@ -54,7 +68,9 @@ export type JustificatifStatus = (typeof JUSTIFICATIF_STATUSES)[number];
 export const DEPOT_TYPES = ['banque', 'ancv'] as const;
 export type DepotType = (typeof DEPOT_TYPES)[number];
 
-export const MOUVEMENT_CAISSE_TYPES = ['entree', 'sortie', 'depot'] as const;
+// 'depot' = caisse → banque (montant négatif) ; 'retrait' = banque → caisse
+// (montant positif, #51).
+export const MOUVEMENT_CAISSE_TYPES = ['entree', 'sortie', 'depot', 'retrait'] as const;
 export type MouvementCaisseType = (typeof MOUVEMENT_CAISSE_TYPES)[number];
 
 export const MOUVEMENT_CAISSE_STATUSES = ['saisi', 'depose', 'rapproche'] as const;
@@ -68,6 +84,8 @@ export interface Ecriture {
   description: string;
   amount_cents: number;
   type: EcritureType;
+  // Renseigné seulement quand type = 'transfert_interne' (sinon null).
+  mode_transfert?: ModeTransfert | null;
   category_id: string | null;
   mode_paiement_id: string | null;
   activite_id: string | null;

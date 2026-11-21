@@ -2,7 +2,7 @@ import { getDb, type DbWrapper } from '../db';
 import { currentTimestamp } from '../ids';
 import { nullIfEmpty } from '../utils/form';
 import { uniteScopeSql } from '../scope';
-import type { Ecriture, EcritureStatus } from '../types';
+import { isModeTransfert, type Ecriture, type EcritureStatus, type EcritureType, type ModeTransfert } from '../types';
 import { isMirrorStatus, pendingStatuses, STATUT_FUSIONNE } from './ecritures-status';
 import { purgeRejetsPourEcriture } from './inbox-rejets';
 
@@ -60,12 +60,19 @@ export function computeMissingFields(e: {
   unite_id: string | null;
   mode_paiement_id: string | null;
   type: string;
+  mode_transfert?: string | null;
   numero_piece: string | null;
   justif_attendu: number;
   has_justificatif?: boolean;
   remboursement_id?: string | null;
 }): string[] {
   const missing: string[] = [];
+  // Transfert interne (#51) : ni nature, ni activité, ni unité, ni mode de
+  // paiement, ni justificatif — Comptaweb ne demande que le mode de transfert.
+  if (e.type === 'transfert_interne') {
+    if (!isMirrorStatus(e.status) && !e.mode_transfert) missing.push('mode de transfert');
+    return missing;
+  }
   // Tant que l'écriture n'est pas dans CW (mirror/divergent), elle est
   // "à compléter" si un champ d'imputation manque. Couvre les nouveaux
   // statuts pending (draft/pending_cw/pending_sync) à la fois.
@@ -266,7 +273,10 @@ export interface UpdateEcritureInput {
   date_ecriture?: string;
   description?: string;
   amount_cents?: number;
-  type?: 'depense' | 'recette';
+  type?: EcritureType;
+  // Mode du transfert interne. Ignoré si le type résultant n'est pas
+  // 'transfert_interne' ; vidé quand l'écriture redevient dépense/recette.
+  mode_transfert?: ModeTransfert | null;
   unite_id?: string | null;
   category_id?: string | null;
   mode_paiement_id?: string | null;
@@ -290,7 +300,7 @@ export interface UpdateEcritureInput {
 // `category_id` et `activite_id` en sont volontairement absents (propres à la
 // ligne), ainsi que `notes` (contenu saisi, jamais écrasé ailleurs).
 const PIECE_FIELDS: readonly string[] = [
-  'date_ecriture', 'description', 'type', 'mode_paiement_id', 'carte_id', 'numero_piece', 'justif_attendu',
+  'date_ecriture', 'description', 'type', 'mode_transfert', 'mode_paiement_id', 'carte_id', 'numero_piece', 'justif_attendu',
 ];
 
 const INLINE_FIELDS_SYNC = ['unite_id', 'category_id', 'activite_id', 'mode_paiement_id', 'carte_id', 'description'] as const;
@@ -308,9 +318,12 @@ export async function updateEcriture(
   // transition de statut/comptaweb_synced restent applicables. Les autres
   // champs sont silencieusement ignorés — l'UX renvoie déjà la lecture seule.
   const current = await getDb()
-    .prepare('SELECT status, ventilation_group_id FROM ecritures WHERE id = ? AND group_id = ?')
-    .get<{ status: string; ventilation_group_id: string | null }>(id, groupId);
+    .prepare('SELECT status, type, ventilation_group_id FROM ecritures WHERE id = ? AND group_id = ?')
+    .get<{ status: string; type: string; ventilation_group_id: string | null }>(id, groupId);
   if (!current) return null;
+  if (patch.mode_transfert !== undefined && patch.mode_transfert !== null && !isModeTransfert(patch.mode_transfert)) {
+    throw new Error(`Mode de transfert invalide : ${String(patch.mode_transfert)}.`);
+  }
   // Lock sync : écriture déjà côté Comptaweb (mirror/divergent). On laisse
   // les champs internes Baloo (notes, justif_attendu) modifiables ; la
   // résolution d'un divergent passera par la sync de retour, pas par
@@ -327,6 +340,15 @@ export async function updateEcriture(
   if (!lockSync && patch.description !== undefined) { sets.push('description = ?'); values.push(patch.description); }
   if (!lockSync && patch.amount_cents !== undefined) { sets.push('amount_cents = ?'); values.push(patch.amount_cents); }
   if (!lockSync && patch.type !== undefined) { sets.push('type = ?'); values.push(patch.type); }
+  // Mode de transfert : n'a de sens que pour un transfert interne. Posé si le
+  // type résultant est 'transfert_interne' ; vidé quand l'écriture cesse d'en
+  // être un (sinon un mode fantôme survivrait à un retour en recette).
+  const typeFinal = patch.type ?? current.type;
+  if (!lockSync && typeFinal === 'transfert_interne' && patch.mode_transfert !== undefined) {
+    sets.push('mode_transfert = ?'); values.push(patch.mode_transfert);
+  } else if (!lockSync && current.type === 'transfert_interne' && typeFinal !== 'transfert_interne') {
+    sets.push('mode_transfert = ?'); values.push(null);
+  }
   if (!lockSync && patch.unite_id !== undefined) { sets.push('unite_id = ?'); values.push(nullIfEmpty(patch.unite_id)); }
   if (!lockSync && patch.category_id !== undefined) { sets.push('category_id = ?'); values.push(nullIfEmpty(patch.category_id)); }
   if (!lockSync && patch.mode_paiement_id !== undefined) { sets.push('mode_paiement_id = ?'); values.push(nullIfEmpty(patch.mode_paiement_id)); }

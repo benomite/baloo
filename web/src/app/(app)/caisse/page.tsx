@@ -34,6 +34,7 @@ const TYPE_LABEL: Record<MouvementCaisseType, string> = {
   entree: '↗ Entrée',
   sortie: '↘ Sortie',
   depot: '🏦 Dépôt',
+  retrait: '🏦 Retrait',
 };
 
 const STATUS_LABEL: Record<MouvementCaisseStatus, string> = {

@@ -60,6 +60,9 @@ vi.mock('@/components/ecritures/panel-valider-button', () => ({
 vi.mock('@/components/ecritures/panel-more-menu', () => ({
   PanelMoreMenu: () => <div data-testid="more-menu" />,
 }));
+vi.mock('@/components/ecritures/transfert-interne-card', () => ({
+  TransfertInterneCard: () => <div data-testid="transfert-interne-card" />,
+}));
 
 import { EcritureInlinePanel } from '../ecriture-inline-panel';
 

@@ -93,6 +93,12 @@ function collectMissing(
   opts: { scope: 'imputation' | 'entete'; prefix?: string },
 ): void {
   const prefix = opts.prefix ?? '';
+  // Transfert interne (#51) : pas d'imputation (catégorie / unité / activité)
+  // ni de mode de paiement — seul le mode de transfert est demandé.
+  if (ecriture.type === 'transfert_interne') {
+    if (opts.scope === 'entete' && !ecriture.mode_transfert) missing.push('mode de transfert');
+    return;
+  }
   const checkMapped = (label: string, id: string | null, list: RefMaybe[]) => {
     if (!id) {
       missing.push(`${prefix}${label}`);

@@ -95,7 +95,8 @@ export async function createDepotEspeces(
 }
 
 // Liste les écritures candidates pour rapprocher un dépôt espèces.
-// Critères : recette, pas encore liée à un autre dépôt, montant exact
+// Critères : recette ou transfert interne « dépôt d'espèces » (#51), pas
+// encore liée à un autre dépôt, montant exact
 // ou tolérance ±10%, date ±15j. Triées par proximité de montant puis
 // de date.
 export interface CandidateEcritureBanque {
@@ -118,7 +119,8 @@ export async function listCandidateEcrituresForDepot(
               e.numero_piece, e.status
        FROM ecritures e
        WHERE e.group_id = ?
-         AND e.type = 'recette'${horsFusionnesSql()}
+         AND (e.type = 'recette'
+              OR (e.type = 'transfert_interne' AND e.mode_transfert = 'depot_especes'))${horsFusionnesSql()}
          AND ABS(e.amount_cents - ?) <= ?
          AND ABS(julianday(e.date_ecriture) - julianday(?)) <= 15
          AND NOT EXISTS (
@@ -175,6 +177,18 @@ export async function attachDepotEspecesToEcriture(
        WHERE depot_id = ? AND group_id = ?`,
     )
     .run(depotId, groupId);
+
+  // Transfert interne (#51) encore brouillon : il prend le n° de pièce du
+  // dépôt (celui de son mouvement de caisse) s'il n'en a pas. Il partira tel
+  // quel dans Comptaweb, où la ligne caisse du transfert portera donc le même
+  // n° que le mouvement Baloo (clé de la sync caisse). Une recette déjà dans
+  // Comptaweb n'est jamais touchée.
+  await db
+    .prepare(
+      `UPDATE ecritures SET numero_piece = COALESCE(numero_piece, ?)
+       WHERE id = ? AND group_id = ? AND type = 'transfert_interne' AND status = 'draft'`,
+    )
+    .run(depotId, ecritureId, groupId);
 
   return (await getDepotEspeces({ groupId }, depotId))!;
 }

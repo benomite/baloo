@@ -105,7 +105,14 @@ export interface VentilationInput {
 }
 
 export interface CreateEcritureInput {
-  type: EcritureType;
+  // 'transfert_interne' (#51) = 3e option du select « depenserecette » :
+  // « Transfert interne à la structure ».
+  type: EcritureType | 'transfert_interne';
+  // Transfert interne seulement : mode choisi par l'utilisateur. Résolu au
+  // POST en option du select `modetransaction` par son libellé Comptaweb
+  // (« Caisse (dépôt) »…), comme l'utilisateur le choisirait dans le
+  // formulaire — `modetransactionId` est alors ignoré.
+  modeTransfert?: 'depot_especes' | 'retrait_especes' | 'transfert_especes';
   libel: string;
   dateecriture: string;
   montant: string;

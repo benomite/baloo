@@ -32,6 +32,7 @@ import type { DbWrapper } from '../db';
 import { nextIdOn, currentTimestamp } from '../ids';
 import { nullIfEmpty } from '../utils/form';
 import type { ComptawebConfig } from '../comptaweb/types';
+import type { ModeTransfert } from '../types';
 
 // Erreur dédiée pour l'échec du push CW (scraper rejette ou
 // `cwConfigLoader` plante). Porte l'`ecritureId` du draft rétrogradé
@@ -86,7 +87,11 @@ export interface EcriturePayload {
   date_ecriture: string; // ISO YYYY-MM-DD
   description: string;
   amount_cents: number; // TOTAL (= Σ ventilations)
-  type: 'depense' | 'recette';
+  // 'transfert_interne' (#51) : seul le chemin de validation d'un brouillon
+  // (`syncDraftToComptaweb`) le produit ; la création directe reste
+  // dépense/recette (schéma de la route POST /api/ecritures).
+  type: 'depense' | 'recette' | 'transfert_interne';
+  mode_transfert?: ModeTransfert | null;
   mode_paiement_id?: string | null;
   numero_piece?: string | null;
   carte_id?: string | null;

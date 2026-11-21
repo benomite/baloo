@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { getEcriture, updateEcriture } from '@/lib/services/ecritures';
-import { ECRITURE_STATUSES } from '@/lib/types';
+import { ECRITURE_STATUSES, ECRITURE_TYPES, MODES_TRANSFERT } from '@/lib/types';
 import { jsonError, parseJsonBody, requireApiContext } from '@/lib/api/route-helpers';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -17,7 +17,9 @@ const patchSchema = z.object({
   date_ecriture: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   description: z.string().optional(),
   amount_cents: z.number().int().optional(),
-  type: z.enum(['depense', 'recette']).optional(),
+  type: z.enum(ECRITURE_TYPES).optional(),
+  // Transfert interne (#51) : mode Comptaweb du transfert.
+  mode_transfert: z.enum(MODES_TRANSFERT).nullish(),
   unite_id: z.string().nullish(),
   category_id: z.string().nullish(),
   mode_paiement_id: z.string().nullish(),
