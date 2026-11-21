@@ -4,7 +4,10 @@
 // `ecritures_new` laissée en place quand la retirer pourrait perdre quelque
 // chose. Libsql distant simulé : FK actives, PRAGMA foreign_keys = OFF sans effet.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createClient } from '@libsql/client';
 import { wrapClient, type DbWrapper } from '../db';
 import { migrateEcrituresTransfertInterne } from './business-schema';
@@ -166,5 +169,67 @@ describe('migration transfert interne sans reconstruction (#55)', () => {
 
     expect(await tableExiste('ecritures_new')).toBe(false);
     expect((await etat() as { ecritures: unknown[] }).ecritures).toHaveLength(2);
+  });
+});
+
+describe('scripts/check-ecritures-counts.ts', () => {
+  const envAvant = { DB_PATH: process.env.DB_PATH, DB_URL: process.env.DB_URL };
+  let sortie: string[];
+
+  // Lance le vrai script sur une base fichier temporaire préparée par `sql`.
+  async function lancer(sql: string): Promise<{ code?: number }> {
+    const chemin = join(mkdtempSync(join(tmpdir(), 'counts-55-')), 'base.db');
+    await wrapClient(createClient({ url: `file:${chemin}` })).exec(sql);
+    process.env.DB_PATH = chemin;
+    delete process.env.DB_URL;
+    sortie = [];
+    const res: { code?: number } = {};
+    vi.spyOn(console, 'log').mockImplementation((l: string) => void sortie.push(l));
+    vi.spyOn(console, 'error').mockImplementation((l: unknown) => void sortie.push(`ERR ${String(l)}`));
+    vi.spyOn(process, 'exit').mockImplementation(((c?: number) => {
+      res.code = c;
+    }) as never);
+    vi.resetModules();
+    const { fini } = await import('../../../scripts/check-ecritures-counts');
+    await fini;
+    vi.restoreAllMocks();
+    return res;
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    for (const [cle, valeur] of Object.entries(envAvant)) {
+      if (valeur === undefined) delete process.env[cle];
+      else process.env[cle] = valeur;
+    }
+  });
+
+  it('affiche ecritures, chaque table qui la référence, et ecritures_new restante', async () => {
+    const res = await lancer(`
+      ${AVANT_51}
+      CREATE TABLE unites (id TEXT PRIMARY KEY);
+      CREATE TABLE personnes (id TEXT PRIMARY KEY, unite_id TEXT REFERENCES unites(id));
+      INSERT INTO unites VALUES ('U1');
+      CREATE TABLE ecritures_new (id TEXT PRIMARY KEY);
+      INSERT INTO ecritures_new VALUES ('E1');
+    `);
+    expect(res.code).toBeUndefined();
+    expect(sortie).toEqual([
+      'ecritures       2',
+      'depots_especes  1',
+      'remboursements  1',
+      'ecritures_new   1   (vestige de l’ancienne migration)',
+    ]);
+  });
+
+  it('sans ecritures_new : rien de plus', async () => {
+    await lancer(AVANT_51);
+    expect(sortie).toEqual(['ecritures       2', 'depots_especes  1', 'remboursements  1']);
+  });
+
+  it('base sans table ecritures : message et code de sortie 1', async () => {
+    const res = await lancer('CREATE TABLE autre (id TEXT PRIMARY KEY);');
+    expect(res.code).toBe(1);
+    expect(sortie).toEqual(['ERR Pas de table ecritures dans cette base.']);
   });
 });

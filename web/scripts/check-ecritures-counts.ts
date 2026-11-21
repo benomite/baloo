@@ -9,14 +9,16 @@
 // copie de la base de production :
 //   1. lancer le script sur la copie, garder la sortie ;
 //   2. lancer l'app (ou `ensureBusinessSchema`) sur cette copie ;
-//   3. relancer le script et comparer : chaque nombre doit être identique.
+//   3. relancer le script et comparer : chaque nombre doit être identique
+//      (seule la ligne `ecritures_new` peut disparaître).
 //
 // Usage :
 //   DB_PATH=../data/copie-prod.db pnpm exec tsx scripts/check-ecritures-counts.ts
 //   pnpm exec tsx --env-file=.env.copie scripts/check-ecritures-counts.ts   (DB_URL + DB_AUTH_TOKEN)
 //
-// Sortie : une ligne `<table> <nombre>` par table, ecritures en premier.
-// Code de sortie 1 si la base n'a pas de table `ecritures`.
+// Sortie : une ligne `<table>  <nombre>` par table, ecritures en premier.
+// Code de sortie 1 si la base n'a pas de table `ecritures` ou si une lecture
+// échoue.
 
 import { getDb } from '../src/lib/db';
 
@@ -29,6 +31,7 @@ async function main() {
   if (!noms.includes('ecritures')) {
     console.error('Pas de table ecritures dans cette base.');
     process.exit(1);
+    return;
   }
 
   const referentes: string[] = [];
@@ -46,7 +49,8 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+// Exporté pour le test (business-schema.migration.test.ts), qui attend la fin.
+export const fini = main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
