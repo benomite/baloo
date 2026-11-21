@@ -68,12 +68,10 @@ describe('createEcriture — transfert interne (corps POST)', () => {
     expect(Object.keys(r.postBody ?? {}).some((k) => k.includes('ecriturecomptabledetails'))).toBe(false);
   });
 
-  it('un transfert sans libellé reste signalé', async () => {
-    const r = await createEcriture({ baseUrl: 'https://cw.test', cookie: '' }, { ...transfert('depot_especes'), libel: ' ' }, { dryRun: true });
-    expect(r.warnings).toEqual(['libel vide']);
-  });
+  it('un transfert sans libellé reste signalé ; une dépense garde ses options et exige une ventilation', async () => {
+    const t = await createEcriture({ baseUrl: 'https://cw.test', cookie: '' }, { ...transfert('depot_especes'), libel: ' ' }, { dryRun: true });
+    expect(t.warnings).toEqual(['libel vide']);
 
-  it('une dépense garde ses options et exige toujours une ventilation', async () => {
     const r = await createEcriture(
       { baseUrl: 'https://cw.test', cookie: '' },
       { ...transfert(undefined), type: 'depense', modetransactionId: '1', tiersCategId: '10' },

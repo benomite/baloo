@@ -12,7 +12,7 @@ import {
   listRetraitsEspecesEnAttente,
   getOperationCaisseLiee,
 } from '../caisse';
-import { listCandidateEcrituresForDepot } from '../depots-especes';
+import { listCandidateEcrituresForDepot, attachDepotEspecesToEcriture } from '../depots-especes';
 
 let testDb: DbWrapper;
 vi.mock('../../db', async (importOriginal) => {
@@ -72,17 +72,16 @@ async function ligne(id: string) {
 }
 
 describe('updateEcriture — type et mode de transfert', () => {
-  it('redevenir recette vide le mode', async () => {
+  it('redevenir recette vide le mode ; une écriture déjà dans Comptaweb ne bouge pas', async () => {
     await updateEcriture(g, 'E1', { type: 'recette' });
     expect(await ligne('E1')).toMatchObject({ type: 'recette', mode_transfert: null });
+    await updateEcriture(g, 'M1', { type: 'recette', mode_transfert: 'retrait_especes' });
+    expect(await ligne('M1')).toMatchObject({ type: 'transfert_interne', mode_transfert: 'depot_especes' });
   });
 
-  it('changer seulement le mode d’un transfert', async () => {
+  it('changer seulement le mode d’un transfert ; un mode sur une recette est ignoré', async () => {
     await updateEcriture(g, 'E1', { mode_transfert: 'transfert_especes' });
     expect(await ligne('E1')).toMatchObject({ type: 'transfert_interne', mode_transfert: 'transfert_especes' });
-  });
-
-  it('un mode sur une recette est ignoré', async () => {
     await updateEcriture(g, 'R1', { mode_transfert: 'depot_especes' });
     expect(await ligne('R1')).toMatchObject({ type: 'recette', mode_transfert: null });
   });
@@ -96,11 +95,6 @@ describe('updateEcriture — type et mode de transfert', () => {
     await updateEcriture(g, 'E1', { mode_transfert: null });
     expect(await ligne('E1')).toMatchObject({ type: 'transfert_interne', mode_transfert: null });
   });
-
-  it('écriture déjà dans Comptaweb : ni type ni mode ne bougent', async () => {
-    await updateEcriture(g, 'M1', { type: 'recette', mode_transfert: 'retrait_especes' });
-    expect(await ligne('M1')).toMatchObject({ type: 'transfert_interne', mode_transfert: 'depot_especes' });
-  });
 });
 
 describe('computeMissingFields — transfert interne', () => {
@@ -108,27 +102,21 @@ describe('computeMissingFields — transfert interne', () => {
     status: 'draft', category_id: null, activite_id: null, unite_id: null, mode_paiement_id: null,
     type: 'transfert_interne', numero_piece: null, justif_attendu: 1,
   };
-  it('sans mode : seul le mode manque', () => {
+  it('sans mode : seul le mode manque, sauf une fois dans Comptaweb — une dépense garde ses champs', () => {
     expect(computeMissingFields({ ...base, mode_transfert: null })).toEqual(['mode de transfert']);
-  });
-  it('déjà dans Comptaweb : plus rien à compléter', () => {
     expect(computeMissingFields({ ...base, status: 'mirror', mode_transfert: null })).toEqual([]);
-  });
-  it('une dépense garde ses champs obligatoires', () => {
     expect(computeMissingFields({ ...base, type: 'depense' })).toEqual(['nature', 'activité', 'unité', 'mode', 'justif']);
   });
 });
 
 describe('dépôt d’espèces depuis un brouillon', () => {
-  it('écriture inconnue : erreur, aucun dépôt créé', async () => {
+  it('écriture inconnue : erreur, aucun dépôt créé ; sans brouillon : dépôt en attente', async () => {
     await expect(
       createDepotEspecesAvecMouvement(g, { date_depot: '2026-10-03', total_amount_cents: 25000, ecriture_id: 'NOPE' }),
     ).rejects.toThrow(/introuvable/);
     const n = await testDb.prepare('SELECT COUNT(*) AS n FROM depots_especes').get<{ n: number }>();
     expect(n?.n).toBe(0);
-  });
 
-  it('sans brouillon : dépôt en attente, comme avant', async () => {
     const { depot, mouvement } = await createDepotEspecesAvecMouvement(g, { date_depot: '2026-10-03', total_amount_cents: 25000 });
     expect(depot.ecriture_id).toBeNull();
     expect(mouvement.status).toBe('depose');
@@ -206,9 +194,18 @@ describe('retrait d’espèces', () => {
 });
 
 describe('getOperationCaisseLiee', () => {
-  it('dépôt lié au brouillon', async () => {
-    const { depot } = await createDepotEspecesAvecMouvement(g, { date_depot: '2026-10-03', total_amount_cents: 25000, ecriture_id: 'E1' });
+  it('dépôt lié au brouillon, qui prend le n° de pièce du dépôt', async () => {
+    const { depot, mouvement } = await createDepotEspecesAvecMouvement(g, { date_depot: '2026-10-03', total_amount_cents: 25000, ecriture_id: 'E1' });
     expect(await getOperationCaisseLiee(g, 'E1')).toMatchObject({ kind: 'depot', depot: { id: depot.id, ecriture_id: 'E1' } });
+    expect(await ligne('E1')).toMatchObject({ numero_piece: depot.id });
+    expect(mouvement.numero_piece).toBe(depot.id);
+
+    // Une recette liée à un dépôt garde son n° de pièce (vide ici).
+    await testDb
+      .prepare("INSERT INTO depots_especes (id, group_id, date_depot, total_amount_cents) VALUES ('DES-R', 'g1', '2026-10-03', 25000)")
+      .run();
+    await attachDepotEspecesToEcriture(g, 'DES-R', 'R1');
+    expect(await ligne('R1')).toMatchObject({ numero_piece: null });
   });
 
   it('rien de lié : null (un retrait non rapproché ne compte pas)', async () => {

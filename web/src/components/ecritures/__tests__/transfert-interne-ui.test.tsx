@@ -169,7 +169,7 @@ describe('EcritureFormFields — type « Transfert interne »', () => {
 
 describe('CwAssistActions — « Tout copier » d’un transfert interne', () => {
   it('copie le type et le mode tels que dans le formulaire Comptaweb', async () => {
-    const writeText = vi.fn(async (_texte: string) => undefined);
+    const writeText = vi.fn<(texte: string) => Promise<void>>(async () => undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true });
     render(
       <CwAssistActions
@@ -190,7 +190,7 @@ describe('CwAssistActions — « Tout copier » d’un transfert interne', () =>
   });
 
   it('une dépense n’a pas de ligne « Mode »', async () => {
-    const writeText = vi.fn(async (_texte: string) => undefined);
+    const writeText = vi.fn<(texte: string) => Promise<void>>(async () => undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true });
     render(<CwAssistActions payload={{ date_ecriture: '2026-10-03', description: 'Achat', amount_cents: 100, type: 'depense' }} />);
     fireEvent.click(screen.getByTestId('cw-assist-copy'));

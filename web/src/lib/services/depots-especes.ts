@@ -178,5 +178,17 @@ export async function attachDepotEspecesToEcriture(
     )
     .run(depotId, groupId);
 
+  // Transfert interne (#51) encore brouillon : il prend le n° de pièce du
+  // dépôt (celui de son mouvement de caisse) s'il n'en a pas. Il partira tel
+  // quel dans Comptaweb, où la ligne caisse du transfert portera donc le même
+  // n° que le mouvement Baloo (clé de la sync caisse). Une recette déjà dans
+  // Comptaweb n'est jamais touchée.
+  await db
+    .prepare(
+      `UPDATE ecritures SET numero_piece = COALESCE(numero_piece, ?)
+       WHERE id = ? AND group_id = ? AND type = 'transfert_interne' AND status = 'draft'`,
+    )
+    .run(depotId, ecritureId, groupId);
+
   return (await getDepotEspeces({ groupId }, depotId))!;
 }

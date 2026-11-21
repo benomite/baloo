@@ -25,20 +25,17 @@ describe('readiness — transfert interne', () => {
     expect(computeGroupReadiness([ecriture({})], refs).level).toBe('ready');
   });
 
-  it('sans mode : seul le mode de transfert manque', () => {
+  it('sans mode : seul le mode de transfert manque — une recette garde son imputation', () => {
     expect(computeReadiness(ecriture({ mode_transfert: null }), refs)).toMatchObject({
       level: 'incomplete',
       missingFields: ['mode de transfert'],
     });
+    const r = computeReadiness(ecriture({ type: 'recette', mode_transfert: null }), refs);
+    expect(r.missingFields).toEqual(['catégorie', 'unité', 'activité', 'mode de paiement']);
   });
 
   it('pièce de deux lignes sans mode : le mode (en-tête) n’est demandé qu’une fois', () => {
     const r = computeGroupReadiness([ecriture({ mode_transfert: null }), ecriture({ id: 'E2', mode_transfert: null })], refs);
     expect(r.missingFields).toEqual(['mode de transfert']);
-  });
-
-  it('une recette sans imputation reste incomplète', () => {
-    const r = computeReadiness(ecriture({ type: 'recette', mode_transfert: null }), refs);
-    expect(r.missingFields).toEqual(['catégorie', 'unité', 'activité', 'mode de paiement']);
   });
 });
