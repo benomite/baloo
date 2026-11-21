@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { signIn, auth } from '@/lib/auth/auth';
 import { getDb } from '@/lib/db';
 import { logError } from '@/lib/log';
+import { isInfraError } from '@/lib/auth/infra-error';
 import { verifyLoginCode } from '@/lib/auth/login-codes';
 import { createDbSession, buildSessionCookie } from '@/lib/auth/session-mint';
 import { markUserConnected } from '@/lib/auth/invite-links';
@@ -52,6 +53,13 @@ export default async function LoginPage({
     } catch (err) {
       // Une vraie redirection Auth.js doit remonter (ne pas l'avaler).
       if (isRedirectError(err)) throw err;
+      // Panne d'infra (BDD, schéma) : aucun mail n'est parti, on ne ment pas
+      // à l'utilisateur. Message identique pour tout email (pas de fuite
+      // d'existence). Log structuré, préfixe stable à alerter.
+      if (isInfraError(err)) {
+        logError('auth', 'login indisponible : erreur infrastructure (BDD/schéma)', err);
+        redirect('/login?error=login_unavailable');
+      }
       // Sinon on logge mais on continue : ne rien révéler sur l'existence
       // de l'email (anti-énumération) — on affiche toujours l'étape code.
       logError('auth', 'signIn email (étape code) a échoué', err, { email: rawEmail });
@@ -138,6 +146,8 @@ function errorLabel(code: string): string {
       return "Ce lien d'accès direct a expiré ou n'est plus valide. Demande-en un nouveau au trésorier.";
     case 'InviteError':
       return "Impossible d'ouvrir ce lien d'accès direct. Réessaie ou demande un nouveau lien au trésorier.";
+    case 'login_unavailable':
+      return 'Connexion temporairement indisponible. Réessaie dans quelques minutes.';
     case 'code_invalid':
       return 'Code incorrect. Vérifie les 6 chiffres reçus par mail.';
     case 'code_expired':
