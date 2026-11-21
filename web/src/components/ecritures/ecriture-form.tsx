@@ -11,6 +11,7 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { PendingButton } from '@/components/shared/pending-button';
 import { CategoryPicker } from '@/components/shared/category-picker';
 import { keepSelectable, isUnmapped } from '@/lib/selectable';
+import { TERMS } from '@/lib/glossary';
 import type { VentilationRow } from './ventilations-form';
 import type { Category, Unite, ModePaiement, Activite, Carte, Ecriture } from '@/lib/types';
 
@@ -148,6 +149,12 @@ export function EcritureFormFields({
             >
               <option value="depense">Dépense</option>
               <option value="recette">Recette</option>
+              {/* Transfert interne (#51) : qualifié dans le panneau (« Nature de
+                  l'opération ») ; proposé ici pour qu'un enregistrement du
+                  formulaire ne le repasse pas en dépense. */}
+              {ecriture?.type === 'transfert_interne' ? (
+                <option value="transfert_interne">{TERMS.transfertInterne.singular}</option>
+              ) : null}
             </NativeSelect>
           </Field>
         </div>

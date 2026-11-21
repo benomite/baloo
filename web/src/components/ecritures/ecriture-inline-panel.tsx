@@ -16,6 +16,7 @@ import { ResyncEcritureButton } from '@/components/ecritures/resync-ecriture-but
 import { DeleteDraftButton } from '@/components/ecritures/delete-draft-button';
 import { PanelValiderButton } from '@/components/ecritures/panel-valider-button';
 import { PanelMoreMenu } from '@/components/ecritures/panel-more-menu';
+import { TransfertInterneCard } from '@/components/ecritures/transfert-interne-card';
 import { updateEcriture, updateEcritureField, fetchEcritureDetail } from '@/lib/actions/ecritures';
 import { computeGroupReadiness } from '@/lib/sync-readiness';
 import { panelViewModel } from '@/components/ecritures/panel-view-model';
@@ -220,6 +221,7 @@ export function EcritureInlinePanel({
     description: ecriture.description,
     amount_cents: ecriture.amount_cents,
     type: ecriture.type,
+    mode_transfert: ecriture.mode_transfert,
     category_id: ecriture.category_id,
     mode_paiement_id: ecriture.mode_paiement_id,
     unite_id: ecriture.unite_id,
@@ -252,35 +254,44 @@ export function EcritureInlinePanel({
         </div>
       ) : (
         <div className="space-y-4">
+          {/* Nature (#51) : dépense / recette / transfert interne + lien caisse,
+              sur un brouillon issu de la banque. */}
+          {vm.showNature ? (
+            <TransfertInterneCard ecriture={ecriture} onChanged={() => void refreshRow?.(ecriture.id)} />
+          ) : null}
+
           {/* IMPUTATION EN TÊTE : grille unifiée mono/ventilé. En mono, édition
               champ par champ (PATCH). Ventilable seulement pour un draft local
               (canVentilate) → sinon la grille reste mono. La `key` inclut
               `updated_at` pour REMONTER la grille après un PATCH mono (elle ne
-              se resynchronise pas seule depuis `initialLines`). */}
-          <ImputationGrid
-            key={`imp-${ecriture.id}-${ecriture.updated_at}`}
-            totalCents={ventTotalCents}
-            initialLines={ventInitialLines}
-            categories={categories}
-            topCategoryIds={topCategoryIds}
-            sens={ecriture.type}
-            unites={unites}
-            activites={activites}
-            editable={vm.editable}
-            canVentilate={canVentilate}
-            onMonoFieldChange={handleMonoField}
-            onSaveVentilation={canVentilate ? handleVentilate : async () => {}}
-            saving={ventSaving}
-            startVentilated={isMultiCategory}
-          />
+              se resynchronise pas seule depuis `initialLines`). Sans objet pour
+              un transfert interne (ni catégorie, ni unité, ni activité). */}
+          {vm.showImputation ? (
+            <ImputationGrid
+              key={`imp-${ecriture.id}-${ecriture.updated_at}`}
+              totalCents={ventTotalCents}
+              initialLines={ventInitialLines}
+              categories={categories}
+              topCategoryIds={topCategoryIds}
+              sens={ecriture.type as 'depense' | 'recette'}
+              unites={unites}
+              activites={activites}
+              editable={vm.editable}
+              canVentilate={canVentilate}
+              onMonoFieldChange={handleMonoField}
+              onSaveVentilation={canVentilate ? handleVentilate : async () => {}}
+              saving={ventSaving}
+              startVentilated={isMultiCategory}
+            />
+          ) : null}
           {ventError && (
             <p className="text-[12px] text-destructive" role="alert">
               {ventError}
             </p>
           )}
 
-          {/* Justificatifs sous l'imputation. */}
-          {justifBlock}
+          {/* Justificatifs sous l'imputation (aucun pour un transfert interne). */}
+          {vm.showImputation ? justifBlock : null}
 
           {/* Détails / édition complète (date, montant, type, carte, notes…).
               Ouvert d'emblée en saisie manuelle (identité = le travail), replié

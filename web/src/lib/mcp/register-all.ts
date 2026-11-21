@@ -14,6 +14,7 @@ import { registerBudgetTools } from './tools/budgets';
 import { registerCaisseTools } from './tools/caisse';
 import { registerChequesTools } from './tools/cheques';
 import { registerDepotsEspecesTools } from './tools/depots-especes';
+import { registerRetraitsEspecesTools } from './tools/retraits-especes';
 import { registerAbandonTools } from './tools/abandons';
 import { registerRemboursementTools } from './tools/remboursements';
 import { registerJustificatifTools } from './tools/justificatifs';
@@ -86,6 +87,8 @@ export function registerAllTools(server: McpServer, ctx: McpContext): void {
   registerCaisseTools(server, ctx);
   registerChequesTools(server, ctx);
   registerDepotsEspecesTools(server, ctx);
+  // Retraits d'espèces (banque → caisse) : pendant des dépôts (#51).
+  registerRetraitsEspecesTools(server, ctx);
   registerAbandonTools(server, ctx);
   registerRemboursementTools(server, ctx);
   registerJustificatifTools(server, ctx);

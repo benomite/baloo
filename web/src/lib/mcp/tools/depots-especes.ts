@@ -36,6 +36,10 @@ export function registerDepotsEspecesTools(server: McpServer, ctx: McpContext) {
       description: z.string().optional().describe('Libellé du mouvement caisse (défaut : "Dépôt en banque <date>")'),
       detail_billets: z.string().optional().describe('Détail libre des billets/pièces déposés'),
       notes: z.string().optional(),
+      ecriture_id: z
+        .string()
+        .optional()
+        .describe("ID de l'écriture banque (brouillon « Transfert interne — dépôt d'espèces ») : le dépôt naît rapproché d'elle"),
     },
     async (params) => {
       const result = await createDepotEspecesAvecMouvement(
@@ -46,6 +50,7 @@ export function registerDepotsEspecesTools(server: McpServer, ctx: McpContext) {
           description: params.description ?? null,
           detail_billets: params.detail_billets ?? null,
           notes: params.notes ?? null,
+          ecriture_id: params.ecriture_id ?? null,
         },
       );
       return {
@@ -77,7 +82,9 @@ export function registerDepotsEspecesTools(server: McpServer, ctx: McpContext) {
     "Lie un dépôt d'espèces à l'écriture banque correspondante (versement espèces sur compte courant). Marque les mouvements caisse liés comme 'rapproche'.",
     {
       depot_id: z.string().describe('ID du dépôt espèces (DES-XXX)'),
-      ecriture_id: z.string().describe("ID de l'écriture banque (DEP-XXX ou REC-XXX)"),
+      ecriture_id: z
+        .string()
+        .describe("ID de l'écriture banque (recette, ou brouillon « Transfert interne — dépôt d'espèces »)"),
     },
     async (params) => {
       const updated = await attachDepotEspecesToEcriture(

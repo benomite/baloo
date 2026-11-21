@@ -18,6 +18,7 @@ import { ValiderCwButton } from './valider-cw-button';
 import { buildEcritureGroups, groupKey, isMultiCategoryRow, type Group, type GroupKind, type Item } from './ecriture-groups';
 import type { Ecriture, Category, Unite, ModePaiement, Activite, Carte } from '@/lib/types';
 import { abregeExercice, exerciceCodeForDate } from '@/lib/services/exercices-affichage';
+import { libelleTransfert } from '@/lib/transfert-interne';
 
 interface Props {
   ecritures: Ecriture[];
@@ -458,6 +459,9 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
             // ventilation à l'autre → chip « Catégories multiples » non éditable
             // à la place du picker de catégorie (cf. isMultiCategoryRow).
             const isMultiCat = isMultiCategoryRow(group);
+            // Transfert interne (#51) : ni imputation, ni justificatif, ni mode
+            // de paiement à demander — la ligne affiche son mode de transfert.
+            const transfert = e.type === 'transfert_interne';
             return (
               <div key={e.id}>
                 <div
@@ -532,6 +536,13 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                         activité (les 3 requises pour valider), éditables inline.
                         Un champ manquant s'affiche en ambre. + présence justif. */}
                     <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px]" data-testid={`row-chips-${e.id}`} onClick={stop}>
+                      {transfert ? (
+                        <span className="inline-flex items-center gap-1 text-fg-muted" data-testid={`row-transfert-${e.id}`}>
+                          <Landmark size={11} className="shrink-0 text-fg-subtle" />
+                          {libelleTransfert(e.mode_transfert)}
+                        </span>
+                      ) : (
+                      <>
                       <InlineSelect
                         value={e.unite_id}
                         disabled={!editable}
@@ -566,7 +577,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                           name={`row-cat-${e.id}`}
                           categories={categories.map((c) => ({ id: c.id, name: c.name, type: c.type, unmapped: c.comptaweb_id == null }))}
                           topIds={topCategoryIds}
-                          sens={e.type}
+                          sens={e.type as 'depense' | 'recette'}
                           defaultValue={e.category_id ?? ''}
                           disabled={!editable}
                           onChange={(v) => {
@@ -622,6 +633,8 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                         <Paperclip size={11} className={`shrink-0 ${hasJustif ? 'text-emerald-600 dark:text-emerald-400' : 'text-fg-subtle/60'}`} />
                         {hasJustif ? 'justif' : 'sans justif'}
                       </button>
+                      </>
+                      )}
                     </div>
                   </div>
                   {/* Colonne droite sur 2 lignes : montant (ligne 1), puis le
@@ -634,6 +647,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                       <Amount cents={e.amount_cents} tone={e.type === 'depense' ? 'negative' : 'positive'} />
                     </div>
                     <div className="flex items-center justify-end gap-2 text-[12px]" onClick={stop}>
+                      {transfert ? null : (
                       <InlineSelect
                         value={e.mode_paiement_id}
                         disabled={!editable}
@@ -657,6 +671,7 @@ export function EcrituresTable({ ecritures, categories, unites, modesPaiement, a
                           return r;
                         }}
                       />
+                      )}
                       {isValidating ? (
                         <span
                           className="inline-flex items-center gap-1 text-[11.5px] font-medium text-amber-700 dark:text-amber-300"

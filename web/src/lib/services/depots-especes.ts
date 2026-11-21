@@ -94,7 +94,8 @@ export async function createDepotEspeces(
 }
 
 // Liste les écritures candidates pour rapprocher un dépôt espèces.
-// Critères : recette, pas encore liée à un autre dépôt, montant exact
+// Critères : recette ou transfert interne « dépôt d'espèces » (#51), pas
+// encore liée à un autre dépôt, montant exact
 // ou tolérance ±10%, date ±15j. Triées par proximité de montant puis
 // de date.
 export interface CandidateEcritureBanque {
@@ -117,7 +118,8 @@ export async function listCandidateEcrituresForDepot(
               e.numero_piece, e.status
        FROM ecritures e
        WHERE e.group_id = ?
-         AND e.type = 'recette'
+         AND (e.type = 'recette'
+              OR (e.type = 'transfert_interne' AND e.mode_transfert = 'depot_especes'))
          AND ABS(e.amount_cents - ?) <= ?
          AND ABS(julianday(e.date_ecriture) - julianday(?)) <= 15
          AND NOT EXISTS (

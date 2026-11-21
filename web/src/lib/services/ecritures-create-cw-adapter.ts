@@ -38,6 +38,9 @@ import type { CwScraper, EcriturePayload } from './ecritures-create';
 // Cf. drafts.ts : valeurs validées en prod pour le groupe Val de Saône.
 const DEFAULT_TIERS_CATEG_ID = '10'; // "Autre : pas structure SGDF"
 const DEFAULT_TIERS_STRUCTURE_ID = '';
+// « Mon groupe » : catégorie de tiers des mouvements internes purs (les
+// transferts internes apparaissent avec elle dans la caisse Comptaweb).
+const TIERS_CATEG_MON_GROUPE = '4';
 const DEFAULT_COMPTE_BANCAIRE_ID = '791';
 
 interface CarteRow {
@@ -108,6 +111,32 @@ export async function buildCwInputFromPayload(
   // L'exercice de LA DATE de l'écriture : c'est dans sa session qu'elle part
   // (ADR-039), donc avec ses IDs d'unités et d'activités (ADR-041).
   const exercice = exerciceCodeForDate(payload.date_ecriture);
+
+  // Transfert interne (#51) : le formulaire Comptaweb « Transfert interne à la
+  // structure » ne demande que le mode (Caisse (dépôt) / (retrait) /
+  // (transfert)), la date, le montant, l'intitulé et le n° de pièce. Ni
+  // nature, ni activité, ni branche, ni carte. Tiers : « Mon groupe ».
+  if (payload.type === 'transfert_interne') {
+    if (!payload.mode_transfert) {
+      throw new Error(
+        "Impossible d'envoyer à Comptaweb — il manque : mode de transfert (dépôt, retrait ou transfert d'espèces).",
+      );
+    }
+    return {
+      type: 'transfert_interne',
+      modeTransfert: payload.mode_transfert,
+      libel: payload.description,
+      dateecriture: isoToFr(payload.date_ecriture),
+      montant: centsToMontantFr(payload.amount_cents),
+      numeropiece: payload.numero_piece ?? undefined,
+      // Résolu par libellé au POST (cf. resolveSelectsEcriture).
+      modetransactionId: '',
+      comptebancaireId: DEFAULT_COMPTE_BANCAIRE_ID,
+      tiersCategId: TIERS_CATEG_MON_GROUPE,
+      tiersStructureId: DEFAULT_TIERS_STRUCTURE_ID,
+      ventilations: [],
+    };
+  }
 
   // En-tête : mode de paiement (obligatoire pour CW).
   const modeCw = await luComptawebId('modes_paiement', payload.mode_paiement_id, exercice);

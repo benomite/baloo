@@ -32,7 +32,7 @@ export function JustificatifsCard({
   bundle: EcritureJustifsBundle;
   justifAttendu: boolean;
   numeroPiece: string | null;
-  type: 'depense' | 'recette';
+  type: 'depense' | 'recette' | 'transfert_interne';
   pendingDepots: DepotEnriched[];
   shareableDepots?: DepotForSharing[];
   ecritureAmountCents: number;

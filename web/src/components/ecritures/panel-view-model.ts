@@ -18,19 +18,29 @@ export interface PanelViewModel {
   editable: boolean;
   primary: PanelPrimary;
   showIdentityInline: boolean;
+  // Transfert interne (#51) : choix de la nature (dépense / recette /
+  // transfert interne + mode) proposé sur un brouillon issu de la banque.
+  showNature: boolean;
+  // Imputation (catégorie / unité / activité) et justificatifs : sans objet
+  // pour un transfert interne, qui ne les demande pas.
+  showImputation: boolean;
 }
 
 export function panelViewModel(ecriture: {
   status: string;
   ligne_bancaire_id: number | null;
   comptaweb_ecriture_id: number | null;
-  type: 'depense' | 'recette';
+  type: 'depense' | 'recette' | 'transfert_interne';
   justif_attendu: number;
 }): PanelViewModel {
+  const showImputation = ecriture.type !== 'transfert_interne';
   // Verrou sync : déjà dans Comptaweb (mirror) ou écart détecté (divergent).
   const locked = ecriture.status === 'mirror' || ecriture.status === 'divergent';
   if (locked) {
-    return { mode: 'readonly', editable: false, primary: 'copier-cw', showIdentityInline: false };
+    return {
+      mode: 'readonly', editable: false, primary: 'copier-cw', showIdentityInline: false,
+      showNature: false, showImputation,
+    };
   }
 
   const fromBank = ecriture.ligne_bancaire_id !== null;
@@ -47,5 +57,9 @@ export function panelViewModel(ecriture: {
     // Identité prioritaire seulement en saisie manuelle (montant = le travail) ;
     // pour la banque, l'identité vient du relevé → reléguée au menu ⋯.
     showIdentityInline: mode === 'edit-manual',
+    // Seul un brouillon local tiré d'une ligne bancaire se qualifie : c'est
+    // là qu'arrivent les dépôts / retraits d'espèces.
+    showNature: fromBank && ecriture.status === 'draft',
+    showImputation,
   };
 }

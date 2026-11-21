@@ -57,7 +57,7 @@ function dayDiff(a: string, b: string): number {
 }
 
 export function suggestMatchForEcriture(
-  ecriture: { id: string; amount_cents: number; date_ecriture: string; type: 'depense' | 'recette' },
+  ecriture: { id: string; amount_cents: number; date_ecriture: string; type: 'depense' | 'recette' | 'transfert_interne' },
   depots: MatchDepot[],
   rembs: MatchRemboursement[],
   rejectedKeys: Set<string> = new Set(),

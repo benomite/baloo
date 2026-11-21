@@ -21,6 +21,8 @@ import type {
 import type { ComptawebConfig } from '../comptaweb/types';
 import { planLineHeal, type ExistingLineDraft } from './drafts-line-reconcile';
 import { purgeRejetsPourEcriture } from './inbox-rejets';
+import { buildCwInputFromPayload } from './ecritures-create-cw-adapter';
+import type { ModeTransfert } from '../types';
 
 ensureComptawebEnv();
 
@@ -436,7 +438,12 @@ export async function scanDraftsFromComptaweb(
             // absolu restent intacts (pas de suppression/recréation, donc rien à
             // réassocier). Seule barrière : ne jamais toucher une écriture déjà
             // matérialisée dans Comptaweb (status ≠ draft ou déjà liée à CW).
-            const corrigeable = existingCand.status === 'draft' && existingCand.cwId === null;
+            // Exception : un brouillon qualifié en transfert interne (#51) par
+            // le trésorier n'est ni dépense ni recette — son type est une
+            // saisie, pas un sens bancaire à recaler.
+            const corrigeable =
+              existingCand.status === 'draft' && existingCand.cwId === null &&
+              existingCand.type !== 'transfert_interne';
             if (corrigeable && existingCand.type !== type) {
               // Groupe de ventilation (split manuel) : les N lignes partagent la
               // même sous-ligne bancaire → le sens se recale sur TOUTES, pas
@@ -508,7 +515,8 @@ interface DraftRow {
   date_ecriture: string;
   description: string;
   amount_cents: number;
-  type: 'depense' | 'recette';
+  type: 'depense' | 'recette' | 'transfert_interne';
+  mode_transfert: ModeTransfert | null;
   unite_id: string | null;
   category_id: string | null;
   activite_id: string | null;
@@ -558,11 +566,10 @@ export async function syncDraftToComptaweb(
 ): Promise<SyncDraftResult> {
   try {
     const db = getDb();
+    // `SELECT *` : `mode_transfert` (#51) n'existe que sur les tables migrées ;
+    // absent, il est lu `undefined` et seul un transfert interne s'en sert.
     const ecr = await db.prepare(
-      `SELECT id, group_id, date_ecriture, description, amount_cents, type,
-              unite_id, category_id, activite_id, mode_paiement_id, numero_piece, status, justif_attendu, carte_id,
-              comptaweb_ecriture_id, ventilation_group_id
-       FROM ecritures WHERE id = ? AND group_id = ?`,
+      `SELECT * FROM ecritures WHERE id = ? AND group_id = ?`,
     ).get<DraftRow>(ecritureId, groupId);
     if (!ecr) return { ok: false, message: `Écriture ${ecritureId} introuvable.`, dryRun: opts.dryRun !== false };
 
@@ -582,6 +589,47 @@ export async function syncDraftToComptaweb(
     // IDs d'unités/activités de l'exercice de LA DATE (ADR-041) — le même
     // que celui de la session d'envoi, résolue plus bas (ADR-039).
     const exerciceCode = exerciceCodeForDate(ecr.date_ecriture);
+    const dryRun = opts.dryRun !== false;
+
+    // Transfert interne (#51) : ni nature / activité / unité / mode de
+    // paiement / carte. Même adaptateur que la création directe
+    // (buildCwInputFromPayload) ; le n° de pièce est toujours envoyé (celui du
+    // brouillon, sinon son id) : c'est la clé qui relie la ligne caisse de
+    // Comptaweb au mouvement de caisse Baloo (cf. caisse-sync).
+    if (ecr.type === 'transfert_interne') {
+      const missingTransfert: string[] = [];
+      if (ecr.comptaweb_ecriture_id !== null) {
+        missingTransfert.push(`déjà créée dans Comptaweb (id ${ecr.comptaweb_ecriture_id})`);
+      }
+      if (!ecr.mode_transfert) missingTransfert.push('mode de transfert');
+      if (groupRows.length > 1) missingTransfert.push('un transfert interne ne se ventile pas');
+      if (missingTransfert.length) {
+        return dryRun
+          ? { ok: false, message: `Preview : il manque ${missingTransfert.join(', ')}.`, dryRun: true, missingFields: missingTransfert }
+          : { ok: false, message: `Validation : ${missingTransfert.join(', ')}.`, dryRun: false, missingFields: missingTransfert };
+      }
+      const numeropieceTransfert = ecr.numero_piece || ecr.id;
+      const inputTransfert = await buildCwInputFromPayload({
+        date_ecriture: ecr.date_ecriture,
+        description: ecr.description,
+        amount_cents: totalCents,
+        type: 'transfert_interne',
+        mode_transfert: ecr.mode_transfert,
+        numero_piece: numeropieceTransfert,
+        ventilations: [],
+      });
+      const exerciceT = await resoudreExercicePourDate(groupId, ecr.date_ecriture);
+      const resT = await withComptaweb(exerciceT.cwId, (cfg) => createEcriture(cfg, inputTransfert, { dryRun }));
+      if (resT.dryRun) {
+        return { ok: true, message: 'Preview OK, prêt à synchroniser.', dryRun: true, missingFields: [] };
+      }
+      await db.prepare(
+        `UPDATE ecritures SET status = 'mirror', comptaweb_synced = 1,
+         comptaweb_ecriture_id = ?, numero_piece = ?, updated_at = ? WHERE id = ?`,
+      ).run(resT.ecritureId ?? null, numeropieceTransfert, currentTimestamp(), ecr.id);
+      return { ok: true, message: `Synchronisé vers Comptaweb (id ${resT.ecritureId}).`, dryRun: false, ecritureId: resT.ecritureId };
+    }
+
     const modeCw = await lookupComptawebId('modes_paiement', ecr.mode_paiement_id, exerciceCode);
     const justRow = await db.prepare("SELECT COUNT(*) as n FROM justificatifs WHERE entity_type = 'ecriture' AND entity_id = ?").get<{ n: number }>(ecr.id);
     const hasJust = (justRow?.n ?? 0) > 0;
@@ -625,7 +673,6 @@ export async function syncDraftToComptaweb(
     // les fichiers, seul un code suffit. Si on n'a rien, on retombe sur l'ID
     // de l'écriture (stable, unique, permet de rattacher le justif plus tard).
 
-    const dryRun = opts.dryRun !== false;
     if (missing.length && !dryRun) {
       return { ok: false, message: `Validation : ${missing.join(', ')}.`, dryRun: false, missingFields: missing };
     }

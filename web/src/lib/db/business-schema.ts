@@ -26,7 +26,11 @@ const ECRITURES_COLUMNS_DDL = `
   date_ecriture TEXT NOT NULL,
   description TEXT NOT NULL,
   amount_cents INTEGER NOT NULL,
-  type TEXT NOT NULL CHECK(type IN ('depense', 'recette')),
+  type TEXT NOT NULL CHECK(type IN ('depense', 'recette', 'transfert_interne')),
+  -- Transfert interne (#51) : mode de transaction Comptaweb du transfert
+  -- ('depot_especes' / 'retrait_especes' / 'transfert_especes'). Null pour
+  -- une dépense ou une recette. Validé côté code (MODES_TRANSFERT).
+  mode_transfert TEXT,
   category_id TEXT REFERENCES categories(id),
   mode_paiement_id TEXT REFERENCES modes_paiement(id),
   activite_id TEXT REFERENCES activites(id),
@@ -184,6 +188,67 @@ export async function migrateEcrituresStatus(db: DbWrapper): Promise<void> {
       ALTER TABLE ecritures_new RENAME TO ecritures;
     `);
     await db.exec(ECRITURES_INDEXES_DDL);
+  } finally {
+    if (fkWasOn) {
+      await db.exec('PRAGMA foreign_keys = ON');
+    }
+  }
+}
+
+/**
+ * Transfert interne (#51) : élargit la CHECK SQL de `ecritures.type` à
+ * 'transfert_interne' et ajoute la colonne `mode_transfert`.
+ *
+ * SQLite ne sait pas modifier une CHECK : on reconstruit la table (même
+ * schéma de DROP + RENAME que `migrateEcrituresStatus`). La copie porte sur
+ * TOUTES les colonnes présentes dans l'ancienne table ET dans la nouvelle
+ * (lues par PRAGMA, pas une liste figée : les colonnes ajoutées par ALTER au
+ * fil des chantiers — cw_numero_piece, ventilation_group_id, libelle_origine…
+ * — sont conservées). Aucune ligne perdue (règle CLAUDE.md « JAMAIS de
+ * DELETE »). Les index d'écritures, y compris ceux posés par les `ensure*`,
+ * sont recréés après le RENAME.
+ *
+ * Idempotente : no-op si la CHECK accepte déjà 'transfert_interne' ; dans ce
+ * cas, ajoute seulement `mode_transfert` par ALTER s'il manque.
+ * Exportée pour les tests.
+ */
+export async function migrateEcrituresTransfertInterne(db: DbWrapper): Promise<void> {
+  const def = await db
+    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='ecritures'")
+    .get<{ sql: string }>();
+  if (!def?.sql) return; // table pas encore créée (BDD vierge : CREATE l'inclut)
+
+  const checkSansTransfert =
+    /CHECK\s*\(\s*type\s+IN\s*\(/i.test(def.sql) && !def.sql.includes("'transfert_interne'");
+  if (!checkSansTransfert) {
+    const cols = await db.prepare('PRAGMA table_info(ecritures)').all<{ name: string }>();
+    if (!cols.some((c) => c.name === 'mode_transfert')) {
+      await db.exec('ALTER TABLE ecritures ADD COLUMN mode_transfert TEXT');
+    }
+    return;
+  }
+
+  const fkRow = await db.prepare('PRAGMA foreign_keys').get<{ foreign_keys: number }>();
+  const fkWasOn = (fkRow?.foreign_keys ?? 0) === 1;
+  await db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    await db.exec('DROP TABLE IF EXISTS ecritures_new');
+    await db.exec(`CREATE TABLE ecritures_new (${ECRITURES_COLUMNS_DDL});`);
+    const anciennes = await db.prepare('PRAGMA table_info(ecritures)').all<{ name: string }>();
+    const nouvelles = new Set(
+      (await db.prepare('PRAGMA table_info(ecritures_new)').all<{ name: string }>()).map((c) => c.name),
+    );
+    const copyCols = anciennes.map((c) => c.name).filter((n) => nouvelles.has(n)).join(', ');
+    await db.exec(`
+      INSERT INTO ecritures_new (${copyCols}) SELECT ${copyCols} FROM ecritures;
+      DROP TABLE ecritures;
+      ALTER TABLE ecritures_new RENAME TO ecritures;
+    `);
+    await db.exec(ECRITURES_INDEXES_DDL);
+    await db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_ecritures_cw_numero_piece ON ecritures(cw_numero_piece);
+      CREATE INDEX IF NOT EXISTS idx_ecritures_ventilation_group ON ecritures(ventilation_group_id);
+    `);
   } finally {
     if (fkWasOn) {
       await db.exec('PRAGMA foreign_keys = ON');
@@ -766,6 +831,11 @@ export async function ensureBusinessSchema(): Promise<void> {
   // le nouvel enum (draft/pending_cw/pending_sync/mirror/divergent) et
   // suppression de la CHECK SQL. Idempotent : no-op si déjà migré.
   await migrateEcrituresStatus(db);
+
+  // Transfert interne (#51) : CHECK `type` élargie + colonne mode_transfert.
+  // APRÈS migrateEcrituresStatus (qui reconstruit la table avec la DDL
+  // courante) ; idempotente.
+  await migrateEcrituresTransfertInterne(db);
 
   // Task 7 pivot miroir strict : ajout de la colonne `cw_numero_piece`
   // pour stocker le numéro de pièce renvoyé par Comptaweb après création

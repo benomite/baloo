@@ -26,12 +26,15 @@
 import { useState } from 'react';
 import { Send, Copy, ExternalLink, CheckCircle2, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { MODE_TRANSFERT_CW_LABELS } from '@/lib/transfert-interne';
+import type { ModeTransfert } from '@/lib/types';
 
 export interface CwAssistPayload {
   date_ecriture: string;
   amount_cents: number;
   description: string;
-  type: 'depense' | 'recette';
+  type: 'depense' | 'recette' | 'transfert_interne';
+  mode_transfert?: ModeTransfert | null;
   // Multi-ventilation (S0) : `category_id`/`unite_id`/`activite_id` ici
   // ne reflètent QUE la 1ʳᵉ ventilation, pour le mode dégradé "Copier" /
   // deep-link en mono-ligne (cf. `hideCopy`). L'imputation réelle envoyée
@@ -114,9 +117,19 @@ const FR_DATE = (iso: string): string => {
 const FR_AMOUNT = (cents: number): string =>
   (cents / 100).toFixed(2).replace('.', ',');
 
+// Libellés du select « Type » du formulaire Comptaweb.
+const TYPE_CW: Record<CwAssistPayload['type'], string> = {
+  depense: 'Dépense',
+  recette: 'Recette',
+  transfert_interne: 'Transfert interne à la structure',
+};
+
 const defaultFormatForClipboard = (p: CwAssistPayload): string => {
   const lines = [
-    `Type        : ${p.type === 'depense' ? 'Dépense' : 'Recette'}`,
+    `Type        : ${TYPE_CW[p.type]}`,
+    // Transfert interne (#51) : le mode de transaction tel qu'il s'appelle
+    // dans Comptaweb (« Caisse (dépôt) »…).
+    ...(p.mode_transfert ? [`Mode        : ${MODE_TRANSFERT_CW_LABELS[p.mode_transfert]}`] : []),
     `Date        : ${FR_DATE(p.date_ecriture)}`,
     `Montant     : ${FR_AMOUNT(p.amount_cents)} €`,
     `Libellé     : ${p.description}`,

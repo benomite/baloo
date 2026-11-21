@@ -24,4 +24,14 @@ export const TERMS = {
     plural: 'Remboursements',
     verb: 'Demander un remboursement',
   },
+  // « Transfert interne à la structure » côté Comptaweb (#51) : ni dépense ni
+  // recette, de l'argent qui passe de la banque à la caisse ou l'inverse.
+  transfertInterne: {
+    singular: 'Transfert interne',
+    modes: {
+      depot_especes: 'Dépôt d’espèces (caisse → banque)',
+      retrait_especes: 'Retrait d’espèces (banque → caisse)',
+      transfert_especes: 'Transfert d’espèces',
+    },
+  },
 } as const;

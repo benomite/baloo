@@ -6,6 +6,7 @@ Tous les changements notables sont documentés ici. Format inspiré de [Keep a C
 
 ### Ajouts
 
+- **Transfert interne** (#51) : un brouillon issu d'une ligne bancaire se qualifie en « Transfert interne » avec son mode (dépôt, retrait ou transfert d'espèces, soit « Caisse (dépôt) / (retrait) / (transfert) » dans Comptaweb). Il ne demande ni catégorie, ni unité, ni activité, ni mode de paiement, ni justificatif, sort des totaux (exercice, budgets, vue d'ensemble) et part dans Comptaweb comme « Transfert interne à la structure ». Le brouillon se lie à un dépôt ou à un retrait d'espèces de la caisse, ou le crée. Côté MCP : `update_ecriture` (`type`, `mode_transfert`), `create_depot_especes` (`ecriture_id`), et les nouveaux `list_retraits_especes`, `create_retrait_especes`, `rapprocher_retrait_especes`.
 - **Export d'archive** : deux artefacts distincts — un dump technique complet (`pnpm export:dump`, toutes tables + fichiers, fidèle, reste chez le trésorier) et un dossier d'exercice lisible (`pnpm export:exercice`, caviardé à la source, destiné au Drive du groupe) — plus un rapport de contrôles de cohérence (`pnpm export:controles`) utilisable avant de déclarer un exercice clos. Cf. [ADR-040](doc/decisions.md).
 
 ### À venir

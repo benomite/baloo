@@ -7,6 +7,7 @@ import type {
   RefOption,
 } from './types';
 import { fetchHtml, ComptawebSessionExpiredError } from './http';
+import { MODE_TRANSFERT_CW_LABELS } from '../transfert-interne';
 
 const FORM_PATH = '/recettedepense/creer';
 const POST_PATH = '/recettedepense/nouveau';
@@ -61,14 +62,59 @@ function normaliseMontant(s: string): string {
   return s.replace(',', '.').trim();
 }
 
+function normaliseLabel(s: string): string {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+export interface SelectsEcriture {
+  depenserecette: string;
+  modetransaction: string;
+  caisse: string;
+}
+
+// Valeurs des selects d'en-tête. Dépense / recette : options fixes (1 / 2) et
+// mode déjà résolu par l'appelant. Transfert interne : les options sont
+// cherchées par LIBELLÉ dans le formulaire du jour (aucun id Comptaweb figé
+// côté Baloo) — une option introuvable lève une erreur explicite plutôt que
+// d'envoyer une valeur devinée. La caisse : celle demandée, sinon la seule
+// caisse du groupe s'il n'y en a qu'une.
+export function resolveSelectsEcriture(
+  input: CreateEcritureInput,
+  refs: Pick<ReferentielsCreerEcriture, 'depenserecette' | 'modetransaction' | 'caisse'>,
+): SelectsEcriture {
+  if (input.type !== 'transfert_interne') {
+    return {
+      depenserecette: input.type === 'depense' ? '1' : '2',
+      modetransaction: input.modetransactionId,
+      caisse: input.caisseId ?? '',
+    };
+  }
+  if (!input.modeTransfert) {
+    throw new Error('Transfert interne sans mode de transfert : choisis dépôt, retrait ou transfert d’espèces.');
+  }
+  const find = (options: RefOption[], label: string) =>
+    options.find((o) => o.value !== '' && normaliseLabel(o.label) === normaliseLabel(label));
+  const type = refs.depenserecette.find(
+    (o) => o.value !== '' && normaliseLabel(o.label).startsWith('transfert interne'),
+  );
+  if (!type) throw new Error('Option « Transfert interne » introuvable dans le formulaire Comptaweb.');
+  const modeLabel = MODE_TRANSFERT_CW_LABELS[input.modeTransfert];
+  const mode = find(refs.modetransaction, modeLabel);
+  if (!mode) throw new Error(`Mode de transaction « ${modeLabel} » introuvable dans le formulaire Comptaweb.`);
+  const caisses = refs.caisse.filter((o) => o.value !== '');
+  const caisse = input.caisseId ?? (caisses.length === 1 ? caisses[0].value : '');
+  return { depenserecette: type.value, modetransaction: mode.value, caisse };
+}
+
 function buildPostBody(
   input: CreateEcritureInput,
   csrfToken: string,
   deviseEurId: string,
+  selects: SelectsEcriture,
 ): URLSearchParams {
   const body = new URLSearchParams();
   body.set('ecriturecomptable[_token]', csrfToken);
-  body.set('ecriturecomptable[depenserecette]', input.type === 'depense' ? '1' : '2');
+  body.set('ecriturecomptable[depenserecette]', selects.depenserecette);
   body.set('ecriturecomptable[libel]', input.libel);
   body.set('ecriturecomptable[dateecriture]', input.dateecriture);
   body.set('ecriturecomptable[devise]', deviseEurId);
@@ -77,14 +123,14 @@ function buildPostBody(
   body.set('ecriturecomptable[montant2]', normaliseMontant(input.montant));
   body.set('ecriturecomptable[montant_ancv]', '0,00');
   body.set('ecriturecomptable[numeropiece]', input.numeropiece ?? '');
-  body.set('ecriturecomptable[modetransaction]', input.modetransactionId);
+  body.set('ecriturecomptable[modetransaction]', selects.modetransaction);
   body.set('ecriturecomptable[comptebancaire]', input.comptebancaireId ?? '');
   body.set('ecriturecomptable[comptebancaire2]', '');
   body.set('ecriturecomptable[chequier]', input.chequierId ?? '');
   body.set('ecriturecomptable[chequenum]', input.chequenumValue ?? '');
   body.set('ecriturecomptable[cartebancaire]', input.cartebancaireId ?? '');
   body.set('ecriturecomptable[carteprocurement]', input.carteprocurementId ?? '');
-  body.set('ecriturecomptable[caisse]', input.caisseId ?? '');
+  body.set('ecriturecomptable[caisse]', selects.caisse);
   body.set('ecriturecomptable[caisse2]', '');
   body.set('ecriturecomptable[tierscateg]', input.tiersCategId);
   body.set('ecriturecomptable[tiersstructure]', input.tiersStructureId);
@@ -107,6 +153,9 @@ function validateInput(input: CreateEcritureInput): string[] {
   if (!/^\d{2}\/\d{2}\/\d{4}$/.test(input.dateecriture)) {
     warnings.push('dateecriture : format attendu DD/MM/YYYY');
   }
+  // Un transfert interne n'a pas de ventilation (ni nature, ni activité, ni
+  // branche) : il ne passe pas par le compte de résultat.
+  if (input.type === 'transfert_interne') return warnings;
   if (!input.ventilations.length) warnings.push('aucune ventilation — au moins une est obligatoire');
   const totalVent = input.ventilations.reduce((acc, v) => acc + Number(v.montant.replace(',', '.')), 0);
   const total = Number(input.montant.replace(',', '.'));
@@ -128,7 +177,7 @@ export async function createEcriture(
   const refs = await fetchReferentielsCreer(config);
   const deviseEur = refs.devise.find((o) => /^euro$/i.test(o.label));
   if (!deviseEur) throw new Error('Devise EUR introuvable dans les référentiels.');
-  const body = buildPostBody(input, refs.csrfToken, deviseEur.value);
+  const body = buildPostBody(input, refs.csrfToken, deviseEur.value, resolveSelectsEcriture(input, refs));
 
   if (dryRun) {
     return {
