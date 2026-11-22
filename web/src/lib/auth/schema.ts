@@ -67,6 +67,15 @@ export async function migrateKmColumns(db: DbWrapper): Promise<void> {
   }
 }
 
+// Nature d'un mouvement de caisse (#61) : requise pour l'envoyer à Comptaweb,
+// comme celle d'un brouillon bancaire. Idempotent, colonne nullable.
+export async function migrateMouvementsCaisseCategory(db: DbWrapper): Promise<void> {
+  const cols = await db.prepare('PRAGMA table_info(mouvements_caisse)').all<{ name: string }>();
+  if (!cols.some((c) => c.name === 'category_id')) {
+    await db.exec('ALTER TABLE mouvements_caisse ADD COLUMN category_id TEXT');
+  }
+}
+
 // Signatures rendues caduques par une édition du document (spec 2026-08-17).
 // Idempotent. Colonne nullable, pas de NOT NULL DEFAULT (piège Turso), pas de
 // backfill : les signatures existantes sont toutes actives, ce qui est exact.
@@ -300,6 +309,7 @@ export async function ensureAuthSchema(): Promise<void> {
     // (import legacy non rapproché à Comptaweb) sans casser les liens.
     await db.exec('ALTER TABLE mouvements_caisse ADD COLUMN archived_at TEXT');
   }
+  await migrateMouvementsCaisseCategory(db);
   await db.exec('CREATE INDEX IF NOT EXISTS idx_mvt_caisse_group ON mouvements_caisse(group_id)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_mvt_caisse_status ON mouvements_caisse(status)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_mvt_caisse_depot ON mouvements_caisse(depot_id)');

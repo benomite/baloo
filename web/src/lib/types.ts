@@ -73,7 +73,10 @@ export type DepotType = (typeof DEPOT_TYPES)[number];
 export const MOUVEMENT_CAISSE_TYPES = ['entree', 'sortie', 'depot', 'retrait'] as const;
 export type MouvementCaisseType = (typeof MOUVEMENT_CAISSE_TYPES)[number];
 
-export const MOUVEMENT_CAISSE_STATUSES = ['saisi', 'depose', 'rapproche'] as const;
+// 'draft' : brouillon destiné à Comptaweb (#61), pas encore envoyé.
+// 'pending_sync' : envoyé à Comptaweb, en attente du prochain sync qui le
+// reconnaît comme la ligne de caisse CW (même cycle que les écritures banque).
+export const MOUVEMENT_CAISSE_STATUSES = ['draft', 'pending_sync', 'saisi', 'depose', 'rapproche'] as const;
 export type MouvementCaisseStatus = (typeof MOUVEMENT_CAISSE_STATUSES)[number];
 
 export interface Ecriture {
@@ -179,6 +182,7 @@ export interface MouvementCaisse {
   comptaweb_ecriture_id: number | null;
   unite_id?: string | null;
   activite_id?: string | null;
+  category_id?: string | null;
   solde_apres_cents: number | null;
   notes: string | null;
   created_at: string;

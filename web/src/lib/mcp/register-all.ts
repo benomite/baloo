@@ -12,6 +12,7 @@ import { registerNoteTools } from './tools/notes';
 import { registerTodoTools } from './tools/todos';
 import { registerBudgetTools } from './tools/budgets';
 import { registerCaisseTools } from './tools/caisse';
+import { registerCaisseComptawebTools } from './tools/caisse-comptaweb';
 import { registerChequesTools } from './tools/cheques';
 import { registerDepotsEspecesTools } from './tools/depots-especes';
 import { registerRetraitsEspecesTools } from './tools/retraits-especes';
@@ -26,6 +27,11 @@ import { registerCampsTools } from './tools/camps';
 import { registerRepartitionsTools } from './tools/repartitions';
 import { registerAnneeTools } from './tools/annee';
 
+// #61 : +4 tools caisse ↔ Comptaweb (list_mouvements_caisse_baloo_only,
+// update_mouvement_caisse, push_mouvement_caisse_comptaweb,
+// rapprocher_mouvement_caisse_comptaweb). La caisse suit le modèle des
+// écritures banque : brouillon → envoi CW → reconnu par sync_run.
+//
 // Compteur Lot 5 : 77 tools = 76 existants + 1 ventilation
 //  - ventiler_ecriture : éclate un brouillon en N ventilations (parité
 //    MCP ↔ app — `ventilateDraft`, le service de la route
@@ -85,6 +91,7 @@ export function registerAllTools(server: McpServer, ctx: McpContext): void {
   // Vague 3 — Workflows opérationnels (16 tools : caisse 4 + cheques 2
   // + depots espèces 3 + abandons 3 + rembs 3 + justificatifs 1)
   registerCaisseTools(server, ctx);
+  registerCaisseComptawebTools(server, ctx);
   registerChequesTools(server, ctx);
   registerDepotsEspecesTools(server, ctx);
   // Retraits d'espèces (banque → caisse) : pendant des dépôts (#51).

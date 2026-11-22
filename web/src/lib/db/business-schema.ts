@@ -593,6 +593,8 @@ export async function ensureBusinessSchema(): Promise<void> {
       solde_apres_cents INTEGER,
       unite_id TEXT REFERENCES unites(id),
       activite_id TEXT REFERENCES activites(id),
+      -- Nature (#61) : requise pour envoyer un brouillon de caisse à Comptaweb.
+      category_id TEXT,
       notes TEXT,
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
@@ -1058,6 +1060,10 @@ export async function ensureSyncRunsSchema(db: DbWrapper): Promise<void> {
       remaining INTEGER,
       scope TEXT,
       exercices TEXT,
+      -- Caisse (#61) : solde Comptaweb relevé par le cycle, ou l'erreur du
+      -- pas caisse s'il a échoué.
+      caisse_solde_cw_cents INTEGER,
+      caisse_error TEXT,
       error_message TEXT,
       duration_ms INTEGER,
       created_at TEXT NOT NULL
@@ -1142,6 +1148,14 @@ export async function ensureReconcileSchema(db: DbWrapper): Promise<void> {
     // antérieurs à ADR-039 ne couvraient qu'un exercice, lequel est inconnu.
     if (!srHas('exercices')) {
       await db.exec('ALTER TABLE sync_runs ADD COLUMN exercices TEXT');
+    }
+    // Caisse (#61) : le cycle synchronise aussi la caisse. Nullable, pas de
+    // backfill : les runs antérieurs ne la relevaient pas.
+    if (!srHas('caisse_solde_cw_cents')) {
+      await db.exec('ALTER TABLE sync_runs ADD COLUMN caisse_solde_cw_cents INTEGER');
+    }
+    if (!srHas('caisse_error')) {
+      await db.exec('ALTER TABLE sync_runs ADD COLUMN caisse_error TEXT');
     }
   }
 

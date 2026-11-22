@@ -34,11 +34,18 @@ export async function nextIdOn(
     const lastNum = parseInt(row.id.split('-').pop()!, 10);
     return `${prefix}-${y}-${String(lastNum + 1).padStart(3, '0')}`;
   } catch {
-    const fallback = await db
-      .prepare(`SELECT id FROM ecritures WHERE id LIKE ? ORDER BY id DESC LIMIT 1`)
-      .get<{ id: string }>(pattern);
-    if (!fallback) return `${prefix}-${y}-001`;
-    const lastNum = parseInt(fallback.id.split('-').pop()!, 10);
+    // Table par table, en ignorant celles qui manquent : le max des présentes.
+    let lastNum = 0;
+    for (const t of tables) {
+      try {
+        const row = await db
+          .prepare(`SELECT id FROM ${t} WHERE id LIKE ? ORDER BY id DESC LIMIT 1`)
+          .get<{ id: string }>(pattern);
+        if (row) lastNum = Math.max(lastNum, parseInt(row.id.split('-').pop()!, 10));
+      } catch {
+        // table absente
+      }
+    }
     return `${prefix}-${y}-${String(lastNum + 1).padStart(3, '0')}`;
   }
 }

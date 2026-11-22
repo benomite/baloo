@@ -47,7 +47,7 @@ export function registerCaisseTools(server: McpServer, ctx: McpContext) {
 
   server.tool(
     'cw_sync_caisse',
-    "Synchronise les mouvements de caisse depuis Comptaweb vers Baloo (pull). Idempotent : ne crée pas de doublon (matching par comptaweb_ecriture_id, fallback numero_piece+date+montant). Si caisse_id est omis, prend la première caisse active.",
+    "Synchronise les mouvements de caisse depuis Comptaweb vers Baloo (pull). sync_run le fait déjà à chaque cycle : cet outil sert à cibler une autre caisse (caisse_id). Idempotent : ne crée pas de doublon (matching par comptaweb_ecriture_id, fallback numero_piece+date+montant). Si caisse_id est omis, prend la première caisse active.",
     {
       caisse_id: z
         .number()
@@ -78,17 +78,20 @@ export function registerCaisseTools(server: McpServer, ctx: McpContext) {
     },
   );
 
-  // create_mouvement_caisse reste une saisie locale Baloo-only : la spec
-  // miroir strict acte qu'on n'écrit PAS dans la caisse CW (pas de
-  // scraping write caisse aujourd'hui). Le mouvement crée la ligne en
-  // BDD ; le sync CW remontera quand l'écriture sera saisie côté CW.
+  // create_mouvement_caisse crée un BROUILLON destiné à Comptaweb (#61),
+  // comme un brouillon bancaire : il part dans la caisse CW via
+  // push_mouvement_caisse_comptaweb, puis sync_run le reconnaît comme la
+  // ligne CW (cf. services/caisse-comptaweb).
   server.tool(
     'create_mouvement_caisse',
-    "Enregistre un mouvement de caisse (entrée ou sortie d'espèces). Saisie locale Baloo-only : aucun write côté Comptaweb (cf. spec miroir strict).",
+    "Crée un brouillon de mouvement de caisse (entrée ou sortie d'espèces) destiné à Comptaweb, statut 'draft'. Comme un brouillon bancaire, il doit porter nature (category_id), unité et activité pour être envoyé : compléter via update_mouvement_caisse, prévisualiser puis envoyer via push_mouvement_caisse_comptaweb. Le sync_run suivant le reconnaît comme la ligne de caisse Comptaweb.",
     {
       date_mouvement: z.string().describe('Date du mouvement (YYYY-MM-DD)'),
       description: z.string().describe('Description'),
       montant: z.string().describe('Montant signé : "+15,00" pour entrée, "-8,50" pour sortie'),
+      category_id: z.string().optional().describe('Nature (cf. list_categories)'),
+      unite_id: z.string().optional().describe('Unité (cf. list_unites)'),
+      activite_id: z.string().optional().describe('Activité (cf. list_activites)'),
       notes: z.string().optional(),
     },
     async (params) => {
@@ -96,6 +99,10 @@ export function registerCaisseTools(server: McpServer, ctx: McpContext) {
         date_mouvement: params.date_mouvement,
         description: params.description,
         amount_cents: parseAmount(params.montant),
+        status: 'draft',
+        category_id: params.category_id ?? null,
+        unite_id: params.unite_id ?? null,
+        activite_id: params.activite_id ?? null,
         notes: params.notes ?? null,
       });
       return {
