@@ -38,7 +38,7 @@ Le MCP Baloo expose les outils suivants :
 - `fusionner_brouillons` — fusionne plusieurs brouillons en une écriture (famille qui paie en plusieurs virements) : la cible prend la somme, les pièces et les notes ; les absorbés passent en `fusionne` (jamais supprimés, la sync ne les recrée pas) et restent visibles via `list_ecritures(status='fusionne')`. Brouillons uniquement.
 - `create_remboursement` / `list_remboursements` / `update_remboursement` — suivi remboursements.
 - `create_abandon` / `list_abandons` — abandons de frais.
-- `create_mouvement_caisse` / `list_mouvements_caisse` — caisse espèces.
+- `create_mouvement_caisse` / `list_mouvements_caisse` / `update_mouvement_caisse` / `attach_justificatif_mouvement_caisse` — caisse espèces. `list_mouvements_caisse` prend les mêmes filtres que `list_ecritures`, donne l'état de chaque mouvement (mirror / draft / pending / divergent) et le solde Baloo à côté du solde Comptaweb. Sur un mouvement miroir, `update_mouvement_caisse` refuse de changer titre, catégorie, unité ou activité (Comptaweb fait foi) ; les notes et les pièces restent libres.
 - `create_depot_cheques` / `list_depots_cheques` — dépôts chèques (banque + ANCV).
 - `attach_justificatif` / `list_justificatifs` — pièces justificatives.
 - `import_comptaweb_csv` — import d'un export Comptaweb pour rapprochement.

@@ -7,8 +7,11 @@ import type {
   MouvementCaisseStatus,
   MouvementCaisseType,
   DepotEspeces,
+  Justificatif,
+  EtatMouvementCaisse,
 } from '../types';
 import { createDepotEspeces, attachDepotEspecesToEcriture } from './depots-especes';
+import { attachJustificatif } from './justificatifs';
 
 export interface CaisseContext {
   groupId: string;
@@ -16,18 +19,37 @@ export interface CaisseContext {
   scopeUniteIds?: string[];
 }
 
+// État Comptaweb du mouvement (cf. ETATS_MOUVEMENT_CAISSE dans types.ts).
+const ETAT_SQL = `CASE
+  WHEN m.comptaweb_ecriture_id IS NOT NULL THEN 'mirror'
+  WHEN m.status IN ('depose', 'rapproche', 'pending_sync') THEN 'pending'
+  ELSE 'draft' END`;
+
 export interface ListMouvementsCaisseOptions {
   limit?: number;
+  offset?: number;
   unite_id?: string | null;
   activite_id?: string | null;
+  category_id?: string | null;
+  type?: MouvementCaisseType | null;
+  date_debut?: string | null;
+  date_fin?: string | null;
+  month?: string | null;
+  etats?: EtatMouvementCaisse[] | null;
+  comptaweb_ecriture_id?: number | null;
+  search?: string | null;
 }
 
 export async function listMouvementsCaisse(
   { groupId, scopeUniteIds }: CaisseContext,
   options: ListMouvementsCaisseOptions = {},
-): Promise<{ mouvements: MouvementCaisse[]; solde: number }> {
+): Promise<{
+  mouvements: Array<MouvementCaisse & { etat: EtatMouvementCaisse }>;
+  solde: number;
+  total: number;
+}> {
   const db = getDb();
-  const { limit = 50 } = options;
+  const { limit = 50, offset = 0 } = options;
 
   const conditions: string[] = ['m.group_id = ?'];
   const values: unknown[] = [groupId];
@@ -47,27 +69,176 @@ export async function listMouvementsCaisse(
   // Soft-delete : on exclut les lignes archivées de la liste et du
   // solde par défaut (cf. archiveOrphanedCaisseRows dans caisse-sync).
   conditions.push('m.archived_at IS NULL');
+  // Le solde reste celui de la caisse (unité / activité / scope), sans les
+  // filtres de recherche ci-dessous : une période ou un état ne change pas
+  // l'argent en caisse.
+  const soldeWhere = `WHERE ${conditions.join(' AND ')}`;
+  const soldeValues = [...values];
+
+  if (options.category_id) {
+    conditions.push('m.category_id = ?');
+    values.push(options.category_id);
+  }
+  if (options.type) {
+    conditions.push('m.type = ?');
+    values.push(options.type);
+  }
+  if (options.date_debut) {
+    conditions.push('m.date_mouvement >= ?');
+    values.push(options.date_debut);
+  }
+  if (options.date_fin) {
+    conditions.push('m.date_mouvement <= ?');
+    values.push(options.date_fin);
+  }
+  if (options.month) {
+    conditions.push('m.date_mouvement LIKE ?');
+    values.push(`${options.month}%`);
+  }
+  if (options.etats && options.etats.length > 0) {
+    conditions.push(`(${ETAT_SQL}) IN (${options.etats.map(() => '?').join(', ')})`);
+    values.push(...options.etats);
+  }
+  if (options.comptaweb_ecriture_id != null) {
+    conditions.push('m.comptaweb_ecriture_id = ?');
+    values.push(options.comptaweb_ecriture_id);
+  }
+  if (options.search) {
+    const q = `%${options.search}%`;
+    conditions.push('(m.description LIKE ? OR m.notes LIKE ? OR m.numero_piece LIKE ?)');
+    values.push(q, q, q);
+  }
   const where = `WHERE ${conditions.join(' AND ')}`;
 
   const mouvements = await db
     .prepare(
-      `SELECT m.*, u.code AS unite_code, a.name AS activite_name
+      `SELECT m.*, (${ETAT_SQL}) AS etat, u.code AS unite_code, a.name AS activite_name,
+              c.name AS category_name
        FROM mouvements_caisse m
        LEFT JOIN unites u ON u.id = m.unite_id
        LEFT JOIN activites a ON a.id = m.activite_id
+       LEFT JOIN categories c ON c.id = m.category_id
        ${where}
-       ORDER BY m.date_mouvement DESC, m.created_at DESC LIMIT ?`,
+       ORDER BY m.date_mouvement DESC, m.created_at DESC LIMIT ? OFFSET ?`,
     )
-    .all<MouvementCaisse & { unite_code?: string | null; activite_name?: string | null }>(
-      ...values,
-      limit,
-    );
+    .all<MouvementCaisse & { etat: EtatMouvementCaisse }>(...values, limit, offset);
+
+  const totalRow = await db
+    .prepare(`SELECT COUNT(*) AS n FROM mouvements_caisse m ${where}`)
+    .get<{ n: number }>(...values);
 
   const soldeRow = await db
-    .prepare(`SELECT COALESCE(SUM(m.amount_cents), 0) as total FROM mouvements_caisse m ${where}`)
-    .get<{ total: number }>(...values);
+    .prepare(`SELECT COALESCE(SUM(m.amount_cents), 0) as total FROM mouvements_caisse m ${soldeWhere}`)
+    .get<{ total: number }>(...soldeValues);
 
-  return { mouvements, solde: soldeRow?.total ?? 0 };
+  return { mouvements, solde: soldeRow?.total ?? 0, total: totalRow?.n ?? 0 };
+}
+
+// ─── Modification d'un mouvement (#62) ──────────────────────────────────
+//
+// Enrichissement d'un mouvement existant : titre, catégorie, unité,
+// activité, notes. Sur un mouvement miroir (présent dans Comptaweb), le
+// titre et l'imputation sont tenus par Comptaweb — comme pour les écritures
+// bancaires (cf. update_ecriture) : un changement de l'un d'eux est REFUSÉ,
+// en nommant le champ, et rien n'est écrit. Les notes restent Baloo-only.
+
+export const CHAMPS_COMPTAWEB_MOUVEMENT_CAISSE = [
+  'description',
+  'category_id',
+  'unite_id',
+  'activite_id',
+] as const;
+
+export class MouvementCaisseMiroirError extends Error {
+  constructor(
+    public readonly mouvementId: string,
+    public readonly champs: string[],
+  ) {
+    super(
+      `Refusé : le mouvement ${mouvementId} est un miroir Comptaweb ; ` +
+        `Comptaweb fait foi pour ${champs.map((c) => `\`${c}\``).join(', ')}. ` +
+        'Modifie-le dans Comptaweb, la sync caisse le reflétera. Rien n’a été changé.',
+    );
+    this.name = 'MouvementCaisseMiroirError';
+  }
+}
+
+export interface UpdateMouvementCaisseInput {
+  description?: string;
+  category_id?: string | null;
+  unite_id?: string | null;
+  activite_id?: string | null;
+  notes?: string | null;
+}
+
+async function getMouvementCaisseInScope(
+  { groupId, scopeUniteIds }: CaisseContext,
+  id: string,
+): Promise<MouvementCaisse | null> {
+  const scope = uniteScopeSql(scopeUniteIds ?? [], 'unite_id');
+  const row = await getDb()
+    .prepare(
+      `SELECT * FROM mouvements_caisse
+       WHERE id = ? AND group_id = ? AND archived_at IS NULL${scope.sql ? ` AND ${scope.sql}` : ''}`,
+    )
+    .get<MouvementCaisse>(id, groupId, ...scope.params);
+  return row ?? null;
+}
+
+export async function updateMouvementCaisse(
+  ctx: CaisseContext,
+  id: string,
+  input: UpdateMouvementCaisseInput,
+): Promise<MouvementCaisse | null> {
+  const existing = await getMouvementCaisseInScope(ctx, id);
+  if (!existing) return null;
+
+  const patch: Record<string, string | null> = {};
+  if (input.description !== undefined) {
+    const description = input.description.trim();
+    if (!description) throw new Error('Le titre (description) ne peut pas être vide.');
+    patch.description = description;
+  }
+  for (const k of ['category_id', 'unite_id', 'activite_id', 'notes'] as const) {
+    if (input[k] !== undefined) patch[k] = nullIfEmpty(input[k]);
+  }
+
+  const scopeUniteIds = ctx.scopeUniteIds ?? [];
+  if (patch.unite_id !== undefined && scopeUniteIds.length > 0 && !scopeUniteIds.includes(patch.unite_id ?? '')) {
+    throw new Error('Choisis une unité parmi les tiennes.');
+  }
+
+  if (existing.comptaweb_ecriture_id != null) {
+    const current = existing as unknown as Record<string, unknown>;
+    const refuses = CHAMPS_COMPTAWEB_MOUVEMENT_CAISSE.filter(
+      (k) => patch[k] !== undefined && patch[k] !== (current[k] ?? null),
+    );
+    if (refuses.length > 0) throw new MouvementCaisseMiroirError(id, refuses);
+  }
+
+  const keys = Object.keys(patch);
+  if (keys.length > 0) {
+    await getDb()
+      .prepare(`UPDATE mouvements_caisse SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ? AND group_id = ?`)
+      .run(...keys.map((k) => patch[k]), id, ctx.groupId);
+  }
+  return getMouvementCaisseInScope(ctx, id);
+}
+
+// Pièce justificative d'un mouvement de caisse (#62) : même table et même
+// stockage que celles des écritures (`justificatifs`, entity_type
+// 'mouvement_caisse'). Permis aussi sur un miroir : la pièce est Baloo-only.
+export async function attachJustificatifMouvementCaisse(
+  ctx: CaisseContext,
+  id: string,
+  input: { filename: string; content: Buffer; mime_type?: string | null },
+): Promise<Justificatif> {
+  const mouvement = await getMouvementCaisseInScope(ctx, id);
+  if (!mouvement) throw new Error(`Mouvement de caisse ${id} introuvable.`);
+  return attachJustificatif(
+    { groupId: ctx.groupId },
+    { entity_type: 'mouvement_caisse', entity_id: id, ...input },
+  );
 }
 
 export interface CreateMouvementCaisseInput {

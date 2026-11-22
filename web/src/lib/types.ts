@@ -79,6 +79,23 @@ export type MouvementCaisseType = (typeof MOUVEMENT_CAISSE_TYPES)[number];
 export const MOUVEMENT_CAISSE_STATUSES = ['draft', 'pending_sync', 'saisi', 'depose', 'rapproche'] as const;
 export type MouvementCaisseStatus = (typeof MOUVEMENT_CAISSE_STATUSES)[number];
 
+// État d'un mouvement de caisse vis-à-vis de Comptaweb (#62), sur le modèle
+// des écritures bancaires (dérivé en SQL, cf. listMouvementsCaisse) :
+//  - `mirror`    : le mouvement existe dans Comptaweb (la sync caisse lui a
+//                  posé son `comptaweb_ecriture_id`) ;
+//  - `pending`   : saisi dans Baloo et déjà engagé (déposé en banque,
+//                  rapproché d'une écriture banque, ou envoyé à Comptaweb —
+//                  statut `pending_sync`, #61), attend de remonter de CW ;
+//  - `draft`     : saisie locale Baloo, en préparation ;
+//  - `divergent` : écart Baloo ↔ CW. La sync caisse ne le détecte pas encore
+//                  (elle appartient à un autre ticket) : l'état est accepté en
+//                  filtre pour la parité avec list_ecritures, aucun mouvement
+//                  ne le porte aujourd'hui.
+export const ETATS_MOUVEMENT_CAISSE = ['mirror', 'draft', 'pending', 'divergent'] as const;
+export type EtatMouvementCaisse = (typeof ETATS_MOUVEMENT_CAISSE)[number];
+// Pas encore dans Comptaweb (équivalent de pending_only côté écritures).
+export const ETATS_MOUVEMENT_CAISSE_PENDING: EtatMouvementCaisse[] = ['draft', 'pending'];
+
 export interface Ecriture {
   id: string;
   group_id: string;
@@ -188,6 +205,7 @@ export interface MouvementCaisse {
   created_at: string;
   unite_code?: string | null;
   activite_name?: string | null;
+  category_name?: string | null;
 }
 
 export interface DepotEspeces {

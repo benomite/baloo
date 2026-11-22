@@ -593,8 +593,7 @@ export async function ensureBusinessSchema(): Promise<void> {
       solde_apres_cents INTEGER,
       unite_id TEXT REFERENCES unites(id),
       activite_id TEXT REFERENCES activites(id),
-      -- Nature (#61) : requise pour envoyer un brouillon de caisse à Comptaweb.
-      category_id TEXT,
+      category_id TEXT REFERENCES categories(id),
       notes TEXT,
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );

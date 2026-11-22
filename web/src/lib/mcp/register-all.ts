@@ -27,9 +27,8 @@ import { registerCampsTools } from './tools/camps';
 import { registerRepartitionsTools } from './tools/repartitions';
 import { registerAnneeTools } from './tools/annee';
 
-// #61 : +4 tools caisse ↔ Comptaweb (list_mouvements_caisse_baloo_only,
-// update_mouvement_caisse, push_mouvement_caisse_comptaweb,
-// rapprocher_mouvement_caisse_comptaweb). La caisse suit le modèle des
+// #61 : +3 tools caisse ↔ Comptaweb (list_mouvements_caisse_baloo_only,
+// push_mouvement_caisse_comptaweb, rapprocher_mouvement_caisse_comptaweb). La caisse suit le modèle des
 // écritures banque : brouillon → envoi CW → reconnu par sync_run.
 //
 // Compteur Lot 5 : 77 tools = 76 existants + 1 ventilation

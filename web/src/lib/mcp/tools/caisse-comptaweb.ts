@@ -12,9 +12,8 @@ import {
   listMouvementsCaisseBalooOnly,
   pushMouvementCaisseToComptaweb,
   rapprocherMouvementCaisseComptaweb,
-  updateMouvementCaisseAvantComptaweb,
 } from '@/lib/services/caisse-comptaweb';
-import { formatAmount, parseAmount } from '@/lib/format';
+import { formatAmount } from '@/lib/format';
 import type { MouvementCaisse } from '@/lib/types';
 
 function texte(data: unknown, isError = false) {
@@ -42,37 +41,6 @@ export function registerCaisseComptawebTools(server: McpServer, ctx: McpContext)
         montant_total: formatAmount(mouvements.reduce((s, m) => s + m.amount_cents, 0)),
         mouvements: mouvements.map(avecMontant),
       });
-    },
-  );
-
-  server.tool(
-    'update_mouvement_caisse',
-    "Complète ou corrige un mouvement de caisse pas encore dans Comptaweb (brouillon ou Baloo-only) : nature, unité, activité, date, libellé, montant, notes. Refusé pour un miroir CW ou un envoi en attente (Comptaweb fait foi).",
-    {
-      mouvement_id: z.string().describe('ID du mouvement (CAI-…)'),
-      date_mouvement: z.string().optional().describe('YYYY-MM-DD'),
-      description: z.string().optional(),
-      montant: z.string().optional().describe('Montant signé : "+15,00" entrée, "-8,50" sortie'),
-      category_id: z.string().optional().describe('Nature (cf. list_categories)'),
-      unite_id: z.string().optional(),
-      activite_id: z.string().optional(),
-      notes: z.string().optional(),
-    },
-    async (params) => {
-      try {
-        const m = await updateMouvementCaisseAvantComptaweb(caisseCtx, params.mouvement_id, {
-          date_mouvement: params.date_mouvement,
-          description: params.description,
-          amount_cents: params.montant !== undefined ? parseAmount(params.montant) : undefined,
-          category_id: params.category_id,
-          unite_id: params.unite_id,
-          activite_id: params.activite_id,
-          notes: params.notes,
-        });
-        return texte(avecMontant(m));
-      } catch (err) {
-        return texte({ error: err instanceof Error ? err.message : String(err) }, true);
-      }
     },
   );
 

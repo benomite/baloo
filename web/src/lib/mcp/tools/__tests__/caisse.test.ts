@@ -42,12 +42,14 @@ describe('caisse tools (Vague 3)', () => {
   const tools = captureTools(registerCaisseTools);
   beforeEach(() => vi.clearAllMocks());
 
-  it('expose les 4 tools attendus', () => {
+  it('expose les 6 tools attendus', () => {
     expect(Object.keys(tools).sort()).toEqual([
+      'attach_justificatif_mouvement_caisse',
       'create_mouvement_caisse',
       'cw_list_caisses',
       'cw_sync_caisse',
       'list_mouvements_caisse',
+      'update_mouvement_caisse',
     ]);
   });
 

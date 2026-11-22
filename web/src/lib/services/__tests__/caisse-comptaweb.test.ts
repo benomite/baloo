@@ -16,11 +16,10 @@ import {
   listMouvementsCaisseBalooOnly,
   pushMouvementCaisseToComptaweb,
   rapprocherMouvementCaisseComptaweb,
-  updateMouvementCaisseAvantComptaweb,
   type PushMouvementCaisseDeps,
 } from '../caisse-comptaweb';
 import { persistCaisseSync } from '../caisse-sync';
-import { createMouvementCaisse } from '../caisse';
+import { createMouvementCaisse, listMouvementsCaisse } from '../caisse';
 
 const CTX = { groupId: 'g1' };
 
@@ -80,6 +79,9 @@ beforeEach(async () => {
       created_at TEXT NOT NULL DEFAULT '2026-10-01T00:00:00Z'
     );
     CREATE TABLE modes_paiement (id TEXT PRIMARY KEY, name TEXT NOT NULL, comptaweb_id INTEGER);
+    CREATE TABLE unites (id TEXT PRIMARY KEY, code TEXT);
+    CREATE TABLE activites (id TEXT PRIMARY KEY, name TEXT);
+    CREATE TABLE categories (id TEXT PRIMARY KEY, name TEXT);
     INSERT INTO modes_paiement VALUES ('mp-cb', 'Carte bancaire', 3), ('mp-caisse', 'Espèces', 5);
   `);
 });
@@ -291,26 +293,13 @@ describe('rapprocherMouvementCaisseComptaweb', () => {
   });
 });
 
-describe('updateMouvementCaisseAvantComptaweb', () => {
-  it('complète un brouillon (nature, unité) sans toucher au reste', async () => {
-    await insert('CAI-1', { category_id: null });
-    const m = await updateMouvementCaisseAvantComptaweb(CTX, 'CAI-1', { category_id: 'cat-2', unite_id: 'u-2' });
-    expect(m).toMatchObject({ category_id: 'cat-2', unite_id: 'u-2', activite_id: 'a-1', description: 'Achat fournitures' });
-  });
-
-  it('une chaîne vide efface le champ ; un patch vide ne change rien', async () => {
-    await insert('CAI-1', { notes: 'x' });
-    expect((await updateMouvementCaisseAvantComptaweb(CTX, 'CAI-1', { notes: '' })).notes).toBeNull();
-    expect((await updateMouvementCaisseAvantComptaweb(CTX, 'CAI-1', {})).id).toBe('CAI-1');
-  });
-
-  it('refuse un miroir CW, un envoi en attente ou un archivé', async () => {
-    await insert('CAI-MIR', { comptaweb_ecriture_id: 3, status: 'saisi' });
-    await insert('CAI-PEND', { status: 'pending_sync' });
-    await insert('CAI-ARCH', { archived_at: '2026-10-06T00:00:00Z' });
-    await expect(updateMouvementCaisseAvantComptaweb(CTX, 'CAI-MIR', { notes: 'a' })).rejects.toThrow(/Comptaweb/);
-    await expect(updateMouvementCaisseAvantComptaweb(CTX, 'CAI-PEND', { notes: 'a' })).rejects.toThrow(/Comptaweb/);
-    await expect(updateMouvementCaisseAvantComptaweb(CTX, 'CAI-ARCH', { notes: 'a' })).rejects.toThrow(/archivé/);
+describe('état Comptaweb des mouvements (#62 + #61)', () => {
+  it('brouillon = draft ; envoyé à Comptaweb mais pas encore reconnu = pending', async () => {
+    await insert('CAI-D', { status: 'draft' });
+    await insert('CAI-P', { status: 'pending_sync' });
+    const { mouvements } = await listMouvementsCaisse(CTX);
+    const etats = Object.fromEntries(mouvements.map((m) => [m.id, m.etat]));
+    expect(etats).toEqual({ 'CAI-D': 'draft', 'CAI-P': 'pending' });
   });
 });
 

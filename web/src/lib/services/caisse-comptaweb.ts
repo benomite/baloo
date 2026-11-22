@@ -194,45 +194,6 @@ export async function pushMouvementCaisseToComptaweb(
   };
 }
 
-// ─── Complément d'un mouvement pas encore dans Comptaweb ──────────────────
-//
-// Un brouillon ou un mouvement Baloo-only doit porter nature, unité et
-// activité pour partir dans Comptaweb. Un miroir (ou un envoi en attente) ne
-// se modifie pas ici : Comptaweb fait foi.
-
-export interface UpdateMouvementCaisseInput {
-  date_mouvement?: string;
-  description?: string;
-  amount_cents?: number;
-  category_id?: string | null;
-  unite_id?: string | null;
-  activite_id?: string | null;
-  notes?: string | null;
-}
-
-export async function updateMouvementCaisseAvantComptaweb(
-  { groupId }: CaisseContext,
-  mouvementId: string,
-  patch: UpdateMouvementCaisseInput,
-): Promise<MouvementCaisse> {
-  const m = await requireMouvement(groupId, mouvementId);
-  if (m.archived_at) throw new Error(`Le mouvement ${mouvementId} est archivé.`);
-  if (m.comptaweb_ecriture_id !== null || m.status === 'pending_sync') {
-    throw new Error(
-      `Le mouvement ${mouvementId} est déjà dans Comptaweb : c'est là qu'il se modifie.`,
-    );
-  }
-  const champs = Object.entries(patch).filter(([, v]) => v !== undefined);
-  if (champs.length === 0) return m;
-  await getDb()
-    .prepare(
-      `UPDATE mouvements_caisse SET ${champs.map(([k]) => `${k} = ?`).join(', ')}
-        WHERE id = ? AND group_id = ?`,
-    )
-    .run(...champs.map(([, v]) => (v === '' ? null : v)), mouvementId, groupId);
-  return await requireMouvement(groupId, mouvementId);
-}
-
 // ─── Rapprochement avec une ligne de caisse Comptaweb ─────────────────────
 
 export interface RapprochementCaisseResult {

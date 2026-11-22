@@ -7,7 +7,6 @@ import { registerCaisseComptawebTools } from '../caisse-comptaweb';
 import {
   pushMouvementCaisseToComptaweb,
   rapprocherMouvementCaisseComptaweb,
-  updateMouvementCaisseAvantComptaweb,
 } from '@/lib/services/caisse-comptaweb';
 
 const MVT = { id: 'CAI-1', amount_cents: -800, description: 'Achat', date_mouvement: '2026-10-05' };
@@ -23,7 +22,6 @@ vi.mock('@/lib/services/caisse-comptaweb', () => ({
     rapproche_de: null,
     avertissements: [],
   })),
-  updateMouvementCaisseAvantComptaweb: vi.fn(async () => ({ ...MVT, category_id: 'cat-1' })),
 }));
 
 describe('tools caisse ↔ Comptaweb (#61)', () => {
@@ -37,7 +35,7 @@ describe('tools caisse ↔ Comptaweb (#61)', () => {
       mouvements: Array<{ montant: string }>;
     };
     expect(r.total).toBe(2);
-    expect(r.montant_total).toMatch(/7,00/);
+    expect(r.montant_total).toMatch(/^7,00/);
     expect(r.mouvements[0].montant).toMatch(/-8,00/);
   });
 
@@ -84,24 +82,9 @@ describe('tools caisse ↔ Comptaweb (#61)', () => {
     expect(parseToolResult(ko)).toEqual({ error: 'déjà lié' });
   });
 
-  it('update : parse le montant, laisse absents les champs non fournis', async () => {
-    await tools.update_mouvement_caisse.handler({ mouvement_id: 'CAI-1', montant: '-9,50', category_id: 'cat-1' });
-    const patch = vi.mocked(updateMouvementCaisseAvantComptaweb).mock.calls[0][2];
-    expect(patch.amount_cents).toBe(-950);
-    expect(patch.category_id).toBe('cat-1');
-    expect(patch.description).toBeUndefined();
-
-    await tools.update_mouvement_caisse.handler({ mouvement_id: 'CAI-1', notes: 'x' });
-    expect(vi.mocked(updateMouvementCaisseAvantComptaweb).mock.calls[1][2].amount_cents).toBeUndefined();
-
-    vi.mocked(updateMouvementCaisseAvantComptaweb).mockRejectedValueOnce(new Error('miroir'));
-    const ko = await tools.update_mouvement_caisse.handler({ mouvement_id: 'CAI-1', notes: 'x' });
-    expect((ko as { isError?: boolean }).isError).toBe(true);
-  });
-
   it('passe le périmètre d’unités du contexte MCP au service', async () => {
-    await tools.update_mouvement_caisse.handler({ mouvement_id: 'CAI-1', notes: 'x' });
-    expect(vi.mocked(updateMouvementCaisseAvantComptaweb).mock.calls[0][0]).toEqual({
+    await tools.rapprocher_mouvement_caisse_comptaweb.handler({ mouvement_id: 'CAI-1', comptaweb_ecriture_id: 4242 });
+    expect(vi.mocked(rapprocherMouvementCaisseComptaweb).mock.calls[0][0]).toEqual({
       groupId: 'g-test',
       scopeUniteIds: ['u-1'],
     });
