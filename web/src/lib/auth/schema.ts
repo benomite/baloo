@@ -83,6 +83,15 @@ export async function migrateSignaturesSuperseded(db: DbWrapper): Promise<void> 
   );
 }
 
+// Catégorie (nature) d'un mouvement de caisse, enrichie via MCP (#62).
+// Idempotent. Colonne nullable, sans backfill.
+export async function migrateCaisseCategoryColumn(db: DbWrapper): Promise<void> {
+  const cols = await db.prepare('PRAGMA table_info(mouvements_caisse)').all<{ name: string }>();
+  if (!cols.some((c) => c.name === 'category_id')) {
+    await db.exec('ALTER TABLE mouvements_caisse ADD COLUMN category_id TEXT REFERENCES categories(id)');
+  }
+}
+
 // Lazy-init appelé depuis l'adapter NextAuth (cf. adapter.ts) au
 // premier accès. Garde le flag `ensured` pour ne tourner qu'une fois
 // par process.
@@ -300,6 +309,7 @@ export async function ensureAuthSchema(): Promise<void> {
     // (import legacy non rapproché à Comptaweb) sans casser les liens.
     await db.exec('ALTER TABLE mouvements_caisse ADD COLUMN archived_at TEXT');
   }
+  await migrateCaisseCategoryColumn(db);
   await db.exec('CREATE INDEX IF NOT EXISTS idx_mvt_caisse_group ON mouvements_caisse(group_id)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_mvt_caisse_status ON mouvements_caisse(status)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_mvt_caisse_depot ON mouvements_caisse(depot_id)');
