@@ -1246,6 +1246,8 @@ export async function runSyncCycle(
         };
       } catch (err) {
         caisse = { status: 'failed', error_message: err instanceof Error ? err.message : String(err) };
+        // Visible aussi de qui ne lit que le run (sync_status, error_message).
+        avertissements.push(`caisse non synchronisée : ${caisse.error_message}`);
         logError('sync-cycle', 'caisse_en_echec', err, { groupId, syncRunId });
       }
     }

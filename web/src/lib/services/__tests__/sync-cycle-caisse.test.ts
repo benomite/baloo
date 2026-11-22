@@ -115,6 +115,22 @@ describe('sync_run — pas caisse (#61)', () => {
     });
   });
 
+  it('un échec caisse remonte en avertissement du run (error_message, lu par sync_status)', async () => {
+    const res = await runSyncCycle(
+      db,
+      'g1',
+      opts({
+        syncCaisse: async () => {
+          throw new Error('caisse introuvable');
+        },
+      }),
+    );
+    expect(res.error_message).toContain('caisse non synchronisée : caisse introuvable');
+    expect((await runRow(db, res.sync_run_id))?.error_message).toContain(
+      'caisse non synchronisée : caisse introuvable',
+    );
+  });
+
   it('prend la session du premier exercice abouti, une seule fois', async () => {
     const vues: string[] = [];
     const res = await runSyncCycle(

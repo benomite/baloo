@@ -38,10 +38,19 @@ import type { CaisseContext } from './caisse';
 
 type MouvementRow = MouvementCaisse & { archived_at: string | null; group_id: string };
 
-async function requireMouvement(groupId: string, mouvementId: string): Promise<MouvementRow> {
+// Mouvement du groupe, dans le périmètre d'unités de l'appelant (même
+// partition que `getMouvementCaisseInScope` et la liste Baloo-only) : un chef
+// d'unité n'envoie ni ne rapproche le mouvement d'une autre unité.
+async function requireMouvement(
+  { groupId, scopeUniteIds }: CaisseContext,
+  mouvementId: string,
+): Promise<MouvementRow> {
+  const scope = uniteScopeSql(scopeUniteIds ?? [], 'unite_id');
   const row = await getDb()
-    .prepare('SELECT * FROM mouvements_caisse WHERE id = ? AND group_id = ?')
-    .get<MouvementRow>(mouvementId, groupId);
+    .prepare(
+      `SELECT * FROM mouvements_caisse WHERE id = ? AND group_id = ?${scope.sql ? ` AND ${scope.sql}` : ''}`,
+    )
+    .get<MouvementRow>(mouvementId, groupId, ...scope.params);
   if (!row) throw new Error(`Mouvement de caisse ${mouvementId} introuvable.`);
   return row;
 }
@@ -114,13 +123,14 @@ function blocages(m: MouvementRow): string[] {
 }
 
 export async function pushMouvementCaisseToComptaweb(
-  { groupId }: CaisseContext,
+  ctx: CaisseContext,
   mouvementId: string,
   opts: { dryRun?: boolean; deps?: PushMouvementCaisseDeps } = {},
 ): Promise<PushMouvementCaisseResult> {
+  const { groupId } = ctx;
   const dryRun = opts.dryRun !== false;
   const deps = opts.deps ?? {};
-  const m = await requireMouvement(groupId, mouvementId);
+  const m = await requireMouvement(ctx, mouvementId);
 
   const bloque = blocages(m);
   if (bloque.length > 0) {
@@ -205,15 +215,16 @@ export interface RapprochementCaisseResult {
 }
 
 export async function rapprocherMouvementCaisseComptaweb(
-  { groupId }: CaisseContext,
+  ctx: CaisseContext,
   mouvementId: string,
   comptawebEcritureId: number,
 ): Promise<RapprochementCaisseResult> {
   if (!Number.isInteger(comptawebEcritureId) || comptawebEcritureId <= 0) {
     throw new Error(`Id de ligne Comptaweb invalide : ${comptawebEcritureId}.`);
   }
+  const { groupId } = ctx;
   const db = getDb();
-  const m = await requireMouvement(groupId, mouvementId);
+  const m = await requireMouvement(ctx, mouvementId);
   if (m.archived_at) throw new Error(`Le mouvement ${mouvementId} est archivé.`);
   if (m.comptaweb_ecriture_id !== null) {
     throw new Error(
@@ -227,6 +238,12 @@ export async function rapprocherMouvementCaisseComptaweb(
         WHERE group_id = ? AND comptaweb_ecriture_id = ? AND archived_at IS NULL AND id <> ?`,
     )
     .get<MouvementRow>(groupId, comptawebEcritureId, mouvementId);
+  // Le miroir d'une autre unité reste hors d'atteinte d'un chef d'unité ; un
+  // miroir sans unité (ligne CW importée telle quelle) reste rapprochable.
+  const scopeUniteIds = ctx.scopeUniteIds ?? [];
+  if (miroir?.unite_id && scopeUniteIds.length > 0 && !scopeUniteIds.includes(miroir.unite_id)) {
+    throw new Error(`La ligne Comptaweb ${comptawebEcritureId} appartient à une autre unité.`);
+  }
 
   const avertissements: string[] = [];
   if (miroir) {
@@ -272,6 +289,6 @@ export async function rapprocherMouvementCaisseComptaweb(
       .run(comptawebEcritureId, m.id);
   }
 
-  const relu = await requireMouvement(groupId, m.id);
+  const relu = await requireMouvement({ groupId }, m.id);
   return { mouvement: relu, rapproche_de: miroir?.id ?? null, avertissements };
 }

@@ -293,6 +293,51 @@ describe('rapprocherMouvementCaisseComptaweb', () => {
   });
 });
 
+describe("périmètre d'unités d'un chef (push et rapprochement)", () => {
+  const CHEF = { groupId: 'g1', scopeUniteIds: ['u-1'] };
+
+  it("n'envoie pas le mouvement d'une autre unité : introuvable, rien envoyé, inchangé", async () => {
+    await insert('CAI-U2', { unite_id: 'u-2' });
+    const { deps, envoye } = fakeDeps();
+    await expect(pushMouvementCaisseToComptaweb(CHEF, 'CAI-U2', { dryRun: false, deps })).rejects.toThrow(
+      /introuvable/,
+    );
+    expect(envoye).toHaveLength(0);
+    expect(await lire('CAI-U2')).toMatchObject({ status: 'draft', comptaweb_ecriture_id: null });
+  });
+
+  it('envoie le mouvement de son unité', async () => {
+    await insert('CAI-U1', { unite_id: 'u-1' });
+    const r = await pushMouvementCaisseToComptaweb(CHEF, 'CAI-U1', { dryRun: false, deps: fakeDeps().deps });
+    expect(r.ok).toBe(true);
+    expect((await lire('CAI-U1'))?.status).toBe('pending_sync');
+  });
+
+  it("ne rapproche pas le mouvement d'une autre unité : introuvable, ni lié ni archivé", async () => {
+    await insert('CAI-U2', { status: 'saisi', unite_id: 'u-2' });
+    await expect(rapprocherMouvementCaisseComptaweb(CHEF, 'CAI-U2', 4242)).rejects.toThrow(/introuvable/);
+    expect(await lire('CAI-U2')).toMatchObject({ comptaweb_ecriture_id: null, archived_at: null });
+  });
+
+  it("refuse de rapprocher vers le miroir d'une autre unité", async () => {
+    await insert('CAI-MIR', { status: 'saisi', comptaweb_ecriture_id: 4242, unite_id: 'u-2' });
+    await insert('CAI-U1', { status: 'saisi', unite_id: 'u-1' });
+    await expect(rapprocherMouvementCaisseComptaweb(CHEF, 'CAI-U1', 4242)).rejects.toThrow(/autre unité/);
+    expect(await lire('CAI-U1')).toMatchObject({ comptaweb_ecriture_id: null, archived_at: null });
+    expect((await lire('CAI-MIR'))?.unite_id).toBe('u-2');
+  });
+
+  it('rapproche vers un miroir sans unité ou de son unité', async () => {
+    await insert('CAI-MIR0', { status: 'saisi', comptaweb_ecriture_id: 4242, unite_id: null });
+    await insert('CAI-MIR1', { status: 'saisi', comptaweb_ecriture_id: 4343, unite_id: 'u-1' });
+    await insert('CAI-A', { status: 'saisi', unite_id: 'u-1' });
+    await insert('CAI-B', { status: 'saisi', unite_id: 'u-1' });
+    expect((await rapprocherMouvementCaisseComptaweb(CHEF, 'CAI-A', 4242)).rapproche_de).toBe('CAI-MIR0');
+    expect((await rapprocherMouvementCaisseComptaweb(CHEF, 'CAI-B', 4343)).rapproche_de).toBe('CAI-MIR1');
+    expect((await lire('CAI-MIR0'))?.unite_id).toBe('u-1');
+  });
+});
+
 describe('état Comptaweb des mouvements (#62 + #61)', () => {
   it('brouillon = draft ; envoyé à Comptaweb mais pas encore reconnu = pending', async () => {
     await insert('CAI-D', { status: 'draft' });

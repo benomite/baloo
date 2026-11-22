@@ -13,6 +13,7 @@ import {
   resolveCaisseId,
 } from '@/lib/services/caisse-sync';
 import { formatAmount, parseAmount } from '@/lib/format';
+import { resolveScopedUnite } from '@/lib/scope';
 import {
   ETATS_MOUVEMENT_CAISSE,
   ETATS_MOUVEMENT_CAISSE_PENDING,
@@ -241,13 +242,21 @@ export function registerCaisseTools(server: McpServer, ctx: McpContext) {
       notes: z.string().optional(),
     },
     async (params) => {
+      // Même règle que les écritures : un chef d'unité ne crée que pour les
+      // siennes (unique unité imposée, sinon choix parmi les siennes).
+      let uniteId: string | null;
+      try {
+        uniteId = resolveScopedUnite(ctx.scopeUniteIds ?? [], params.unite_id ?? null);
+      } catch (err) {
+        return erreur(err);
+      }
       const created = await createMouvementCaisse(caisseCtx, {
         date_mouvement: params.date_mouvement,
         description: params.description,
         amount_cents: parseAmount(params.montant),
         status: 'draft',
         category_id: params.category_id ?? null,
-        unite_id: params.unite_id ?? null,
+        unite_id: uniteId,
         activite_id: params.activite_id ?? null,
         notes: params.notes ?? null,
       });

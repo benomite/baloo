@@ -245,6 +245,14 @@ describe('runSyncCycle — deux exercices', () => {
       resolveActiviteId: async () => null,
       resolveUniteId: async () => null,
       resolveCategoryId: async () => null,
+      // Pas caisse (#61) hors sujet ici : doublé, pas de réseau.
+      syncCaisse: async () => ({
+        caisseId: 1,
+        libelle: 'Caisse',
+        soldeComptaweb: 0,
+        soldeBaloo: 0,
+        stats: { pulled: 0, inserted: 0, matched_by_cw_id: 0, matched_by_fallback: 0, unchanged: 0 },
+      }),
     });
 
     expect(clearStoredSession).toHaveBeenCalledWith('34'); // session morte jetée
