@@ -38,12 +38,16 @@ const TYPE_LABEL: Record<MouvementCaisseType, string> = {
 };
 
 const STATUS_LABEL: Record<MouvementCaisseStatus, string> = {
+  draft: 'Brouillon',
+  pending_sync: 'Envoyé à Comptaweb',
   saisi: 'Saisi',
   depose: 'Déposé',
   rapproche: 'Rapproché',
 };
 
 const STATUS_TONE: Record<MouvementCaisseStatus, 'outline' | 'secondary' | 'default'> = {
+  draft: 'outline',
+  pending_sync: 'secondary',
   saisi: 'outline',
   depose: 'secondary',
   rapproche: 'default',

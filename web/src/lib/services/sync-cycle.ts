@@ -63,6 +63,7 @@ import { importHorsResultatTransfers } from './hors-resultat-import';
 import { CATEGORIES_HORS_RESULTAT } from './overview';
 import { exercicesActifs, type ExerciceActif } from './exercices-actifs';
 import { getGroupe } from './groupes';
+import { syncCaisseFromComptaweb, resolveCaisseId, type CaisseSyncResult } from './caisse-sync';
 
 // ============================================================================
 // Types publics
@@ -104,7 +105,19 @@ export interface SyncCycleOptions {
   exercices?: ExerciceActif[];
   /** Injection pour tests : ouvre la session d'un exercice. */
   loadConfigPourExercice?: (cwId: number) => Promise<ComptawebConfig>;
+  /** Injection pour tests : synchronise la caisse avec la session donnée (#61). */
+  syncCaisse?: (groupId: string, config: ComptawebConfig) => Promise<CaisseSyncResult>;
 }
+
+/** Pas caisse du cycle (#61) : solde Comptaweb relevé, ou l'erreur. */
+export type SyncCaisseOutcome =
+  | {
+      status: 'ok';
+      solde_comptaweb_cents: number;
+      solde_baloo_cents: number;
+      stats: CaisseSyncResult['stats'];
+    }
+  | { status: 'failed'; error_message: string };
 
 export interface SyncCycleResult {
   sync_run_id: string;
@@ -123,6 +136,8 @@ export interface SyncCycleResult {
   exercices: string[];
   scope: SyncScope;
   duration_ms: number;
+  /** Caisse (#61) : null si le cycle n'a pas atteint ce pas. */
+  caisse: SyncCaisseOutcome | null;
   error_message?: string;
   skipped_reason?: SkipReason;
 }
@@ -146,6 +161,8 @@ export interface SyncRunRow {
   remaining: number | null;
   scope: string | null;
   exercices: string | null;
+  caisse_solde_cw_cents: number | null;
+  caisse_error: string | null;
   error_message: string | null;
   duration_ms: number | null;
   created_at: string;
@@ -1075,6 +1092,7 @@ export async function runSyncCycle(
     exercices: [],
     scope,
     duration_ms: 0,
+    caisse: null,
     ...over,
   });
 
@@ -1129,15 +1147,19 @@ export async function runSyncCycle(
     const codesCouverts: string[] = [];
     const avertissements: string[] = [];
     const echecs: unknown[] = [];
+    // Session du premier exercice synchronisé (le plus récent) : la caisse se
+    // lit dans celle-ci, sans second login.
+    let sessionCaisse: ComptawebConfig | null = null;
 
     for (const tour of tours) {
       // Un tour complet, session comprise : rejouable tel quel après avoir jeté
       // une session morte. `budgetRestant` est lu à l'appel, donc toujours à jour.
+      let sessionTour: ComptawebConfig | null = null;
       const lancerTour = async () =>
         syncUnExercice({
           db,
           groupId,
-          config: await tour.ouvrirSession(),
+          config: (sessionTour = await tour.ouvrirSession()),
           budgetDetail: budgetRestant,
           opts,
           bornes: tour.bornes,
@@ -1178,6 +1200,7 @@ export async function runSyncCycle(
         remaining += c.remaining;
         avertissements.push(...c.warnings);
         reussis++;
+        sessionCaisse ??= sessionTour;
         if (tour.code) codesCouverts.push(tour.code);
       } catch (err) {
         // Un exercice en échec (session, bascule refusée, scrape) ne doit pas
@@ -1200,6 +1223,33 @@ export async function runSyncCycle(
     if (tours.length > 0 && reussis === 0) throw echecs[0];
     if (tours.length === 0) {
       avertissements.push('aucun exercice actif dans Comptaweb — rien à synchroniser');
+    }
+
+    // 7 bis. Caisse (#61) : Comptaweb est aussi la source de vérité de la
+    // caisse. Mouvements et solde CW sont relevés dans le même cycle, avec la
+    // session du premier exercice synchronisé. Un échec caisse n'emporte pas
+    // le cycle banque : il est consigné à part (sync_runs.caisse_error,
+    // `caisse` du résultat) et journalisé.
+    let caisse: SyncCaisseOutcome | null = null;
+    if (sessionCaisse) {
+      const syncCaisse =
+        opts.syncCaisse ??
+        (async (g: string, cfg: ComptawebConfig) =>
+          syncCaisseFromComptaweb(g, await resolveCaisseId(cfg), cfg));
+      try {
+        const r = await syncCaisse(groupId, sessionCaisse);
+        caisse = {
+          status: 'ok',
+          solde_comptaweb_cents: r.soldeComptaweb,
+          solde_baloo_cents: r.soldeBaloo,
+          stats: r.stats,
+        };
+      } catch (err) {
+        caisse = { status: 'failed', error_message: err instanceof Error ? err.message : String(err) };
+        // Visible aussi de qui ne lit que le run (sync_status, error_message).
+        avertissements.push(`caisse non synchronisée : ${caisse.error_message}`);
+        logError('sync-cycle', 'caisse_en_echec', err, { groupId, syncRunId });
+      }
     }
 
     // 8. Détection stale (warning, pas erreur)
@@ -1226,7 +1276,8 @@ export async function runSyncCycle(
            divergent_detected = 0,
            updated_mirror = ?, supprimee_cw_detected = ?, imported_from_cw = ?,
            link_suggestions_created = ?, detail_fetches = ?, remaining = ?,
-           exercices = ?, error_message = ?, duration_ms = ?
+           exercices = ?, caisse_solde_cw_cents = ?, caisse_error = ?,
+           error_message = ?, duration_ms = ?
          WHERE id = ?`,
       )
       .run(
@@ -1240,6 +1291,8 @@ export async function runSyncCycle(
         detailFetches,
         remaining,
         codesCouverts.join(',') || null,
+        caisse?.status === 'ok' ? caisse.solde_comptaweb_cents : null,
+        caisse?.status === 'failed' ? caisse.error_message : null,
         warningMessage,
         durationMs,
         syncRunId,
@@ -1261,6 +1314,7 @@ export async function runSyncCycle(
       exercices: codesCouverts,
       scope,
       duration_ms: durationMs,
+      caisse,
       error_message: warningMessage ?? undefined,
     };
   } catch (err) {

@@ -1,4 +1,9 @@
-import { getCurrentContext } from '../context';
+// `../context` (Auth.js, next/navigation) se charge à la demande : ce module est
+// aussi importé par le serveur MCP (tool inbox), qui passe toujours `groupId`
+// et ne doit pas tirer next-auth à l'import (cf. #61, registerAllTools en test).
+async function getCurrentContext() {
+  return (await import('../context')).getCurrentContext();
+}
 import { getDb } from '../db';
 import { ensureDepotsSchema } from '../services/depots';
 import { loadRejectedPairKeys } from '../services/inbox-rejets';

@@ -7,6 +7,7 @@ import {
   type CaisseGestionData,
   type MouvementCaisseComptaweb,
 } from '../comptaweb';
+import type { ComptawebConfig } from '../comptaweb/types';
 import type { MouvementCaisseStatus, MouvementCaisseType } from '../types';
 
 // Sync caisse Comptaweb → Baloo (ADR à venir).
@@ -71,7 +72,11 @@ function inferStatus(m: MouvementCaisseComptaweb): MouvementCaisseStatus {
 // l'inféré Comptaweb pour ne JAMAIS régresser un statut (ex. une
 // ligne marquée 'rapproche' à la main ne doit pas redescendre à
 // 'saisi' à la sync suivante).
+// Brouillon / envoyé (#61) : sous 'saisi' — une ligne retrouvée dans
+// Comptaweb sort de ces états pour devenir un miroir.
 const STATUS_RANK: Record<MouvementCaisseStatus, number> = {
+  draft: -1,
+  pending_sync: -1,
   saisi: 0,
   depose: 1,
   rapproche: 2,
@@ -87,11 +92,16 @@ function promoteStatus(
   return STATUS_RANK[inferred] >= existingRank ? inferred : (existing as MouvementCaisseStatus);
 }
 
+// `config` : session Comptaweb déjà ouverte (celle du cycle sync_run, #61).
+// Sans elle, session par défaut avec re-login automatique.
 export async function syncCaisseFromComptaweb(
   groupId: string,
   caisseId: number,
+  config?: ComptawebConfig,
 ): Promise<CaisseSyncResult> {
-  const data = await withAutoReLogin((config) => fetchCaisseGestion(config, caisseId));
+  const data = config
+    ? await fetchCaisseGestion(config, caisseId)
+    : await withAutoReLogin((cfg) => fetchCaisseGestion(cfg, caisseId));
   return persistCaisseSync(groupId, data);
 }
 
@@ -364,10 +374,11 @@ export async function archiveOrphanedCaisseRows(
 
 // Helper de découverte : utile au premier sync pour identifier la
 // caisse (ou les caisses) du groupe sans config en dur.
-export async function discoverCaisses(): Promise<
+export async function discoverCaisses(config?: ComptawebConfig): Promise<
   Array<{ id: number; libelle: string; gerant: string; devise: string; inactif: boolean }>
 > {
-  return await withAutoReLogin((config) => fetchCaisseList(config));
+  if (config) return await fetchCaisseList(config);
+  return await withAutoReLogin((cfg) => fetchCaisseList(cfg));
 }
 
 // Résolution du caisseId à utiliser pour la sync. Stratégie :
@@ -375,7 +386,7 @@ export async function discoverCaisses(): Promise<
 //  2. Découverte automatique via `/caisse` (filtre les caisses inactives).
 // Si l'étape 2 retourne une liste vide (parsing inattendu, page différente),
 // on lève une erreur explicite plutôt que silencieuse.
-export async function resolveCaisseId(): Promise<number> {
+export async function resolveCaisseId(config?: ComptawebConfig): Promise<number> {
   const fromEnv = process.env.COMPTAWEB_CAISSE_ID;
   if (fromEnv) {
     const n = Number(fromEnv);
@@ -385,7 +396,7 @@ export async function resolveCaisseId(): Promise<number> {
     return n;
   }
 
-  const list = await discoverCaisses();
+  const list = await discoverCaisses(config);
   const active = list.find((c) => !c.inactif);
   if (active) return active.id;
 

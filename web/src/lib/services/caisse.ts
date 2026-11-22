@@ -22,7 +22,7 @@ export interface CaisseContext {
 // État Comptaweb du mouvement (cf. ETATS_MOUVEMENT_CAISSE dans types.ts).
 const ETAT_SQL = `CASE
   WHEN m.comptaweb_ecriture_id IS NOT NULL THEN 'mirror'
-  WHEN m.status IN ('depose', 'rapproche') THEN 'pending'
+  WHEN m.status IN ('depose', 'rapproche', 'pending_sync') THEN 'pending'
   ELSE 'draft' END`;
 
 export interface ListMouvementsCaisseOptions {
@@ -254,6 +254,8 @@ export interface CreateMouvementCaisseInput {
   airtable_id?: string | null;
   unite_id?: string | null;
   activite_id?: string | null;
+  // Nature (#61) : requise pour envoyer le mouvement à Comptaweb.
+  category_id?: string | null;
   notes?: string | null;
 }
 
@@ -285,31 +287,34 @@ export async function createMouvementCaisse(
     .get<{ total: number }>(groupId);
   const soldeAfter = (soldeBefore?.total ?? 0) + input.amount_cents;
 
+  const colonnes: Record<string, unknown> = {
+    id,
+    group_id: groupId,
+    date_mouvement: input.date_mouvement,
+    description: input.description,
+    amount_cents: input.amount_cents,
+    type: inferredType,
+    numero_piece: nullIfEmpty(input.numero_piece),
+    status: input.status ?? 'saisi',
+    depot_id: nullIfEmpty(input.depot_id),
+    airtable_id: nullIfEmpty(input.airtable_id),
+    unite_id: nullIfEmpty(input.unite_id),
+    activite_id: nullIfEmpty(input.activite_id),
+    solde_apres_cents: soldeAfter,
+    notes: nullIfEmpty(input.notes),
+    created_at: now,
+  };
+  // `category_id` (#61) n'est écrit que s'il est fourni : les appelants
+  // historiques (dépôts, retraits, import) n'en ont pas.
+  const categoryId = nullIfEmpty(input.category_id);
+  if (categoryId) colonnes.category_id = categoryId;
+  const noms = Object.keys(colonnes);
   await db
     .prepare(
-      `INSERT INTO mouvements_caisse
-         (id, group_id, date_mouvement, description, amount_cents,
-          type, numero_piece, status, depot_id, airtable_id,
-          unite_id, activite_id, solde_apres_cents, notes, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO mouvements_caisse (${noms.join(', ')})
+       VALUES (${noms.map(() => '?').join(', ')})`,
     )
-    .run(
-      id,
-      groupId,
-      input.date_mouvement,
-      input.description,
-      input.amount_cents,
-      inferredType,
-      nullIfEmpty(input.numero_piece),
-      input.status ?? 'saisi',
-      nullIfEmpty(input.depot_id),
-      nullIfEmpty(input.airtable_id),
-      nullIfEmpty(input.unite_id),
-      nullIfEmpty(input.activite_id),
-      soldeAfter,
-      nullIfEmpty(input.notes),
-      now,
-    );
+    .run(...Object.values(colonnes));
 
   return (await db.prepare('SELECT * FROM mouvements_caisse WHERE id = ?').get<MouvementCaisse>(id))!;
 }

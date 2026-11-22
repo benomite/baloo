@@ -105,6 +105,7 @@ describe('sync MCP tools (Phase 2 Task 5)', () => {
       exercices: [],
       scope: 'recent',
       duration_ms: 0,
+      caisse: null,
       error_message: 'CW down',
     });
     const r = (await tools.sync_run.handler({})) as { isError?: boolean };

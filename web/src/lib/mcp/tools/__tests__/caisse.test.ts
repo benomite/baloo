@@ -83,7 +83,9 @@ describe('caisse tools (Vague 3)', () => {
     expect(parsed.montant).toMatch(/-8,00/);
   });
 
-  it("create_mouvement_caisse documente l'aspect Baloo-only", () => {
-    expect(tools.create_mouvement_caisse.description).toContain('Baloo-only');
+  // #61 : la saisie n'est plus Baloo-only, c'est un brouillon pour Comptaweb.
+  it('create_mouvement_caisse documente le brouillon destiné à Comptaweb', () => {
+    expect(tools.create_mouvement_caisse.description).toContain('Comptaweb');
+    expect(tools.create_mouvement_caisse.description).toContain('push_mouvement_caisse_comptaweb');
   });
 });

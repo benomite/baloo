@@ -39,6 +39,7 @@ Le MCP Baloo expose les outils suivants :
 - `create_remboursement` / `list_remboursements` / `update_remboursement` — suivi remboursements.
 - `create_abandon` / `list_abandons` — abandons de frais.
 - `create_mouvement_caisse` / `list_mouvements_caisse` / `update_mouvement_caisse` / `attach_justificatif_mouvement_caisse` — caisse espèces. `list_mouvements_caisse` prend les mêmes filtres que `list_ecritures`, donne l'état de chaque mouvement (mirror / draft / pending / divergent) et le solde Baloo à côté du solde Comptaweb. Sur un mouvement miroir, `update_mouvement_caisse` refuse de changer titre, catégorie, unité ou activité (Comptaweb fait foi) ; les notes et les pièces restent libres.
+- Cycle caisse ↔ Comptaweb (#61), sur le modèle des brouillons bancaires : `create_mouvement_caisse` crée un **brouillon** (`draft`) ; `push_mouvement_caisse_comptaweb(mouvement_id, dry_run)` le valide comme un brouillon bancaire (mode Espèces, nature, unité, activité mappés) puis, avec `dry_run=false`, le crée dans la caisse Comptaweb (statut `pending_sync`) — exception caisse à ADR-037 ; le `sync_run` suivant le reconnaît comme la ligne CW, sans doublon. `list_mouvements_caisse_baloo_only` liste les mouvements hérités ni brouillons ni miroirs ; chacun s'envoie par `push_mouvement_caisse_comptaweb` ou se lie à une ligne de caisse CW choisie par l'utilisateur via `rapprocher_mouvement_caisse_comptaweb` (le doublon éventuel est archivé, jamais supprimé). Dépôts et retraits d'espèces : par leur brouillon bancaire.
 - `create_depot_cheques` / `list_depots_cheques` — dépôts chèques (banque + ANCV).
 - `attach_justificatif` / `list_justificatifs` — pièces justificatives.
 - `import_comptaweb_csv` — import d'un export Comptaweb pour rapprochement.
@@ -57,7 +58,7 @@ Le MCP Baloo expose les outils suivants :
 - `cw_list_rapprochement_bancaire` — lignes bancaires non rapprochées et écritures comptables non rapprochées, avec sous-lignes DSP2.
 
 **Sync incrémentale Comptaweb** (Phase 2 pivot miroir strict — ADR-032) :
-- `sync_run({force?})` — lance un cycle de sync : promeut les `pending_sync` en `mirror` par match `cw_numero_piece`, maintient les drafts depuis les lignes bancaires non rapprochées, détecte les divergents. Throttle 15 min par défaut (bypass via `force=true`). Verrou running < 60 s par groupe.
+- `sync_run({force?})` — lance un cycle de sync : promeut les `pending_sync` en `mirror` par match `cw_numero_piece`, maintient les drafts depuis les lignes bancaires non rapprochées, détecte les divergents, et synchronise la caisse depuis Comptaweb (mouvements + solde CW, `caisse` dans le résultat). Throttle 15 min par défaut (bypass via `force=true`). Verrou running < 60 s par groupe.
 - `sync_status()` — état courant : dernier run, is_running, stale, throttle_until. Utile pour décider si appeler `sync_run` avant un autre tool comptable.
 
 Les montants sont en centimes dans la base, affichés en format français (`42,50 €`). Quand tu passes un montant à un outil, utilise le format `"42,50"`.
